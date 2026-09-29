@@ -437,7 +437,7 @@ flowchart TD
     I --> J[Top-K Results]
 ```
 
-### Python SDK
+### Python SDK (Global Distributed)
 
 ```python
 # Automatic global search when peer nodes available

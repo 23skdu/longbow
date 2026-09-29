@@ -21,6 +21,7 @@ go build -tags emlgo -o longbow ./cmd/longbow
 Without `-tags emlgo`, the `mathutil` and `tensor` packages use pure Go `math` standard library functions. With `-tags emlgo`, they dispatch to EMLGo's SIMD-optimized kernels (AVX2/AVX-512 on x86, NEON on ARM).
 
 Both builds compile and pass all tests. The build-tag approach ensures:
+
 - **No binary size bloat** when EMLGo is not needed (~34KB difference)
 - **Identical SIMD kernel performance** between builds (verified via pprof and perf stat)
 - **Clean separation** of EMLGo code from the standard math path
@@ -99,6 +100,7 @@ func GetBackend() Backend
 ```
 
 #### Supported Operations
+
 - **Square Root & Fused Multiply-Add**:
   - `Sqrt(x float64) float64`: Dispatches to `fastmath.Sqrt` (`SQRTSD` / `FSQRTD`) or `math.Sqrt`.
   - `FMA(x, y, z float64) float64`: Dispatches to `fastmath.FMA` (`VFMADD231SD` / `FMADD`) or `math.FMA`.
@@ -115,12 +117,14 @@ func GetBackend() Backend
 ### 2. Tensor Engine Integration (`internal/tensor`)
 
 #### A. Dynamic Dispatch Extension
+
 `internal/tensor/math_dispatch.go` defines execution engines, split by build tag:
 
 - **`math_dispatch.go`** (`//go:build !emlgo`): Defaults to `MathSIMD`. `MathEML` case falls through to `MathSIMD`.
 - **`math_dispatch_emlgo.go`** (`//go:build emlgo`): Defaults to `MathEML`. Full EMLGo batch dispatch.
 
 Execution engines:
+
 - `MathGo`: Standard library fallbacks.
 - `MathSIMD`: Hand-rolled vector assembly.
 - `MathEML`: High-performance `emlgo` hardware kernels and batch operations.
@@ -128,16 +132,21 @@ Execution engines:
 Use `tensor.SetMathImplementation(tensor.MathEML)` to switch the active tensor execution engine.
 
 #### B. Float64 Support & Vectorized Batch Dispatch
+
 In [`internal/tensor/ops.go`](file:///home/rsd/REPOS/longbow/internal/tensor/ops.go):
+
 - Enabled complete element-wise `Float64` unary and binary tensor operations (`Add`, `Sub`, `Mul`, `Div`, `Pow`, `Sin`, `Cos`, `Exp`, `Log`, `Sqrt`, `Sinh`, `Cosh`, `Tanh`, `Asin`, `Acos`, `Atan`).
 - Integrated `elementwiseBinaryBroadcastFloat64` for arbitrary tensor broadcasting.
 - Wired batch SIMD functions into contiguous slice executions for both `Float32` and `Float64`.
 
 #### C. Hyperbolic Operation Optimization
+
 Longbow previously evaluated `Sinh`, `Cosh`, and `Tanh` using a 12-iteration pure Go Taylor series approximation (`expGo`), invoking it twice per scalar element. Replacing this with `mathutil.SinhBatch` and `mathutil.Sinh` completely eliminated this bottleneck, improving throughput by **1.66x**.
 
 #### D. FMA Contractions in Tensor Calculus
+
 In [`internal/tensor/calculus.go`](file:///home/rsd/REPOS/longbow/internal/tensor/calculus.go), multi-index contractions for differential geometry and curvature evaluation were refactored to use `mathutil.FMA`:
+
 - **Christoffel Symbols ($\Gamma^\lambda_{\mu\nu}$)**:
   $$\Gamma^\lambda_{\mu\nu} = \frac{1}{2} g^{\lambda\sigma} \left( \partial_\mu g_{\nu\sigma} + \partial_\nu g_{\mu\sigma} - \partial_\sigma g_{\mu\nu} \right)$$
 - **Riemann Curvature Tensor ($R^\rho_{\sigma\mu\nu}$)**:
@@ -152,6 +161,7 @@ Using `mathutil.FMA` executes each `sum += a * b` in a single CPU cycle with a s
 ### 3. SIMD Distance Baselines (`internal/simd`)
 
 In [`internal/simd/simd_baseline.go`](file:///home/rsd/REPOS/longbow/internal/simd/simd_baseline.go):
+
 - Upgraded `EuclideanDistanceFloat64` and `CosineDistanceFloat64` unrolled reference implementations to use `mathutil.Sqrt`.
 - Ensures zero heap allocations and exact bit-level parity with hardware instructions.
 
@@ -193,7 +203,7 @@ All tests passed with zero functional or numerical regressions:
 
 *Benchmarked on Intel Core i7-12650H (16 hardware threads, 1000-element Float64 tensor):*
 
-```
+```text
 BenchmarkAB_Tensor_Sinh_TaylorVsEMLGo/Longbow_MathGo_TaylorSeries-16    49,402 ops    24,109 ns/op
 BenchmarkAB_Tensor_Sinh_TaylorVsEMLGo/Longbow_MathEML_EMLGo-16          81,920 ops    14,530 ns/op
 ```
@@ -219,7 +229,7 @@ Measured across vector dimensions commonly used in embedding models:
 
 #### CPU Per-Type Analysis — 10,000 Vectors
 
-**Where emlgo helps (CPU, 10k)**
+##### Where emlgo helps (CPU, 10k)
 
 | Dtype | Search Mode | Standard | Emlgo | Delta |
 |-------|------------|--------:|------:|------:|
@@ -230,7 +240,7 @@ Measured across vector dimensions commonly used in embedding models:
 | complex64 | dense | 3546 | 3547 | ~0% |
 | complex128 | dense | 3580 | 3415 | -5% |
 
-**Where emlgo hurts (CPU, 10k)**
+##### Where emlgo hurts (CPU, 10k)
 
 | Dtype | Search Mode | Standard | Emlgo | Delta |
 |-------|------------|--------:|------:|------:|
@@ -247,7 +257,7 @@ Measured across vector dimensions commonly used in embedding models:
 
 #### CPU Per-Type Analysis — 100,000 Vectors
 
-**Where emlgo helps (CPU, 100k)**
+##### Where emlgo helps (CPU, 100k)
 
 | Dtype | Search Mode | Standard | Emlgo | Delta |
 |-------|------------|--------:|------:|------:|
@@ -260,7 +270,7 @@ Measured across vector dimensions commonly used in embedding models:
 | uint8 | dense | 3010 | 2394 | -21% |
 | float16 | dense | 2017 | 1494 | -26% |
 
-**Where emlgo hurts (CPU, 100k)**
+##### Where emlgo hurts (CPU, 100k)
 
 | Dtype | Search Mode | Standard | Emlgo | Delta |
 |-------|------------|--------:|------:|------:|
@@ -277,7 +287,7 @@ Measured across vector dimensions commonly used in embedding models:
 
 #### CPU Per-Type Analysis — 500,000 Vectors
 
-**Where emlgo helps (CPU, 500k)**
+##### Where emlgo helps (CPU, 500k)
 
 | Dtype | Search Mode | Standard | Emlgo | Delta |
 |-------|------------|--------:|------:|------:|
@@ -290,7 +300,7 @@ Measured across vector dimensions commonly used in embedding models:
 | float64 | sparse | 6853 | 4018 | -41% |
 | complex64 | dense | 404 | 251 | -38% |
 
-**Where emlgo hurts (CPU, 500k)**
+##### Where emlgo hurts (CPU, 500k)
 
 | Dtype | Search Mode | Standard | Emlgo | Delta |
 |-------|------------|--------:|------:|------:|
@@ -307,7 +317,7 @@ Measured across vector dimensions commonly used in embedding models:
 
 ### 5. GPU Per-Type Analysis
 
-**Where emlgo helps (GPU)**
+#### Where emlgo helps (GPU)
 
 | Dtype | Count | Search Mode | Standard | Emlgo | Delta |
 |-------|------:|------------|--------:|------:|------:|
@@ -339,7 +349,7 @@ Measured across vector dimensions commonly used in embedding models:
 | float16 | 500k | temporal | 647 | 668 | +3% |
 | float32 | 500k | temporal | 729 | 754 | +3% |
 
-**Where emlgo hurts (GPU)**
+#### Where emlgo hurts (GPU)
 
 | Dtype | Count | Search Mode | Standard | Emlgo | Delta |
 |-------|------:|------------|--------:|------:|------:|
@@ -423,6 +433,7 @@ Measured across vector dimensions commonly used in embedding models:
 | turboquant4 | +35% | +15% | **-19%** |
 
 **Analysis**: Memory impact varies significantly by scale and dtype:
+
 - **CPU float64 at 500k: +48%** -- emlgo allocates additional buffers for 8-byte arithmetic at large scale (10632 vs 7172 MB)
 - **CPU turboquant4 at 500k: -22%** -- quantized representation benefits from emlgo's compact storage
 - **GPU uint8 at 10k: +28%** -- additional GPU buffer allocation in emlgo path for small datasets
@@ -576,24 +587,31 @@ func contractVectors(a, b []float64) float64 {
 The integration adheres to Longbow's quality and security standards:
 
 1. **Linter Validation**:
+
    ```bash
    go vet ./internal/mathutil/... ./internal/tensor/... ./internal/simd/...
    ```
+
    *Result: Passed with 0 errors.*
 
 2. **Static Security Analysis**:
+
    ```bash
    gosec -fmt=json -no-fail ./...
    ```
+
    *Result: Scanned 581 files and 154,747 lines of code; 0 security issues reported.*
 
 3. **Data Race Verification**:
+
    ```bash
    go test -race ./internal/mathutil/... ./internal/tensor/... ./internal/simd/...
    ```
+
    *Result: 0 data races detected.*
 
 4. **A/B Parity & Benchmark Commands**:
+
    ```bash
    # Run parity tests (both builds)
    go test -v ./internal/tensor -run TestEmlgoParity

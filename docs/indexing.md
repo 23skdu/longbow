@@ -133,7 +133,7 @@ longbow-cli create-namespace -name my_ns -dims 768 -data_type turboquant
 
 #### Architecture
 
-```
+```text
 ┌─────────────────────────────────────┐
 │         CLIENT SDK                  │
 │  create_dataset(turboquant_bits=4)  │

@@ -25,11 +25,13 @@ Internal (Go) defaults: `M=32`, `MMax=64`, `MMax0=64`, `EfConstruction=400`, `Ef
 M controls the maximum number of outgoing edges per node in each graph layer.
 
 **Construction time:**
+
 - Doubling M roughly doubles construction memory writes (more edges to store/update per insert)
 - Each new node searches ef_construction candidates and connects to the closest M of them
 - Higher M also increases the number of reverse connections that must be trimmed
 
 **Memory per node:**
+
 - Each node stores up to `2 * M` neighbor IDs (M outgoing + up to M incoming from other nodes' reverse connections)
 - Each ID is a `uint32` (4 bytes)
 - Memory = `nodes * (2 * M) * 4` bytes for the graph alone
@@ -45,6 +47,7 @@ M controls the maximum number of outgoing edges per node in each graph layer.
 | 48–64 | Research-grade recall, small datasets (<100k), or when recall >0.999 is needed |
 
 **Dim interaction:**
+
 - At low dimensions (64–128), distance computations are cheap — lower M works well
 - At high dimensions (768–3072), each edge traversal costs more — higher M reduces the number of hops needed
 - For dim=384, M=16 is usually sufficient; M=32 gives marginal recall gain at ~2x construction cost
@@ -55,13 +58,14 @@ ef_construction controls how many candidates are evaluated during the search pha
 
 **Construction cost model:**
 Each insert at layer 0:
+
 1. Navigates from the entry point to the insertion layer (few hops, cheap)
 2. At layer 0, maintains a candidate set of size `ef_construction`
 3. For each of ~ef_construction candidates, evaluates all neighbors (up to M each)
 4. Total distance computations per node: roughly `ef_construction * (M/2)` at layer 0
 
-With ef_construction=400, M=32: ~50k * 400 * 16 ≈ 320M distance computations at layer 0 alone
-With ef_construction=200, M=16: ~50k * 200 * 8 ≈ 80M distance computations — **4x fewer**
+With ef_construction=400, M=32: ~50k \* 400 \* 16 ≈ 320M distance computations at layer 0 alone
+With ef_construction=200, M=16: ~50k \* 200 \* 8 ≈ 80M distance computations — **4x fewer**
 
 **Recall saturation:**
 
@@ -85,6 +89,7 @@ The gain from 200→400 is typically ~1.5% recall, but doubles the build time. T
 
 **Data type interaction:**
 Construction time scales directly with element size:
+
 - float32: 4 bytes/elem — baseline
 - float16: 2 bytes/elem — ~40% faster than float32 (less memory bandwidth, F16C conversion overhead)
 - float64: 8 bytes/elem — ~3-5x slower than float32 (half SIMD throughput on AVX2: 2 doubles per 128-bit vs 4 floats)
@@ -101,6 +106,7 @@ ef_search controls query-time recall. Unlike ef_construction, it can be tuned pe
 
 **Cost model:**
 Query time is roughly linear in ef_search:
+
 - Each query evaluates ~ef_search * (M/2) candidates
 - Doubling ef_search roughly doubles query latency
 - Throughput drops inversely with ef_search
@@ -118,7 +124,9 @@ Query time is roughly linear in ef_search:
 ## Combined Effects
 
 ### Dimension
+
 Higher dimensions make distance computations more expensive. Mitigation strategies:
+
 - **≤128**: Lower M (8–16) and ef_construction (100–200) suffice for >0.99 recall
 - **384**: Default (M=32, ef=400) gives >0.99 recall; M=16, ef=200 is a good lighter option
 - **≥768**: Use M=16–24, ef_construction=100–200; higher values give diminishing returns
@@ -181,9 +189,9 @@ For a dataset of N vectors at dim=384, float32:
 
 | Component | Size | Notes |
 |-----------|------|-------|
-| Raw vectors | N * 384 * 4 | 384 bytes per vector element × 4 bytes |
-| HNSW graph (M=16) | N * 32 * 4 | 2M neighbor slots × 4 bytes |
-| HNSW graph (M=32) | N * 64 * 4 | 2M neighbor slots × 4 bytes |
+| Raw vectors | N \* 384 \* 4 | 384 bytes per vector element × 4 bytes |
+| HNSW graph (M=16) | N \* 32 \* 4 | 2M neighbor slots × 4 bytes |
+| HNSW graph (M=32) | N \* 64 \* 4 | 2M neighbor slots × 4 bytes |
 | Level assignments | N * 1 | uint8 per node |
 | Arena/buffer overhead | ~10-20% | Internal pool allocators |
 
@@ -381,10 +389,12 @@ through this list before opening an issue:
 1. **Confirm the failure mode**: is it `"arena is nil"` (read
    pin missing) or a Go race-detector report (pin order wrong)?
 2. **Run the regression test**:
+
    ```bash
    go test -race -timeout 240s -run 'TestArrowHNSW_ConcurrentAddBatch' \
      -count=3 -v ./internal/store/index/
    ```
+
    If the 50k int8 stress test fails, the reader pin is missing
    at a call site listed in the table above.
 3. **Check `GraphData.Release()`** at
@@ -443,4 +453,3 @@ is well below 50000. With the fix, all 5 succeed in ~76 s.
 
 The 50k stress test is listed as a "must run" test in
 `docs/development.md` §Regression Test Plan. Do not skip it.
-

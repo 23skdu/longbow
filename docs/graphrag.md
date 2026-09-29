@@ -95,12 +95,14 @@ When `alpha > 0` is passed in search, the following re-ranking occurs:
 1. **ANN Seed Query**: Standard HNSW search retrieves top-K seeds
 2. **BFS Expansion**: Seeds expand outward up to `graph_depth` hops
 3. **Activation Propagation**:
-   ```
+
+   ```text
    activation[neighbor] += activation[parent] * alpha^hop * EdgeWeight
    ```
+
 4. **Re-ranking**: Nodes sorted by accumulated activation
 
-### Python SDK Usage
+### Python SDK Usage (Spreading Activation)
 
 ```python
 # Hybrid search with graph spreading
@@ -161,11 +163,11 @@ Scatter-gather search across multiple Longbow nodes in the cluster.
 
 ### Architecture
 
-```
+```text
 Local Search Results → Scatter to Peers → Gather & Merge → Return Top-K
 ```
 
-### Python SDK
+### Python SDK (Distributed)
 
 ```python
 # Multi-seed expansion across cluster
@@ -209,6 +211,7 @@ Longbow differentiates between local node graph traversal (**GraphRAG**) and clu
 #### Single-Node vs Clustered Execution Semantics
 
 In [`internal/store/store_query.go`](../internal/store/store_query.go):
+
 ```go
 // Header extraction enables distributed search
 if vals := md.Get("x-longbow-global"); len(vals) > 0 && vals[0] == "true" {
@@ -229,11 +232,13 @@ if !req.LocalOnly && s.Mesh != nil {
 > [!IMPORTANT]
 > **Single-Node Fallback**:
 > When Longbow runs as a standalone single-node instance (`s.Mesh == nil`), requests specifying `GlobalGraphRAG` execute the local GraphRAG path. While this verifies ticket deserialization, header parsing, circuit breaker handling, and local graph traversal, **it does not exercise cross-node network scatter-gather or distributed rank merging**.
-> 
+>
 > To test true distributed `GlobalGraphRAG`:
+>
 > ```bash
 > python3 scripts/unified_benchmark.py --mode cluster --cluster-nodes 3 --dims 128,384
 > ```
+>
 > This spawns multiple Longbow daemons interconnected via the SWIM gossip protocol (`LONGBOW_GOSSIP_ENABLED=true`), exercising distributed peer fan-out, hedged queries, and multi-node Arrow streaming.
 
 ---
@@ -266,6 +271,7 @@ The GraphStore automatically flattens to CSR format before VRAM sync:
 | 100M nodes / 1B edges | GraphExpand (d=3) | 650ms | **28ms** |
 
 **CLI Benchmark**:
+
 ```bash
 python3 scripts/unified_benchmark.py --mode graphrag --dims 768 --counts 10000
 ```
@@ -292,6 +298,7 @@ python3 scripts/unified_benchmark.py --mode graphrag --dims 768 --counts 10000
 Knowledge graph data exports/imports as Arrow RecordBatches.
 
 **Schema**:
+
 - `subject`: `uint32`
 - `predicate`: `dictionary<int32, binary>`
 - `object`: `uint32`

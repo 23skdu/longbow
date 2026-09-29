@@ -1,0 +1,21 @@
+{
+  // Rules relaxed from the default set, with the reason each is off. Every
+  // other default rule stays enabled, so this is a real gate rather than a
+  // blanket suppression. Re-enable these once the docs are restyled, or leave
+  // them off deliberately and delete this comment.
+  //
+  // MD013/line-length: the docs are tables, ASCII diagrams, shell transcripts
+  // and single-sentence-per-line prose. Lines run well past 80 columns (up to
+  // ~735 in docs/roadmap.md) and cannot be wrapped without breaking table rows
+  // and code samples, which markdownlint would not reformat safely.
+  //
+  // MD060/table-column-style: the docs deliberately mix delimiter styles -
+  // compact "|---|---|" in some tables and padded "| --- | --- |" in others,
+  // matching each table's column widths. Normalising 598 cells would produce a
+  // large diff with no reader-visible benefit.
+  "config": {
+    "default": true,
+    "MD013": false,
+    "MD060": false
+  }
+}

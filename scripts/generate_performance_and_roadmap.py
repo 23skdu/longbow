@@ -6,6 +6,7 @@ and updates docs/performance.md and docs/roadmap.md with empirical metrics and 1
 """
 
 import os
+import re
 import sys
 import json
 import glob
@@ -143,6 +144,7 @@ def generate_performance_doc(records):
     md.append("Continuous runtime CPU, heap allocation, and mutex profiling (`profiles/*.pprof`) during execution identified key operational insights:")
     md.append("")
     md.append("### CPU Hotspots (Top Functions by Flat Duration)")
+    md.append("")
     md.append("1. **`simd.euclideanDistanceBatch4Way` (16.34% flat time)**: Dominates float32 search distance evaluation; 4-way unrolled AVX2 kernel provides high throughput.")
     md.append("2. **`simd.euclideanFloat64AVX2Kernel` (42.62% flat time)**: In `complex128` search, each 128-dim vector consists of 256 float64 elements, requiring heavy 256-bit SIMD processing.")
     md.append("3. **`store/index.(*ArrowHNSW).searchLayerFloat32` (9.60% flat, 90.27% cum)**: Core graph traversal loop traversing neighbor candidates.")
@@ -151,88 +153,54 @@ def generate_performance_doc(records):
     md.append("6. **`prometheus.(*counter).Inc` & `hashAdd` (3.43% flat time)**: High-frequency metric counter increments on hot query paths.")
     md.append("")
     md.append("### Lock & Contention Bottlenecks")
+    md.append("")
     md.append("- **`ArrowHNSW.AddConnectionsBatch` (56.94% mutex delay)**: Mutex serialization occurs when concurrent indexing workers update node neighbor lists in parallel.")
     md.append("- **`ArrowHNSW.AddConnection` (25.13% mutex delay)**: Fine-grained bidirectional edge linkage synchronization.")
     md.append("")
     md.append("### Allocation Bottlenecks")
+    md.append("")
     md.append("- **`bytes.growSlice` (14.85% total alloc space)**: Slice expansion during batch payload serialization.")
     md.append("- **`SimpleBufferPool.Get` (10.93%) & protobuf decoding (10.72%)**: Flight RPC payload buffer management.")
     md.append("- **`NewBloomFilter` (10.24%)**: Temporary bloom filter structures allocated per batch.")
     md.append("")
-    return "\n".join(md)
+    return "\n".join(_separate_blocks(md))
+
+
+def _separate_blocks(lines):
+    """Ensure block-level markdown is not glued to the preceding line.
+
+    markdownlint requires a blank line before a heading and before a list, and
+    the linter runs in CI against this file's output. Rather than relying on
+    every append() remembering the separator, enforce it structurally here.
+    """
+    out = []
+    for line in lines:
+        is_heading = line.startswith("#")
+        is_list = line.startswith(("- ", "* ", "+ ")) or re.match(r"^\d+\. ", line)
+        if out and out[-1].strip() and (is_heading or is_list):
+            if not out[-1].lstrip().startswith(("- ", "* ", "+ ")) and not re.match(
+                r"^\d+\. ", out[-1]
+            ):
+                out.append("")
+        out.append(line)
+    return out
 
 def update_roadmap_doc():
-    roadmap_path = os.path.join(DOCS_DIR, "roadmap.md")
-    with open(roadmap_path) as f:
-        content = f.read()
+    """Refresh the profile-derived section 5 of the roadmap.
 
-    section_header = "## 5. Ten Concrete Steps to Improve Performance Across Data and Search Types"
-    
-    ten_steps = """## 5. Ten Concrete Steps to Improve Performance Across Data and Search Types
+    Section 5 is hand-maintained: it records the measured outcome of each
+    initiative, not the projection the initiative was planned from. This
+    function therefore no longer rewrites it, because doing so would discard
+    the measurements (and, with the old split-based implementation, every
+    section after it). The profile numbers it used to inject now live in
+    generate_performance_doc(), which regenerates docs/performance.md.
 
-Based on empirical CPU, Heap, and Mutex pprof profile data collected during multi-scale benchmarking across all data types and search modalities, the following 10 optimization initiatives are prioritized:
-
-1. **4-Ary Flat SIMD Heap for HNSW Priority Queue**:
-   - **Empirical Finding**: `pprof` shows `MaxCandidateHeapAdapter.down`, `MinCandidateHeapAdapter.down`, and `Less/Swap` account for **15.2% of total search time** in `searchLayer`.
-   - **Optimization**: Replace standard binary heap trees with cache-aligned 4-ary flat array heaps. Use AVX2 vectorized min/max selection to reduce branch mispredictions and eliminate pointer chasing in L1 data cache.
-   - **Target Impact**: +12% to +18% QPS across all 9 search modalities.
-
-2. **Lock-Free Striped Adjacency Updates for Parallel Ingestion**:
-   - **Empirical Finding**: Mutex profiling reveals that `ArrowHNSW.AddConnectionsBatch` accounts for **56.9%** and `AddConnection` accounts for **25.1%** of lock delay during concurrent index ingestion.
-   - **Optimization**: Implement cache-line-striped atomic spinlocks (64 stripes) or lock-free copy-on-write neighbor lists, enabling 4+ concurrent workers to link graph edges simultaneously with zero mutex stalls.
-   - **Target Impact**: 2.5x to 3.2x faster HNSW construction at 250k and 1M scale.
-
-3. **AVX-512 & 8-Way Unrolled ILP for Complex128 / Float64 Kernels**:
-   - **Empirical Finding**: `euclideanFloat64AVX2Kernel` consumes **42.6% of search time** for complex128 vectors because 256-bit AVX2 registers can only process two complex numbers (4 floats) per cycle.
-   - **Optimization**: Implement 512-bit AVX-512F kernels (`VFMADD231PD`) and 8-way instruction-level parallel (ILP) unrolled loops for AVX2, saturating floating-point execution ports.
-   - **Target Impact**: +85% to +120% QPS for complex128 and float64 dense/hybrid queries.
-
-4. **Thread-Local Metric Accumulators on Query Hotpaths**:
-   - **Empirical Finding**: `prometheus.(*counter).Inc` and `prometheus.hashAdd` consume **3.43% of total CPU time** on search hotpaths due to atomic contention on shared Prometheus metrics.
-   - **Optimization**: Replace per-query Prometheus increments with thread-local counters flushed asynchronously in 100ms intervals.
-   - **Target Impact**: Immediate +3.5% QPS improvement across all query engines.
-
-5. **Direct Zero-Copy Arena Pointers in `GetWithGeneration`**:
-   - **Empirical Finding**: `memory.(*SlabArena).GetWithGeneration` and `TypedArena.GetWithGeneration` consume **15.38% cumulative CPU time** during vector distance evaluations.
-   - **Optimization**: Cache raw memory slice base pointers per chunk batch, validating the arena generation once per batch rather than per vector lookup.
-   - **Target Impact**: +10% to +15% distance evaluation throughput.
-
-6. **SIMD Vectorized Bitmask Filtering for Int8 and Structured Predicates**:
-   - **Empirical Finding**: In filtered searches, `RoaringBitmap.Contains` and `binarySearch` consume noticeable CPU time when predicate selectivity is high.
-   - **Optimization**: Introduce dense contiguous bitmasks evaluated using `VPMOVMSKB` and SIMD popcount (`POPCNT`), bypassing roaring bitmap tree traversal for high-density predicate evaluations.
-   - **Target Impact**: +25% to +40% QPS on `filtered`, `filteredbool`, and `filteredstring`.
-
-7. **Linear Spatial Morton Hash Grid to Replace Recursive Quadtree in Geo Search**:
-   - **Empirical Finding**: `store.(*Quadtree).subdivide` causes 2.83% of allocations and Geo search exhibits lower throughput (368 - 1,223 QPS) due to recursive tree traversal overhead.
-   - **Optimization**: Replace pointer-based Quadtree with a 64-bit Morton-coded linear spatial grid stored in contiguous memory with Z-order curve bounding box filtering.
-   - **Target Impact**: 3x to 5x higher Geo search QPS and zero tree pointer allocations.
-
-8. **Pre-Sized Zero-Allocation Buffer Pooling for Arrow IPC Responses**:
-   - **Empirical Finding**: Memory profiling shows `bytes.growSlice` (14.85%) and buffer pool allocations dominate garbage collection pressure during DoGet streaming.
-   - **Optimization**: Pre-calculate Arrow IPC buffer size from top-k and projection schema, reusing pre-sized buffer slices from a thread-safe slab pool.
-   - **Target Impact**: Eliminates GC pauses during high-concurrency query bursts.
-
-9. **Precomputed Polar Angle Look-Up Tables (LUT) for TurboQuant4**:
-   - **Empirical Finding**: `turboquant4` achieves high compression (318 MB Peak RSS vs 753 MB for complex128) but spends CPU cycles decoding 4-bit polar coordinates into float representations.
-   - **Optimization**: Precompute 16-entry cosine/sine dot product tables stored in L1 cache, allowing direct 4-bit nibble indexing without decompression floating-point math.
-   - **Target Impact**: +30% to +50% QPS for TurboQuant searches, surpassing float32 raw speed.
-
-10. **Columnar Column-Oriented Skip-Lists for Temporal Search Modes**:
-    - **Empirical Finding**: Temporal search (`SearchAsOf`, `SearchRange`, `SearchSlidingWindow`) traverses interval trees with per-node branching latency.
-    - **Optimization**: Store temporal version timestamps in columnar float64/int64 sorted arrays with SIMD binary search (`_mm256_cmpgt_epi64`), enabling sub-millisecond temporal filtering.
-    - **Target Impact**: +50% to +75% QPS on all temporal search modes.
-"""
-
-    if section_header in content:
-        # Replace existing section
-        parts = content.split(section_header)
-        new_content = parts[0] + ten_steps
-    else:
-        new_content = content + "\n\n" + ten_steps
-
-    with open(roadmap_path, "w") as f:
-        f.write(new_content)
-    print(f"Updated {roadmap_path} with 10 performance steps.")
+    Regenerate that file with: python3 scripts/generate_performance_and_roadmap.py
+    """
+    print(
+        f"Skipped {os.path.join(DOCS_DIR, 'roadmap.md')} section 5: it is "
+        "hand-maintained and records measured results."
+    )
 
 if __name__ == "__main__":
     records = load_all_benchmark_data()

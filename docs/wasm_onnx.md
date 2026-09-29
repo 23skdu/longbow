@@ -5,6 +5,7 @@ Longbow supports high-performance local ML inference for embedding generation, r
 ## Runtimes Overview
 
 ### 1. ONNX Runtime
+
 Provides high-performance execution using native libraries. Longbow's ONNX integration is designed for zero-copy data flow and hardware acceleration.
 
 - **Best for**: Maximum performance, GPU acceleration, and production workloads on supported hardware.
@@ -14,6 +15,7 @@ Provides high-performance execution using native libraries. Longbow's ONNX integ
   - **CPU**: Fallback to highly optimized AVX-512/NEON SIMD kernels.
 
 ### 2. WebAssembly (WASM)
+
 Uses the [Wazero](https://wazero.io/) runtime for sandboxed, cross-platform inference.
 
 - **Best for**: Edge deployments, untrusted model execution (security), and environments where native libraries cannot be installed.
@@ -37,10 +39,12 @@ Enable local inference by setting the following environment variables:
 ## Architecture & Implementation
 
 ### ONNX Integration
+
 - **`internal/onnx`**: A Go wrapper around `onnxruntime_go`.
 - **`internal/onnx/metal`**: Custom Metal kernels for macOS (ARM64) providing optimized transformer execution.
 
 ### WASM Integration
+
 - **`internal/wasm`**: Manages the Wazero runtime, handles WASM module loading, and manages tensor I/O mapping.
 
 ---
@@ -48,10 +52,12 @@ Enable local inference by setting the following environment variables:
 ## Usage & Model Support
 
 Longbow is optimized for transformer-based models:
+
 - **Embedding Models**: BERT-style encoders (e.g., `bge-small-en`, `all-MiniLM-L6-v2`).
 - **Reranking Models**: Cross-encoders (e.g., `bge-reranker-base`).
 
 ### Requirements
+
 - **Format**: `.onnx` for ONNX runtime or `.wasm` for WASM runtime.
 - **Tokenizer**: Include a `vocab.txt` file in the model directory for native tokenization. Longbow includes a built-in WordPiece tokenizer for BERT/RoBERTa/MiniLM models, removing the need for external pre-processing.
 
@@ -99,6 +105,7 @@ results = client.search("my-dataset", query="How does vector sharding work?", re
 ```
 
 ### Performance Tuning (ONNX/Metal)
+
 - **Batching**: Supported for both scoring and embeddings. Larger batches improve throughput but increase latency.
 - **Pooling Strategies**:
   - `Mean`: Average of all token embeddings (default).
@@ -111,10 +118,13 @@ results = client.search("my-dataset", query="How does vector sharding work?", re
 ## Troubleshooting
 
 ### ONNX: Library Not Found
+
 Ensure `libonnxruntime` is in your library path (e.g., `/usr/local/lib`) or set `ONNX_RUNTIME_LIB_PATH` explicitly.
 
 ### WASM: Out of Memory
+
 If you encounter OOM errors in WASM, adjust the memory limits in `internal/wasm/runner.go`.
 
 ### Metal: Not Available
+
 Ensure you are on Apple Silicon and the binary was built with `-tags gpu`.

@@ -174,21 +174,21 @@ For every dataset, `bench-tool` executes the following operations in sequence:
 
 #### Examples
 
-**Random Generation Benchmark**
+##### Random Generation Benchmark
 
 ```bash
 # Benchmark 100k vectors of float32 in 128 dimensions
 ./bin/bench-tool -dataset test_rand -scale 100000 -dtype float32 -dim 128 -workers 8
 ```
 
-**Binary File Ingestion**
+##### Binary File Ingestion
 
 ```bash
 # Benchmark vectors from an Arrow IPC binary file
 ./bin/bench-tool -dataset test_fbin -fbin data.fbin -queries 5000 -workers 16
 ```
 
-**TurboQuant Stress Test**
+##### TurboQuant Stress Test
 
 ```bash
 # Test 1M vectors with 2-bit TurboQuant
@@ -261,7 +261,7 @@ This section details the test plan for running comprehensive regression benchmar
 
 #### Execution Steps
 
-**Phase 1: Cleanup**
+##### Phase 1: Cleanup
 
 ```bash
 pkill -9 longbow bench-tool
@@ -269,14 +269,14 @@ rm -rf data/bench/* data/perf_logs/* profiles/*
 mkdir -p data/bench data/perf_logs profiles
 ```
 
-**Phase 2: Build (if binaries need updates)**
+##### Phase 2: Build (if binaries need updates)
 
 ```bash
 go build -o bin/longbow -ldflags "-s -w" ./cmd/longbow
 go build -o bin/bench-tool -ldflags "-s -w" ./cmd/bench-tool
 ```
 
-**Phase 3: Run**
+##### Phase 3: Run
 
 ```bash
 export LONGBOW_MAX_MEMORY=17179869184
@@ -295,7 +295,7 @@ python3 scripts/unified_benchmark.py \
   --workers 8
 ```
 
-**Phase 4: Monitoring**
+##### Phase 4: Monitoring
 
 Check every 10 minutes:
 
@@ -316,7 +316,7 @@ dmesg | grep -i "killed process"
 grep -i "error\|fail\|exhausted\|panic\|CRASH" benchmark_run.log
 ```
 
-**Phase 5: Report Generation**
+##### Phase 5: Report Generation
 
 Results are auto-saved to `data/perf_logs/perf_matrix_*.json` with an accompanying `*.md` report. Copy to docs:
 
@@ -338,6 +338,7 @@ cp data/perf_logs/perf_matrix_cpu_regression_*.md docs/performance.md
 #### Pass/Fail Criteria
 
 Each config passes if:
+
 - Server starts and stays up through all phases
 - All vectors indexed without error
 - All search modes return non-zero QPS
@@ -345,6 +346,7 @@ Each config passes if:
 - No kernel OOM kill
 
 Full run passes if:
+
 - >=95% of configs complete
 - No regressions vs previous runs for comparable configs
 - All 13 search modes verified working

@@ -5,6 +5,7 @@
 This test plan defines the comprehensive benchmarking, performance validation, and regression testing matrix for Longbow. It establishes testing protocols for vector ingest and query search across multiple execution backends, data types, index sizes, dimensionalities, and persistence configurations.
 
 The primary goals are:
+
 1. Measure and record ingestion throughput (vectors/sec) and search throughput (queries/sec / QPS) with P50, P95, and P99 latency percentiles.
 2. Characterize the performance delta between standard Go and EMLGo SIMD kernels on CPU and GPU.
 3. Quantify the performance and memory impact of auto-spill disk persistence (`use_disk=yes` vs `use_disk=no`).
@@ -39,13 +40,17 @@ The primary goals are:
 | `bin/longbow-cuda_emlgo` | GPU CUDA + EMLGo | `go build -tags "gpu,emlgo" -o bin/longbow-cuda_emlgo ./cmd/longbow` |
 
 ### 3.2 Vector Scaling Tiers
+
 Tests are evaluated at three representative dataset scale points:
+
 - **50,000 vectors (50k)**: Low-footprint baseline, in-cache behavior.
 - **100,000 vectors (100k)**: Mid-tier working set, SIMD dispatch crossover.
 - **250,000 vectors (250k)**: Large-scale index stress, disk spillover threshold testing.
 
 ### 3.3 Dimensionalities to Test (OpenAI Large & Transformer Tiers)
+
 Testing covers compact to high-dimensional representation tiers:
+
 - **128 dimensions**: Default compact benchmark embedding, cache-resident indexing.
 - **384 dimensions**: MiniLM, BGE-small, and lightweight sentence transformers.
 - **768 dimensions**: BERT-base, RoBERTa, and standard transformer dense representations.
@@ -53,7 +58,9 @@ Testing covers compact to high-dimensional representation tiers:
 - **3072 dimensions**: OpenAI `text-embedding-3-large` (maximum scale stress test).
 
 ### 3.4 Data Types (Including TurboQuant Tiers)
+
 Longbow supports a full spectrum of scalar, floating-point, complex, and quantized representations:
+
 1. `int8`: 8-bit signed integer quantization.
 2. `uint8`: 8-bit unsigned integer quantization.
 3. `int16`: 16-bit signed integer.
@@ -72,7 +79,9 @@ Longbow supports a full spectrum of scalar, floating-point, complex, and quantiz
 16. `turboquant8`: 8-bit quantized polar representation (high-fidelity quantized).
 
 ### 3.5 Full Search Modes Taxonomy
+
 Longbow engine and harness support 13 distinct search modalities:
+
 1. **`dense`**: Pure vector similarity search via HNSW multi-layer graph navigation.
 2. **`hybrid`**: Reciprocal rank fusion (RRF) combining dense vector similarity and sparse BM25 lexical token match.
 3. **`sparse`**: Inverted index token matching with term frequency scoring and vector reranking.
@@ -88,6 +97,7 @@ Longbow engine and harness support 13 distinct search modalities:
 13. **`learned_index`**: Neural-accelerated candidate pruning using a learned CDF spline predictor.
 
 ### 3.6 Storage / Spillover Modes
+
 - **`use_disk=no` (`nodisk`)**: Pure in-memory vector storage and graph indexing.
 - **`use_disk=yes` (`disk`)**: Auto-spill mode enabled (`LONGBOW_AUTO_SPILL_DISK=true`), paging vector storage to disk when memory consumption exceeds 60% of the allocated ceiling while keeping graph traversal fast.
 
@@ -96,6 +106,7 @@ Longbow engine and harness support 13 distinct search modalities:
 ## 4. Execution Methodology
 
 For each test configuration:
+
 1. Ensure no rogue processes occupy the target port (kill lingering instances on port 3000/random fallback).
 2. Clean temporary benchmark data in `data/bench/` to prevent cross-run state pollution.
 3. Start the Longbow server instance with appropriate environment variables and memory limits:

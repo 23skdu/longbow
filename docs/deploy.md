@@ -186,7 +186,7 @@ All commands support the following global options:
 
 Import vectors from Parquet, NumPy, or generate demo data. Supports local filesystem and remote S3 buckets.
 
-```
+```bash
 longbow-cli import -dataset <name> [options]
 ```
 
@@ -216,7 +216,7 @@ longbow-cli import -dataset demo-ds -dim 1536 -count 10000
 
 Perform high-performance vector searches using various modes.
 
-```
+```bash
 longbow-cli search -dataset <name> -mode <type> [options]
 ```
 
@@ -234,7 +234,7 @@ longbow-cli search -dataset <name> -mode <type> [options]
 
 Search for vectors within a physical radius.
 
-```
+```bash
 longbow-cli geo-search -dataset <name> -lat <val> -lon <val> -radius <km> -k <n>
 ```
 
@@ -242,7 +242,7 @@ longbow-cli geo-search -dataset <name> -lat <val> -lon <val> -radius <km> -k <n>
 
 Get similar vectors based on existing IDs.
 
-```
+```bash
 longbow-cli recommend -dataset <name> -seeds <id1,id2> -k <n> -alpha <f>
 ```
 
@@ -288,7 +288,7 @@ Administrative tools for managing the HNSW graph as a knowledge graph.
 
 Manage and download ONNX models from external repositories like Hugging Face.
 
-```
+```bash
 longbow-cli download-model -repo <repo_id> [-dest <path>]
 ```
 
@@ -302,7 +302,7 @@ longbow-cli download-model -repo sentence-transformers/all-MiniLM-L6-v2 -dest mo
 
 Query the temporal index for versioned data.
 
-```
+```bash
 longbow-cli temporal-search -dataset <name> -type <as_of|range|window> [options]
 ```
 
@@ -496,13 +496,13 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 **Check Metrics**:
 
-* `longbow_wal_writes_total`: Is the rate consistent?
-* `longbow_wal_bytes_written_total`: Are you writing unusually large batches?
+- `longbow_wal_writes_total`: Is the rate consistent?
+- `longbow_wal_bytes_written_total`: Are you writing unusually large batches?
 
 **Potential Causes**:
 
-* **Slow Disk**: The WAL requires high IOPS. Ensure `LONGBOW_DATA_PATH` is on an SSD.
-* **Large Batches**: Extremely large Arrow batches can cause GC pauses. Try reducing batch size.
+- **Slow Disk**: The WAL requires high IOPS. Ensure `LONGBOW_DATA_PATH` is on an SSD.
+- **Large Batches**: Extremely large Arrow batches can cause GC pauses. Try reducing batch size.
 
 ### High Memory Usage
 
@@ -510,13 +510,13 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 **Check Metrics**:
 
-* `longbow_vector_index_size`: Is the index growing as expected?
-* `longbow_memory_fragmentation_ratio`: Is Go runtime retaining memory?
+- `longbow_vector_index_size`: Is the index growing as expected?
+- `longbow_memory_fragmentation_ratio`: Is Go runtime retaining memory?
 
 **Potential Causes**:
 
-* **Snapshot Lag**: If snapshots are failing, the WAL grows, and memory isn't freed. Check `longbow_snapshot_operations_total{status="error"}`.
-* **Configuration**: Ensure `LONGBOW_MAX_MEMORY` is set to a value lower than your container's hard limit.
+- **Snapshot Lag**: If snapshots are failing, the WAL grows, and memory isn't freed. Check `longbow_snapshot_operations_total{status="error"}`.
+- **Configuration**: Ensure `LONGBOW_MAX_MEMORY` is set to a value lower than your container's hard limit.
 
 ### Memory Spikes during Index Migration
 
@@ -534,6 +534,7 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 1. **Increase Buffer**: Ensure `LONGBOW_MAX_MEMORY` is set with at least a 50% buffer above your steady-state index size.
 2. **Limit Concurrent Migrations**: Avoid triggering multiple collection migrations simultaneously.
 3. **Disable Auto-Adaptation**: If memory is critical, disable automatic switching via config:
+
    ```yaml
    learned_index:
      adaptation:
@@ -546,11 +547,11 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 **Check Metrics**:
 
-* `longbow_wal_replay_duration_seconds`: High values indicate a large WAL.
+- `longbow_wal_replay_duration_seconds`: High values indicate a large WAL.
 
 **Solution**:
 
-* Decrease `LONGBOW_SNAPSHOT_INTERVAL`. A shorter interval means a smaller WAL to replay on startup, as older data is already in Parquet.
+- Decrease `LONGBOW_SNAPSHOT_INTERVAL`. A shorter interval means a smaller WAL to replay on startup, as older data is already in Parquet.
 
 ### Permission Denied on /data
 
@@ -560,8 +561,8 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 **Solution**:
 
-* Ensure `persistence.wal.enabled` is `true` in Helm values to mount a PersistentVolume.
-* Verify `podSecurityContext.fsGroup` is set to `2000` (or similar) to ensure the volume is writable by the app user.
+- Ensure `persistence.wal.enabled` is `true` in Helm values to mount a PersistentVolume.
+- Verify `podSecurityContext.fsGroup` is set to `2000` (or similar) to ensure the volume is writable by the app user.
 
 ### Config Parsing Errors
 
@@ -571,7 +572,7 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 **Solution**:
 
-* Quote all large integer values in `values.yaml` (e.g., `maxRecvMsgSize: "67108864"`).
+- Quote all large integer values in `values.yaml` (e.g., `maxRecvMsgSize: "67108864"`).
 
 ### Replication Lag
 
@@ -581,9 +582,9 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 **Solution**:
 
-* Check follower disk IOPS and CPU.
-* Ensure network connectivity between Leader and Follower is stable (`longbow_gossip_pings_total{direction="failed"}`).
-* If persisting, consider scaling out with more shards to distribute write load.
+- Check follower disk IOPS and CPU.
+- Ensure network connectivity between Leader and Follower is stable (`longbow_gossip_pings_total{direction="failed"}`).
+- If persisting, consider scaling out with more shards to distribute write load.
 
 ### GPU Initialization Failure
 
@@ -591,15 +592,15 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 **Cause**:
 
-* **CUDA/Metal**: Missing drivers or unsupported hardware.
-* **Memory**: Insufficient GPU memory (OOM).
-* **Permissions**: Access to GPU device denied.
+- **CUDA/Metal**: Missing drivers or unsupported hardware.
+- **Memory**: Insufficient GPU memory (OOM).
+- **Permissions**: Access to GPU device denied.
 
 **Solution**:
 
-* Verify NVIDIA drivers/CUDA toolkit (Linux) or macOS version (Apple Silicon).
-* Check `nvidia-smi` or `powermetrics` (macOS).
-* Ensure `GPU_ENABLED=true` is set.
+- Verify NVIDIA drivers/CUDA toolkit (Linux) or macOS version (Apple Silicon).
+- Check `nvidia-smi` or `powermetrics` (macOS).
+- Ensure `GPU_ENABLED=true` is set.
 
 ### S3 Backup Failures
 
@@ -609,9 +610,9 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 **Solution**:
 
-* Verify `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`.
-* Check IAM permissions for `s3:PutObject` and `s3:GetObject`.
-* Inspect logs for specific S3 error codes (e.g., `403 Forbidden`, `503 Slow Down`).
+- Verify `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`.
+- Check IAM permissions for `s3:PutObject` and `s3:GetObject`.
+- Inspect logs for specific S3 error codes (e.g., `403 Forbidden`, `503 Slow Down`).
 
 ---
 

@@ -49,7 +49,8 @@ sequenceDiagram
     Kernel-->>App: Batch results slice populated
 ```
 
-### Supported Hardware Tiers:
+### Supported Hardware Tiers
+
 - **AVX-512 (x86_64)**: 512-bit vector processing (`ZMM` registers) with support for AVX512F, AVX512DQ, AVX512BW, and VNNI/VBMI extensions.
 - **AMX (x86_64)**: Intel Advanced Matrix Extensions tile registers on modern Xeon processors for massive GEMM and quantized dot products.
 - **AVX2 / FMA (x86_64)**: 256-bit vector operations (`YMM` registers) utilizing fused multiply-add.
@@ -85,6 +86,7 @@ graph LR
 ## 3. Fallback & Robustness Strategy
 
 Every distance kernel follows a strict three-tier degradation path:
+
 1. **Hardware Kernel (Native Assembly)**: Maximum performance via Avo-generated assembly.
 2. **Unrolled Go Batch (4x)**: High-speed portable implementation that tests for dimension parity and `nil` slices.
 3. **Scalar Fallback**: Guaranteed byte-for-byte correctness across all platforms.

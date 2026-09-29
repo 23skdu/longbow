@@ -417,6 +417,119 @@ func (g *GraphData) NeedsChunk(cID int) bool {
 	return false
 }
 
+// VectorChunkBatch is a batch-scoped view over a chunked typed arena. It holds
+// the arena batch together with the chunk offset table so that a per-vector
+// loop (distance evaluation, for example) resolves the slab table and the
+// generation policy once and then indexes vectors directly.
+//
+// Every accessor mirrors its GetXChunkWithGen counterpart exactly: the same
+// chunk selection, the same arena/legacy fallback, the same generation
+// visibility and the same bounds rejection, so any vector the reference
+// accessor would not serve yields nil here as well.
+type VectorChunkBatch[T any] struct {
+	arena      *memory.TypedArena[T]
+	batch      memory.TypedBatch[T]
+	offsets    []uint64
+	legacy     [][]T
+	pd         int
+	chunkLen   int
+	rejectZero bool
+}
+
+// newVectorChunkBatch builds a batch over offsets, falling back to legacy for
+// chunk ids the offset table does not cover. rejectZero mirrors the reference
+// accessor: accessors that treat a zero offset as "not resident" set it, while
+// accessors that forward a zero offset straight to the arena (int8) do not.
+func newVectorChunkBatch[T any](arena *memory.TypedArena[T], offsets []uint64, legacy [][]T, pd int, maxGen uint64, rejectZero bool) VectorChunkBatch[T] {
+	b := VectorChunkBatch[T]{
+		arena:      arena,
+		offsets:    offsets,
+		legacy:     legacy,
+		pd:         pd,
+		chunkLen:   ChunkSize * pd,
+		rejectZero: rejectZero,
+	}
+	if arena != nil {
+		b.batch = arena.BeginBatch(maxGen)
+	}
+	return b
+}
+
+// Chunk returns the whole chunk, or nil when the reference chunk accessor
+// would return nil.
+func (b *VectorChunkBatch[T]) Chunk(chunkID int) []T {
+	if chunkID < 0 {
+		return nil
+	}
+	if b.arena != nil && chunkID < len(b.offsets) {
+		offset := atomic.LoadUint64(&b.offsets[chunkID])
+		if offset == 0 && b.rejectZero {
+			return nil
+		}
+		return b.batch.Get(memory.SliceRef{Offset: offset, Len: uint32(b.chunkLen), Cap: uint32(b.chunkLen)}) // #nosec G115
+	}
+	if chunkID < len(b.legacy) {
+		return b.legacy[chunkID]
+	}
+	return nil
+}
+
+// Vector returns the dims-long vector stored at index within chunkID, or nil
+// when the reference per-vector accessor would not have served it (chunk not
+// resident, hidden by generation isolation, or index past the chunk).
+func (b *VectorChunkBatch[T]) Vector(chunkID, index, dims int) []T {
+	if index < 0 || dims <= 0 {
+		return nil
+	}
+	chunk := b.Chunk(chunkID)
+	if chunk == nil {
+		return nil
+	}
+	start := index * b.pd
+	end := start + dims
+	if start < 0 || end < start || end > len(chunk) {
+		return nil
+	}
+	return chunk[start:end]
+}
+
+// Stale reports whether the arena was structurally mutated after the batch was
+// opened. The batch re-resolves transparently, so this is only for callers
+// that want to observe the mutation.
+func (b *VectorChunkBatch[T]) Stale() bool {
+	return b.arena == nil || b.batch.Stale()
+}
+
+// BeginFloat32ChunkBatch opens a batch-scoped view over the float32 chunk
+// table, matching GetVectorsChunkWithGen / GetVectorsChunkFast.
+func (g *GraphData) BeginFloat32ChunkBatch(maxGen uint64) VectorChunkBatch[float32] {
+	if g == nil {
+		return VectorChunkBatch[float32]{}
+	}
+	return newVectorChunkBatch[float32](g.Float32Arena, g.VectorsF32, g.Vectors,
+		g.GetPaddedDimsForType(VectorTypeFloat32), maxGen, true)
+}
+
+// BeginInt8ChunkBatch opens a batch-scoped view over the int8 chunk table,
+// matching GetVectorsInt8ChunkWithGen / GetVectorsInt8ChunkFast.
+func (g *GraphData) BeginInt8ChunkBatch(maxGen uint64) VectorChunkBatch[int8] {
+	if g == nil {
+		return VectorChunkBatch[int8]{}
+	}
+	return newVectorChunkBatch[int8](g.Int8Arena, g.VectorsInt8, nil,
+		g.GetPaddedDimsForType(VectorTypeInt8), maxGen, false)
+}
+
+// BeginFloat64ChunkBatch opens a batch-scoped view over the float64 chunk
+// table, matching GetVectorsFloat64ChunkWithGen / GetVectorsFloat64ChunkFast.
+func (g *GraphData) BeginFloat64ChunkBatch(maxGen uint64) VectorChunkBatch[float64] {
+	if g == nil {
+		return VectorChunkBatch[float64]{}
+	}
+	return newVectorChunkBatch[float64](g.Float64Arena, g.VectorsFloat64Offsets, g.VectorsFloat64,
+		g.GetPaddedDimsForType(VectorTypeFloat64), maxGen, true)
+}
+
 // GetVectorsChunk returns the vector chunk for the given ID.
 func (g *GraphData) GetVectorsChunk(chunkID int) []float32 {
 	return g.GetVectorsChunkWithGen(chunkID, math.MaxUint64)

@@ -86,6 +86,58 @@ type GeoSearchConfig struct {
 	IndexType    string
 }
 
+const (
+	// GeoIndexTypeMorton selects the linear Morton-coded spatial grid. It is
+	// opt-in: inserts are ~2.3x faster and allocation-free, but its fixed
+	// resolution is non-adaptive, so measured queries are 17% (selective box)
+	// to 40% (global box) slower than the quadtree. Select it where the write
+	// path dominates; see NewMortonGridWithResolution to tune cell size.
+	GeoIndexTypeMorton = "morton"
+	// GeoIndexTypeQuadtree selects the recursive quadtree, the default index
+	// type, because it currently wins on query latency.
+	GeoIndexTypeQuadtree = "quadtree"
+	// defaultQuadtreeCapacity is the bucket size of the root quadtree node.
+	defaultQuadtreeCapacity = 4
+)
+
+// GeoPointIndex is the spatial index contract shared by Quadtree and MortonGrid.
+type GeoPointIndex interface {
+	Insert(vec *GeoIndexedVector) bool
+	Contains(point GeoPoint) bool
+	QueryBox(box GeoBoundingBox) []*GeoIndexedVector
+	QueryRadius(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector)
+}
+
+// geoIndexHandle boxes a spatial index so it can be published through an
+// atomic.Pointer. The wrapped index is immutable once the handle is stored.
+type geoIndexHandle struct {
+	index GeoPointIndex
+}
+
+// newGeoIndexHandle boxes a spatial index for atomic publication.
+func newGeoIndexHandle(index GeoPointIndex) *geoIndexHandle {
+	return &geoIndexHandle{index: index}
+}
+
+// geoWorldBounds returns the bounds covering the whole globe.
+func geoWorldBounds() GeoBoundingBox {
+	return GeoBoundingBox{MinLat: -90, MaxLat: 90, MinLon: -180, MaxLon: 180}
+}
+
+// newGeoPointIndex builds the spatial index selected by indexType. The default
+// is the quadtree; the Morton grid is opt-in via GeoIndexTypeMorton. capacity is
+// the root node capacity of the quadtree; the Morton grid is sized from it only
+// as an entry-count hint.
+func newGeoPointIndex(indexType, datasetName string, capacity int) GeoPointIndex {
+	if indexType == GeoIndexTypeMorton {
+		if capacity <= 0 {
+			capacity = mortonDefaultCapacity
+		}
+		return NewMortonGrid(geoWorldBounds(), capacity, datasetName)
+	}
+	return NewQuadtree(geoWorldBounds(), capacity, datasetName)
+}
+
 // GeoIndexedVector pairs a vector with its geographic location.
 type GeoIndexedVector struct {
 	ID        uint64
@@ -100,7 +152,7 @@ type GeoIndex struct {
 	mu           sync.Mutex
 	dimension    int
 	vectors      sync.Map
-	pointIndex   atomic.Pointer[Quadtree]
+	pointIndex   atomic.Pointer[geoIndexHandle]
 	nearestCache atomic.Pointer[sync.Map]
 	config       *GeoSearchConfig
 	datasetName  string // For metrics
@@ -373,7 +425,7 @@ func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *Ge
 		config = &GeoSearchConfig{
 			DistanceType: GeoDistanceHaversine,
 			EarthRadius:  6371.0,
-			IndexType:    "quadtree",
+			IndexType:    GeoIndexTypeQuadtree,
 		}
 	}
 
@@ -383,8 +435,17 @@ func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *Ge
 		config:      config,
 	}
 	gi.nearestCache.Store(&sync.Map{})
-	gi.pointIndex.Store(NewQuadtree(GeoBoundingBox{MinLat: -90, MaxLat: 90, MinLon: -180, MaxLon: 180}, 4, datasetName))
+	gi.pointIndex.Store(newGeoIndexHandle(newGeoPointIndex(config.IndexType, datasetName, defaultQuadtreeCapacity)))
 	return gi
+}
+
+// pointIndexRef returns the currently published spatial index, or nil.
+func (gi *GeoIndex) pointIndexRef() GeoPointIndex {
+	handle := gi.pointIndex.Load()
+	if handle == nil {
+		return nil
+	}
+	return handle.index
 }
 
 // SetGPUIndex sets the GPU acceleration index for this GeoIndex.
@@ -403,7 +464,7 @@ func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata []
 	}
 
 	gi.vectors.Store(id, geoVec)
-	index := gi.pointIndex.Load()
+	index := gi.pointIndexRef()
 	if index != nil {
 		index.Insert(geoVec)
 	}
@@ -417,7 +478,7 @@ func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata []
 
 // AddBatch inserts multiple vectors into the GeoIndex.
 func (gi *GeoIndex) AddBatch(ids []uint64, vectors [][]float32, points []GeoPoint, metadata [][]byte) error {
-	index := gi.pointIndex.Load()
+	index := gi.pointIndexRef()
 	for i := range ids {
 		var m []byte
 		if i < len(metadata) {
@@ -452,7 +513,7 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 		metrics.GeoSearchDurationSeconds.WithLabelValues(gi.datasetName, "radius").Observe(time.Since(start).Seconds())
 	}()
 
-	index := gi.pointIndex.Load()
+	index := gi.pointIndexRef()
 	if index == nil {
 		return []lbtypes.SearchResult{}, nil
 	}
@@ -598,7 +659,7 @@ func (gi *GeoIndex) SearchBox(ctx context.Context, box GeoBoundingBox, k int) ([
 		metrics.GeoSearchDurationSeconds.WithLabelValues(gi.datasetName, "box").Observe(time.Since(start).Seconds())
 	}()
 
-	index := gi.pointIndex.Load()
+	index := gi.pointIndexRef()
 	if index == nil {
 		return []lbtypes.SearchResult{}, nil
 	}
@@ -626,18 +687,18 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 		metrics.GeoSearchDurationSeconds.WithLabelValues(gi.datasetName, "hybrid").Observe(time.Since(start).Seconds())
 	}()
 
-		vIdx := gi.GetVectorIndex()
-		if vIdx != nil {
-			index := gi.pointIndex.Load()
-			var allowed *roaring.Bitmap
-			if index != nil {
-				candidates := make([]*GeoIndexedVector, 0, 128)
-				index.QueryRadius(center, radiusKm, &candidates)
-				allowed = roaring.New()
-				for _, c := range candidates {
-					allowed.Add(uint32(c.ID)) // #nosec G115 — safe: VectorID is uint32
-				}
+	vIdx := gi.GetVectorIndex()
+	if vIdx != nil {
+		index := gi.pointIndexRef()
+		var allowed *roaring.Bitmap
+		if index != nil {
+			candidates := make([]*GeoIndexedVector, 0, 128)
+			index.QueryRadius(center, radiusKm, &candidates)
+			allowed = roaring.New()
+			for _, c := range candidates {
+				allowed.Add(uint32(c.ID)) // #nosec G115 — safe: VectorID is uint32
 			}
+		}
 
 		pred := &GeoPredicate{
 			center:   center,
@@ -669,7 +730,7 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 		}
 	}
 
-	index := gi.pointIndex.Load()
+	index := gi.pointIndexRef()
 	if index == nil {
 		return []lbtypes.SearchResult{}, nil
 	}
@@ -841,9 +902,9 @@ func (gi *GeoIndex) Delete(id uint64) {
 		gi.vectors.Delete(id)
 		gi.pointCount.Add(-1)
 	}
-	// Note: We don't remove from pointIndex (Quadtree) for performance.
+	// Note: We don't remove from pointIndex (spatial index) for performance.
 	// It will be filtered out during Search if not in gi.vectors or marked.
-	// But current Quadtree doesn't support easy deletion.
+	// Neither the Quadtree nor the MortonGrid supports easy deletion.
 
 	gi.nearestCache.Store(&sync.Map{})
 }

@@ -6,7 +6,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
@@ -213,9 +212,7 @@ func (s *VectorStore) HandleVectorSearchExchange(stream flight.FlightService_DoE
 	defer resRec.Release()
 
 	// 5. Write Response
-	// NewRecordWriter takes (ipc.MessageWriter, ...options)
-	// flight.NewRecordWriter takes (flight.DataStreamWriter, ...options)
-	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	writer := newDoGetRecordWriter(stream, schema, len(searchResults), 0)
 	defer func() { _ = writer.Close() }()
 
 	if err := writer.Write(resRec); err != nil {

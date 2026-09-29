@@ -87,6 +87,7 @@ type ArrowHNSW struct {
 	candidatePool    sync.Pool
 
 	name                   string
+	hotpath                hotpathMetrics
 	disableNodeCountMetric atomic.Bool
 	metricsSampleCounter   atomic.Uint64
 	topLayerManager        *TopLayerManager
@@ -155,12 +156,12 @@ type ArrowHNSW struct {
 	levelMultiplier   float64
 
 	// Graph Navigation
-	navigator  *GraphNavigator
+	navigator     *GraphNavigator
 	tqCompute     *TurboQuantCompute
 	tqDecodeCache atomic.Pointer[tqDecodeCache] // pre-decoded TQ vectors (non-nil during batch insert for fast construction)
 	gpuTrained    atomic.Bool
-	topo       *memory.NUMATopology
-	efTuner    *PIDTuner
+	topo          *memory.NUMATopology
+	efTuner       *PIDTuner
 
 	inBulkInsert atomic.Int64
 
@@ -197,14 +198,14 @@ func NewArrowHNSW(dataset types.IndexDataProvider, config *types.ArrowHNSWConfig
 // NewArrowHNSWWithConfig creates a new ArrowHNSW index with the given configuration.
 func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowHNSWConfig, topo *memory.NUMATopology) *ArrowHNSW {
 	h := &ArrowHNSW{
-		config:           config,
-		dataset:          dataset,
-		m:                atomic.Int32{},
-		mMax:             atomic.Int32{},
-		mMax0:            atomic.Int32{},
-		searchPool:       NewArrowSearchContextPool(),
-		insertPool:       NewInsertContextPool(),
-		externalIDIndex:  make(map[uint64]uint32),
+		config:          config,
+		dataset:         dataset,
+		m:               atomic.Int32{},
+		mMax:            atomic.Int32{},
+		mMax0:           atomic.Int32{},
+		searchPool:      NewArrowSearchContextPool(),
+		insertPool:      NewInsertContextPool(),
+		externalIDIndex: make(map[uint64]uint32),
 		candidatePool: sync.Pool{
 			New: func() any {
 				s := make([]types.Candidate, 0, config.EfConstruction)

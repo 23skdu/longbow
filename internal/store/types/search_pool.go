@@ -100,6 +100,35 @@ type SearchResultBucket struct {
 // SearchResultPool manages reusable SearchResult slices organized by capacity buckets
 type SearchResultPool struct {
 	buckets map[int]*SearchResultBucket
+
+	// hotpath caches the label resolved sharded accumulators of the
+	// longbow_search_result_pool_*_total families, keyed by capacity label. The
+	// label of a Get is derived from the requested capacity and the label of a
+	// Put from the capacity of the returned slice, so the handles are cached per
+	// label instead of per bucket and the exported series are unchanged.
+	hotpath sync.Map
+}
+
+// resultPoolHotpath holds the accumulators of one capacity label.
+type resultPoolHotpath struct {
+	get  *metrics.ShardedCounter
+	hits *metrics.ShardedCounter
+	put  *metrics.ShardedCounter
+}
+
+// hotpathFor returns the accumulators of label, resolving the children of the
+// counter vectors on first use so an unused label is not published.
+func (sp *SearchResultPool) hotpathFor(label string) *resultPoolHotpath {
+	if v, ok := sp.hotpath.Load(label); ok {
+		return v.(*resultPoolHotpath)
+	}
+	resolved := &resultPoolHotpath{
+		get:  metrics.SearchResultPoolGetSharded.For(label),
+		hits: metrics.SearchResultPoolHitsSharded.For(label),
+		put:  metrics.SearchResultPoolPutSharded.For(label),
+	}
+	actual, _ := sp.hotpath.LoadOrStore(label, resolved)
+	return actual.(*resultPoolHotpath)
 }
 
 // NewSearchResultPool creates a new result pool with common capacity buckets
@@ -139,8 +168,9 @@ func (sp *SearchResultPool) Get(capacity int) []SearchResult {
 	result := bucket.pool.Get().([]SearchResult)
 	result = result[:0] // Reset slice
 
-	metrics.SearchResultPoolGetTotal.WithLabelValues(capacityBucketLabel(capacity)).Inc()
-	metrics.SearchResultPoolHitsTotal.WithLabelValues(capacityBucketLabel(capacity)).Inc()
+	hp := sp.hotpathFor(capacityBucketLabel(capacity))
+	hp.get.Inc()
+	hp.hits.Inc()
 
 	return result
 }
@@ -168,7 +198,7 @@ func (sp *SearchResultPool) Put(slice []SearchResult) {
 	bucket.puts.Add(1)
 	bucket.pool.Put(slice) //nolint:staticcheck // SA6002: slice header is small, avoiding API change
 
-	metrics.SearchResultPoolPutTotal.WithLabelValues(capacityBucketLabel(capacity)).Inc()
+	sp.hotpathFor(capacityBucketLabel(capacity)).put.Inc()
 }
 
 // getBucket finds the bucket that can hold the given capacity

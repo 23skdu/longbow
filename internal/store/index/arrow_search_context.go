@@ -145,6 +145,14 @@ type ArrowSearchContext struct {
 	// Filter bitmap for early filtering during search
 	filterBitmap *roaring.Bitmap
 
+	// filterMask is filterBitmap pre-converted to a dense bitmask, or holding
+	// filterBitmap itself when densifying it is not worthwhile, so that graph
+	// traversal probes candidates with a single word load. nil means the search
+	// is unfiltered.
+	filterMask *filterMask
+	// filterBits is the reusable dense backing store for filterMask.
+	filterBits types.BitVector
+
 	// Cached DiskGraph reference for the duration of the search
 	diskGraph *DiskGraph
 
@@ -320,6 +328,9 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.predicate = nil
 	ctx.queryRadius = 0
 	ctx.AllowUncommitted = false
+	ctx.filterBitmap = nil
+	ctx.filterMask = nil
+	ctx.filterBits = ctx.filterBits[:0]
 
 	// Clear temp buffer without reallocating
 	for i := range ctx.distsTemp {
@@ -349,8 +360,13 @@ func (ctx *ArrowSearchContext) GetDiskGraph() *DiskGraph {
 }
 
 // RecordEarlyExit increments the early exit counter with a specific reason.
+// The reason is a dynamic label, so the accumulator is resolved through the
+// memoized lookup of the sharded counter vector rather than by hashing the
+// label set on every call.
 func (ctx *ArrowSearchContext) RecordEarlyExit(reason string) {
-	metrics.HnswSearchEarlyExitsTotal.WithLabelValues(reason).Inc()
+	if c := metrics.HnswSearchEarlyExitsSharded.For(reason); c != nil {
+		c.Inc()
+	}
 }
 
 // EvaluatePredicateBatch evaluates a batch of IDs against the current predicate.

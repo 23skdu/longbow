@@ -7,7 +7,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
@@ -497,6 +496,10 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 	ctx.resultSet = ctx.resultSet[:0]
 	ctx.visited.Clear()
 
+	// Hoist the filter probe out of the traversal loop: a nil mask means the
+	// search is unfiltered.
+	fm := ctx.filterMask
+
 	minHeap := (*MinCandidateHeapAdapter)(&ctx.candidates)
 	resultSetAdapter := (*MaxCandidateHeapAdapter)(&ctx.resultSet)
 
@@ -505,7 +508,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 	// Only add to result set if it passes filters and isn't deleted
 	passes := true
-	if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(entryPoint) {
+	if fm != nil && !fm.allows(entryPoint) {
 		passes = false
 	}
 	if passes && h.IsDeleted(entryPoint) {
@@ -526,7 +529,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		// 0. Early termination: Visited nodes budget check
 		if ctx.visitedNodesBudget > 0 && ctx.nodesVisitedCount >= ctx.visitedNodesBudget {
-			metrics.HNSWEarlyTerminationTotal.WithLabelValues("budget_exceeded").Inc()
+			hotpathEarlyTerminationBudget.Inc()
 			break
 		}
 
@@ -596,9 +599,9 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 			}
 			if len(data.VectorsTQ) > cID {
-		if tqChunk := data.GetVectorsTQChunkWithGen(cID, maxGen); tqChunk != nil {
-				stride := data.PackedSize()
-				start := cOff * stride
+				if tqChunk := data.GetVectorsTQChunkWithGen(cID, maxGen); tqChunk != nil {
+					stride := data.PackedSize()
+					start := cOff * stride
 					if start+stride <= len(tqChunk) {
 						if int64(nID) < maxCommitted {
 							_ = tqChunk[start]
@@ -638,13 +641,14 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 			if len(batch) > 0 {
 				results := ctx.EvaluatePredicateBatch(batch)
+				skipped := h.hotpath.NodesSkippedCounter(h.name)
 
 				var validBatch []uint32
 				for i, n := range batch {
 					if results[i] == 1 {
 						validBatch = append(validBatch, n)
 					} else {
-						metrics.HNSWNodesSkippedTotal.WithLabelValues(h.name).Inc()
+						skipped.Inc()
 					}
 				}
 
@@ -682,7 +686,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 								cand := types.Candidate{ID: n, Dist: d}
 								minHeap.PushCandidate(cand)
 
-								if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+								if fm != nil && !fm.allows(n) {
 									continue
 								}
 								if h.IsDeleted(n) {
@@ -756,7 +760,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 							minHeap.PushCandidate(cand)
 
 							// Only add to resultSet if it passes filters
-							if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+							if fm != nil && !fm.allows(n) {
 								continue
 							}
 							if h.deleted != nil && h.deleted.Contains(n) {

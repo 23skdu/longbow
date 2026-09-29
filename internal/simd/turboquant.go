@@ -31,33 +31,50 @@ type TurboQuantDistanceFunc func(query []float32, tqData []byte, dim int, pow2 i
 // dstAngles: extracted angles (length n/2)
 type TurboQuantPolarTransformFunc func(src []float32, dstRadii []float32, dstAngles []float32)
 
-var (
-	tqLookup2 []float32
-	tqLookup4 []float32
-	tqLookup8 []float32
+// tqLUTMinBits and tqLUTMaxBits bound the angle depths covered by tqPolarLUT.
+const (
+	tqLUTMinBits = 1
+	tqLUTMaxBits = 8
+	// tqLUTEntries is sum(2^bits) for bits in [tqLUTMinBits, tqLUTMaxBits] = 510,
+	// i.e. 510 interleaved (cos, sin) pairs.
+	tqLUTEntries = 510
 )
 
+// tqPolarLUT holds sin/cos for every quantized angle code of every supported
+// bit depth, interleaved as [cos(q), sin(q)]. Depth b owns the pairs
+// [tqLUTBase(b), tqLUTBase(b)+2^b) where tqLUTBase(b) = sum(2^k, k<b) = 2^b-2.
+// The whole table is 4080 bytes and is built once in init, before any
+// goroutine can read it, so lookups are race-free and stay resident in L1.
+var tqPolarLUT [2 * tqLUTEntries]float32
+
+// tqLUTBase returns the index of the first (cos, sin) pair of a bit depth.
+func tqLUTBase(bitsPerAngle int) int {
+	return (1 << bitsPerAngle) - 2
+}
+
+// tqLUTFor returns the interleaved cos/sin table for bitsPerAngle, or nil when
+// the depth is outside [tqLUTMinBits, tqLUTMaxBits].
+func tqLUTFor(bitsPerAngle int) []float32 {
+	if bitsPerAngle < tqLUTMinBits || bitsPerAngle > tqLUTMaxBits {
+		return nil
+	}
+	base := tqLUTBase(bitsPerAngle)
+	return tqPolarLUT[2*base : 2*(base+(1<<bitsPerAngle))]
+}
+
 func init() {
-	tqLookup2 = make([]float32, 4*2)
-	for i := 0; i < 4; i++ {
-		theta := (float32(i)/3.0)*2*math.Pi - math.Pi
-		s, c := math.Sincos(float64(theta))
-		tqLookup2[2*i] = float32(c)
-		tqLookup2[2*i+1] = float32(s)
-	}
-	tqLookup4 = make([]float32, 16*2)
-	for i := 0; i < 16; i++ {
-		theta := (float32(i)/15.0)*2*math.Pi - math.Pi
-		s, c := math.Sincos(float64(theta))
-		tqLookup4[2*i] = float32(c)
-		tqLookup4[2*i+1] = float32(s)
-	}
-	tqLookup8 = make([]float32, 256*2)
-	for i := 0; i < 256; i++ {
-		theta := (float32(i)/255.0)*2*math.Pi - math.Pi
-		s, c := math.Sincos(float64(theta))
-		tqLookup8[2*i] = float32(c)
-		tqLookup8[2*i+1] = float32(s)
+	for bits := tqLUTMinBits; bits <= tqLUTMaxBits; bits++ {
+		n := 1 << bits
+		base := tqLUTBase(bits)
+		maxVal := float32(n - 1)
+		for i := 0; i < n; i++ {
+			// Same expression as the per-element math.Sincos call this table
+			// replaces, so every entry is bit-identical to it.
+			theta := (float32(i)/maxVal)*2*math.Pi - math.Pi
+			s, c := math.Sincos(float64(theta))
+			tqPolarLUT[2*(base+i)] = float32(c)
+			tqPolarLUT[2*(base+i)+1] = float32(s)
+		}
 	}
 }
 
@@ -94,12 +111,20 @@ func turboQuantDistanceNEONScratch(query []float32, tqData []byte, dim int, pow2
 			qIndices[angleCount-1] = packedAngles[angleCount/2] & 0x0F
 		}
 	case 2:
-		for i := 0; i < angleCount/4; i++ {
-			b := packedAngles[i]
-			qIndices[4*i] = b & 0x03
-			qIndices[4*i+1] = (b >> 2) & 0x03
-			qIndices[4*i+2] = (b >> 4) & 0x03
-			qIndices[4*i+3] = (b >> 6) & 0x03
+		i := 0
+		for ; i+4 <= angleCount; i += 4 {
+			b := packedAngles[i/4]
+			qIndices[i] = b & 0x03
+			qIndices[i+1] = (b >> 2) & 0x03
+			qIndices[i+2] = (b >> 4) & 0x03
+			qIndices[i+3] = b >> 6
+		}
+		// angleCount is pow2-1 and therefore odd, so the vector loop always
+		// leaves 1-3 codes behind. They must be written too: qIndices is pooled
+		// scratch and would otherwise feed a previous request's codes into this
+		// reconstruction.
+		for ; i < angleCount; i++ {
+			qIndices[i] = (packedAngles[i/4] >> (uint(i%4) * 2)) & 0x03
 		}
 	default:
 		return TurboQuantDistanceGeneric(query, tqData, dim, pow2, bitsPerAngle)
@@ -111,15 +136,7 @@ func turboQuantDistanceNEONScratch(query []float32, tqData []byte, dim int, pow2
 	recon = recon[:pow2]
 	recon[0] = radius
 
-	var lookup []float32
-	switch bitsPerAngle {
-	case 2:
-		lookup = tqLookup2
-	case 4:
-		lookup = tqLookup4
-	case 8:
-		lookup = tqLookup8
-	}
+	lookup := tqLUTFor(bitsPerAngle)
 
 	currentLevelSize := 1
 	angleOffset := angleCount
@@ -156,7 +173,10 @@ func TurboQuantDistanceGeneric(query []float32, tqData []byte, dim int, pow2 int
 	packedAngles := tqData[4 : 4+angleBytes]
 	qjlBits := tqData[4+angleBytes:]
 
-	maxVal := float32((uint32(1) << bitsPerAngle) - 1)
+	lookup := tqLUTFor(bitsPerAngle)
+	if lookup == nil {
+		return 0, nil
+	}
 	qIndices := make([]byte, angleCount)
 	var currentBit int
 	for i := range qIndices {
@@ -180,10 +200,10 @@ func TurboQuantDistanceGeneric(query []float32, tqData []byte, dim int, pow2 int
 		for i := currentLevelSize - 1; i >= 0; i-- {
 			r := recon[i]
 			q := qIndices[angleOffset+i]
-			theta := (float32(q)/maxVal)*2*math.Pi - math.Pi
-			s, c := math.Sincos(float64(theta))
-			recon[2*i] = r * float32(c)
-			recon[2*i+1] = r * float32(s)
+			c := lookup[2*int(q)]
+			s := lookup[2*int(q)+1]
+			recon[2*i] = r * c
+			recon[2*i+1] = r * s
 		}
 		currentLevelSize *= 2
 	}
@@ -234,27 +254,27 @@ func turboQuantDistanceAVX2Scratch(query []float32, tqData []byte, dim int, pow2
 			qIndices[angleCount-1] = packedAngles[angleCount/2] & 0x0F
 		}
 	case 2:
-		for i := 0; i < angleCount/4; i++ {
-			b := packedAngles[i]
-			qIndices[4*i] = b & 0x03
-			qIndices[4*i+1] = (b >> 2) & 0x03
-			qIndices[4*i+2] = (b >> 4) & 0x03
-			qIndices[4*i+3] = (b >> 6) & 0x03
+		i := 0
+		for ; i+4 <= angleCount; i += 4 {
+			b := packedAngles[i/4]
+			qIndices[i] = b & 0x03
+			qIndices[i+1] = (b >> 2) & 0x03
+			qIndices[i+2] = (b >> 4) & 0x03
+			qIndices[i+3] = b >> 6
+		}
+		// angleCount is pow2-1 and therefore odd, so the vector loop always
+		// leaves 1-3 codes behind. They must be written too: qIndices is pooled
+		// scratch and would otherwise feed a previous request's codes into this
+		// reconstruction.
+		for ; i < angleCount; i++ {
+			qIndices[i] = (packedAngles[i/4] >> (uint(i%4) * 2)) & 0x03
 		}
 	default:
 		return TurboQuantDistanceGeneric(query, tqData, dim, pow2, bitsPerAngle)
 	}
 
 	// Reconstruct vector via recursive polar transform
-	var lookup []float32
-	switch bitsPerAngle {
-	case 2:
-		lookup = tqLookup2
-	case 4:
-		lookup = tqLookup4
-	case 8:
-		lookup = tqLookup8
-	}
+	lookup := tqLUTFor(bitsPerAngle)
 
 	if cap(recon) < pow2 {
 		recon = make([]float32, pow2)

@@ -286,7 +286,7 @@ func TestGeoIndex_Concurrency(t *testing.T) {
 		MinLat: -90, MaxLat: 90, MinLon: -180, MaxLon: 180,
 	}
 	gi := NewGeoIndex("test", 128, config)
-	gi.pointIndex.Store(NewQuadtree(bounds, 64, "test"))
+	gi.pointIndex.Store(newGeoIndexHandle(NewQuadtree(bounds, 64, "test")))
 
 	// Start concurrent inserters
 	numInserters := 4
@@ -325,28 +325,29 @@ func TestGeoIndex_Concurrency(t *testing.T) {
 }
 
 func BenchmarkGeoIndex_SearchRadius(b *testing.B) {
-	config := &GeoSearchConfig{
-		DistanceType: GeoDistanceHaversine,
-		EarthRadius:  6371.0,
-		IndexType:    "quadtree",
-	}
-	bounds := GeoBoundingBox{
-		MinLat: -90, MaxLat: 90, MinLon: -180, MaxLon: 180,
-	}
-	gi := NewGeoIndex("bench", 128, config)
-	gi.pointIndex.Store(NewQuadtree(bounds, 64, "bench"))
+	for _, indexType := range []string{GeoIndexTypeMorton, GeoIndexTypeQuadtree} {
+		b.Run(indexType, func(b *testing.B) {
+			config := &GeoSearchConfig{
+				DistanceType: GeoDistanceHaversine,
+				EarthRadius:  6371.0,
+				IndexType:    indexType,
+			}
+			gi := NewGeoIndex("bench", 128, config)
+			gi.pointIndex.Store(newGeoIndexHandle(newGeoPointIndex(indexType, "bench", 64)))
 
-	// Pre-fill with 10k points
-	for i := 0; i < 10000; i++ {
-		id := uint64(i)
-		vec := make([]float32, 128)
-		point := GeoPoint{Lat: 40.0 + float64(i)*0.0001, Lon: -74.0 + float64(i)*0.0001}
-		_ = gi.Add(id, vec, point, nil)
-	}
+			// Pre-fill with 10k points
+			for i := 0; i < 10000; i++ {
+				id := uint64(i)
+				vec := make([]float32, 128)
+				point := GeoPoint{Lat: 40.0 + float64(i)*0.0001, Lon: -74.0 + float64(i)*0.0001}
+				_ = gi.Add(id, vec, point, nil)
+			}
 
-	center := GeoPoint{Lat: 40.5, Lon: -73.5}
-	b.ResetTimer()
-	for b.Loop() {
-		_, _ = gi.SearchRadius(context.Background(), center, 100, 10)
+			center := GeoPoint{Lat: 40.5, Lon: -73.5}
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = gi.SearchRadius(context.Background(), center, 100, 10)
+			}
+		})
 	}
 }

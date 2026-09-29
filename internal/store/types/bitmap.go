@@ -8,10 +8,16 @@ import (
 	"github.com/RoaringBitmap/roaring/v2"
 )
 
+// Bitset is a thread-safe wrapper around a roaring.Bitmap. A Bitset that draws
+// its bitmap from the shared pool owns it and hands it back on Release; a
+// Bitset built from a caller's roaring.Bitmap does not own it and must not hand
+// it back, or the pool would end up holding the same pointer twice and could
+// then hand it to two owners at once.
 type Bitset struct {
 	bitmap *roaring.Bitmap
 	mu     sync.RWMutex
 	shared bool // if true, must clone before modification
+	pooled bool // if true, bitmap came from pool.GetBitmap and Release returns it
 }
 
 func (b *Bitset) AsRoaring() *roaring.Bitmap {
@@ -27,16 +33,18 @@ func NewBitset() *Bitset {
 	return &Bitset{
 		bitmap: pool.GetBitmap(),
 		shared: false,
+		pooled: true,
 	}
 }
 
 func NewBitsetFromRoaring(bm *roaring.Bitmap) *Bitset {
 	if bm == nil {
-		return &Bitset{bitmap: roaring.New(), shared: false}
+		return &Bitset{bitmap: roaring.New(), shared: false, pooled: false}
 	}
 	return &Bitset{
 		bitmap: bm,
 		shared: true,
+		pooled: false,
 	}
 }
 
@@ -86,7 +94,8 @@ func (b *Bitset) Contains(i int) bool {
 	return b.bitmap.Contains(uint32(i)) // #nosec G115
 }
 
-// Clone creates a thread-safe copy of the bitset.
+// Clone creates a thread-safe copy of the bitset. The copy holds a fresh
+// roaring.Bitmap that never came from the pool, so it does not own one either.
 func (b *Bitset) Clone() *Bitset {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -118,14 +127,25 @@ func (b *Bitset) ToUint32Array() []uint32 {
 	return b.bitmap.ToArray()
 }
 
-// Release releases the underlying bitmap to the pool
+// Release detaches the bitset from its bitmap and returns the bitmap to the
+// pool when the bitset owns it. A bitset built by NewBitsetFromRoaring aliases
+// a bitmap the caller still owns, and a Clone holds a fresh one that never came
+// from the pool, so neither is returned: putting a bitmap the pool did not hand
+// out lets the pool end up holding the same pointer twice, and a later Get then
+// hands one object to two owners, which is both a data race and a cross-request
+// leak of the previous owner's contents. Release is idempotent.
 func (b *Bitset) Release() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.bitmap != nil {
-		pool.PutBitmap(b.bitmap)
-		b.bitmap = nil
+	if b.bitmap == nil {
+		return
 	}
+	if b.pooled {
+		pool.PutBitmap(b.bitmap)
+	}
+	b.bitmap = nil
+	b.pooled = false
+	b.shared = false
 }
 
 // Slice returns a new Bitset containing bits in range [offset, offset+length)

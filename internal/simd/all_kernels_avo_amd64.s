@@ -12933,20 +12933,74 @@ TEXT ·euclideanFloat64AVX2Kernel(SB), NOSPLIT, $0-28
 	MOVQ   b+8(FP), CX
 	MOVQ   n+16(FP), DX
 	VXORPD Y0, Y0, Y0
+	VXORPD Y1, Y1, Y1
+	VXORPD Y2, Y2, Y2
+	VXORPD Y3, Y3, Y3
+	VXORPD Y4, Y4, Y4
+	VXORPD Y5, Y5, Y5
+	VXORPD Y6, Y6, Y6
+	VXORPD Y7, Y7, Y7
 
 loop:
-	CMPQ        DX, $0x04
+	CMPQ        DX, $0x20
 	JL          tail
-	VMOVUPD     (AX), Y1
-	VMOVUPD     (CX), Y2
-	VSUBPD      Y2, Y1, Y1
-	VFMADD231PD Y1, Y1, Y0
-	ADDQ        $0x20, AX
-	ADDQ        $0x20, CX
-	SUBQ        $0x04, DX
+	VMOVUPD     (AX), Y8
+	VMOVUPD     (CX), Y9
+	VSUBPD      Y9, Y8, Y8
+	VFMADD231PD Y8, Y8, Y0
+	VMOVUPD     32(AX), Y8
+	VMOVUPD     32(CX), Y9
+	VSUBPD      Y9, Y8, Y8
+	VFMADD231PD Y8, Y8, Y1
+	VMOVUPD     64(AX), Y8
+	VMOVUPD     64(CX), Y9
+	VSUBPD      Y9, Y8, Y8
+	VFMADD231PD Y8, Y8, Y2
+	VMOVUPD     96(AX), Y8
+	VMOVUPD     96(CX), Y9
+	VSUBPD      Y9, Y8, Y8
+	VFMADD231PD Y8, Y8, Y3
+	VMOVUPD     128(AX), Y8
+	VMOVUPD     128(CX), Y9
+	VSUBPD      Y9, Y8, Y8
+	VFMADD231PD Y8, Y8, Y4
+	VMOVUPD     160(AX), Y8
+	VMOVUPD     160(CX), Y9
+	VSUBPD      Y9, Y8, Y8
+	VFMADD231PD Y8, Y8, Y5
+	VMOVUPD     192(AX), Y8
+	VMOVUPD     192(CX), Y9
+	VSUBPD      Y9, Y8, Y8
+	VFMADD231PD Y8, Y8, Y6
+	VMOVUPD     224(AX), Y8
+	VMOVUPD     224(CX), Y9
+	VSUBPD      Y9, Y8, Y8
+	VFMADD231PD Y8, Y8, Y7
+	ADDQ        $0x00000100, AX
+	ADDQ        $0x00000100, CX
+	SUBQ        $0x00000020, DX
 	JMP         loop
 
 tail:
+	CMPQ        DX, $0x04
+	JL          reduce
+	VMOVUPD     (AX), Y8
+	VMOVUPD     (CX), Y9
+	VSUBPD      Y9, Y8, Y8
+	VFMADD231PD Y8, Y8, Y0
+	ADDQ        $0x20, AX
+	ADDQ        $0x20, CX
+	SUBQ        $0x04, DX
+	JMP         tail
+
+reduce:
+	VADDPD       Y1, Y0, Y0
+	VADDPD       Y3, Y2, Y2
+	VADDPD       Y5, Y4, Y4
+	VADDPD       Y7, Y6, Y6
+	VADDPD       Y2, Y0, Y0
+	VADDPD       Y6, Y4, Y4
+	VADDPD       Y4, Y0, Y0
 	VEXTRACTF128 $0x00, Y0, X1
 	VEXTRACTF128 $0x01, Y0, X0
 	VADDPD       X1, X0, X0
@@ -12979,19 +13033,65 @@ TEXT ·dotFloat64AVX2Kernel(SB), NOSPLIT, $0-28
 	MOVQ   b+8(FP), CX
 	MOVQ   n+16(FP), DX
 	VXORPD Y0, Y0, Y0
+	VXORPD Y1, Y1, Y1
+	VXORPD Y2, Y2, Y2
+	VXORPD Y3, Y3, Y3
+	VXORPD Y4, Y4, Y4
+	VXORPD Y5, Y5, Y5
+	VXORPD Y6, Y6, Y6
+	VXORPD Y7, Y7, Y7
 
 loop:
-	CMPQ        DX, $0x04
+	CMPQ        DX, $0x20
 	JL          tail
-	VMOVUPD     (AX), Y1
-	VMOVUPD     (CX), Y2
-	VFMADD231PD Y1, Y2, Y0
-	ADDQ        $0x20, AX
-	ADDQ        $0x20, CX
-	SUBQ        $0x04, DX
+	VMOVUPD     (AX), Y8
+	VMOVUPD     (CX), Y9
+	VFMADD231PD Y8, Y9, Y0
+	VMOVUPD     32(AX), Y8
+	VMOVUPD     32(CX), Y9
+	VFMADD231PD Y8, Y9, Y1
+	VMOVUPD     64(AX), Y8
+	VMOVUPD     64(CX), Y9
+	VFMADD231PD Y8, Y9, Y2
+	VMOVUPD     96(AX), Y8
+	VMOVUPD     96(CX), Y9
+	VFMADD231PD Y8, Y9, Y3
+	VMOVUPD     128(AX), Y8
+	VMOVUPD     128(CX), Y9
+	VFMADD231PD Y8, Y9, Y4
+	VMOVUPD     160(AX), Y8
+	VMOVUPD     160(CX), Y9
+	VFMADD231PD Y8, Y9, Y5
+	VMOVUPD     192(AX), Y8
+	VMOVUPD     192(CX), Y9
+	VFMADD231PD Y8, Y9, Y6
+	VMOVUPD     224(AX), Y8
+	VMOVUPD     224(CX), Y9
+	VFMADD231PD Y8, Y9, Y7
+	ADDQ        $0x00000100, AX
+	ADDQ        $0x00000100, CX
+	SUBQ        $0x00000020, DX
 	JMP         loop
 
 tail:
+	CMPQ        DX, $0x04
+	JL          reduce
+	VMOVUPD     (AX), Y8
+	VMOVUPD     (CX), Y9
+	VFMADD231PD Y8, Y9, Y0
+	ADDQ        $0x20, AX
+	ADDQ        $0x20, CX
+	SUBQ        $0x04, DX
+	JMP         tail
+
+reduce:
+	VADDPD       Y1, Y0, Y0
+	VADDPD       Y3, Y2, Y2
+	VADDPD       Y5, Y4, Y4
+	VADDPD       Y7, Y6, Y6
+	VADDPD       Y2, Y0, Y0
+	VADDPD       Y6, Y4, Y4
+	VADDPD       Y4, Y0, Y0
 	VEXTRACTF128 $0x00, Y0, X1
 	VEXTRACTF128 $0x01, Y0, X0
 	VADDPD       X1, X0, X0

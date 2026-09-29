@@ -19,7 +19,7 @@ var globalBitmapPool = &BitmapPool{
 	},
 }
 
-// GetBitmap retrieves a cleared bitmap from the global pool.
+// GetBitmap retrieves an empty bitmap from the global pool.
 func GetBitmap() *roaring.Bitmap {
 	return globalBitmapPool.Get()
 }
@@ -29,15 +29,27 @@ func PutBitmap(bm *roaring.Bitmap) {
 	globalBitmapPool.Put(bm)
 }
 
-// Get retrieves a cleared bitmap from the pool.
+// Get retrieves an empty bitmap from the pool. The clear is not redundant with
+// the one in Put: it is what makes "every Get returns an empty bitmap" hold for
+// the pool regardless of how an object entered it, so a caller that recycles a
+// bitmap it does not exclusively own can never leak its contents to the next
+// owner. roaring's Clear only resets the container index, so it costs the same
+// whether or not there is anything to drop.
 func (p *BitmapPool) Get() *roaring.Bitmap {
-	return p.pool.Get().(*roaring.Bitmap)
+	bm := p.pool.Get().(*roaring.Bitmap)
+	if !bm.IsEmpty() {
+		bm.Clear()
+	}
+	return bm
 }
 
-// Put returns a bitmap to the pool.
+// Put returns a bitmap to the pool after clearing it.
 func (p *BitmapPool) Put(bm *roaring.Bitmap) {
-	if bm != nil {
-		bm.Clear()
-		p.pool.Put(bm)
+	if bm == nil {
+		return
 	}
+	if !bm.IsEmpty() {
+		bm.Clear()
+	}
+	p.pool.Put(bm)
 }

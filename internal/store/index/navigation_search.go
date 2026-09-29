@@ -100,9 +100,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		// Fall through to CPU on GPU error
 	}
 
-	if metrics.HNSWSearchPoolGetTotal != nil {
-		metrics.HNSWSearchPoolGetTotal.Inc()
-	}
+	metrics.HNSWSearchPoolGetSharded.Inc()
 	start := time.Now()
 	searchCtx := h.searchPool.Get()
 	searchCtx.MaxNodeCount = meta.NodeCount
@@ -146,16 +144,22 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	if filter != nil {
 		searchCtx.filterBitmap = filter.Clone()
+		// Pre-convert the filter to a dense bitmask once so that traversal
+		// probes candidates with a single word load instead of a binary search
+		// through the roaring containers. Densification falls back to
+		// filterBitmap when the filter's id universe is too wide, or its
+		// conversion too expensive, to be worth a dense bitmask.
+		searchCtx.filterMask, searchCtx.filterBits = buildFilterMask(searchCtx.filterBitmap, searchCtx.filterBits)
 	} else {
 		searchCtx.filterBitmap = nil
+		searchCtx.filterMask = nil
 	}
 	if filter != nil {
-		metrics.HNSWPreFilteredSearchesTotal.WithLabelValues(h.name).Inc()
+		h.hotpath.PreFilteredCounter(h.name).Inc()
 		if filter.IsEmpty() {
-			metrics.HNSWFilterEarlyExitTotal.WithLabelValues(h.name).Inc()
-			if metrics.HNSWSearchPoolPutTotal != nil {
-				metrics.HNSWSearchPoolPutTotal.Inc()
-			}
+			h.hotpath.FilterEarlyExitCounter(h.name).Inc()
+			metrics.HNSWSearchPoolPutSharded.Inc()
+			searchCtx.filterMask = nil
 			h.searchPool.Put(searchCtx)
 			return nil, nil
 		}
@@ -163,6 +167,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	defer func() {
 		searchCtx.filterBitmap = nil
+		searchCtx.filterMask = nil
 		h.flushSearchMetrics(searchCtx)
 
 		if should, mult := metrics.GlobalHotpathSampler.ShouldSample(); should {
@@ -180,9 +185,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 			byteThroughput := float64(int(h.dims.Load()) * h.config.DataType.ElementSize())
 			metrics.HNSWPolymorphicThroughput.WithLabelValues(typeLabel).Add(byteThroughput * mult)
 
-			if metrics.HNSWSearchPoolPutTotal != nil {
-				metrics.HNSWSearchPoolPutTotal.Add(mult)
-			}
+			metrics.HNSWSearchPoolPutSharded.Add(mult)
 			h.searchPool.PutWithMetrics(searchCtx, typeLabel, dimsStr)
 		} else {
 			h.searchPool.Put(searchCtx)
@@ -383,9 +386,10 @@ search_layer0:
 			return nil, err
 		}
 		sort.Slice(res, func(i, j int) bool { return res[i].Dist < res[j].Dist })
+		fm := searchCtx.filterMask
 		result := make([]types.SearchResult, 0, k)
 		for _, c := range res {
-			if h.IsDeleted(c.ID) || (filter != nil && !filter.Contains(c.ID)) {
+			if h.IsDeleted(c.ID) || (fm != nil && !fm.allows(c.ID)) {
 				continue
 			}
 			result = append(result, types.SearchResult{ID: types.VectorID(c.ID), Distance: c.Dist, Score: 1.0 / (1.0 + c.Dist)})
@@ -539,15 +543,17 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 	searchCtx.MaxGeneration = meta.Generation
 	defer func() {
 		searchCtx.filterBitmap = nil
-		if metrics.HNSWSearchPoolPutTotal != nil {
-			metrics.HNSWSearchPoolPutTotal.Inc()
-		}
+		searchCtx.filterMask = nil
+		metrics.HNSWSearchPoolPutSharded.Inc()
 		h.searchPool.Put(searchCtx)
 	}()
 
 	searchCtx.filterBitmap = roaringFilter
+	// Pre-convert the filter to a dense bitmask once; the traversal probes it
+	// per candidate and the result loop below reuses the same mask.
+	searchCtx.filterMask, searchCtx.filterBits = buildFilterMask(roaringFilter, searchCtx.filterBits)
 	if roaringFilter != nil {
-		metrics.HNSWPreFilteredSearchesTotal.WithLabelValues(h.name).Inc()
+		h.hotpath.PreFilteredCounter(h.name).Inc()
 	}
 
 	computer = h.resolveHNSWComputer(data, searchCtx, queryVec, false, options)
@@ -596,6 +602,7 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 	}
 
 	var results []types.SearchResult
+	fm := searchCtx.filterMask
 	for _, c := range res {
 		if c.Dist > threshold {
 			continue
@@ -603,7 +610,7 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 		if h.IsDeleted(c.ID) {
 			continue
 		}
-		if roaringFilter != nil && !roaringFilter.Contains(c.ID) {
+		if fm != nil && !fm.allows(c.ID) {
 			continue
 		}
 		results = append(results, types.SearchResult{

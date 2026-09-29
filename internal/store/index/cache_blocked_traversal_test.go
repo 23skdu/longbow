@@ -46,7 +46,9 @@ func TestCacheBlockedTraversal_MetricIncremented(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Record metric before search
+	// Record metric before search. The counter is sharded and published on a
+	// 100ms tick, so publish whatever an earlier test left pending first.
+	metrics.FlushHotpathCounters()
 	before := testutil.ToFloat64(metrics.CacheBlockedTraversalChunksTotal)
 
 	// Search with ef=128 to force wide traversal
@@ -62,6 +64,7 @@ func TestCacheBlockedTraversal_MetricIncremented(t *testing.T) {
 	assert.Greater(t, len(result), 0, "search should return results")
 
 	// Verify cache-blocked chunks were processed
+	metrics.FlushHotpathCounters()
 	after := testutil.ToFloat64(metrics.CacheBlockedTraversalChunksTotal)
 	assert.Greater(t, after, before,
 		"CacheBlockedTraversalChunksTotal should increase during search")

@@ -65,6 +65,10 @@ func (c *float64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 	}
 
 	const blockSize = 64
+	pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
+	// Resolve the arena slab table and the generation policy once for the whole
+	// batch instead of once per vector.
+	batch := c.data.BeginFloat64ChunkBatch(c.maxGen)
 	for blockStart := 0; blockStart < n; blockStart += blockSize {
 		blockEnd := blockStart + blockSize
 		if blockEnd > n {
@@ -78,33 +82,21 @@ func (c *float64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 				nextEnd = n
 			}
 			for _, nextID := range ids[blockEnd:nextEnd] {
-				c.Prefetch(nextID)
+				c.prefetchChunk(batch.Chunk(types.ChunkID(nextID)), int(nextID)%types.ChunkSize, pd)
 			}
 		}
 
 		// Process current 64-vector block
 		for i := blockStart; i < blockEnd; i++ {
 			id := ids[i]
-			cID := types.ChunkID(id)
-			var chunk []float64
-			if c.maxGen == math.MaxUint64 {
-				chunk = c.data.GetVectorsFloat64ChunkFast(int(cID))
-			} else {
-				chunk = c.data.GetVectorsFloat64ChunkWithGen(int(cID), c.maxGen)
-			}
-			if chunk != nil {
-				cOff := int(id) % types.ChunkSize
-				pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
-				start := cOff * pd
-				if start+c.dims <= len(chunk) {
-					d, err := c.h.distFuncF64(c.q, chunk[start:start+c.dims])
-					if err != nil {
-						dst[i] = math.MaxFloat32
-						continue
-					}
-					dst[i] = d
+			if v := batch.Vector(types.ChunkID(id), int(id)%types.ChunkSize, c.dims); v != nil {
+				d, err := c.h.distFuncF64(c.q, v)
+				if err != nil {
+					dst[i] = math.MaxFloat32
 					continue
 				}
+				dst[i] = d
+				continue
 			}
 			vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 			if err != nil {
@@ -126,6 +118,22 @@ func (c *float64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 	}
 
 	return dst, nil
+}
+
+// prefetchChunk issues the same prefetches as Prefetch for an already resolved
+// chunk so the hot loop does not re-enter the arena once per vector.
+func (c *float64Computer) prefetchChunk(chunk []float64, cOff, pd int) {
+	if chunk == nil {
+		return
+	}
+	start := cOff * pd
+	if start+c.dims <= len(chunk) {
+		base := unsafe.Pointer(&chunk[start]) // #nosec G103
+		byteLen := uintptr(c.dims * 8)
+		for off := uintptr(0); off < byteLen; off += 64 {
+			simd.Prefetch(unsafe.Add(base, off)) // #nosec G103
+		}
+	}
 }
 
 func (c *float64Computer) Prefetch(id uint32) {

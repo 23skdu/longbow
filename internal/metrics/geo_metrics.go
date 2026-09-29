@@ -42,4 +42,13 @@ var (
 		},
 		[]string{"dataset"},
 	)
+
+	// MortonGridCellsCreatedTotal tracks number of cells created in Morton grids
+	MortonGridCellsCreatedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_morton_grid_cells_created_total",
+			Help: "Total number of cells allocated in linear Morton spatial grids",
+		},
+		[]string{"dataset"},
+	)
 )

@@ -5,7 +5,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
@@ -64,6 +63,10 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 	ctx.resultSet = ctx.resultSet[:0]
 	ctx.visited.Clear()
 
+	// Hoist the filter probe out of the traversal loop: a nil mask means the
+	// search is unfiltered.
+	fm := ctx.filterMask
+
 	minHeap := (*MinCandidateHeapAdapter)(&ctx.candidates)
 	resultSetAdapter := (*MaxCandidateHeapAdapter)(&ctx.resultSet)
 
@@ -71,7 +74,7 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 	minHeap.PushCandidate(epCand)
 
 	passes := true
-	if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(entryPoint) {
+	if fm != nil && !fm.allows(entryPoint) {
 		passes = false
 	}
 	if passes && h.IsDeleted(entryPoint) {
@@ -93,7 +96,7 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 		}
 
 		if ctx.visitedNodesBudget > 0 && ctx.nodesVisitedCount >= ctx.visitedNodesBudget {
-			metrics.HNSWEarlyTerminationTotal.WithLabelValues("budget_exceeded").Inc()
+			hotpathEarlyTerminationBudget.Inc()
 			break
 		}
 
@@ -159,13 +162,14 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 
 			if len(batch) > 0 {
 				results := ctx.EvaluatePredicateBatch(batch)
+				skipped := h.hotpath.NodesSkippedCounter(h.name)
 
 				var validBatch []uint32
 				for i, n := range batch {
 					if results[i] == 1 {
 						validBatch = append(validBatch, n)
 					} else {
-						metrics.HNSWNodesSkippedTotal.WithLabelValues(h.name).Inc()
+						skipped.Inc()
 					}
 				}
 
@@ -202,7 +206,7 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 								cand := types.Candidate{ID: n, Dist: d}
 								minHeap.PushCandidate(cand)
 
-								if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+								if fm != nil && !fm.allows(n) {
 									continue
 								}
 								if h.IsDeleted(n) {
@@ -272,7 +276,7 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 
 							minHeap.PushCandidate(cand)
 
-							if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+							if fm != nil && !fm.allows(n) {
 								continue
 							}
 							if h.deleted != nil && h.deleted.Contains(n) {

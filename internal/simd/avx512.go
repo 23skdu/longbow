@@ -181,7 +181,7 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 		}
 		euclideanVertical4AVX512(
 			queryPtr,
-			uintptr(unsafe.Pointer(&vectors[i][0])), // #nosec G103
+			uintptr(unsafe.Pointer(&vectors[i][0])),   // #nosec G103
 			uintptr(unsafe.Pointer(&vectors[i+1][0])), // #nosec G103
 			uintptr(unsafe.Pointer(&vectors[i+2][0])), // #nosec G103
 			uintptr(unsafe.Pointer(&vectors[i+3][0])), // #nosec G103
@@ -289,67 +289,6 @@ func matchFloat64AVX512(src []float64, val float64, op CompareOp, dst []byte) er
 // =============================================================================
 // Floating Point Variants
 // =============================================================================
-
-func euclideanFloat64AVX512(a, b []float64) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if !features.HasAVX512 {
-		return euclideanFloat64AVX2(a, b)
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanFloat64AVX512Kernel(
-		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
-		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
-		len(a)), nil
-}
-
-func dotFloat64AVX512(a, b []float64) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if !features.HasAVX512 {
-		return dotFloat64AVX2(a, b)
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return dotFloat64AVX512Kernel(
-		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
-		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
-		len(a)), nil
-}
-
-func cosineFloat64AVX512(a, b []float64) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if !features.HasAVX512 {
-		return cosineFloat64AVX2(a, b)
-	}
-	if len(a) == 0 {
-		return 1.0, nil
-	}
-	dot, normA, normB := cosineFloat64AVX512Kernel(
-		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
-		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
-		len(a),
-	)
-	if normA <= 0 || normB <= 0 {
-		return 1.0, nil
-	}
-	return 1.0 - (dot / (float32(math.Sqrt(float64(normA))) * float32(math.Sqrt(float64(normB))))), nil
-}
-
-func l2SquaredFloat64AVX512(a, b []float64) (float32, error) {
-	val, err := euclideanFloat64AVX512(a, b)
-	if err != nil {
-		return 0, err
-	}
-	return val * val, nil
-}
 
 func euclideanF16AVX512(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
@@ -622,9 +561,9 @@ func euclideanPQVNNI(query []byte, centroids []byte, subDim int, k int, results 
 	if !features.HasVNNI {
 		return errors.New("simd: VNNI not supported")
 	}
-	qPtr := uintptr(unsafe.Pointer(&query[0])) // #nosec G103
+	qPtr := uintptr(unsafe.Pointer(&query[0]))     // #nosec G103
 	cPtr := uintptr(unsafe.Pointer(&centroids[0])) // #nosec G103
-	rPtr := uintptr(unsafe.Pointer(&results[0])) // #nosec G103
+	rPtr := uintptr(unsafe.Pointer(&results[0]))   // #nosec G103
 	euclideanPQVNNIKernel(qPtr, cPtr, subDim, k, rPtr)
 	return nil
 }
@@ -670,8 +609,6 @@ func orBytesAVX512(dst, src []byte) {
 	}
 	orBytesAVX2(dst, src)
 }
-
-
 
 //go:noescape
 func euclideanInt8AVX512Kernel(a, b uintptr, n int) float32

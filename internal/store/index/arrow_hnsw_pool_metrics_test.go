@@ -49,12 +49,20 @@ func TestArrowHNSW_PoolMetrics(t *testing.T) {
 	require.Equal(t, getBefore+1, getAfter, "InsertPoolGet should increment")
 	require.Equal(t, putBefore+1, putAfter, "InsertPoolPut should increment")
 
-	// Trigger Search
+	// Trigger Search. The pool counters are sharded and published on a 100ms
+	// tick, so drain the accumulators before reading the baseline as well:
+	// otherwise a value an earlier test left pending would land between the two
+	// reads and the exact +1 assertion would be off.
+	metrics.FlushHotpathCounters()
 	searchGetBefore := getCounterValue(metrics.HNSWSearchPoolGetTotal)
 	searchPutBefore := getCounterValue(metrics.HNSWSearchPoolPutTotal)
 
 	_, err = idx.Search(context.Background(), vec, 1, nil)
 	require.NoError(t, err)
+
+	// The search pool counters are sharded and published asynchronously, so drain
+	// the accumulators before reading the wrapped Prometheus counters.
+	metrics.FlushHotpathCounters()
 
 	searchGetAfter := getCounterValue(metrics.HNSWSearchPoolGetTotal)
 	searchPutAfter := getCounterValue(metrics.HNSWSearchPoolPutTotal)

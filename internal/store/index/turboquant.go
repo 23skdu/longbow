@@ -9,8 +9,76 @@ import (
 
 // TurboQuantParams defines the quantization settings.
 type TurboQuantParams struct {
-	BitsPerAngle int   // e.g., 3 or 4 bits
+	// BitsPerAngle is the angular grid resolution. The codec accepts 1..8, but
+	// only 4..8 preserve the vector direction: the recursive polar transform
+	// spends one angle per reconstructed coordinate, so a coarse grid caps the
+	// achievable cosine. Measured on a linear ramp (dims 128/384/768):
+	// 1 bit ~0.06/0.00/-0.00, 2 bits ~0.50/0.39/0.34, 3 bits ~0.82/0.72/0.72,
+	// 4 bits ~0.95/0.93/0.92, 5 bits ~0.99/0.98/0.97, 6 bits ~0.992,
+	// 7 bits ~0.994, 8 bits ~0.995. TestTurboQuantRoundTrip pins the 4..8
+	// contract at cosine > 0.90.
+	BitsPerAngle int
 	Seed         int64 // For random rotation
+}
+
+// Angle-grid sin/cos tables for the quantized (decode) path. Every supported
+// bit depth owns the 2^bits entries [tqPolarLUTBase(bits), +2^bits) of a
+// single 510-pair array, interleaved as [cos(q), sin(q)]. The array is
+// 4080 bytes, built once in init before any goroutine can observe it, so
+// lookups are race-free and stay resident in L1.
+const tqPolarLUTEntries = 2 + 4 + 8 + 16 + 32 + 64 + 128 + 256
+
+var tqPolarLUT [2 * tqPolarLUTEntries]float32
+
+// tqPolarLUTBase returns the pair index where a bit depth's entries start:
+// sum(2^k, k<bits) == 2^bits-2.
+func tqPolarLUTBase(bits int) int {
+	return (1 << bits) - 2
+}
+
+// tqPolarLUTFor returns the interleaved cos/sin table for bits, or nil when
+// the depth is outside [1, 8].
+func tqPolarLUTFor(bits int) []float32 {
+	if bits < 1 || bits > 8 {
+		return nil
+	}
+	base := tqPolarLUTBase(bits)
+	return tqPolarLUT[2*base : 2*(base+(1<<bits))]
+}
+
+func init() {
+	for bits := 1; bits <= 8; bits++ {
+		n := 1 << bits
+		// The grid is produced by the very unpacker Decode would have used, so
+		// the table reproduces the exact float32 angle (the AVX2/NEON kernels
+		// compute code*scale+bias with FMA, which can differ from the multiply
+		// and add being separately rounded) and the Sincos of it is bit-exact.
+		thetas := make([]float32, n)
+		unpackAngleValues(bits, packAngleCodes(bits, n), thetas)
+		base := tqPolarLUTBase(bits)
+		for code, theta := range thetas {
+			s, c := math.Sincos(float64(theta))
+			tqPolarLUT[2*(base+code)] = float32(c)
+			tqPolarLUT[2*(base+code)+1] = float32(s)
+		}
+	}
+}
+
+// packAngleCodes writes the codes 0..count-1 into a fresh buffer using the same
+// LSB-first layout as packAngles. Codes do not fit once count exceeds 2^bits, so
+// the sequence wraps modulo 2^bits; the table builder asks for exactly 2^bits.
+func packAngleCodes(bits, count int) []byte {
+	dst := make([]byte, (count*bits+7)/8)
+	bit := 0
+	for code := 0; code < count; code++ {
+		for k := 0; k < bits; k++ {
+			if code&(1<<k) != 0 {
+				dst[bit/8] |= 1 << (bit % 8)
+			}
+			bit++
+		}
+	}
+	return dst
 }
 
 // TurboQuantEncoder handles the two-stage compression: PolarQuant + QJL.
@@ -23,6 +91,8 @@ type TurboQuantEncoder struct {
 	pool *LockFreeRingBuffer[*[]float32]
 	// Lock-free ring buffer for QJL bit-scratch byte slices.
 	qjlPool *LockFreeRingBuffer[*[]byte]
+	// Lock-free ring buffer for decoded angle-code scratch byte slices.
+	codesPool *LockFreeRingBuffer[*[]byte]
 }
 
 // NewTurboQuantEncoder creates a new encoder.
@@ -37,14 +107,16 @@ func NewTurboQuantEncoder(dims int, bitsPerAngle int, seed int64) *TurboQuantEnc
 	// Create ring buffers for workspaces. Size 1024 is plenty for concurrent bulk inserts.
 	rb := NewLockFreeRingBuffer[*[]float32](1024)
 	qb := NewLockFreeRingBuffer[*[]byte](1024)
+	cb := NewLockFreeRingBuffer[*[]byte](1024)
 
 	return &TurboQuantEncoder{
-		params:  TurboQuantParams{BitsPerAngle: bitsPerAngle, Seed: seed},
-		dims:    dims,
-		pow2:    pow2,
-		had:     simd.NewHadamardTransformer(pow2),
-		pool:    rb,
-		qjlPool: qb,
+		params:    TurboQuantParams{BitsPerAngle: bitsPerAngle, Seed: seed},
+		dims:      dims,
+		pow2:      pow2,
+		had:       simd.NewHadamardTransformer(pow2),
+		pool:      rb,
+		qjlPool:   qb,
+		codesPool: cb,
 	}
 }
 
@@ -80,6 +152,24 @@ func (e *TurboQuantEncoder) getQJLScratch(n int) *[]byte {
 
 func (e *TurboQuantEncoder) putQJLScratch(ptr *[]byte) {
 	e.qjlPool.Push(ptr)
+}
+
+// getCodesScratch returns a byte slice of at least n bytes for the decoded
+// angle codes. No clearing is needed: unpackAngleCodes writes every element.
+// The pooled header is resized in place so a hit costs no allocation.
+func (e *TurboQuantEncoder) getCodesScratch(n int) *[]byte {
+	if ptr, ok := e.codesPool.Pop(); ok {
+		if cap(*ptr) >= n {
+			*ptr = (*ptr)[:n]
+			return ptr
+		}
+	}
+	s := make([]byte, n)
+	return &s
+}
+
+func (e *TurboQuantEncoder) putCodesScratch(ptr *[]byte) {
+	e.codesPool.Push(ptr)
 }
 
 // Encode compresses a float32 vector into a TurboQuant byte stream.
@@ -162,6 +252,10 @@ func (e *TurboQuantEncoder) polarTransformRecursive(vec []float32, angles []floa
 	return e.polarTransformRecursive(nextRadii, angles[n/2:], stack)
 }
 
+// polarReconstructRecursive rebuilds the Cartesian vector from a radius and a
+// continuous angle list. Encode feeds it the raw atan2 output, which is not a
+// quantized grid point, so it must stay on math.Sincos: a code-indexed table
+// cannot represent it.
 func (e *TurboQuantEncoder) polarReconstructRecursive(radius float32, angles []float32, dst []float32, stack []float32) {
 	n := len(dst)
 	if n == 1 {
@@ -181,6 +275,30 @@ func (e *TurboQuantEncoder) polarReconstructRecursive(radius float32, angles []f
 		sin, cos := math.Sincos(float64(theta))
 		dst[2*i] = r * float32(cos)
 		dst[2*i+1] = r * float32(sin)
+	}
+}
+
+// polarReconstructCodes is the LUT counterpart of polarReconstructRecursive for
+// the decode path: the angles are quantized codes, so the sin/cos pair is a
+// single table lookup instead of a math.Sincos call.
+func (e *TurboQuantEncoder) polarReconstructCodes(radius float32, codes []byte, dst []float32, stack []float32) {
+	n := len(dst)
+	if n == 1 {
+		dst[0] = radius
+		return
+	}
+
+	stackOffset := e.pow2 - n
+	nextRadii := stack[stackOffset : stackOffset+n/2]
+
+	e.polarReconstructCodes(radius, codes[n/2:], nextRadii, stack)
+
+	lookup := tqPolarLUTFor(e.params.BitsPerAngle)
+	for i := 0; i < n/2; i++ {
+		r := nextRadii[i]
+		pair := 2 * int(codes[i])
+		dst[2*i] = r * lookup[pair]
+		dst[2*i+1] = r * lookup[pair+1]
 	}
 }
 
@@ -239,18 +357,21 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	angleBytes := (angleCount*e.params.BitsPerAngle + 7) / 8
 	qjlOffset := 4 + angleBytes
 
-	// Unpack Angles into workspace quadrant 4 (avoids per-call allocation).
+	// Unpack the quantized angle codes: Decode only needs the code, because the
+	// sin/cos grid is served by the LUT.
 	wsPtr := e.getWorkspace()
 	workspace := *wsPtr
 	defer e.putWorkspace(wsPtr)
 
-	angles := workspace[e.pow2*3 : e.pow2*3+angleCount]
-	e.unpackAngles(data[4:qjlOffset], angles)
+	codesPtr := e.getCodesScratch(angleCount)
+	codes := *codesPtr
+	defer e.putCodesScratch(codesPtr)
+	e.unpackAngleCodes(data[4:qjlOffset], codes)
 
 	// Reconstruct Cartesian using workspace quadrant 2 for recon, quadrant 3 for stack.
 	recon := workspace[e.pow2 : e.pow2*2]
 	stack := workspace[e.pow2*2 : e.pow2*3]
-	e.polarReconstructRecursive(radius, angles, recon, stack)
+	e.polarReconstructCodes(radius, codes, recon, stack)
 
 	// Apply QJL Correction
 	qjlBits := data[qjlOffset:]
@@ -285,7 +406,14 @@ func (e *TurboQuantEncoder) GetRadius(data []byte) float32 {
 }
 
 func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
-	bits := e.params.BitsPerAngle
+	unpackAngleValues(e.params.BitsPerAngle, src, dst)
+}
+
+// unpackAngleValues expands packed angle codes into their theta grid values,
+// i.e. code q of depth bits maps to float32(q)*(2*pi/(2^bits-1)) - pi as
+// computed by the depth's unpacker. The LUT in init is built from this, so the
+// two must stay in lockstep.
+func unpackAngleValues(bits int, src []byte, dst []float32) {
 	maxVal := float32((uint32(1) << bits) - 1)
 
 	// Optimized path for 4 and 8 bits
@@ -322,6 +450,56 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 		acc >>= bits
 		accBits -= uint(bits)
 		dst[i] = float32(q)*scale - math.Pi
+	}
+}
+
+// unpackAngleCodes extracts the raw quantized angle codes, the index of the
+// sin/cos pair polarReconstructCodes needs. It is the exact inverse of
+// packAngleCodes, so no trigonometry is evaluated here.
+func (e *TurboQuantEncoder) unpackAngleCodes(src []byte, dst []byte) {
+	bits := e.params.BitsPerAngle
+
+	switch bits {
+	case 8:
+		copy(dst, src)
+	case 4:
+		i := 0
+		for ; i+1 < len(dst); i += 2 {
+			b := src[i/2]
+			dst[i] = b & 0x0F
+			dst[i+1] = b >> 4
+		}
+		if i < len(dst) {
+			dst[i] = src[i/2] & 0x0F
+		}
+	case 2:
+		i := 0
+		for ; i+3 < len(dst); i += 4 {
+			b := src[i/4]
+			dst[i] = b & 0x03
+			dst[i+1] = (b >> 2) & 0x03
+			dst[i+2] = (b >> 4) & 0x03
+			dst[i+3] = b >> 6
+		}
+		for ; i < len(dst); i++ {
+			dst[i] = (src[i/4] >> (uint(i%4) * 2)) & 0x03
+		}
+	default:
+		// Bit-accumulator fallback for non-power-of-two depths (1,3,5,6,7).
+		var acc uint64
+		var accBits uint
+		byteIdx := 0
+		mask := uint64(1)<<bits - 1
+		for i := range dst {
+			for accBits < uint(bits) {
+				acc |= uint64(src[byteIdx]) << accBits // #nosec G115
+				byteIdx++
+				accBits += 8
+			}
+			dst[i] = byte(acc & mask) // #nosec G115 -- mask bounds the value to 8 bits
+			acc >>= bits
+			accBits -= uint(bits)
+		}
 	}
 }
 

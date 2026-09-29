@@ -254,7 +254,7 @@ func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSe
 
 		// Context check every 32 items
 		if i&31 == 0 {
-			metrics.HnswContextCheckTotal.Inc()
+			metrics.HnswContextCheckSharded.Inc()
 			select {
 			case <-ctx.Done():
 				return nil
@@ -271,21 +271,21 @@ func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSe
 		}
 		if dataset == nil {
 			found[i] = true
-			metrics.HnswBranchPredictionTotal.WithLabelValues("location_found").Inc()
+			hotpathBranchLocationFound.Inc()
 			continue
 		}
 
 		loc, ok := h.GetLocationForParallel(nodeID)
 		if ok {
-			metrics.HnswBranchPredictionTotal.WithLabelValues("location_found").Inc()
+			hotpathBranchLocationFound.Inc()
 			locations[i] = loc
 			found[i] = true
 		} else {
-			metrics.HnswBranchPredictionTotal.WithLabelValues("location_miss").Inc()
+			hotpathBranchLocationMiss.Inc()
 		}
 	}
 
-	metrics.PrefetchOperationsTotal.Add(float64(prefetchOps))
+	metrics.PrefetchOperationsSharded.Add(float64(prefetchOps))
 
 	// Step 2 & 3: Extract vectors and compute distances
 	dims := len(query)
@@ -348,7 +348,7 @@ func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSe
 
 	for i, n := range candidates {
 		if i&31 == 0 {
-			metrics.HnswContextCheckTotal.Inc()
+			metrics.HnswContextCheckSharded.Inc()
 			select {
 			case <-ctx.Done():
 				if dataset != nil {
@@ -389,10 +389,10 @@ func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSe
 					evaluators[loc.BatchIdx] = ev
 				}
 				if !ev.Matches(loc.RowIdx) {
-					metrics.HnswBranchPredictionTotal.WithLabelValues("filter_miss").Inc()
+					hotpathBranchFilterMiss.Inc()
 					continue
 				}
-				metrics.HnswBranchPredictionTotal.WithLabelValues("filter_match").Inc()
+				hotpathBranchFilterMatch.Inc()
 			}
 
 			err = h.ExtractVectorToBufferForParallel(rec, loc.RowIdx, dst)

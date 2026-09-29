@@ -398,13 +398,36 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 }
 
 func (c *float32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
-	dst = dst[:0]
-	for _, id := range ids {
-		dist, err := c.ComputeSingle(id)
+	if cap(dst) < len(ids) {
+		dst = make([]float32, len(ids))
+	} else {
+		dst = dst[:len(ids)]
+	}
+
+	// Resolve the arena slab table and the generation policy once for the whole
+	// batch instead of once per vector.
+	batch := c.data.BeginFloat32ChunkBatch(c.maxGen)
+	for i, id := range ids {
+		v := batch.Vector(types.ChunkID(id), int(id)%types.ChunkSize, c.dims)
+		if v == nil {
+			dist, err := c.ComputeSingle(id)
+			if err != nil {
+				return nil, err
+			}
+			dst[i] = dist
+			continue
+		}
+		var dist float32
+		var err error
+		if c.squared {
+			dist, err = c.h.distFuncSquared(c.q, v)
+		} else {
+			dist, err = c.h.distFunc(c.q, v)
+		}
 		if err != nil {
 			return nil, err
 		}
-		dst = append(dst, dist)
+		dst[i] = dist
 	}
 	return dst, nil
 }
@@ -498,20 +521,11 @@ func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]
 
 	// Collect indices of vectors that need to be loaded from disk
 	var diskLoads []int
+	batch := c.data.BeginFloat32ChunkBatch(c.maxGen)
 	for i, id := range ids {
-		cID := types.ChunkID(id)
-		var chunk []float32
-		if c.maxGen == 18446744073709551615 {
-			chunk = c.data.GetVectorsChunkFast(int(cID))
-		} else {
-			chunk = c.data.GetVectorsChunkWithGen(int(cID), c.maxGen)
-		}
-
-		if chunk != nil {
-			cOff := int(id) % types.ChunkSize
-			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat32)
-			start := cOff * pd
-			c.batchVecs[i] = chunk[start : start+len(c.q)]
+		v := batch.Vector(types.ChunkID(id), int(id)%types.ChunkSize, len(c.q))
+		if v != nil {
+			c.batchVecs[i] = v
 		} else {
 			diskLoads = append(diskLoads, i)
 		}
@@ -696,16 +710,13 @@ func (c *int8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, err
 	pd := c.data.GetPaddedDimsForType(types.VectorTypeInt8)
 	var lastChunkID int32 = -1
 	var chunk []int8
+	batch := c.data.BeginInt8ChunkBatch(c.maxGen)
 
 	for i, id := range ids {
 		cID := int32(types.ChunkID(id)) // #nosec G115
 		if cID != lastChunkID {
 			lastChunkID = cID
-			if c.maxGen == 18446744073709551615 {
-				chunk = c.data.GetVectorsInt8ChunkFast(int(cID))
-			} else {
-				chunk = c.data.GetVectorsInt8ChunkWithGen(int(cID), c.maxGen)
-			}
+			chunk = batch.Chunk(int(cID))
 		}
 		if chunk != nil {
 			cOff := int(id) % types.ChunkSize

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // shutdown state constants
@@ -14,6 +15,10 @@ const (
 	stateRunning  int32 = 0
 	stateShutdown int32 = 1
 )
+
+// hotpathFlushStopTimeout bounds the final publish of the sharded query hot
+// path metrics during shutdown.
+const hotpathFlushStopTimeout = 5 * time.Second
 
 // stopWorkers cancels the store context and stops background workers.
 func (s *VectorStore) stopWorkers() {
@@ -35,6 +40,14 @@ func (s *VectorStore) stopWorkers() {
 		// instead of waiting for the next time.Sleep tick.
 		if s.cancel != nil {
 			s.cancel()
+		}
+		// Publish what the sharded query hot path metrics still hold before the
+		// store goes away. The flusher goroutine only exists while a store holds
+		// a reference, so this is where it exits.
+		flushCtx, cancelFlush := context.WithTimeout(context.Background(), hotpathFlushStopTimeout)
+		defer cancelFlush()
+		if err := metrics.StopHotpathFlushers(flushCtx); err != nil {
+			s.logger.Warn().Err(err).Msg("Timed out stopping the hotpath metric flusher")
 		}
 	})
 }

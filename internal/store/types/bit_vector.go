@@ -17,12 +17,21 @@ func (bv BitVector) Set(i uint32) {
 	bv[i/64] |= (1 << (i % 64))
 }
 
-// Get returns true if the bit at index i is set.
-func (bv BitVector) Get(i uint32) bool {
-	if int(i/64) >= len(bv) {
+// Test reports whether the bit at index i is set. It is the membership
+// primitive for filter probing: a single indexed word load, one shift/mask and
+// one compare, with an out-of-range index answering false instead of panicking,
+// so callers can probe ids in traversal loops without a preceding bounds check.
+func (bv BitVector) Test(i uint32) bool {
+	w := i >> 6
+	if w >= uint32(len(bv)) { // #nosec G115 -- len is a non-negative slice length
 		return false
 	}
-	return (bv[i/64] & (1 << (i % 64))) != 0
+	return bv[w]&(1<<(i&63)) != 0
+}
+
+// Get returns true if the bit at index i is set.
+func (bv BitVector) Get(i uint32) bool {
+	return bv.Test(i)
 }
 
 // And performs bitwise AND between two bit vectors.

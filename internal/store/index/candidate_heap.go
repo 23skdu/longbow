@@ -22,7 +22,8 @@ func (h *MinCandidateHeap) Pop() any {
 	return x
 }
 
-// MinCandidateHeapAdapter makes a []types.Candidate a Min-Heap (closest on top)
+// MinCandidateHeapAdapter makes a []types.Candidate a Min-Heap (closest on top).
+// The flat backing slice is sifted as a 4-ary heap: parent (j-1)/4, children 4*i+1..4*i+4.
 type MinCandidateHeapAdapter []types.Candidate
 
 func (h MinCandidateHeapAdapter) Len() int           { return len(h) }
@@ -48,9 +49,9 @@ func (h *MinCandidateHeapAdapter) PopCandidate() types.Candidate {
 }
 
 func (h *MinCandidateHeapAdapter) up(j int) {
-	for {
-		i := (j - 1) / 2
-		if i == j || !h.Less(j, i) {
+	for j > 0 {
+		i := (j - 1) / 4
+		if !h.Less(j, i) {
 			break
 		}
 		h.Swap(i, j)
@@ -61,24 +62,31 @@ func (h *MinCandidateHeapAdapter) up(j int) {
 func (h *MinCandidateHeapAdapter) down(i0, n int) bool {
 	i := i0
 	for {
-		j1 := 2*i + 1
+		j1 := 4*i + 1
 		if j1 >= n || j1 < 0 {
 			break
 		}
-		j := j1
-		if j2 := j1 + 1; j2 < n && h.Less(j2, j1) {
-			j = j2
+		jEnd := j1 + 4
+		if jEnd > n {
+			jEnd = n
 		}
-		if !h.Less(j, i) {
+		best := j1
+		for j := j1 + 1; j < jEnd; j++ {
+			if h.Less(j, best) {
+				best = j
+			}
+		}
+		if !h.Less(best, i) {
 			break
 		}
-		h.Swap(i, j)
-		i = j
+		h.Swap(i, best)
+		i = best
 	}
 	return i > i0
 }
 
-// MaxCandidateHeapAdapter makes a []types.Candidate a Max-Heap (furthest on top)
+// MaxCandidateHeapAdapter makes a []types.Candidate a Max-Heap (furthest on top).
+// The flat backing slice is sifted as a 4-ary heap: parent (j-1)/4, children 4*i+1..4*i+4.
 type MaxCandidateHeapAdapter []types.Candidate
 
 func (h MaxCandidateHeapAdapter) Len() int           { return len(h) }
@@ -104,9 +112,9 @@ func (h *MaxCandidateHeapAdapter) PopCandidate() types.Candidate {
 }
 
 func (h *MaxCandidateHeapAdapter) up(j int) {
-	for {
-		i := (j - 1) / 2
-		if i == j || !h.Less(j, i) {
+	for j > 0 {
+		i := (j - 1) / 4
+		if !h.Less(j, i) {
 			break
 		}
 		h.Swap(i, j)
@@ -117,19 +125,25 @@ func (h *MaxCandidateHeapAdapter) up(j int) {
 func (h *MaxCandidateHeapAdapter) down(i0, n int) bool {
 	i := i0
 	for {
-		j1 := 2*i + 1
+		j1 := 4*i + 1
 		if j1 >= n || j1 < 0 {
 			break
 		}
-		j := j1
-		if j2 := j1 + 1; j2 < n && h.Less(j2, j1) {
-			j = j2
+		jEnd := j1 + 4
+		if jEnd > n {
+			jEnd = n
 		}
-		if !h.Less(j, i) {
+		best := j1
+		for j := j1 + 1; j < jEnd; j++ {
+			if h.Less(j, best) {
+				best = j
+			}
+		}
+		if !h.Less(best, i) {
 			break
 		}
-		h.Swap(i, j)
-		i = j
+		h.Swap(i, best)
+		i = best
 	}
 	return i > i0
 }

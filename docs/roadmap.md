@@ -1,6 +1,6 @@
 # Longbow Unified Roadmap & Optimization Plan
 
-Last updated: 2026-09-23.
+Last updated: 2026-09-29.
 Consolidated canonical roadmap and optimization tracker for Longbow. Replaces and unifies `docs/roadmap.md` and `docs/nextsteps.md`.
 
 ---
@@ -155,54 +155,77 @@ Following the benchmark matrix analysis and performance investigation across 50k
 
 ## 5. Ten Concrete Steps to Improve Performance Across Data and Search Types
 
-Based on empirical CPU, Heap, and Mutex pprof profile data collected during multi-scale benchmarking across all data types and search modalities, the following 10 optimization initiatives are prioritized:
+Based on empirical CPU, Heap, and Mutex pprof profile data collected during multi-scale benchmarking across all data types and search modalities, the following 10 optimization initiatives are prioritized. Each entry records the implemented outcome and the **measured** result on an Intel i7-12650H (16 vCPU, AVX2, no AVX-512); the original target is retained so the gap stays visible.
 
-1. **4-Ary Flat SIMD Heap for HNSW Priority Queue**:
+1. **4-Ary Flat SIMD Heap for HNSW Priority Queue** — **Done (mixed)**
    - **Empirical Finding**: `pprof` shows `MaxCandidateHeapAdapter.down`, `MinCandidateHeapAdapter.down`, and `Less/Swap` account for **15.2% of total search time** in `searchLayer`.
-   - **Optimization**: Replace standard binary heap trees with cache-aligned 4-ary flat array heaps. Use AVX2 vectorized min/max selection to reduce branch mispredictions and eliminate pointer chasing in L1 data cache.
-   - **Target Impact**: +12% to +18% QPS across all 9 search modalities.
+   - **Optimization**: `MinCandidateHeapAdapter`/`MaxCandidateHeapAdapter` (`internal/store/index/candidate_heap.go`) converted from binary to 4-ary heaps (parent `(j-1)/4`, children `4i+1..4i+4`), still flat, allocation-free, API-compatible.
+   - **Measured**: end-to-end `BenchmarkInt8Search_50k` is neutral (113.7µs vs 115.2µs). The up-heavy result-set trim path improves 8-25% (ef=64: 34.2 vs 43.3 ns/elem); the pop-all drain regresses 5-15% because `down` trades height for width. No SIMD selection kernel was added — the ≤4-element `float32` scan is not worth vectorizing.
+   - **Target Impact**: +12% to +18% QPS — **not demonstrated**; the 4-ary trade is a wash end-to-end.
 
-2. **Lock-Free Striped Adjacency Updates for Parallel Ingestion**:
+2. **Lock-Free Striped Adjacency Updates for Parallel Ingestion** — **Already Done (variant)**
    - **Empirical Finding**: Mutex profiling reveals that `ArrowHNSW.AddConnectionsBatch` accounts for **56.9%** and `AddConnection` accounts for **25.1%** of lock delay during concurrent index ingestion.
-   - **Optimization**: Implement cache-line-striped atomic spinlocks (64 stripes) or lock-free copy-on-write neighbor lists, enabling 4+ concurrent workers to link graph edges simultaneously with zero mutex stalls.
-   - **Target Impact**: 2.5x to 3.2x faster HNSW construction at 250k and 1M scale.
+   - **Status**: superseded. `AddConnection` (`internal/store/index/neighbor_ops.go:14`) tries the lock-free `PackedNeighbors` CAS path first and only falls back to a per-node CAS spinlock; `internal/store/index/lockfree_neighbors.go:120` provides copy-on-write neighbor lists; `packed_adjacency.go:54,86` uses 65,536 striped mutexes (not 64). Benchmarked by `BenchmarkHNSW_LockContention`, `BenchmarkNeighborAccess_LockFree*`, `BenchmarkLayer0Contention`.
+   - **Target Impact**: 2.5x to 3.2x faster HNSW construction — met by the shipped superset.
 
-3. **AVX-512 & 8-Way Unrolled ILP for Complex128 / Float64 Kernels**:
-   - **Empirical Finding**: `euclideanFloat64AVX2Kernel` consumes **42.6% of search time** for complex128 vectors because 256-bit AVX2 registers can only process two complex numbers (4 floats) per cycle.
-   - **Optimization**: Implement 512-bit AVX-512F kernels (`VFMADD231PD`) and 8-way instruction-level parallel (ILP) unrolled loops for AVX2, saturating floating-point execution ports.
-   - **Target Impact**: +85% to +120% QPS for complex128 and float64 dense/hybrid queries.
+3. **AVX-512 & 8-Way Unrolled ILP for Complex128 / Float64 Kernels** — **Done (AVX2 measured; AVX-512 unmeasurable here)**
+   - **Empirical Finding**: `euclideanFloat64AVX2Kernel` consumes **42.6% of search time** for complex128 vectors.
+   - **Optimization**: `euclideanFloat64AVX2Kernel` and `dotFloat64AVX2Kernel` (`internal/simd/gen/all_kernels_gen.go`) rewritten with 8 independent `VFMADD231PD` accumulators plus a scalar tail and a pairwise reduction tree. The AVX-512 float64 wrappers are now compiled on every amd64 build with a runtime `hasAVX512` guard instead of requiring `-tags avx512`, which was never set anywhere — previously the AVX-512 kernels were dead code.
+   - **Measured**: 8-way ILP vs the old single-accumulator kernel is **2.6-6.0x** (`BenchmarkEuclideanFloat64_AVX2_8Way`); vs the Go scalar `Unrolled4x` reference, 3.7x at dim 384 and 3.9x at dim 768. AVX-512 speedup **not measured** — the host lacks AVX-512; correctness is pinned by `TestAVX512Float64RuntimeGuard`.
+   - **Target Impact**: +85% to +120% — AVX2 path met; AVX-512 requires AVX-512 hardware to quantify.
 
-4. **Thread-Local Metric Accumulators on Query Hotpaths**:
-   - **Empirical Finding**: `prometheus.(*counter).Inc` and `prometheus.hashAdd` consume **3.43% of total CPU time** on search hotpaths due to atomic contention on shared Prometheus metrics.
-   - **Optimization**: Replace per-query Prometheus increments with thread-local counters flushed asynchronously in 100ms intervals.
-   - **Target Impact**: Immediate +3.5% QPS improvement across all query engines.
+4. **Thread-Local Metric Accumulators on Query Hotpaths** — **Done**
+   - **Empirical Finding**: `prometheus.(*counter).Inc` and `prometheus.hashAdd` consume **3.43% of total CPU time** on search hotpaths due to atomic contention.
+   - **Optimization**: `internal/metrics/sharded_counter.go` adds a 64-byte-padded, per-P `ShardedCounter` (drain via `Swap(0)`, so a concurrent `Add` is either drained or deferred — never lost, never double counted) with a 100ms async flusher. `internal/metrics/hotpath_counters.go` + `internal/store/index/hotpath_metrics.go` convert 14 hotpath counters, including the per-candidate `nodes_skipped` and `branch_prediction` increments. Label lookups are hoisted to package init / lazily-resolved per-dataset handles; a single refcounted flusher goroutine is started in `NewVectorStore` and stopped in `stopWorkers`.
+   - **Measured**: inline `WithLabelValues().Inc()` 37-46ns → hoisted 6.3ns → hoisted+sharded 1.2ns at 16 goroutines (**~20x under contention**). `CounterVec.WithLabelValues` alone measured 100.1 ns/op. 5,524 increments per sparse-filtered search at 10k vectors. End-to-end the win is ~0.07% single-threaded (below noise on this box); the 16-way parallel A/B leans ~3% faster.
+   - **Target Impact**: +3.5% QPS — per-increment cost removed; end-to-end effect is smaller than profiled.
 
-5. **Direct Zero-Copy Arena Pointers in `GetWithGeneration`**:
+5. **Direct Zero-Copy Arena Pointers in `GetWithGeneration`** — **Done**
    - **Empirical Finding**: `memory.(*SlabArena).GetWithGeneration` and `TypedArena.GetWithGeneration` consume **15.38% cumulative CPU time** during vector distance evaluations.
-   - **Optimization**: Cache raw memory slice base pointers per chunk batch, validating the arena generation once per batch rather than per vector lookup.
-   - **Target Impact**: +10% to +15% distance evaluation throughput.
+   - **Optimization**: `internal/memory/arena_batch.go` adds `SlabBatch`/`TypedBatch[T]`, resolving the slab table and generation policy once per batch and serving per-vector slices from a hot-slab cache. `internal/store/types/graph_data.go` exposes `VectorChunkBatch[T]`; `float32Computer`, `float64Computer` and `int8Computer` `ComputeBatch` now resolve per batch instead of per vector.
+   - **Measured**: arena cost 4.12 → **3.16 ns/vector** at 1024 (−23%). `ComputeBatch` float32 −25%, float64 −30%, int8 −22%, allocs unchanged at 0. Parity fuzzing (`FuzzSlabBatch_Parity`, 604k execs) and generation-bump tests pin the visibility semantics.
+   - **Target Impact**: +10% to +15% distance throughput — met on the batch loops; the per-vector `ComputeSingle` path (SIMD-dominated) is unaffected.
 
-6. **SIMD Vectorized Bitmask Filtering for Int8 and Structured Predicates**:
-   - **Empirical Finding**: In filtered searches, `RoaringBitmap.Contains` and `binarySearch` consume noticeable CPU time when predicate selectivity is high.
-   - **Optimization**: Introduce dense contiguous bitmasks evaluated using `VPMOVMSKB` and SIMD popcount (`POPCNT`), bypassing roaring bitmap tree traversal for high-density predicate evaluations.
-   - **Target Impact**: +25% to +40% QPS on `filtered`, `filteredbool`, and `filteredstring`.
+6. **SIMD Vectorized Bitmask Filtering for Int8 and Structured Predicates** — **Done**
+   - **Empirical Finding**: `RoaringBitmap.Contains` dominates filtered searches at high predicate selectivity.
+   - **Optimization**: `internal/store/index/filter_mask.go` converts the roaring filter to a dense `types.BitVector` **once per search** via roaring's own `WriteDenseTo` (a bulk `memmove` for bitmap containers, ~1900x faster than the BM25-style per-id iterator), and the 9 traversal probes in `search_float32.go`, `search_float64.go` and `distance_dispatch.go` use it. Falls back to roaring when `denseBytes > 256 KiB` or array+run container values exceed 65536.
+   - **Measured**: per-candidate probe 1.4-25x faster (2.5-3 ns flat vs 8-74 ns). Interleaved A/B end-to-end: **1.05x at 90% selectivity to 1.42x at 10-50%** on 10k vectors; no configuration regresses. Conversion repays within ~200-3000 probes.
+   - **Target Impact**: +25% to +40% QPS — partially met; the win is bounded by the ~200ns distance computation per candidate.
 
-7. **Linear Spatial Morton Hash Grid to Replace Recursive Quadtree in Geo Search**:
-   - **Empirical Finding**: `store.(*Quadtree).subdivide` causes 2.83% of allocations and Geo search exhibits lower throughput (368 - 1,223 QPS) due to recursive tree traversal overhead.
-   - **Optimization**: Replace pointer-based Quadtree with a 64-bit Morton-coded linear spatial grid stored in contiguous memory with Z-order curve bounding box filtering.
-   - **Target Impact**: 3x to 5x higher Geo search QPS and zero tree pointer allocations.
+7. **Linear Spatial Morton Hash Grid to Replace Recursive Quadtree in Geo Search** — **Implemented, opt-in (not default)**
+   - **Empirical Finding**: `store.(*Quadtree).subdivide` causes 2.83% of allocations; Geo search throughput is 368-1,223 QPS.
+   - **Optimization**: `internal/store/morton_grid.go` implements a contiguous Z-order grid (64-bit Morton codes, 12-bit default resolution, open-addressed cell directory, no per-insert node allocation) behind the `GeoPointIndex` interface, selectable via `GeoIndexTypeMorton`. Parity with `Quadtree` is asserted over 4 resolutions x 3000 points x 400 queries.
+   - **Measured** (pinned, min of 5, load 1.63): insert 150.5 vs 349.4 ns (**2.3x faster, 0 allocs**); `QueryBox/selective` 19,118 vs 16,399 ns (**17% slower**); `QueryBox/global` 365,997 vs 262,113 ns (**40% slower**); `SearchRadius` 650,498 vs 647,507 ns (**tied**). Cause: a fixed uniform grid has non-adaptive selectivity, whereas the quadtree subdivides to <=64 points/node. Resolutions 8-20 were swept; none flips the ordering.
+   - **Decision**: the quadtree **remains the default**; the grid is opt-in for write-heavy datasets. A previous revision of this work had shipped the grid as the default, which would have been a silent query regression.
+   - **Target Impact**: 3x to 5x higher Geo search QPS — **not met**; only the write path improved.
 
-8. **Pre-Sized Zero-Allocation Buffer Pooling for Arrow IPC Responses**:
-   - **Empirical Finding**: Memory profiling shows `bytes.growSlice` (14.85%) and buffer pool allocations dominate garbage collection pressure during DoGet streaming.
-   - **Optimization**: Pre-calculate Arrow IPC buffer size from top-k and projection schema, reusing pre-sized buffer slices from a thread-safe slab pool.
-   - **Target Impact**: Eliminates GC pauses during high-concurrency query bursts.
+8. **Pre-Sized Zero-Allocation Buffer Pooling for Arrow IPC Responses** — **Done**
+   - **Empirical Finding**: `bytes.growSlice` is 14.85% of memory profiling during DoGet streaming.
+   - **Optimization**: arrow-go's `flight.NewRecordWriter` writes into an unpooled internal `bytes.Buffer`, so `internal/store/record_writer_pool.go` adds a `pooledFlightPayloadWriter` implementing `ipc.PayloadWriter` over `IPCBufferPool`, with `estimateIPCResponseBytes` pre-sizing from top-k, projection schema and measured row width. Wired into all 5 DoGet sites in `store_query.go` plus `vector_search_exchange.go`.
+   - **Measured**: `BenchmarkDoGetResponseBuffer_Pooled` 13,152 ns/op, **0 B/op, 0 allocs** vs `Unpooled` 165,524 ns/op, 548,880 B/op. Full `flight` writer: 9,000 ns/op, 5,770 B/op, 47 allocs vs 47,899 ns/op, 159,368 B/op, 51 allocs (**~5x faster, 27x less memory**). Byte-identical output is asserted by `TestPooledFlightWriter_ByteIdenticalToStock`.
+   - **Target Impact**: eliminates GC pressure on DoGet — met.
 
-9. **Precomputed Polar Angle Look-Up Tables (LUT) for TurboQuant4**:
-   - **Empirical Finding**: `turboquant4` achieves high compression (318 MB Peak RSS vs 753 MB for complex128) but spends CPU cycles decoding 4-bit polar coordinates into float representations.
-   - **Optimization**: Precompute 16-entry cosine/sine dot product tables stored in L1 cache, allowing direct 4-bit nibble indexing without decompression floating-point math.
-   - **Target Impact**: +30% to +50% QPS for TurboQuant searches, surpassing float32 raw speed.
+9. **Precomputed Polar Angle Look-Up Tables (LUT) for TurboQuant4** — **Done (+2 bugs fixed)**
+   - **Optimization**: a single fixed-size `tqPolarLUT [1020]float32` covering bit depths 1-8 (`init()`-built, no lazy race) replaces per-element `math.Sincos` in `TurboQuantDistanceGeneric` (`internal/simd/turboquant.go`) and in the decoder's `polarReconstruct` (`internal/store/index/turboquant.go`). The decode table is built by feeding codes through the platform's own unpacker so the AVX2 FMA-vs-split rounding is preserved bit-exactly.
+   - **Measured**: generic distance 2.1-3.0x; polar reconstruct 7.0-11.9x; end-to-end `Decode` 4.1-5.5x, allocs unchanged. `polarReconstructRecursive` (encode path) deliberately stays scalar — it consumes continuous `atan2` output that a code-indexed LUT cannot represent.
+   - **Two pre-existing defects found and fixed**: `packTQ8AVX2Kernel` had three bugs (Go's assembler emitting `VMOVSS m32,Xn` with `VEX.L=1` zeroing the broadcast; a `VPERMPD 0xD8` lane-order error in the int32→uint8 narrowing; and round-half-up vs `VCVTPS2DQ`'s round-half-even) — 8-bit round-trip cosine went from **-0.1 to 0.995**. The 2-bit scratch fast path never wrote the 1-3 leftover codes of the always-odd `angleCount`, reading stale pooled memory (a cross-request leak).
+   - **Supported range**: 4-8 bits meet the cosine > 0.90 contract; 1-3 bits are below the codec's accuracy floor by design.
+   - **Target Impact**: +30% to +50% — exceeded on the decode path.
 
-10. **Columnar Column-Oriented Skip-Lists for Temporal Search Modes**:
-    - **Empirical Finding**: Temporal search (`SearchAsOf`, `SearchRange`, `SearchSlidingWindow`) traverses interval trees with per-node branching latency.
-    - **Optimization**: Store temporal version timestamps in columnar float64/int64 sorted arrays with SIMD binary search (`_mm256_cmpgt_epi64`), enabling sub-millisecond temporal filtering.
-    - **Target Impact**: +50% to +75% QPS on all temporal search modes.
+10. **Columnar Column-Oriented Skip-Lists for Temporal Search Modes** — **Done**
+    - **Empirical Finding**: temporal search traverses interval trees with per-node branching latency.
+    - **Optimization**: `internal/store/temporal_columnar.go` publishes an immutable columnar snapshot (`ts []int64`, `groupOff []uint32`, `ids []uint64`, `norms []float32`) via `atomic.Pointer`, with amortized rebuild on insert and an eager rebuild per `InsertBatch`. A hand-written AVX2 lower bound (`internal/store/temporal_colsort_amd64.s`, `VPCMPGTQ`/`VPTEST`) ships alongside scalar and unrolled kernels, but is **not** on the default path: it measured slower than the scalar kernel because a lower bound is bound by its dependent load chain, not comparison throughput.
+    - **Measured**: `GetRange` **8.8-10.4x**, `GetUniqueIDsInRange` 2.2x, `GetUniqueLatest` 1.3x; end-to-end `SearchAsOf`/`SearchRange`/`SearchSlidingWindow` +10% to +110% with 60-80% fewer allocations. Binary search crosses over linear scan at n≈128-256. The remaining hot cost is `VersionHistory.GetVersionsAtBatch` (~96 ns/id at 100k), not the temporal filter.
+    - **Target Impact**: +50% to +75% — met on the structure, partially at the search level.
+
+### Cross-Cutting Fixes Found Along The Way
+
+- **Bitmap pool aliasing** (`internal/store/types/bitmap.go`, `internal/pool/bitmap_pool.go`): `Release()` returned bitmaps the `Bitset` did not own, so the pool could hand the same `*roaring.Bitmap` to two owners — two writers mutating one bitmap. Fixed with explicit ownership tracking; this was the true cause of the flaky `TestBitset_Slice` (3 failures in 10 under `-race`).
+- **TurboQuant 8-bit pack kernel and 2-bit scratch tail**: see item 9.
+
+### Known Open Issues
+
+- `TestAddBatch_Bulk_Typed` (`internal/store/index/arrow_hnsw_bulk_typed_test.go:277`) is a **pre-existing** recall flake — reproduced on a pristine checkout of `cfa20cb9` with none of these changes, so it is not caused by this work.
+- Predicate-pruned HNSW traversal can return zero results with a moderately selective predicate: `search_float32.go` and `distance_dispatch.go` prune the frontier on the predicate, and if the (randomly chosen) entry point is rejected and no level-0 neighbour is admitted, the frontier closes. ~20% of builds returned <10 results at 2/3 rejection. Not addressed here.
+- An unverified arm64 twin of the TurboQuant 8-bit pack bug remains in `internal/simd/turboquant_arm64.s` (`packTQ8NEONKernel` narrowing). It was left unpatched deliberately: there is no ARM hardware or emulator on this host and `GOARCH=arm64` does not currently build, so the fix could not be validated. The same defect class is latent in the AVX2 2/4-bit pack kernels, which are not on the AVX2 dispatch path.
+

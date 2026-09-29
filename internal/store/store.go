@@ -226,6 +226,10 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		resultPool:   NewSearchResultPool(),
 	}
 	vs.ctx, vs.cancel = context.WithCancel(context.Background()) // #nosec G118
+	// Publish the sharded query hot path metrics while this store is alive. The
+	// flusher is reference counted and process wide, so a second store reuses it
+	// instead of starting another one.
+	metrics.StartHotpathFlushers()
 	vs.evictionManager = lbcore.NewGraphLayerEvictionManager(0.60, logger)
 
 	// Initialize NUMA topology if on Linux

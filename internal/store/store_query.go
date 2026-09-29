@@ -18,7 +18,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/23skdu/longbow/internal/cache"
@@ -497,7 +496,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	// Use standard Flight RecordWriter to stream results
 	// This efficiently handles schema (first message) and subsequent batches
 	// without intermediate copying or manual chunk management.
-	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	writer := newDoGetRecordWriter(stream, schema, minChunkRows, int(avgRowSize))
 	defer func() { _ = writer.Close() }()
 
 	// Consume Results (Sequential Write)
@@ -986,7 +985,11 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 
 	schema := arrow.NewSchema(fields, nil)
 
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	measuredRowBytes := 0
+	if req.IncludeVectors && len(req.Vector) > 0 {
+		measuredRowBytes = 16 + len(req.Vector)*4
+	}
+	w := newDoGetRecordWriter(stream, schema, len(searchResults), measuredRowBytes)
 	defer func() { _ = w.Close() }()
 
 	builder := array.NewRecordBuilder(pool, schema)
@@ -1232,7 +1235,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 		}
 	}()
 
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(builder.Schema()))
+	w := newDoGetRecordWriter(stream, builder.Schema(), len(results), 0)
 	defer func() { _ = w.Close() }()
 
 	idBuilder := builder.Field(0).(*array.StringBuilder)
@@ -1277,7 +1280,7 @@ func (s *VectorStore) handleDoGetRecommend(req *qry.RecommendRequest, stream fli
 		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
 	}, nil)
 
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	w := newDoGetRecordWriter(stream, schema, len(results), 0)
 	defer func() { _ = w.Close() }()
 
 	builder := array.NewRecordBuilder(mem, schema)
@@ -1533,7 +1536,7 @@ func (s *VectorStore) streamSearchResults(results []types.SearchResult, windowFu
 	}
 
 	schema := arrow.NewSchema(fields, nil)
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	w := newDoGetRecordWriter(stream, schema, len(results), 0)
 	defer func() { _ = w.Close() }()
 
 	builder := array.NewRecordBuilder(mem, schema)

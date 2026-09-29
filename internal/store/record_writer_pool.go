@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
 )
 
 // =============================================================================
@@ -132,4 +136,111 @@ func (p *IPCBufferPool) Reset() {
 	atomic.StoreInt64(&p.puts, 0)
 	atomic.StoreInt64(&p.misses, 0)
 	atomic.StoreInt64(&p.discarded, 0)
+}
+
+// GetSized returns a reset buffer with capacity for at least size bytes,
+// growing a pooled buffer only when the requested size does not already fit.
+// size is clamped to MaxBufferSize so an oversized estimate cannot pin an
+// unbounded buffer in the pool.
+func (p *IPCBufferPool) GetSized(size int) *bytes.Buffer {
+	buf := p.Get()
+	if size <= 0 {
+		return buf
+	}
+	if p.config.MaxBufferSize > 0 && size > p.config.MaxBufferSize {
+		size = p.config.MaxBufferSize
+	}
+	if buf.Cap() < size {
+		buf.Grow(size)
+	}
+	return buf
+}
+
+const (
+	ipcSchemaMessageBytes   = 1024
+	ipcRecordMessageBytes   = 1024
+	ipcFieldMetadataBytes   = 64
+	defaultVarWidthRowBytes = 64
+)
+
+var doGetIPCBufferPool = NewIPCBufferPool(DefaultRecordWriterPoolConfig())
+
+func estimateIPCResponseBytes(rows int, schema *arrow.Schema, measuredBytesPerRow int) int {
+	if rows < 0 {
+		rows = 0
+	}
+	numFields := 0
+	if schema != nil {
+		numFields = schema.NumFields()
+	}
+	perRow := 0
+	if measuredBytesPerRow > 0 {
+		perRow = measuredBytesPerRow
+	} else {
+		for i := 0; i < numFields; i++ {
+			perRow += estimateFieldBytes(schema.Field(i).Type)
+		}
+	}
+	return ipcSchemaMessageBytes + ipcRecordMessageBytes + numFields*ipcFieldMetadataBytes + rows*perRow
+}
+
+func estimateFieldBytes(t arrow.DataType) int {
+	if t == nil || t.ID() == arrow.NULL {
+		return 0
+	}
+	switch dt := t.(type) {
+	case *arrow.FixedSizeBinaryType:
+		return int(dt.ByteWidth)
+	case *arrow.FixedSizeListType:
+		return int(dt.Len()) * estimateFieldBytes(dt.Elem())
+	}
+	if ft, ok := t.(arrow.FixedWidthDataType); ok {
+		return (ft.BitWidth() + 7) / 8
+	}
+	return defaultVarWidthRowBytes
+}
+
+type pooledFlightPayloadWriter struct {
+	w    flight.DataStreamWriter
+	fd   flight.FlightData
+	buf  *bytes.Buffer
+	pool *IPCBufferPool
+}
+
+func (p *pooledFlightPayloadWriter) Start() error { return nil }
+
+func (p *pooledFlightPayloadWriter) WritePayload(payload ipc.Payload) error {
+	m := payload.Meta()
+	defer m.Release()
+
+	p.fd.DataHeader = m.Bytes()
+	p.buf.Reset()
+
+	if err := payload.SerializeBody(p.buf); err != nil {
+		return err
+	}
+	p.fd.DataBody = p.buf.Bytes()
+
+	err := p.w.Send(&p.fd)
+	p.fd.FlightDescriptor = nil
+	return err
+}
+
+func (p *pooledFlightPayloadWriter) Close() error {
+	p.pool.Put(p.buf)
+	p.buf = nil
+	return nil
+}
+
+func newRecordWriterWithPool(pool *IPCBufferPool, stream flight.DataStreamWriter, schema *arrow.Schema, rows, measuredBytesPerRow int) *ipc.Writer {
+	pw := &pooledFlightPayloadWriter{
+		w:    stream,
+		pool: pool,
+		buf:  pool.GetSized(estimateIPCResponseBytes(rows, schema, measuredBytesPerRow)),
+	}
+	return ipc.NewWriterWithPayloadWriter(pw, ipc.WithSchema(schema))
+}
+
+func newDoGetRecordWriter(stream flight.DataStreamWriter, schema *arrow.Schema, rows, measuredBytesPerRow int) *ipc.Writer {
+	return newRecordWriterWithPool(doGetIPCBufferPool, stream, schema, rows, measuredBytesPerRow)
 }

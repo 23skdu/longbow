@@ -294,6 +294,17 @@ type TemporalTree struct {
 	minTs      int64
 	maxTs      int64
 	nodeCount  atomic.Uint32
+
+	// columnar holds the immutable struct-of-arrays snapshot that backs the
+	// range/predicate queries. columnarDirty is set before any arena mutation
+	// so a snapshot is never served while it is missing an insert; see
+	// temporal_columnar.go.
+	columnar       atomic.Pointer[temporalColumnarIndex]
+	columnarDirty  atomic.Bool
+	columnarStale  atomic.Int64
+	columnarMisses atomic.Int64
+	columnarBuild  sync.Mutex
+	columnarOff    atomic.Bool
 }
 
 // NewTemporalTree creates a new TemporalTree instance with an optional arena.
@@ -331,6 +342,8 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 // cursor, if non-nil, provides a hint for the leaf index to start searching from
 // and is updated to the leaf where the entry was placed.
 func (tt *TemporalTree) insertEntryNoLock(timestamp int64, entry TemporalEntry, cursor *int) {
+	tt.markColumnarDirty()
+
 	if timestamp < tt.minTs {
 		tt.minTs = timestamp
 	}
@@ -537,16 +550,22 @@ func (tt *TemporalTree) InsertBatch(timestamps []int64, ids []uint64, norms []fl
 	})
 
 	tt.mu.Lock()
-	defer tt.mu.Unlock()
 
 	cursor := -1
 	for _, e := range entries {
 		tt.insertEntryNoLock(e.ts, TemporalEntry{ID: e.id, Norm: e.norm}, &cursor)
 	}
+	tt.mu.Unlock()
+
+	// A batch is the natural amortization point for a columnar snapshot rebuild,
+	// so refresh eagerly instead of leaving the tree on the chunked path until
+	// the lazy staleness budget runs out.
+	tt.rebuildColumnarIndex()
 }
 
-// GetRange returns all vector IDs within the specified timestamp range.
-func (tt *TemporalTree) GetRange(start, end int64) []uint64 {
+// getRangeChunked is the reference chunk walk served when no fresh columnar
+// snapshot is available. GetRange is the public entry point.
+func (tt *TemporalTree) getRangeChunked(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
@@ -591,8 +610,9 @@ func (tt *TemporalTree) GetRange(start, end int64) []uint64 {
 	return results
 }
 
-// GetRangeReversed returns all vector IDs within the specified timestamp range in descending order.
-func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
+// getRangeReversedChunked is the reference chunk walk served when no fresh
+// columnar snapshot is available.
+func (tt *TemporalTree) getRangeReversedChunked(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
@@ -643,9 +663,9 @@ func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
 	return results
 }
 
-// GetUniqueIDsInRange returns unique vector IDs within the specified timestamp range,
-// keeping only the most recent version of each ID.
-func (tt *TemporalTree) GetUniqueIDsInRange(start, end int64) []uint64 {
+// getUniqueIDsInRangeChunked is the reference chunk walk served when no fresh
+// columnar snapshot is available.
+func (tt *TemporalTree) getUniqueIDsInRangeChunked(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
@@ -713,8 +733,9 @@ func (tt *TemporalTree) GetAfter(timestamp int64) []uint64 {
 	return tt.GetRange(timestamp+1, math.MaxInt64)
 }
 
-// GetEarliest returns the vector IDs from the first n timestamps.
-func (tt *TemporalTree) GetEarliest(n int) []uint64 {
+// getEarliestChunked is the reference chunk walk served when no fresh columnar
+// snapshot is available.
+func (tt *TemporalTree) getEarliestChunked(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
@@ -744,8 +765,9 @@ func (tt *TemporalTree) GetEarliest(n int) []uint64 {
 	return results
 }
 
-// GetLatest returns the vector IDs from the last n timestamps.
-func (tt *TemporalTree) GetLatest(n int) []uint64 {
+// getLatestChunked is the reference chunk walk served when no fresh columnar
+// snapshot is available.
+func (tt *TemporalTree) getLatestChunked(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
@@ -775,8 +797,9 @@ func (tt *TemporalTree) GetLatest(n int) []uint64 {
 	return results
 }
 
-// GetUniqueLatest returns the n most recent unique vector IDs.
-func (tt *TemporalTree) GetUniqueLatest(n int) []uint64 {
+// getUniqueLatestChunked is the reference chunk walk served when no fresh
+// columnar snapshot is available.
+func (tt *TemporalTree) getUniqueLatestChunked(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 

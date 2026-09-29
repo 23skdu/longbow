@@ -62,6 +62,10 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 	ctx.resultSet = ctx.resultSet[:0]
 	ctx.visited.Clear()
 
+	// Hoist the filter probe out of the traversal loop: a nil mask means the
+	// search is unfiltered.
+	fm := ctx.filterMask
+
 	minHeap := (*MinCandidateHeapAdapter)(&ctx.candidates)
 	resultSetAdapter := (*MaxCandidateHeapAdapter)(&ctx.resultSet)
 
@@ -69,7 +73,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 	minHeap.PushCandidate(epCand)
 
 	passes := true
-	if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(entryPoint) {
+	if fm != nil && !fm.allows(entryPoint) {
 		passes = false
 	}
 	if passes && h.IsDeleted(entryPoint) {
@@ -91,7 +95,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 		}
 
 		if ctx.visitedNodesBudget > 0 && ctx.nodesVisitedCount >= ctx.visitedNodesBudget {
-			metrics.HNSWEarlyTerminationTotal.WithLabelValues("budget_exceeded").Inc()
+			hotpathEarlyTerminationBudget.Inc()
 			break
 		}
 
@@ -176,13 +180,14 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 
 			if len(batch) > 0 {
 				results := ctx.EvaluatePredicateBatch(batch)
+				skipped := h.hotpath.NodesSkippedCounter(h.name)
 
 				var validBatch []uint32
 				for i, n := range batch {
 					if results[i] == 1 {
 						validBatch = append(validBatch, n)
 					} else {
-						metrics.HNSWNodesSkippedTotal.WithLabelValues(h.name).Inc()
+						skipped.Inc()
 					}
 				}
 
@@ -194,7 +199,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 							chunkEnd = len(validBatch)
 						}
 						block := validBatch[chunkStart:chunkEnd]
-						metrics.CacheBlockedTraversalChunksTotal.Inc()
+						metrics.CacheBlockedTraversalChunksSharded.Inc()
 
 						// Prefetch candidate vectors in next tile
 						if chunkEnd < len(validBatch) {
@@ -220,7 +225,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 								cand := types.Candidate{ID: n, Dist: d}
 								minHeap.PushCandidate(cand)
 
-								if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+								if fm != nil && !fm.allows(n) {
 									continue
 								}
 								if h.IsDeleted(n) {
@@ -264,7 +269,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 						chunkEnd = len(batch)
 					}
 					block := batch[chunkStart:chunkEnd]
-					metrics.CacheBlockedTraversalChunksTotal.Inc()
+					metrics.CacheBlockedTraversalChunksSharded.Inc()
 
 					// Prefetch candidate vectors in next tile
 					if chunkEnd < len(batch) {
@@ -291,7 +296,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 
 							minHeap.PushCandidate(cand)
 
-							if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+							if fm != nil && !fm.allows(n) {
 								continue
 							}
 							if h.deleted != nil && h.deleted.Contains(n) {

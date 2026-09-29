@@ -39,6 +39,7 @@ DATA tq_half<>+0x00(SB)/4, $0.5
 DATA tq_max8<>+0x00(SB)/4, $255.0
 DATA tq_max4<>+0x00(SB)/4, $15.0
 DATA tq_max2<>+0x00(SB)/4, $3.0
+DATA tq_one<>+0x00(SB)/4, $1.0
 
 GLOBL tq_pi<>(SB), RODATA, $4
 GLOBL tq_inv2pi<>(SB), RODATA, $4
@@ -46,6 +47,7 @@ GLOBL tq_half<>(SB), RODATA, $4
 GLOBL tq_max8<>(SB), RODATA, $4
 GLOBL tq_max4<>(SB), RODATA, $4
 GLOBL tq_max2<>(SB), RODATA, $4
+GLOBL tq_one<>(SB), RODATA, $4
 
 // Control masks for VPMULTISHIFTQB packing (TQ2)
 // Each qword lane has 8 bytes. We want to extract 2 bits from each and pack into 2 bytes.
@@ -379,129 +381,114 @@ done_tq8:
     VZEROUPPER
     RET
 
-// Pack kernels are harder to implement with SIMD because they involve quantization (norm, Pi, etc).
-// We'll leave them as stubs for now or implement scalar in assembly if needed.
-// Actually, I'll implement them in Go for now as I did in simd.go.
 // func packTQ8AVX2Kernel(src, dst unsafe.Pointer, n int)
+//
+// q = byte(clamp((v + PI) * (1/2PI), 0, 1) * 255 + 0.5), one byte per element.
+//
+// Two register-aliasing traps are worth spelling out, because both silently
+// corrupt the codes rather than faulting:
+//
+//   - The constants are broadcast straight from memory. The two-operand
+//     "VMOVSS m32, Xn" form is assembled with VEX.L=1, i.e. as the 256-bit
+//     variant, which zeroes bits [255:32] of the destination YMM. Chaining
+//     "load into X0, broadcast X0 into Yk" therefore destroys the broadcast
+//     the previous instruction installed, and the quantizer loses its +PI
+//     step on every lane but the first.
+//   - The VEXTRACTI128 scratch is X5, never X0..X6: Xk is the low half of Yk,
+//     so extracting into X6 would replace the upper half of the clamp
+//     constant Y6 and collapse every later element to code 0.
+//
+// VROUNDPS makes the conversion an explicit floor so the kernel is
+// bit-identical to PackTQ8Generic's byte(x + 0.5); VCVTPS2DQ alone would round
+// to nearest and skew almost every code by +1.
 TEXT ·packTQ8AVX2Kernel(SB), NOSPLIT, $0-24
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
-    
-    VMOVSS  tq_pi<>(SB), X0
-    VBROADCASTSS X0, Y0 // PI
-    VMOVSS  tq_inv2pi<>(SB), X0
-    VBROADCASTSS X0, Y1 // 1/2PI
-    VMOVSS  tq_max8<>(SB), X0
-    VBROADCASTSS X0, Y2 // 255.0
-    VMOVSS  tq_half<>(SB), X0
-    VBROADCASTSS X0, Y3 // 0.5
-    
-    VPXOR   Y4, Y4, Y4  // 0.0
-    VMOVSS  $1.0, X6
-    VBROADCASTSS X6, Y6 // 1.0
-    
+
+    VBROADCASTSS tq_pi<>(SB), Y0
+    VBROADCASTSS tq_inv2pi<>(SB), Y1
+    VBROADCASTSS tq_max8<>(SB), Y2
+    VBROADCASTSS tq_half<>(SB), Y3
+    VPXOR   Y4, Y4, Y4
+    VBROADCASTSS tq_one<>(SB), Y6
+
 loop_pack8:
-    CMPQ    CX, $32
-    JL      tail_pack8_outer
-    
-    // Process 32 elements (4 YMMs) -> 32 bytes
+    CMPQ    CX, $16
+    JL      tail_pack8_small
+
+    // 16 elements (two 8-lane groups) -> 16 bytes
     VMOVDQU (SI), Y7
     VMOVDQU 32(SI), Y8
-    VMOVDQU 64(SI), Y9
-    VMOVDQU 96(SI), Y10
-    
-    // Quantize Y7
+
     VADDPS  Y0, Y7, Y7
     VMULPS  Y1, Y7, Y7
     VMAXPS  Y4, Y7, Y7
     VMINPS  Y6, Y7, Y7
     VMULPS  Y2, Y7, Y7
     VADDPS  Y3, Y7, Y7
+    VROUNDPS $1, Y7, Y7
     VCVTPS2DQ Y7, Y7
-    
-    // Quantize Y8
+
     VADDPS  Y0, Y8, Y8
     VMULPS  Y1, Y8, Y8
     VMAXPS  Y4, Y8, Y8
     VMINPS  Y6, Y8, Y8
     VMULPS  Y2, Y8, Y8
     VADDPS  Y3, Y8, Y8
+    VROUNDPS $1, Y8, Y8
     VCVTPS2DQ Y8, Y8
-    
-    // Quantize Y9
-    VADDPS  Y0, Y9, Y9
-    VMULPS  Y1, Y9, Y9
-    VMAXPS  Y4, Y9, Y9
-    VMINPS  Y6, Y9, Y9
-    VMULPS  Y2, Y9, Y9
-    VADDPS  Y3, Y9, Y9
-    VCVTPS2DQ Y9, Y9
-    
-    // Quantize Y10
-    VADDPS  Y0, Y10, Y10
-    VMULPS  Y1, Y10, Y10
-    VMAXPS  Y4, Y10, Y10
-    VMINPS  Y6, Y10, Y10
-    VMULPS  Y2, Y10, Y10
-    VADDPS  Y3, Y10, Y10
-    VCVTPS2DQ Y10, Y10
 
-    // Pack Y7, Y8 -> X7 (16 bytes)
-    VPERMPD $0xD8, Y7, Y7
-    VPERMPD $0xD8, Y8, Y8
-    VEXTRACTI128 $0, Y7, X11
-    VEXTRACTI128 $1, Y7, X12
-    VPACKUSDW X12, X11, X11
-    VEXTRACTI128 $0, Y8, X13
-    VEXTRACTI128 $1, Y8, X14
-    VPACKUSDW X14, X13, X13
-    VPACKUSWB X13, X11, X11
-    VMOVDQU X11, (DI)
-    
-    // Pack Y9, Y10 -> X9 (16 bytes)
-    VPERMPD $0xD8, Y9, Y9
-    VPERMPD $0xD8, Y10, Y10
-    VEXTRACTI128 $0, Y9, X11
-    VEXTRACTI128 $1, Y9, X12
-    VPACKUSDW X12, X11, X11
-    VEXTRACTI128 $0, Y10, X13
-    VEXTRACTI128 $1, Y10, X14
-    VPACKUSDW X14, X13, X13
-    VPACKUSWB X13, X11, X11
-    VMOVDQU X11, 16(DI)
-    
-    ADDQ    $128, SI
-    ADDQ    $32, DI
-    SUBQ    $32, CX
+    // Narrow 8 codes to 8 bytes, in element order: the extracted upper lane
+    // feeds the high half of VPACKUSDW, and VPACKUSWB then reads the low 4
+    // codes of each half.
+    VEXTRACTI128 $1, Y7, X5
+    VPACKUSDW  Y5, Y7, Y7
+    VPACKUSWB  X7, X7, X7
+    VMOVQ      X7, (DI)
+
+    VEXTRACTI128 $1, Y8, X5
+    VPACKUSDW  Y5, Y8, Y8
+    VPACKUSWB  X8, X8, X8
+    VMOVQ      X8, 8(DI)
+
+    ADDQ    $64, SI
+    ADDQ    $16, DI
+    SUBQ    $16, CX
     JMP     loop_pack8
 
-tail_pack8_outer:
-loop_pack8_small:
+tail_pack8_small:
     CMPQ    CX, $8
     JL      tail_pack8
-    VMOVDQU (SI), Y5
-    VADDPS  Y0, Y5, Y5
-    VMULPS  Y1, Y5, Y5
-    VMAXPS  Y4, Y5, Y5
-    VMINPS  Y6, Y5, Y5
-    VMULPS  Y2, Y5, Y5
-    VADDPS  Y3, Y5, Y5
-    VCVTPS2DQ Y5, Y5
-    VPERMPD $0xD8, Y5, Y5
-    VEXTRACTI128 $0, Y5, X11
-    VEXTRACTI128 $1, Y5, X12
-    VPACKUSDW X12, X11, X11
-    VPACKUSWB X11, X11, X11
-    VMOVQ   X11, (DI)
+    VMOVDQU (SI), Y7
+    VADDPS  Y0, Y7, Y7
+    VMULPS  Y1, Y7, Y7
+    VMAXPS  Y4, Y7, Y7
+    VMINPS  Y6, Y7, Y7
+    VMULPS  Y2, Y7, Y7
+    VADDPS  Y3, Y7, Y7
+    VROUNDPS $1, Y7, Y7
+    VCVTPS2DQ Y7, Y7
+    VEXTRACTI128 $1, Y7, X5
+    VPACKUSDW  Y5, Y7, Y7
+    VPACKUSWB  X7, X7, X7
+    VMOVQ      X7, (DI)
     ADDQ    $32, SI
     ADDQ    $8, DI
     SUBQ    $8, CX
-    JMP     loop_pack8_small
+    JMP     tail_pack8_small
 
 tail_pack8:
     TESTQ   CX, CX
     JZ      done_pack8
+    // Y0..Y6 are dead from here, so the constants can be reloaded as scalars.
+    VMOVSS  tq_pi<>(SB), X0
+    VMOVSS  tq_inv2pi<>(SB), X1
+    VMOVSS  tq_max8<>(SB), X2
+    VMOVSS  tq_half<>(SB), X3
+    VPXOR   X4, X4, X4
+    VMOVSS  tq_one<>(SB), X6
+loop_tail_pack8:
     VMOVSS  (SI), X5
     VADDSS  X0, X5, X5
     VMULSS  X1, X5, X5
@@ -509,13 +496,14 @@ tail_pack8:
     VMINSS  X6, X5, X5
     VMULSS  X2, X5, X5
     VADDSS  X3, X5, X5
+    VROUNDPS $1, X5, X5 // VEX.128 VROUNDPS: lane 0 is all the tail needs
     VCVTSS2SI X5, AX
     MOVB    AL, (DI)
     ADDQ    $4, SI
     INCQ    DI
     DECQ    CX
-    JMP     tail_pack8
-    
+    JNZ     loop_tail_pack8
+
 done_pack8:
     VZEROUPPER
     RET
@@ -930,8 +918,7 @@ TEXT ·packTQ8AVX512Kernel(SB), NOSPLIT, $0-24
     VMOVSS  tq_half<>(SB), X0
     VBROADCASTSS X0, Z3
     VPXORD  Z4, Z4, Z4
-    VMOVSS  $1.0, X6
-    VBROADCASTSS X6, Z6
+    VBROADCASTSS tq_one<>(SB), Z6
 
 loop_pack8_512:
     CMPQ    CX, $16
@@ -957,6 +944,15 @@ loop_pack8_512:
 tail_pack8_512:
     TESTQ   CX, CX
     JZ      done_pack8_512
+    // The broadcasts above live in Z0..Z6, so the scalar tail has to reload
+    // the constants into X registers of its own.
+    VMOVSS  tq_pi<>(SB), X0
+    VMOVSS  tq_inv2pi<>(SB), X1
+    VMOVSS  tq_max8<>(SB), X2
+    VMOVSS  tq_half<>(SB), X3
+    VPXOR   X4, X4, X4
+    VMOVSS  tq_one<>(SB), X6
+loop_tail_pack8_512:
     VMOVSS  (SI), X5
     VADDSS  X0, X5, X5
     VMULSS  X1, X5, X5
@@ -964,12 +960,13 @@ tail_pack8_512:
     VMINSS  X6, X5, X5
     VMULSS  X2, X5, X5
     VADDSS  X3, X5, X5
+    VROUNDPS $1, X5, X5
     VCVTSS2SI X5, AX
     MOVB    AL, (DI)
     ADDQ    $4, SI
     INCQ    DI
     DECQ    CX
-    JMP     tail_pack8_512
+    JNZ     loop_tail_pack8_512
     
 done_pack8_512:
     VZEROUPPER

@@ -412,34 +412,16 @@ func generateDemoData(dim, count int) (arrow.Record, *arrow.Schema) {
 } // #nosec G404
 
 func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.Record, sch *arrow.Schema) error {
-	desc := &flight.FlightDescriptor{
-		Type: flight.DescriptorPATH,
-		Path: []string{dataset},
-	}
-
-	stream, err := sc.DoPut(ctx, desc)
+	uploader, err := sc.NewStreamUploader(ctx, dataset, sch)
 	if err != nil {
 		return err
 	}
+	defer uploader.Close()
 
-	writer := flight.NewRecordWriter(stream, ipc.WithSchema(sch))
-	writer.SetFlightDescriptor(desc)
-
-	if err := writer.Write(rec); err != nil {
-		_ = writer.Close()
+	if err := uploader.WriteChunked(rec, 10000); err != nil {
 		return err
 	}
-
-	if err := writer.Close(); err != nil {
-		return err
-	}
-
-	if err := stream.CloseSend(); err != nil {
-		return err
-	}
-
-	_, _ = stream.Recv()
-	return nil
+	return uploader.Close()
 }
 
 func runSearch(ctx context.Context, args []string) {
@@ -1305,18 +1287,11 @@ func runImportArrow(ctx context.Context, sc *client.SmartClient, dataset, inputP
 		log.Fatalf("Failed to create arrow reader: %v\n", err)
 	}
 
-	desc := &flight.FlightDescriptor{
-		Type: flight.DescriptorPATH,
-		Path: []string{dataset},
-	}
-
-	stream, err := sc.DoPut(ctx, desc)
+	uploader, err := sc.NewStreamUploader(ctx, dataset, rdr.Schema())
 	if err != nil {
-		log.Fatalf("DoPut stream failed: %v\n", err)
+		log.Fatalf("Failed to create stream uploader: %v\n", err)
 	}
-
-	writer := flight.NewRecordWriter(stream, ipc.WithSchema(rdr.Schema()))
-	writer.SetFlightDescriptor(desc)
+	defer uploader.Close()
 
 	totalRows := int64(0)
 	for i := 0; i < rdr.NumRecords(); i++ {
@@ -1324,17 +1299,15 @@ func runImportArrow(ctx context.Context, sc *client.SmartClient, dataset, inputP
 		if err != nil {
 			log.Fatalf("Failed to read record %d: %v\n", i, err)
 		}
-		if err := writer.Write(rec); err != nil {
+		if err := uploader.WriteChunked(rec, 10000); err != nil {
 			log.Fatalf("Failed to write record batch: %v\n", err)
 		}
 		totalRows += rec.NumRows()
 	}
 
-	_ = writer.Close()
-	if err := stream.CloseSend(); err != nil {
-		log.Fatalf("Failed to close flight stream: %v\n", err)
+	if err := uploader.Close(); err != nil {
+		log.Fatalf("Failed to close stream uploader: %v\n", err)
 	}
-	_, _ = stream.Recv()
 
 	fmt.Printf("Successfully imported %d rows from Arrow in %v\n", totalRows, time.Since(start))
 }
@@ -1514,33 +1487,24 @@ func runImportArrowFromReader(ctx context.Context, sc *client.SmartClient, datas
 	}
 	defer reader.Release()
 
-	desc := &flight.FlightDescriptor{
-		Type: flight.DescriptorPATH,
-		Path: []string{dataset},
-	}
-
-	stream, err := sc.DoPut(ctx, desc)
+	uploader, err := sc.NewStreamUploader(ctx, dataset, reader.Schema())
 	if err != nil {
-		log.Fatalf("DoPut stream failed: %v\n", err)
+		log.Fatalf("Failed to create stream uploader: %v\n", err)
 	}
-
-	writer := flight.NewRecordWriter(stream, ipc.WithSchema(reader.Schema()))
-	writer.SetFlightDescriptor(desc)
+	defer uploader.Close()
 
 	totalRows := int64(0)
 	for reader.Next() {
 		rec := reader.Record()
-		if err := writer.Write(rec); err != nil {
+		if err := uploader.WriteChunked(rec, 10000); err != nil {
 			log.Fatalf("Failed to write record batch: %v\n", err)
 		}
 		totalRows += rec.NumRows()
 	}
 
-	_ = writer.Close()
-	if err := stream.CloseSend(); err != nil {
-		log.Fatalf("Failed to close flight stream: %v\n", err)
+	if err := uploader.Close(); err != nil {
+		log.Fatalf("Failed to close stream uploader: %v\n", err)
 	}
-	_, _ = stream.Recv()
 
 	fmt.Printf("Successfully imported %d rows in %v\n", totalRows, time.Since(start))
 }

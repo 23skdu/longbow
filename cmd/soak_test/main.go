@@ -18,7 +18,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/google/uuid"
 )
@@ -289,23 +288,16 @@ func performIngest(ctx context.Context, c *client.SmartClient) error {
 	rec := b.NewRecordBatch()
 	defer rec.Release()
 
-	desc := &flight.FlightDescriptor{
-		Type: flight.DescriptorPATH,
-		Path: []string{*dataset},
-	}
-	stream, err := c.DoPut(ctx, desc)
+	uploader, err := c.NewStreamUploader(ctx, *dataset, schema)
 	if err != nil {
 		return err
 	}
+	defer uploader.Close()
 
-	wr := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
-	wr.SetFlightDescriptor(desc)
-
-	if err := wr.Write(rec); err != nil {
-		_ = wr.Close()
+	if err := uploader.WriteChunked(rec, 10000); err != nil {
 		return err
 	}
-	return wr.Close()
+	return uploader.Close()
 }
 
 func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *Stats) (SearchMode, error) {

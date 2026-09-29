@@ -343,9 +343,10 @@ func main() {
 			os.Exit(0)
 		}
 
-		log.Printf("[PUT] Pre-generating %d chunks...\n", numChunks)
-		preGenerated := make([]arrow.Record, 0, numChunks)
-		var genSchema *arrow.Schema
+		log.Printf("[PUT] Uploading %d chunks (streaming)...\n", numChunks)
+		totalUploaded = 0
+		start = time.Now()
+		var uploader *StreamUploader
 
 		for i := 0; i < *scale; {
 			currentChunk := chunkSize
@@ -357,31 +358,22 @@ func main() {
 			if err != nil {
 				log.Fatalf("Record generation failed at %d: %v", i, err)
 			}
-			preGenerated = append(preGenerated, rec)
-			if genSchema == nil {
-				genSchema = schema
+
+			if uploader == nil {
+				uploader, err = newStreamUploader(sc, *dataset, schema)
+				if err != nil {
+					rec.Release()
+					log.Fatalf("Failed to init uploader for generated records: %v", err)
+				}
 			}
-			i += currentChunk
-		}
 
-		log.Printf("[PUT] Uploading %d chunks (streaming, back-pressure aware)...\n", numChunks)
-		totalUploaded = 0
-		start = time.Now()
-		var uploader *StreamUploader
-
-		if len(preGenerated) > 0 {
-			uploader, err = newStreamUploader(sc, *dataset, genSchema)
-			if err != nil {
-				log.Fatalf("Failed to init uploader for generated records: %v", err)
-			}
-		}
-
-		for _, rec := range preGenerated {
 			if err := uploader.Write(rec); err != nil {
+				rec.Release()
 				log.Fatalf("DoPut write failed: %v", err)
 			}
+			rec.Release()
 
-			totalUploaded += int(rec.NumRows())
+			totalUploaded += currentChunk
 
 			if totalUploaded%50000 == 0 || totalUploaded == *scale {
 				// Exclude the breather sleep from measured upload time so throughput
@@ -389,21 +381,18 @@ func main() {
 				sleepStart := time.Now()
 				log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
 
-				// Server has 18GB memory, safe to burst 400k vectors without deep backpressure polling
 				if totalUploaded < *scale {
-					time.Sleep(1 * time.Second) // Small breather for server
+					time.Sleep(500 * time.Millisecond) // Small breather for server
 				}
 				// Adjust start forward by the sleep duration to keep duration accurate.
 				start = start.Add(time.Since(sleepStart))
 			}
+			i += currentChunk
 		}
 		if uploader != nil {
 			if err := uploader.Close(); err != nil {
 				log.Fatalf("Failed to close uploader: %v", err)
 			}
-		}
-		for _, rec := range preGenerated {
-			rec.Release()
 		}
 	}
 	duration := time.Since(start).Seconds()

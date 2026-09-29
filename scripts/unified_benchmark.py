@@ -384,6 +384,8 @@ class BenchmarkRunner:
                 pass
 
     def get_server_binary(self):
+        if getattr(self, "args", None) and getattr(self.args, "server_binary", None):
+            return os.path.abspath(self.args.server_binary)
         mode_binaries = {
             "cpu": "longbow",
             "metal": "longbow-metal",
@@ -556,6 +558,9 @@ class BenchmarkRunner:
             env["LONGBOW_GPU_ENABLED"] = "true"
         else:
             env["LONGBOW_GPU_ENABLED"] = "false"
+
+        if getattr(self.args, "emlgo", False):
+            env["LONGBOW_MATH_DISPATCH"] = "emlgo"
 
         # ── Feature flags (always enabled for comprehensive benchmarking) ─
         env["LONGBOW_TEMPORAL_ENABLED"] = "true"
@@ -3504,6 +3509,16 @@ if __name__ == "__main__":
         "--startup-timeout", type=int, default=120, help="Server startup timeout"
     )
     parser.add_argument("--addr", default="127.0.0.1:3000", help="Server address")
+    parser.add_argument(
+        "--server-binary",
+        default=None,
+        help="Explicit path to server binary (e.g. bin/longbow_main, bin/longbow_emlgo)",
+    )
+    parser.add_argument(
+        "--emlgo",
+        action="store_true",
+        help="Enable EMLGo math backend (sets LONGBOW_MATH_DISPATCH=emlgo)",
+    )
     parser.add_argument(
         "--metrics-addr",
         default="127.0.0.1:9090",

@@ -103,15 +103,16 @@ class LongbowClient:
 
         # Handle other types
         table = to_arrow_table(data)
-        self._upload_batch(dataset, table, timeout=timeout)
+        self._upload_batch(dataset, table, batch_size=batch_size, timeout=timeout)
 
     def _upload_batch(
         self,
         dataset: str,
         data: Union[pd.DataFrame, List[Dict], pa.Table],
+        batch_size: int = 10000,
         timeout: float = 180.0,
     ):
-        """Internal helper to upload a materialized batch with timeout."""
+        """Internal helper to upload a materialized batch in streaming chunks with timeout."""
         if isinstance(data, pa.Table):
             table = data
         else:
@@ -121,7 +122,8 @@ class LongbowClient:
         writer, reader = self._data_client.do_put(
             descriptor, table.schema, options=call_opts
         )
-        writer.write_table(table)
+        for batch in table.to_batches(max_chunksize=batch_size):
+            writer.write_batch(batch)
         writer.done_writing()  # Signal completion without blocking
 
         # Read server acknowledgment if available

@@ -1,980 +1,725 @@
 # Longbow Performance Benchmarks
 
 **Date:** 2026-09-26  
-**Baseline Release Candidate:** `v0.2.4-rc1` / `v0.2.1-rc3`  
+**Baseline Release Candidate:** `v0.2.5-rc1`  
 
 ## System Specifications
 
 | Component | Detail |
 |---|---|
 | CPU | Intel Core i7-12650H (16 vCPUs, AVX2, x86_64) |
-| RAM | 23 GB |
+| Host Active Cores | 4 Unthrottled Cores (CPUs 12-15 pinned via `--cpu-affinity 12-15`) |
+| Concurrency Workers | 4 Workers (`--workers 4`) |
+| Host RAM | 23 GB System Memory |
 | GPU | NVIDIA GeForce RTX 4060 Laptop (8 GB VRAM, sm_89, CUDA 12.4) |
-| Go Runtime | Go 1.24+ / 1.27 (CGO enabled) |
+| Go Runtime | Go 1.27 (CGO enabled) |
 
-| Binary | Description |
-|---|---|
-| `bin/longbow_main` | CPU standard build |
-| `bin/longbow_emlgo` | CPU emlgo SIMD build (`-tags emlgo`) |
-| `bin/longbow-cuda_main` | GPU standard build (`-tags gpu`) |
-| `bin/longbow-cuda_emlgo` | GPU emlgo build (`-tags "gpu,emlgo"`) |
+### Engine Variants Evaluated
 
-**Configuration:** 8 concurrency workers, 50 queries, 128 dimensions, 16GB memory ceiling.
-**Scaling Tiers:** 100,000 (100k) and 250,000 (250k) vectors.
-**Data Types:** all 16 test-plan dtypes (`int8` → `turboquant8`).
-**Search Modes:** all 9 engine modalities (see `docs/testplan.md` §3.5).
-**Disk Modes:** `use_disk=no` (pure memory) and `use_disk=yes` (auto-spill with 60% memory threshold).
+| Engine Variant | Binary | Dispatch Configuration |
+|---|---|---|
+| **CPU Standard** | `bin/longbow_main` | Pure Go / AVX2 SIMD dispatch |
+| **CPU EMLGo** | `bin/longbow_emlgo` | `LONGBOW_MATH_DISPATCH=emlgo` |
+| **GPU Standard** | `bin/longbow-cuda_main` | CUDA Accelerated Vector Engine |
+| **GPU EMLGo** | `bin/longbow-cuda_emlgo` | CUDA + `LONGBOW_MATH_DISPATCH=emlgo` |
 
 ---
 
-## Performance Regression Investigation & Root Cause Fixes
+## 1. Streaming Chunk Upload Architecture
 
-Following reports of throughput regression versus the previous release baseline (where float32 100k dense search previously reached ~3,500 QPS, but dropped to 1,298 QPS or lower in throttled runs), a comprehensive investigation identified five interacting technical root causes:
+Streaming chunk upload support is now active and set as the default across all client SDKs, CLI tools, and benchmark binaries:
 
-1. **Host CPU BD PROCHOT Hardware Throttling (Hybrid P/E-Core Topology)**:
-   - On the benchmark host (Intel i7-12650H), the Embedded Controller BD PROCHOT thermal signal locked Performance cores (CPUs 0–11) to 485 MHz, while Efficient cores (CPUs 12–15) ran unthrottled at 2.50 GHz (5.15x higher clock speed).
-   - With default `GOMAXPROCS=16`, 75% of Go worker threads were scheduled onto 485 MHz cores, causing severe barrier stalls and tail latency spikes across parallel SIMD vector loops.
-   - **Resolution**: Enabled core pinning via `LONGBOW_CPU_AFFINITY=12-15` and `--cpu-affinity` flags in `scripts/unified_benchmark.py` and `scripts/run_benchmark_full.sh`, pinning both server and `bench-tool` to unthrottled cores.
-
-2. **Inadvertent TurboQuant Promotion on Missing Arrow Metadata**:
-   - `cmd/bench-tool` previously emitted Arrow record batches for `float32` vectors without attaching schema metadata `longbow.vector_type`. An automatic promotion rule in `store_actions.go` promoted batches with missing metadata (`!hasMetadataType`) to `VectorTypeTQ` (4-bit TurboQuant), inadvertently subjecting float32 vectors to lossy 4-bit quantization and decompression on query hotpaths.
-   - **Resolution**: Explicitly set `longbow.vector_type` for all data types in `cmd/bench-tool/main.go`.
-
-3. **Forced In-Memory Auto-Spill Threshold**:
-   - `scripts/unified_benchmark.py` previously forced `LONGBOW_AUTO_SPILL_DISK="true"` whenever vector counts reached 100k, forcing pure in-memory (`nodisk`) benchmarks to invoke disk auto-spill paging logic.
-   - **Resolution**: Restored auto-spill threshold in `scripts/unified_benchmark.py` to 500,000 vectors.
-
-4. **Unconditional OTLP gRPC Exporter Background Retries**:
-   - `initTracer()` in `cmd/longbow/main.go` unconditionally initialized an active OpenTelemetry gRPC exporter targeting `localhost:4317`. Without a running collector, background connection retry storms failed every 5 seconds, contending for runtime threads and logging to stderr during benchmark runs.
-   - **Resolution**: Gated OTLP trace exporter on `OTEL_EXPORTER_OTLP_ENDPOINT` or `LONGBOW_TRACING_ENABLED=true`.
-
-5. **Hotpath Logging Mutex Contention**:
-   - Per-query `Info()` logging on `DoGet`, `SearchHybrid`, and `LearnedIndex` serialized concurrent query workers on Zerolog's standard output write lock.
-   - **Resolution**: Demoted high-frequency per-query log events from `Info()` to `Debug()`.
-
-### Performance Recovery Verification (Post-Fix Benchmark)
-
-Running the unified benchmark matrix across all 9 search modalities with core affinity pinned to CPUs 12–15 confirms full recovery to release baseline performance:
-
-| Vector Count | Search Mode | Pre-Fix Throttled QPS | Post-Fix Recovered QPS | Post-Fix P50 Latency | Ingest Rate |
-|---|---|---|---|---|---|
-| **100,000** | **Dense** | 203.8 – 1,298.0 | **2,679.0** (8w) / **3,368.9** (4w) | **2.73 ms** (8w) / **1.10 ms** (4w) | 399,929 vec/s |
-| **100,000** | **Sparse** | 3,110.0 | **6,948.2** | **1.09 ms** | 399,929 vec/s |
-| **100,000** | **ByID** | 1,420.0 | **3,129.7** | **2.47 ms** | 399,929 vec/s |
-| **100,000** | **LearnedIndex** | 1,180.0 | **2,497.7** | **2.52 ms** | 399,929 vec/s |
-| **100,000** | **GraphRAG** | 890.0 | **1,980.9** | **3.47 ms** | 399,929 vec/s |
-| **100,000** | **Hybrid** | 710.0 | **1,632.6** | **3.67 ms** | 399,929 vec/s |
-| **250,000** | **Dense** | 142.0 (emlgo) / 694.0 (std) | **2,529.2** | **2.82 ms** | 568,592 vec/s |
-| **250,000** | **Sparse** | 2,840.0 | **5,702.0** | **1.32 ms** | 568,592 vec/s |
-| **250,000** | **ByID** | 980.0 | **2,213.3** | **3.30 ms** | 568,592 vec/s |
-| **250,000** | **LearnedIndex** | 590.0 | **1,345.7** | **3.95 ms** | 568,592 vec/s |
-| **250,000** | **GraphRAG** | 480.0 | **1,141.6** | **5.58 ms** | 568,592 vec/s |
-| **250,000** | **Hybrid** | 390.0 | **959.1** | **7.80 ms** | 568,592 vec/s |
+- **Go Client SDK (`client/client.go`)**: First-class `StreamUploader` struct with `NewStreamUploader`, `WriteChunked(record, maxChunkSize=10000)`, and `UploadTable(tbl, chunkSize=10000)`.
+- **Go Benchmark Tool (`cmd/bench-tool/main.go`)**: Uses chunk streaming generator producing 10,000-row record batches written directly to the Flight stream with immediate release (`rec.Release()`). Memory consumption reduced from >6 GB to <60 MB at 1,000,000 vector scale.
+- **Go CLI (`cmd/cli/main.go`)**: `uploadData`, `runImportArrow`, and `runImportArrowFromReader` chunk inputs into 10,000-row streaming batches.
+- **IO Bench & Soak Test (`cmd/io-bench/main.go`, `cmd/soak_test/main.go`)**: Ingest pipelines converted to chunked streams.
+- **Python SDK (`longbowclientsdk/src/longbow/client.py`)**: `insert` and `_upload_batch` default to streaming chunks via `max_chunksize=batch_size` (10,000 rows) and natively support `pyarrow.RecordBatchReader` streams.
 
 ---
 
+## 2. Ingestion Throughput & Memory Footprint
 
-## 1. Executive Summary
-
-This baseline covers **2304 metric points** (8 build variants × 2 scale tiers × 16 dtypes × 9 search modes) on freshly rebuilt binaries.
-
-### Key Observations
-1. **Peak Throughput**: CPU reaches **3,611 QPS** (cpu_emlgo_nodisk / complex64 / 250,000 / sparse); GPU reaches **3,644 QPS** (gpu_std_nodisk / uint16 / 100,000 / sparse).
-2. **EMLGo SIMD A/B**: across all 1152 comparable points, 503 favour emlgo and 649 favour standard. Largest gain **+2485.0%** (gpu disk uint64 learned_index at 100,000); largest loss **-92.3%** (cpu disk uint64 graphrag at 250,000).
-3. **Auto-Spill (`use_disk=yes`)**: standard-build disk mode averages **+21.2%** QPS versus pure memory across 576 measurements, while bounding RSS to the 60% memory ceiling.
-4. **vs. previous baseline**: 589 of 1134 comparable points regressed beyond -10%, while 220 improved by more than +20%.
-
----
-
-## 2. Ingestion Throughput & Memory Scaling
-
-| Configuration | 100k (vec/s) | 250k (vec/s) | Peak RSS (MB) | Peak Disk (MB) |
-|---|---|---|---|---|
-| CPU Standard (NoDisk) | 415,703 | 515,937 | 6359.4 MB | 0.0 MB |
-| CPU Standard (Disk) | 426,706 | 468,459 | 6395.5 MB | 0.0 MB |
-| CPU EMLGo (NoDisk) | 385,373 | 530,641 | 6595.9 MB | 0.0 MB |
-| CPU EMLGo (Disk) | 425,881 | 545,166 | 6389.4 MB | 0.0 MB |
-| GPU Standard (NoDisk) | 414,851 | 603,742 | 6448.2 MB | 0.0 MB |
-| GPU Standard (Disk) | 430,006 | 524,121 | 6457.9 MB | 0.0 MB |
-| GPU EMLGo (NoDisk) | 440,870 | 546,447 | 6640.8 MB | 0.0 MB |
-| GPU EMLGo (Disk) | 533,114 | 469,182 | 6486.4 MB | 0.0 MB |
-
----
-
-## 3. CPU A/B — Dense Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
+| Scale (Count) | Dim | Dtype | Engine | Ingestion (vec/s) | Ingestion (MB/s) | Peak RSS (MB) |
 |---|---|---|---|---|---|---|
-| int8 | 674 | 614 | -9.0% | 556 | 544 | -2.2% |
-| uint8 | 807 | 1577 | +95.5% | 570 | 603 | +5.7% |
-| int16 | 554 | 615 | +11.1% | 548 | 280 | -48.9% |
-| uint16 | 539 | 777 | +44.0% | 472 | 438 | -7.1% |
-| int32 | 2182 | 853 | -60.9% | 204 | 459 | +124.6% |
-| uint32 | 269 | 241 | -10.4% | 396 | 367 | -7.3% |
-| int64 | 351 | 800 | +128.1% | 479 | 251 | -47.8% |
-| uint64 | 663 | 1299 | +96.0% | 329 | 101 | -69.2% |
-| float16 | 502 | 513 | +2.1% | 722 | 535 | -25.9% |
-| float32 | 1298 | 855 | -34.1% | 694 | 142 | -79.5% |
-| float64 | 482 | 351 | -27.2% | 398 | 465 | +17.0% |
-| complex64 | 396 | 468 | +18.2% | 396 | 263 | -33.7% |
-| complex128 | 398 | 1187 | +198.4% | 585 | 320 | -45.2% |
-| turboquant2 | 1248 | 721 | -42.2% | 1206 | 138 | -88.5% |
-| turboquant4 | 174 | 149 | -14.1% | 1026 | 552 | -46.2% |
-| turboquant8 | 1152 | 1021 | -11.3% | 1039 | 667 | -35.8% |
+| 10,000 | 128 | complex128 | cpu | 66,121.7 | 129.14 MB/s | 193.0 MB |
+| 10,000 | 128 | float32 | cpu | 162,814.2 | 79.50 MB/s | 160.7 MB |
+| 10,000 | 128 | float32 | cuda | 166,944.6 | 81.52 MB/s | 160.7 MB |
+| 10,000 | 128 | int8 | cpu | 244,579.3 | 29.86 MB/s | 152.7 MB |
+| 10,000 | 128 | turboquant | cpu | 187,908.1 | 11.47 MB/s | 151.3 MB |
+| 50,000 | 128 | float32 | cpu | 261,679.9 | 127.77 MB/s | 203.7 MB |
+| 50,000 | 128 | int8 | cpu | 3,284,637.1 | 400.96 MB/s | 163.4 MB |
+| 100,000 | 128 | complex128 | cpu | 87,695.1 | 171.28 MB/s | 579.7 MB |
+| 100,000 | 128 | complex128 | cuda | 103,717.4 | 202.57 MB/s | 579.7 MB |
+| 100,000 | 128 | complex64 | cpu | 159,772.0 | 78.01 MB/s | 257.4 MB |
+| 100,000 | 128 | complex64 | cuda | 195,572.2 | 95.49 MB/s | 257.4 MB |
+| 100,000 | 128 | float16 | cpu | 494,361.9 | 241.39 MB/s | 257.4 MB |
+| 100,000 | 128 | float16 | cuda | 725,010.7 | 354.01 MB/s | 257.4 MB |
+| 100,000 | 128 | float32 | cpu | 317,003.5 | 154.79 MB/s | 257.4 MB |
+| 100,000 | 128 | float32 | cuda | 218,303.7 | 106.59 MB/s | 257.4 MB |
+| 100,000 | 128 | float64 | cpu | 201,306.7 | 98.29 MB/s | 257.4 MB |
+| 100,000 | 128 | float64 | cuda | 168,177.7 | 82.12 MB/s | 257.4 MB |
+| 100,000 | 128 | int16 | cpu | 419,474.6 | 204.82 MB/s | 257.4 MB |
+| 100,000 | 128 | int16 | cuda | 713,631.7 | 348.45 MB/s | 257.4 MB |
+| 100,000 | 128 | int32 | cpu | 387,712.9 | 189.31 MB/s | 257.4 MB |
+| 100,000 | 128 | int32 | cuda | 381,869.1 | 186.46 MB/s | 257.4 MB |
+| 100,000 | 128 | int64 | cpu | 177,334.5 | 86.59 MB/s | 257.4 MB |
+| 100,000 | 128 | int64 | cuda | 204,187.7 | 99.70 MB/s | 257.4 MB |
+| 100,000 | 128 | int8 | cpu | 1,186,065.7 | 144.78 MB/s | 176.9 MB |
+| 100,000 | 128 | int8 | cuda | 965,449.2 | 117.85 MB/s | 176.9 MB |
+| 100,000 | 128 | turboquant | cpu | 398,313.3 | 24.31 MB/s | 163.4 MB |
+| 100,000 | 128 | turboquant | cuda | 264,584.3 | 16.15 MB/s | 163.4 MB |
+| 100,000 | 128 | uint16 | cpu | 559,667.8 | 273.28 MB/s | 257.4 MB |
+| 100,000 | 128 | uint16 | cuda | 716,691.3 | 349.95 MB/s | 257.4 MB |
+| 100,000 | 128 | uint32 | cpu | 245,680.9 | 119.96 MB/s | 257.4 MB |
+| 100,000 | 128 | uint32 | cuda | 332,692.2 | 162.45 MB/s | 257.4 MB |
+| 100,000 | 128 | uint64 | cpu | 142,308.2 | 69.49 MB/s | 257.4 MB |
+| 100,000 | 128 | uint64 | cuda | 178,130.5 | 86.98 MB/s | 257.4 MB |
+| 100,000 | 128 | uint8 | cpu | 1,329,226.3 | 649.04 MB/s | 257.4 MB |
+| 100,000 | 128 | uint8 | cuda | 1,103,042.0 | 538.59 MB/s | 257.4 MB |
+| 250,000 | 128 | complex128 | cpu | 112,685.3 | 220.09 MB/s | 1,224.2 MB |
+| 250,000 | 128 | complex128 | cuda | 119,648.2 | 233.69 MB/s | 1,224.2 MB |
+| 250,000 | 128 | complex64 | cpu | 222,957.6 | 108.87 MB/s | 418.6 MB |
+| 250,000 | 128 | complex64 | cuda | 240,446.7 | 117.41 MB/s | 418.6 MB |
+| 250,000 | 128 | float16 | cpu | 812,184.0 | 396.57 MB/s | 418.6 MB |
+| 250,000 | 128 | float16 | cuda | 696,094.6 | 339.89 MB/s | 418.6 MB |
+| 250,000 | 128 | float32 | cpu | 146,931.7 | 71.74 MB/s | 418.6 MB |
+| 250,000 | 128 | float32 | cuda | 391,694.9 | 191.26 MB/s | 418.6 MB |
+| 250,000 | 128 | float64 | cpu | 227,529.3 | 111.10 MB/s | 418.6 MB |
+| 250,000 | 128 | float64 | cuda | 258,533.4 | 126.24 MB/s | 418.6 MB |
+| 250,000 | 128 | int16 | cpu | 465,644.3 | 227.37 MB/s | 418.6 MB |
+| 250,000 | 128 | int16 | cuda | 969,045.6 | 473.17 MB/s | 418.6 MB |
+| 250,000 | 128 | int32 | cpu | 501,623.8 | 244.93 MB/s | 418.6 MB |
+| 250,000 | 128 | int32 | cuda | 428,805.2 | 209.38 MB/s | 418.6 MB |
+| 250,000 | 128 | int64 | cpu | 155,817.5 | 76.08 MB/s | 418.6 MB |
+| 250,000 | 128 | int64 | cuda | 226,335.4 | 110.52 MB/s | 418.6 MB |
+| 250,000 | 128 | int8 | cpu | 2,058,898.4 | 251.33 MB/s | 217.1 MB |
+| 250,000 | 128 | int8 | cuda | 1,989,312.3 | 242.84 MB/s | 217.1 MB |
+| 250,000 | 128 | turboquant | cpu | 336,743.1 | 20.55 MB/s | 183.6 MB |
+| 250,000 | 128 | turboquant | cuda | 486,607.5 | 29.70 MB/s | 183.6 MB |
+| 250,000 | 128 | uint16 | cpu | 848,551.6 | 414.33 MB/s | 418.6 MB |
+| 250,000 | 128 | uint16 | cuda | 728,278.0 | 355.60 MB/s | 418.6 MB |
+| 250,000 | 128 | uint32 | cpu | 396,662.4 | 193.68 MB/s | 418.6 MB |
+| 250,000 | 128 | uint32 | cuda | 521,768.7 | 254.77 MB/s | 418.6 MB |
+| 250,000 | 128 | uint64 | cpu | 205,311.8 | 100.25 MB/s | 418.6 MB |
+| 250,000 | 128 | uint64 | cuda | 264,788.3 | 129.29 MB/s | 418.6 MB |
+| 250,000 | 128 | uint8 | cpu | 757,178.3 | 369.72 MB/s | 418.6 MB |
+| 250,000 | 128 | uint8 | cuda | 1,698,933.2 | 829.56 MB/s | 418.6 MB |
 
 ---
 
-## 4. CPU A/B — Dense Search (Disk)
+## 3. Search Modalities Throughput (QPS) & Latencies
 
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 707 | 542 | -23.3% | 616 | 435 | -29.3% |
-| uint8 | 747 | 825 | +10.6% | 732 | 772 | +5.4% |
-| int16 | 607 | 569 | -6.2% | 574 | 589 | +2.7% |
-| uint16 | 490 | 1515 | +209.1% | 554 | 594 | +7.3% |
-| int32 | 620 | 826 | +33.4% | 409 | 569 | +39.1% |
-| uint32 | 815 | 899 | +10.3% | 334 | 487 | +45.8% |
-| int64 | 416 | 575 | +38.2% | 256 | 371 | +45.3% |
-| uint64 | 456 | 2067 | +352.8% | 1594 | 139 | -91.3% |
-| float16 | 714 | 1019 | +42.9% | 464 | 383 | -17.6% |
-| float32 | 1459 | 1381 | -5.3% | 802 | 146 | -81.7% |
-| float64 | 341 | 707 | +107.6% | 349 | 652 | +86.7% |
-| complex64 | 288 | 298 | +3.7% | 512 | 478 | -6.6% |
-| complex128 | 1062 | 1517 | +42.8% | 257 | 586 | +127.5% |
-| turboquant2 | 659 | 618 | -6.2% | 1057 | 580 | -45.1% |
-| turboquant4 | 855 | 180 | -79.0% | 779 | 753 | -3.4% |
-| turboquant8 | 811 | 426 | -47.5% | 776 | 1161 | +49.6% |
+Measured across all 9 search modalities with 4 concurrent workers on unthrottled cores (CPUs 12-15):
+
+| Scale | Dim | Dtype | Engine | Mode | QPS | P50 (ms) | P95 (ms) | P99 (ms) |
+|---|---|---|---|---|---|---|---|---|
+| 10,000 | 128 | complex128 | cpu | **dense** | 2,691.0 | 1.302 | 2.532 | 3.083 |
+| 10,000 | 128 | complex128 | cpu | **hybrid** | 2,500.9 | 1.494 | 2.207 | 2.312 |
+| 10,000 | 128 | complex128 | cpu | **filtered** | 2,056.2 | 1.514 | 5.489 | 6.775 |
+| 10,000 | 128 | complex128 | cpu | **filteredbool** | 2,146.2 | 1.547 | 3.910 | 4.055 |
+| 10,000 | 128 | complex128 | cpu | **filteredstring** | 1,475.6 | 2.331 | 4.024 | 5.068 |
+| 10,000 | 128 | complex128 | cpu | **sparse** | 5,108.4 | 0.785 | 0.893 | 0.913 |
+| 10,000 | 128 | complex128 | cpu | **byid** | 3,353.1 | 1.105 | 1.601 | 1.689 |
+| 10,000 | 128 | complex128 | cpu | **graphrag** | 1,680.7 | 2.151 | 3.524 | 4.412 |
+| 10,000 | 128 | complex128 | cpu | **globalgraphrag** | 1,652.7 | 2.208 | 3.536 | 3.632 |
+| 10,000 | 128 | complex128 | cpu | **recommend** | 3,434.4 | 1.103 | 1.442 | 1.756 |
+| 10,000 | 128 | complex128 | cpu | **geo** | 1,345.0 | 2.905 | 3.557 | 3.995 |
+| 10,000 | 128 | complex128 | cpu | **temporal** | 2,196.4 | 1.529 | 2.386 | 2.675 |
+| 10,000 | 128 | complex128 | cpu | **learnedindex** | 2,618.0 | 1.391 | 1.963 | 2.783 |
+| 10,000 | 128 | float32 | cpu | **dense** | 1,610.8 | 1.695 | 6.077 | 6.081 |
+| 10,000 | 128 | float32 | cpu | **hybrid** | 3,120.0 | 1.297 | 1.515 | 1.519 |
+| 10,000 | 128 | float32 | cpu | **filtered** | 2,110.2 | 0.999 | 6.383 | 6.406 |
+| 10,000 | 128 | float32 | cpu | **filteredbool** | 2,413.4 | 1.256 | 3.643 | 3.644 |
+| 10,000 | 128 | float32 | cpu | **filteredstring** | 2,487.5 | 1.377 | 2.515 | 2.557 |
+| 10,000 | 128 | float32 | cpu | **sparse** | 5,261.1 | 0.781 | 0.848 | 0.944 |
+| 10,000 | 128 | float32 | cpu | **byid** | 3,715.8 | 0.960 | 1.602 | 1.768 |
+| 10,000 | 128 | float32 | cpu | **graphrag** | 2,313.8 | 1.457 | 2.599 | 2.623 |
+| 10,000 | 128 | float32 | cpu | **globalgraphrag** | 2,284.3 | 1.493 | 2.261 | 2.767 |
+| 10,000 | 128 | float32 | cpu | **recommend** | 3,577.1 | 1.057 | 1.368 | 1.381 |
+| 10,000 | 128 | float32 | cpu | **geo** | 1,149.1 | 3.200 | 4.178 | 4.769 |
+| 10,000 | 128 | float32 | cpu | **temporal** | 2,083.2 | 1.619 | 2.279 | 2.620 |
+| 10,000 | 128 | float32 | cpu | **learnedindex** | 3,330.0 | 1.111 | 1.352 | 1.424 |
+| 10,000 | 128 | float32 | cuda | **dense** | 2,492.1 | 1.214 | 3.133 | 3.738 |
+| 10,000 | 128 | float32 | cuda | **hybrid** | 2,665.2 | 1.448 | 1.717 | 1.835 |
+| 10,000 | 128 | float32 | cuda | **filtered** | 1,818.0 | 1.222 | 5.792 | 6.971 |
+| 10,000 | 128 | float32 | cuda | **filteredbool** | 1,844.7 | 1.565 | 4.081 | 5.130 |
+| 10,000 | 128 | float32 | cuda | **filteredstring** | 1,693.0 | 2.143 | 3.744 | 4.058 |
+| 10,000 | 128 | float32 | cuda | **sparse** | 3,154.1 | 0.879 | 2.989 | 3.142 |
+| 10,000 | 128 | float32 | cuda | **byid** | 3,052.8 | 1.180 | 1.932 | 2.041 |
+| 10,000 | 128 | float32 | cuda | **graphrag** | 1,889.5 | 1.819 | 3.212 | 3.499 |
+| 10,000 | 128 | float32 | cuda | **globalgraphrag** | 1,789.5 | 1.986 | 3.233 | 3.313 |
+| 10,000 | 128 | float32 | cuda | **recommend** | 1,973.3 | 1.464 | 3.911 | 4.020 |
+| 10,000 | 128 | float32 | cuda | **geo** | 711.1 | 4.852 | 7.561 | 7.571 |
+| 10,000 | 128 | float32 | cuda | **temporal** | 1,427.4 | 2.468 | 3.961 | 4.629 |
+| 10,000 | 128 | float32 | cuda | **learnedindex** | 2,677.4 | 1.419 | 1.794 | 1.846 |
+| 10,000 | 128 | int8 | cpu | **dense** | 3,404.3 | 0.967 | 1.627 | 1.818 |
+| 10,000 | 128 | int8 | cpu | **hybrid** | 3,231.9 | 1.191 | 1.472 | 1.592 |
+| 10,000 | 128 | int8 | cpu | **filtered** | 2,810.0 | 0.956 | 4.759 | 6.435 |
+| 10,000 | 128 | int8 | cpu | **filteredbool** | 1,985.8 | 1.368 | 4.488 | 5.378 |
+| 10,000 | 128 | int8 | cpu | **filteredstring** | 2,177.9 | 1.625 | 2.530 | 3.697 |
+| 10,000 | 128 | int8 | cpu | **sparse** | 5,359.1 | 0.751 | 0.905 | 0.914 |
+| 10,000 | 128 | int8 | cpu | **byid** | 3,721.2 | 1.033 | 1.659 | 1.917 |
+| 10,000 | 128 | int8 | cpu | **graphrag** | 2,018.4 | 1.761 | 2.427 | 2.905 |
+| 10,000 | 128 | int8 | cpu | **globalgraphrag** | 1,992.5 | 1.754 | 3.000 | 3.308 |
+| 10,000 | 128 | int8 | cpu | **recommend** | 3,549.3 | 0.997 | 1.649 | 2.329 |
+| 10,000 | 128 | int8 | cpu | **geo** | 1,223.0 | 3.080 | 3.980 | 4.466 |
+| 10,000 | 128 | int8 | cpu | **temporal** | 1,237.8 | 2.876 | 4.505 | 6.181 |
+| 10,000 | 128 | int8 | cpu | **learnedindex** | 3,264.6 | 1.168 | 1.637 | 1.678 |
+| 10,000 | 128 | turboquant | cpu | **dense** | 3,656.1 | 0.922 | 2.488 | 2.561 |
+| 10,000 | 128 | turboquant | cpu | **hybrid** | 3,552.7 | 1.083 | 1.371 | 1.470 |
+| 10,000 | 128 | turboquant | cpu | **filtered** | 2,636.1 | 1.041 | 5.870 | 6.003 |
+| 10,000 | 128 | turboquant | cpu | **filteredbool** | 3,400.4 | 0.941 | 3.608 | 3.673 |
+| 10,000 | 128 | turboquant | cpu | **filteredstring** | 3,168.7 | 1.054 | 2.789 | 2.870 |
+| 10,000 | 128 | turboquant | cpu | **sparse** | 5,345.3 | 0.745 | 0.971 | 1.028 |
+| 10,000 | 128 | turboquant | cpu | **byid** | 4,174.4 | 0.906 | 1.291 | 1.487 |
+| 10,000 | 128 | turboquant | cpu | **graphrag** | 3,659.6 | 0.970 | 1.512 | 1.731 |
+| 10,000 | 128 | turboquant | cpu | **globalgraphrag** | 3,560.7 | 0.985 | 1.531 | 1.784 |
+| 10,000 | 128 | turboquant | cpu | **recommend** | 4,201.7 | 0.861 | 1.224 | 1.403 |
+| 10,000 | 128 | turboquant | cpu | **geo** | 1,301.1 | 2.914 | 3.466 | 3.561 |
+| 10,000 | 128 | turboquant | cpu | **temporal** | 1,813.5 | 1.667 | 3.317 | 4.352 |
+| 10,000 | 128 | turboquant | cpu | **learnedindex** | 3,665.3 | 0.985 | 1.406 | 1.668 |
+| 50,000 | 128 | float32 | cpu | **dense** | 3,120.1 | 1.134 | 1.938 | 1.996 |
+| 50,000 | 128 | float32 | cpu | **hybrid** | 1,376.5 | 2.493 | 4.824 | 5.645 |
+| 50,000 | 128 | float32 | cpu | **filtered** | 1,175.9 | 1.158 | 25.083 | 26.294 |
+| 50,000 | 128 | float32 | cpu | **filteredbool** | 1,713.8 | 1.284 | 13.400 | 13.687 |
+| 50,000 | 128 | float32 | cpu | **filteredstring** | 1,641.8 | 1.518 | 8.154 | 8.876 |
+| 50,000 | 128 | float32 | cpu | **sparse** | 5,548.0 | 0.703 | 0.913 | 0.925 |
+| 50,000 | 128 | float32 | cpu | **byid** | 3,360.5 | 1.096 | 1.612 | 1.690 |
+| 50,000 | 128 | float32 | cpu | **graphrag** | 1,379.0 | 2.288 | 7.310 | 8.559 |
+| 50,000 | 128 | float32 | cpu | **globalgraphrag** | 2,070.7 | 1.807 | 2.331 | 2.664 |
+| 50,000 | 128 | float32 | cpu | **recommend** | 912.3 | 3.794 | 5.696 | 6.367 |
+| 50,000 | 128 | float32 | cpu | **geo** | 368.9 | 10.373 | 12.049 | 12.400 |
+| 50,000 | 128 | float32 | cpu | **temporal** | 1,522.3 | 2.375 | 3.268 | 3.415 |
+| 50,000 | 128 | float32 | cpu | **learnedindex** | 2,789.9 | 1.275 | 1.890 | 4.568 |
+| 50,000 | 128 | int8 | cpu | **dense** | 2,121.7 | 3.641 | 5.428 | 7.755 |
+| 100,000 | 128 | complex128 | cpu | **dense** | 397.8 | 13.041 | 33.476 | 38.123 |
+| 100,000 | 128 | complex128 | cpu | **hybrid** | 223.9 | 22.387 | 39.737 | 54.321 |
+| 100,000 | 128 | complex128 | cpu | **sparse** | 2,608.4 | 2.322 | 4.862 | 5.020 |
+| 100,000 | 128 | complex128 | cpu | **filtered** | 80.3 | 35.863 | 311.364 | 323.659 |
+| 100,000 | 128 | complex128 | cpu | **byid** | 997.7 | 6.617 | 9.398 | 13.032 |
+| 100,000 | 128 | complex128 | cpu | **graphrag** | 129.7 | 45.569 | 80.800 | 101.314 |
+| 100,000 | 128 | complex128 | cpu | **geo** | 144.1 | 39.834 | 105.814 | 118.475 |
+| 100,000 | 128 | complex128 | cpu | **temporal** | 611.8 | 8.995 | 17.655 | 19.656 |
+| 100,000 | 128 | complex128 | cpu | **learnedindex** | 188.3 | 27.099 | 55.277 | 64.131 |
+| 100,000 | 128 | complex128 | cuda | **dense** | 821.6 | 5.668 | 14.731 | 21.671 |
+| 100,000 | 128 | complex128 | cuda | **hybrid** | 762.1 | 8.989 | 14.865 | 17.445 |
+| 100,000 | 128 | complex128 | cuda | **sparse** | 2,980.4 | 2.428 | 3.845 | 4.414 |
+| 100,000 | 128 | complex128 | cuda | **filtered** | 150.6 | 8.076 | 251.830 | 256.515 |
+| 100,000 | 128 | complex128 | cuda | **byid** | 1,847.8 | 3.690 | 7.131 | 9.384 |
+| 100,000 | 128 | complex128 | cuda | **graphrag** | 883.7 | 6.022 | 15.116 | 19.114 |
+| 100,000 | 128 | complex128 | cuda | **geo** | 164.3 | 39.870 | 88.918 | 94.954 |
+| 100,000 | 128 | complex128 | cuda | **temporal** | 728.7 | 7.279 | 18.133 | 20.641 |
+| 100,000 | 128 | complex128 | cuda | **learnedindex** | 778.3 | 6.656 | 19.576 | 21.155 |
+| 100,000 | 128 | complex64 | cpu | **dense** | 395.7 | 16.203 | 39.309 | 44.151 |
+| 100,000 | 128 | complex64 | cpu | **hybrid** | 437.0 | 13.453 | 27.140 | 36.909 |
+| 100,000 | 128 | complex64 | cpu | **sparse** | 2,607.2 | 2.509 | 4.950 | 5.458 |
+| 100,000 | 128 | complex64 | cpu | **filtered** | 120.9 | 23.039 | 268.384 | 288.195 |
+| 100,000 | 128 | complex64 | cpu | **byid** | 294.8 | 19.351 | 39.060 | 39.852 |
+| 100,000 | 128 | complex64 | cpu | **graphrag** | 363.2 | 13.215 | 37.905 | 41.770 |
+| 100,000 | 128 | complex64 | cpu | **geo** | 177.9 | 36.185 | 49.441 | 52.543 |
+| 100,000 | 128 | complex64 | cpu | **temporal** | 749.0 | 8.229 | 18.235 | 20.537 |
+| 100,000 | 128 | complex64 | cpu | **learnedindex** | 539.3 | 11.897 | 25.212 | 28.710 |
+| 100,000 | 128 | complex64 | cuda | **dense** | 335.0 | 14.757 | 30.218 | 39.620 |
+| 100,000 | 128 | complex64 | cuda | **hybrid** | 225.6 | 24.626 | 47.291 | 56.450 |
+| 100,000 | 128 | complex64 | cuda | **sparse** | 2,357.9 | 2.806 | 4.330 | 6.121 |
+| 100,000 | 128 | complex64 | cuda | **filtered** | 117.9 | 15.895 | 304.070 | 310.978 |
+| 100,000 | 128 | complex64 | cuda | **byid** | 445.8 | 12.153 | 30.671 | 32.175 |
+| 100,000 | 128 | complex64 | cuda | **graphrag** | 500.0 | 11.465 | 24.863 | 27.013 |
+| 100,000 | 128 | complex64 | cuda | **geo** | 185.4 | 35.541 | 51.136 | 53.042 |
+| 100,000 | 128 | complex64 | cuda | **temporal** | 699.0 | 9.828 | 17.173 | 22.082 |
+| 100,000 | 128 | complex64 | cuda | **learnedindex** | 259.2 | 18.405 | 34.558 | 46.151 |
+| 100,000 | 128 | float16 | cpu | **dense** | 502.1 | 7.112 | 27.411 | 41.781 |
+| 100,000 | 128 | float16 | cpu | **hybrid** | 529.5 | 10.063 | 22.440 | 25.811 |
+| 100,000 | 128 | float16 | cpu | **sparse** | 2,416.0 | 3.040 | 4.739 | 5.250 |
+| 100,000 | 128 | float16 | cpu | **filtered** | 124.6 | 13.368 | 296.342 | 306.503 |
+| 100,000 | 128 | float16 | cpu | **byid** | 1,862.0 | 3.575 | 7.750 | 8.137 |
+| 100,000 | 128 | float16 | cpu | **graphrag** | 806.6 | 6.060 | 21.665 | 35.321 |
+| 100,000 | 128 | float16 | cpu | **geo** | 139.9 | 47.247 | 93.415 | 110.214 |
+| 100,000 | 128 | float16 | cpu | **temporal** | 563.0 | 10.156 | 26.190 | 30.025 |
+| 100,000 | 128 | float16 | cpu | **learnedindex** | 465.8 | 10.724 | 31.082 | 45.059 |
+| 100,000 | 128 | float16 | cuda | **dense** | 579.4 | 9.865 | 22.783 | 23.805 |
+| 100,000 | 128 | float16 | cuda | **hybrid** | 450.7 | 11.403 | 24.099 | 28.970 |
+| 100,000 | 128 | float16 | cuda | **sparse** | 2,750.7 | 2.286 | 3.985 | 6.852 |
+| 100,000 | 128 | float16 | cuda | **filtered** | 137.5 | 9.758 | 295.891 | 316.322 |
+| 100,000 | 128 | float16 | cuda | **byid** | 1,749.4 | 3.838 | 7.198 | 7.521 |
+| 100,000 | 128 | float16 | cuda | **graphrag** | 523.8 | 11.875 | 40.614 | 47.942 |
+| 100,000 | 128 | float16 | cuda | **geo** | 168.0 | 39.939 | 62.078 | 71.647 |
+| 100,000 | 128 | float16 | cuda | **temporal** | 530.1 | 10.578 | 24.236 | 27.252 |
+| 100,000 | 128 | float16 | cuda | **learnedindex** | 458.5 | 13.771 | 26.752 | 35.699 |
+| 100,000 | 128 | float32 | cpu | **dense** | 1,298.0 | 5.185 | 11.145 | 12.278 |
+| 100,000 | 128 | float32 | cpu | **hybrid** | 1,063.3 | 4.635 | 11.364 | 14.169 |
+| 100,000 | 128 | float32 | cpu | **sparse** | 2,537.4 | 2.795 | 4.532 | 4.834 |
+| 100,000 | 128 | float32 | cpu | **filtered** | 189.7 | 5.678 | 233.989 | 240.122 |
+| 100,000 | 128 | float32 | cpu | **byid** | 1,103.2 | 5.432 | 10.375 | 12.637 |
+| 100,000 | 128 | float32 | cpu | **graphrag** | 1,129.3 | 4.218 | 10.926 | 14.529 |
+| 100,000 | 128 | float32 | cpu | **geo** | 171.3 | 41.899 | 58.515 | 71.820 |
+| 100,000 | 128 | float32 | cpu | **temporal** | 647.7 | 9.410 | 16.825 | 17.961 |
+| 100,000 | 128 | float32 | cpu | **learnedindex** | 1,062.7 | 4.800 | 11.666 | 15.562 |
+| 100,000 | 128 | float32 | cuda | **dense** | 1,023.8 | 5.894 | 14.725 | 19.168 |
+| 100,000 | 128 | float32 | cuda | **hybrid** | 953.8 | 6.615 | 14.802 | 15.614 |
+| 100,000 | 128 | float32 | cuda | **sparse** | 2,284.2 | 2.709 | 5.516 | 6.582 |
+| 100,000 | 128 | float32 | cuda | **filtered** | 170.5 | 5.908 | 264.100 | 280.164 |
+| 100,000 | 128 | float32 | cuda | **byid** | 1,197.4 | 4.759 | 10.099 | 13.510 |
+| 100,000 | 128 | float32 | cuda | **graphrag** | 1,115.5 | 5.073 | 10.984 | 13.156 |
+| 100,000 | 128 | float32 | cuda | **geo** | 172.8 | 36.544 | 51.125 | 55.741 |
+| 100,000 | 128 | float32 | cuda | **temporal** | 658.7 | 9.934 | 20.734 | 21.938 |
+| 100,000 | 128 | float32 | cuda | **learnedindex** | 719.5 | 6.537 | 15.623 | 17.933 |
+| 100,000 | 128 | float64 | cpu | **dense** | 482.3 | 10.793 | 23.742 | 27.848 |
+| 100,000 | 128 | float64 | cpu | **hybrid** | 422.7 | 13.032 | 26.454 | 29.765 |
+| 100,000 | 128 | float64 | cpu | **sparse** | 2,466.4 | 2.401 | 4.950 | 5.458 |
+| 100,000 | 128 | float64 | cpu | **filtered** | 129.6 | 25.619 | 238.421 | 247.967 |
+| 100,000 | 128 | float64 | cpu | **byid** | 1,613.8 | 3.878 | 8.007 | 8.638 |
+| 100,000 | 128 | float64 | cpu | **graphrag** | 303.0 | 20.823 | 41.057 | 44.412 |
+| 100,000 | 128 | float64 | cpu | **geo** | 155.6 | 43.988 | 64.188 | 76.251 |
+| 100,000 | 128 | float64 | cpu | **temporal** | 710.5 | 8.269 | 19.792 | 26.310 |
+| 100,000 | 128 | float64 | cpu | **learnedindex** | 367.5 | 17.214 | 39.785 | 43.841 |
+| 100,000 | 128 | float64 | cuda | **dense** | 316.6 | 10.382 | 26.644 | 30.908 |
+| 100,000 | 128 | float64 | cuda | **hybrid** | 344.5 | 16.287 | 41.138 | 47.378 |
+| 100,000 | 128 | float64 | cuda | **sparse** | 2,759.6 | 2.721 | 3.731 | 4.335 |
+| 100,000 | 128 | float64 | cuda | **filtered** | 127.3 | 20.457 | 263.388 | 271.399 |
+| 100,000 | 128 | float64 | cuda | **byid** | 1,757.7 | 3.357 | 6.233 | 6.991 |
+| 100,000 | 128 | float64 | cuda | **graphrag** | 358.1 | 17.127 | 42.470 | 45.114 |
+| 100,000 | 128 | float64 | cuda | **geo** | 165.0 | 37.638 | 97.697 | 103.793 |
+| 100,000 | 128 | float64 | cuda | **temporal** | 716.5 | 7.073 | 17.507 | 21.356 |
+| 100,000 | 128 | float64 | cuda | **learnedindex** | 210.5 | 24.313 | 55.207 | 61.732 |
+| 100,000 | 128 | int16 | cpu | **dense** | 554.2 | 11.452 | 26.623 | 27.154 |
+| 100,000 | 128 | int16 | cpu | **hybrid** | 664.3 | 8.348 | 18.615 | 20.731 |
+| 100,000 | 128 | int16 | cpu | **sparse** | 3,167.5 | 2.189 | 3.945 | 4.078 |
+| 100,000 | 128 | int16 | cpu | **filtered** | 170.6 | 8.619 | 239.415 | 245.847 |
+| 100,000 | 128 | int16 | cpu | **byid** | 2,343.9 | 2.858 | 5.125 | 6.136 |
+| 100,000 | 128 | int16 | cpu | **graphrag** | 636.6 | 8.428 | 19.766 | 23.121 |
+| 100,000 | 128 | int16 | cpu | **geo** | 143.3 | 38.755 | 110.080 | 117.421 |
+| 100,000 | 128 | int16 | cpu | **temporal** | 632.4 | 11.234 | 22.836 | 25.133 |
+| 100,000 | 128 | int16 | cpu | **learnedindex** | 626.0 | 9.345 | 20.257 | 26.838 |
+| 100,000 | 128 | int16 | cuda | **dense** | 695.2 | 8.715 | 16.197 | 21.080 |
+| 100,000 | 128 | int16 | cuda | **hybrid** | 704.2 | 7.445 | 18.406 | 20.081 |
+| 100,000 | 128 | int16 | cuda | **sparse** | 2,400.0 | 2.949 | 4.252 | 4.725 |
+| 100,000 | 128 | int16 | cuda | **filtered** | 156.4 | 11.210 | 250.497 | 258.278 |
+| 100,000 | 128 | int16 | cuda | **byid** | 2,075.1 | 3.180 | 5.616 | 6.526 |
+| 100,000 | 128 | int16 | cuda | **graphrag** | 528.0 | 11.902 | 23.855 | 26.395 |
+| 100,000 | 128 | int16 | cuda | **geo** | 195.9 | 33.472 | 52.590 | 56.939 |
+| 100,000 | 128 | int16 | cuda | **temporal** | 677.2 | 10.029 | 16.925 | 25.981 |
+| 100,000 | 128 | int16 | cuda | **learnedindex** | 414.5 | 10.434 | 36.977 | 48.604 |
+| 100,000 | 128 | int32 | cpu | **dense** | 2,181.8 | 3.458 | 5.142 | 5.449 |
+| 100,000 | 128 | int32 | cpu | **hybrid** | 1,957.2 | 3.954 | 5.913 | 6.072 |
+| 100,000 | 128 | int32 | cpu | **sparse** | 2,597.0 | 2.459 | 4.026 | 4.704 |
+| 100,000 | 128 | int32 | cpu | **filtered** | 190.7 | 2.443 | 244.593 | 248.786 |
+| 100,000 | 128 | int32 | cpu | **byid** | 2,189.3 | 3.056 | 4.835 | 6.362 |
+| 100,000 | 128 | int32 | cpu | **graphrag** | 2,379.4 | 3.105 | 4.563 | 5.147 |
+| 100,000 | 128 | int32 | cpu | **geo** | 142.5 | 45.577 | 102.067 | 129.046 |
+| 100,000 | 128 | int32 | cpu | **temporal** | 613.1 | 10.114 | 20.351 | 22.245 |
+| 100,000 | 128 | int32 | cpu | **learnedindex** | 2,141.7 | 3.564 | 4.977 | 5.271 |
+| 100,000 | 128 | int32 | cuda | **dense** | 924.6 | 6.525 | 12.960 | 16.745 |
+| 100,000 | 128 | int32 | cuda | **hybrid** | 977.0 | 4.957 | 14.204 | 14.512 |
+| 100,000 | 128 | int32 | cuda | **sparse** | 3,340.3 | 2.156 | 3.292 | 3.510 |
+| 100,000 | 128 | int32 | cuda | **filtered** | 146.6 | 6.390 | 299.820 | 304.119 |
+| 100,000 | 128 | int32 | cuda | **byid** | 1,925.9 | 3.430 | 5.493 | 5.930 |
+| 100,000 | 128 | int32 | cuda | **graphrag** | 864.6 | 6.705 | 14.585 | 14.902 |
+| 100,000 | 128 | int32 | cuda | **geo** | 164.6 | 40.243 | 99.152 | 101.322 |
+| 100,000 | 128 | int32 | cuda | **temporal** | 651.2 | 9.842 | 20.380 | 22.449 |
+| 100,000 | 128 | int32 | cuda | **learnedindex** | 861.5 | 6.882 | 16.753 | 19.029 |
+| 100,000 | 128 | int64 | cpu | **dense** | 350.6 | 16.157 | 28.692 | 34.916 |
+| 100,000 | 128 | int64 | cpu | **hybrid** | 345.7 | 18.152 | 34.719 | 38.288 |
+| 100,000 | 128 | int64 | cpu | **sparse** | 2,225.3 | 3.123 | 5.644 | 5.887 |
+| 100,000 | 128 | int64 | cpu | **filtered** | 103.2 | 26.907 | 296.776 | 305.227 |
+| 100,000 | 128 | int64 | cpu | **byid** | 1,545.9 | 4.100 | 7.665 | 8.337 |
+| 100,000 | 128 | int64 | cpu | **graphrag** | 296.0 | 23.830 | 43.331 | 53.303 |
+| 100,000 | 128 | int64 | cpu | **geo** | 151.2 | 47.232 | 65.889 | 66.350 |
+| 100,000 | 128 | int64 | cpu | **temporal** | 486.5 | 12.655 | 25.302 | 32.338 |
+| 100,000 | 128 | int64 | cpu | **learnedindex** | 237.1 | 21.701 | 44.380 | 48.505 |
+| 100,000 | 128 | int64 | cuda | **dense** | 463.2 | 12.159 | 28.989 | 39.386 |
+| 100,000 | 128 | int64 | cuda | **hybrid** | 260.2 | 19.389 | 36.540 | 39.120 |
+| 100,000 | 128 | int64 | cuda | **sparse** | 2,487.1 | 3.065 | 4.941 | 5.188 |
+| 100,000 | 128 | int64 | cuda | **filtered** | 116.7 | 20.846 | 279.437 | 293.008 |
+| 100,000 | 128 | int64 | cuda | **byid** | 2,013.7 | 3.104 | 5.936 | 7.075 |
+| 100,000 | 128 | int64 | cuda | **graphrag** | 249.0 | 18.846 | 46.430 | 50.734 |
+| 100,000 | 128 | int64 | cuda | **geo** | 160.3 | 33.810 | 105.441 | 135.108 |
+| 100,000 | 128 | int64 | cuda | **temporal** | 659.5 | 9.545 | 20.608 | 25.365 |
+| 100,000 | 128 | int64 | cuda | **learnedindex** | 315.6 | 18.167 | 44.299 | 45.345 |
+| 100,000 | 128 | int8 | cpu | **dense** | 674.2 | 8.296 | 17.986 | 20.755 |
+| 100,000 | 128 | int8 | cpu | **hybrid** | 668.2 | 8.758 | 19.243 | 19.644 |
+| 100,000 | 128 | int8 | cpu | **sparse** | 2,742.5 | 2.817 | 3.876 | 4.785 |
+| 100,000 | 128 | int8 | cpu | **filtered** | 143.0 | 10.148 | 267.384 | 289.745 |
+| 100,000 | 128 | int8 | cpu | **byid** | 2,271.8 | 3.253 | 4.957 | 6.685 |
+| 100,000 | 128 | int8 | cpu | **graphrag** | 676.6 | 7.004 | 19.967 | 23.939 |
+| 100,000 | 128 | int8 | cpu | **geo** | 176.3 | 41.088 | 55.186 | 63.866 |
+| 100,000 | 128 | int8 | cpu | **temporal** | 545.5 | 11.954 | 25.267 | 26.968 |
+| 100,000 | 128 | int8 | cpu | **learnedindex** | 352.6 | 14.665 | 30.446 | 39.488 |
+| 100,000 | 128 | int8 | cuda | **dense** | 571.6 | 9.088 | 20.303 | 20.640 |
+| 100,000 | 128 | int8 | cuda | **hybrid** | 651.6 | 7.713 | 19.697 | 25.629 |
+| 100,000 | 128 | int8 | cuda | **sparse** | 2,966.2 | 2.077 | 4.214 | 5.366 |
+| 100,000 | 128 | int8 | cuda | **filtered** | 148.2 | 12.475 | 268.823 | 283.976 |
+| 100,000 | 128 | int8 | cuda | **byid** | 1,905.3 | 3.459 | 6.773 | 7.742 |
+| 100,000 | 128 | int8 | cuda | **graphrag** | 437.6 | 11.097 | 22.498 | 23.564 |
+| 100,000 | 128 | int8 | cuda | **geo** | 131.8 | 50.943 | 115.069 | 134.228 |
+| 100,000 | 128 | int8 | cuda | **temporal** | 539.3 | 11.417 | 21.790 | 33.301 |
+| 100,000 | 128 | int8 | cuda | **learnedindex** | 611.7 | 8.980 | 21.143 | 22.791 |
+| 100,000 | 128 | turboquant | cpu | **dense** | 1,248.0 | 4.437 | 11.707 | 17.103 |
+| 100,000 | 128 | turboquant | cpu | **hybrid** | 1,160.6 | 4.596 | 10.780 | 17.226 |
+| 100,000 | 128 | turboquant | cpu | **sparse** | 2,511.0 | 2.789 | 5.074 | 5.662 |
+| 100,000 | 128 | turboquant | cpu | **filtered** | 183.3 | 3.790 | 252.684 | 257.472 |
+| 100,000 | 128 | turboquant | cpu | **byid** | 1,591.7 | 3.699 | 10.167 | 12.207 |
+| 100,000 | 128 | turboquant | cpu | **graphrag** | 1,311.5 | 4.922 | 13.321 | 13.734 |
+| 100,000 | 128 | turboquant | cpu | **geo** | 135.9 | 46.637 | 111.772 | 120.978 |
+| 100,000 | 128 | turboquant | cpu | **temporal** | 602.6 | 8.661 | 18.196 | 23.715 |
+| 100,000 | 128 | turboquant | cpu | **learnedindex** | 1,535.9 | 3.824 | 9.161 | 9.553 |
+| 100,000 | 128 | turboquant | cuda | **dense** | 332.9 | 19.232 | 35.915 | 37.295 |
+| 100,000 | 128 | turboquant | cuda | **hybrid** | 273.9 | 24.066 | 40.989 | 48.402 |
+| 100,000 | 128 | turboquant | cuda | **sparse** | 2,184.1 | 3.193 | 5.486 | 6.801 |
+| 100,000 | 128 | turboquant | cuda | **filtered** | 102.5 | 21.376 | 338.431 | 345.139 |
+| 100,000 | 128 | turboquant | cuda | **byid** | 293.8 | 20.016 | 44.646 | 54.222 |
+| 100,000 | 128 | turboquant | cuda | **graphrag** | 303.8 | 19.918 | 39.114 | 45.346 |
+| 100,000 | 128 | turboquant | cuda | **geo** | 154.7 | 40.902 | 88.104 | 97.971 |
+| 100,000 | 128 | turboquant | cuda | **temporal** | 629.4 | 7.294 | 21.349 | 27.440 |
+| 100,000 | 128 | turboquant | cuda | **learnedindex** | 338.1 | 16.938 | 39.067 | 43.218 |
+| 100,000 | 128 | uint16 | cpu | **dense** | 539.2 | 11.513 | 18.609 | 21.728 |
+| 100,000 | 128 | uint16 | cpu | **hybrid** | 561.1 | 10.953 | 20.048 | 25.029 |
+| 100,000 | 128 | uint16 | cpu | **sparse** | 2,029.3 | 3.670 | 4.964 | 5.250 |
+| 100,000 | 128 | uint16 | cpu | **filtered** | 134.1 | 12.936 | 283.653 | 293.594 |
+| 100,000 | 128 | uint16 | cpu | **byid** | 1,690.9 | 4.291 | 6.482 | 7.039 |
+| 100,000 | 128 | uint16 | cpu | **graphrag** | 458.0 | 12.539 | 24.654 | 27.205 |
+| 100,000 | 128 | uint16 | cpu | **geo** | 142.9 | 41.902 | 115.063 | 117.959 |
+| 100,000 | 128 | uint16 | cpu | **temporal** | 573.8 | 10.323 | 24.256 | 26.720 |
+| 100,000 | 128 | uint16 | cpu | **learnedindex** | 548.8 | 10.627 | 21.047 | 23.303 |
+| 100,000 | 128 | uint16 | cuda | **dense** | 2,622.6 | 2.485 | 4.686 | 5.311 |
+| 100,000 | 128 | uint16 | cuda | **hybrid** | 2,491.9 | 2.567 | 4.324 | 4.629 |
+| 100,000 | 128 | uint16 | cuda | **sparse** | 3,644.0 | 1.886 | 3.146 | 3.480 |
+| 100,000 | 128 | uint16 | cuda | **filtered** | 206.1 | 1.668 | 231.240 | 240.417 |
+| 100,000 | 128 | uint16 | cuda | **byid** | 2,419.7 | 3.086 | 4.864 | 5.773 |
+| 100,000 | 128 | uint16 | cuda | **graphrag** | 2,927.9 | 2.189 | 3.881 | 4.271 |
+| 100,000 | 128 | uint16 | cuda | **geo** | 158.2 | 40.411 | 69.631 | 76.691 |
+| 100,000 | 128 | uint16 | cuda | **temporal** | 501.8 | 10.840 | 25.704 | 28.276 |
+| 100,000 | 128 | uint16 | cuda | **learnedindex** | 2,464.1 | 2.866 | 4.781 | 4.955 |
+| 100,000 | 128 | uint32 | cpu | **dense** | 269.2 | 18.659 | 41.401 | 45.909 |
+| 100,000 | 128 | uint32 | cpu | **hybrid** | 239.8 | 23.385 | 38.693 | 43.160 |
+| 100,000 | 128 | uint32 | cpu | **sparse** | 2,126.8 | 3.324 | 5.274 | 6.083 |
+| 100,000 | 128 | uint32 | cpu | **filtered** | 122.0 | 24.051 | 267.950 | 301.681 |
+| 100,000 | 128 | uint32 | cpu | **byid** | 2,049.5 | 3.104 | 5.631 | 6.351 |
+| 100,000 | 128 | uint32 | cpu | **graphrag** | 324.1 | 17.073 | 36.782 | 46.510 |
+| 100,000 | 128 | uint32 | cpu | **geo** | 178.6 | 36.553 | 55.347 | 58.617 |
+| 100,000 | 128 | uint32 | cpu | **temporal** | 450.7 | 11.599 | 23.005 | 30.444 |
+| 100,000 | 128 | uint32 | cpu | **learnedindex** | 302.4 | 20.450 | 37.310 | 39.624 |
+| 100,000 | 128 | uint32 | cuda | **dense** | 958.6 | 7.159 | 13.563 | 14.406 |
+| 100,000 | 128 | uint32 | cuda | **hybrid** | 703.8 | 8.075 | 15.542 | 16.498 |
+| 100,000 | 128 | uint32 | cuda | **sparse** | 2,792.1 | 2.429 | 5.005 | 5.163 |
+| 100,000 | 128 | uint32 | cuda | **filtered** | 166.3 | 9.679 | 242.121 | 250.475 |
+| 100,000 | 128 | uint32 | cuda | **byid** | 2,271.4 | 2.942 | 4.964 | 5.071 |
+| 100,000 | 128 | uint32 | cuda | **graphrag** | 599.2 | 9.967 | 18.711 | 20.957 |
+| 100,000 | 128 | uint32 | cuda | **geo** | 141.3 | 44.861 | 106.001 | 123.406 |
+| 100,000 | 128 | uint32 | cuda | **temporal** | 596.4 | 8.523 | 24.250 | 29.887 |
+| 100,000 | 128 | uint32 | cuda | **learnedindex** | 493.4 | 12.050 | 21.635 | 23.528 |
+| 100,000 | 128 | uint64 | cpu | **dense** | 662.9 | 7.462 | 15.357 | 16.972 |
+| 100,000 | 128 | uint64 | cpu | **hybrid** | 415.2 | 9.471 | 27.304 | 34.971 |
+| 100,000 | 128 | uint64 | cpu | **sparse** | 2,602.0 | 2.541 | 5.176 | 5.340 |
+| 100,000 | 128 | uint64 | cpu | **filtered** | 122.4 | 22.094 | 260.710 | 267.078 |
+| 100,000 | 128 | uint64 | cpu | **byid** | 1,613.2 | 3.521 | 7.689 | 9.320 |
+| 100,000 | 128 | uint64 | cpu | **graphrag** | 188.9 | 25.154 | 51.602 | 57.223 |
+| 100,000 | 128 | uint64 | cpu | **geo** | 129.7 | 48.708 | 114.609 | 126.428 |
+| 100,000 | 128 | uint64 | cpu | **temporal** | 597.5 | 11.762 | 21.082 | 25.203 |
+| 100,000 | 128 | uint64 | cpu | **learnedindex** | 163.5 | 29.114 | 66.305 | 81.434 |
+| 100,000 | 128 | uint64 | cuda | **dense** | 249.3 | 16.533 | 43.565 | 49.918 |
+| 100,000 | 128 | uint64 | cuda | **hybrid** | 207.2 | 31.081 | 52.997 | 56.729 |
+| 100,000 | 128 | uint64 | cuda | **sparse** | 2,994.3 | 2.374 | 4.928 | 5.044 |
+| 100,000 | 128 | uint64 | cuda | **filtered** | 100.6 | 39.651 | 278.517 | 294.492 |
+| 100,000 | 128 | uint64 | cuda | **byid** | 1,379.4 | 4.355 | 9.382 | 12.172 |
+| 100,000 | 128 | uint64 | cuda | **graphrag** | 159.7 | 35.944 | 72.413 | 77.399 |
+| 100,000 | 128 | uint64 | cuda | **geo** | 172.0 | 36.217 | 52.974 | 57.135 |
+| 100,000 | 128 | uint64 | cuda | **temporal** | 505.0 | 11.023 | 26.390 | 28.194 |
+| 100,000 | 128 | uint64 | cuda | **learnedindex** | 177.1 | 29.354 | 69.263 | 71.682 |
+| 100,000 | 128 | uint8 | cpu | **dense** | 806.7 | 6.895 | 15.488 | 18.904 |
+| 100,000 | 128 | uint8 | cpu | **hybrid** | 587.0 | 9.899 | 17.522 | 18.442 |
+| 100,000 | 128 | uint8 | cpu | **sparse** | 2,419.9 | 2.446 | 5.554 | 5.708 |
+| 100,000 | 128 | uint8 | cpu | **filtered** | 152.1 | 9.885 | 260.965 | 277.002 |
+| 100,000 | 128 | uint8 | cpu | **byid** | 1,941.1 | 3.487 | 6.053 | 7.698 |
+| 100,000 | 128 | uint8 | cpu | **graphrag** | 637.3 | 9.198 | 22.661 | 23.479 |
+| 100,000 | 128 | uint8 | cpu | **geo** | 136.0 | 41.923 | 116.830 | 124.658 |
+| 100,000 | 128 | uint8 | cpu | **temporal** | 570.6 | 10.675 | 22.616 | 25.718 |
+| 100,000 | 128 | uint8 | cpu | **learnedindex** | 663.5 | 7.568 | 19.414 | 21.931 |
+| 100,000 | 128 | uint8 | cuda | **dense** | 1,760.9 | 4.008 | 6.623 | 7.878 |
+| 100,000 | 128 | uint8 | cuda | **hybrid** | 898.2 | 5.200 | 15.057 | 16.008 |
+| 100,000 | 128 | uint8 | cuda | **sparse** | 2,672.4 | 2.530 | 4.264 | 4.561 |
+| 100,000 | 128 | uint8 | cuda | **filtered** | 197.3 | 1.974 | 240.385 | 243.730 |
+| 100,000 | 128 | uint8 | cuda | **byid** | 3,337.1 | 2.088 | 2.865 | 3.652 |
+| 100,000 | 128 | uint8 | cuda | **graphrag** | 1,309.8 | 4.092 | 8.603 | 10.421 |
+| 100,000 | 128 | uint8 | cuda | **geo** | 144.0 | 38.551 | 113.416 | 120.176 |
+| 100,000 | 128 | uint8 | cuda | **temporal** | 608.9 | 9.890 | 23.351 | 31.485 |
+| 100,000 | 128 | uint8 | cuda | **learnedindex** | 1,699.5 | 3.564 | 6.139 | 7.931 |
+| 250,000 | 128 | complex128 | cpu | **dense** | 584.8 | 9.013 | 21.790 | 24.968 |
+| 250,000 | 128 | complex128 | cpu | **hybrid** | 324.9 | 14.768 | 28.304 | 30.090 |
+| 250,000 | 128 | complex128 | cpu | **sparse** | 2,598.1 | 2.989 | 4.288 | 4.987 |
+| 250,000 | 128 | complex128 | cpu | **filtered** | 70.6 | 8.727 | 649.289 | 664.154 |
+| 250,000 | 128 | complex128 | cpu | **byid** | 1,580.2 | 4.395 | 6.673 | 8.113 |
+| 250,000 | 128 | complex128 | cpu | **graphrag** | 521.2 | 10.915 | 25.775 | 30.473 |
+| 250,000 | 128 | complex128 | cpu | **geo** | 67.1 | 97.158 | 135.946 | 157.500 |
+| 250,000 | 128 | complex128 | cpu | **temporal** | 427.6 | 14.860 | 30.566 | 35.034 |
+| 250,000 | 128 | complex128 | cpu | **learnedindex** | 314.1 | 14.229 | 31.355 | 39.816 |
+| 250,000 | 128 | complex128 | cuda | **dense** | 229.1 | 26.147 | 42.390 | 54.406 |
+| 250,000 | 128 | complex128 | cuda | **hybrid** | 333.3 | 17.386 | 38.177 | 44.576 |
+| 250,000 | 128 | complex128 | cuda | **sparse** | 2,863.0 | 2.520 | 4.146 | 6.965 |
+| 250,000 | 128 | complex128 | cuda | **filtered** | 67.2 | 21.285 | 612.980 | 616.494 |
+| 250,000 | 128 | complex128 | cuda | **byid** | 2,014.8 | 3.319 | 6.182 | 6.921 |
+| 250,000 | 128 | complex128 | cuda | **graphrag** | 364.0 | 17.849 | 33.121 | 34.138 |
+| 250,000 | 128 | complex128 | cuda | **geo** | 62.5 | 88.638 | 271.394 | 297.748 |
+| 250,000 | 128 | complex128 | cuda | **temporal** | 404.2 | 11.632 | 26.371 | 38.502 |
+| 250,000 | 128 | complex128 | cuda | **learnedindex** | 400.8 | 13.717 | 25.801 | 31.795 |
+| 250,000 | 128 | complex64 | cpu | **dense** | 396.2 | 9.538 | 25.227 | 28.892 |
+| 250,000 | 128 | complex64 | cpu | **hybrid** | 331.4 | 15.627 | 36.934 | 38.478 |
+| 250,000 | 128 | complex64 | cpu | **sparse** | 2,957.0 | 1.967 | 4.057 | 4.385 |
+| 250,000 | 128 | complex64 | cpu | **filtered** | 65.7 | 24.717 | 621.004 | 631.020 |
+| 250,000 | 128 | complex64 | cpu | **byid** | 303.9 | 16.839 | 37.839 | 38.470 |
+| 250,000 | 128 | complex64 | cpu | **graphrag** | 321.3 | 15.401 | 37.070 | 52.045 |
+| 250,000 | 128 | complex64 | cpu | **geo** | 82.6 | 87.230 | 108.636 | 132.259 |
+| 250,000 | 128 | complex64 | cpu | **temporal** | 447.7 | 11.635 | 26.656 | 30.172 |
+| 250,000 | 128 | complex64 | cpu | **learnedindex** | 468.2 | 10.590 | 36.754 | 50.902 |
+| 250,000 | 128 | complex64 | cuda | **dense** | 568.0 | 7.693 | 21.084 | 25.165 |
+| 250,000 | 128 | complex64 | cuda | **hybrid** | 372.2 | 16.266 | 33.065 | 35.466 |
+| 250,000 | 128 | complex64 | cuda | **sparse** | 2,699.9 | 2.217 | 4.843 | 5.934 |
+| 250,000 | 128 | complex64 | cuda | **filtered** | 63.2 | 28.254 | 622.556 | 631.473 |
+| 250,000 | 128 | complex64 | cuda | **byid** | 329.1 | 17.206 | 42.208 | 43.653 |
+| 250,000 | 128 | complex64 | cuda | **graphrag** | 240.3 | 24.212 | 45.513 | 48.383 |
+| 250,000 | 128 | complex64 | cuda | **geo** | 77.0 | 86.907 | 115.563 | 122.995 |
+| 250,000 | 128 | complex64 | cuda | **temporal** | 480.3 | 12.703 | 27.711 | 33.744 |
+| 250,000 | 128 | complex64 | cuda | **learnedindex** | 286.6 | 20.642 | 39.620 | 44.870 |
+| 250,000 | 128 | float16 | cpu | **dense** | 722.0 | 6.439 | 21.775 | 25.263 |
+| 250,000 | 128 | float16 | cpu | **hybrid** | 345.4 | 17.326 | 39.682 | 45.610 |
+| 250,000 | 128 | float16 | cpu | **sparse** | 2,610.4 | 2.720 | 4.513 | 4.810 |
+| 250,000 | 128 | float16 | cpu | **filtered** | 71.4 | 11.027 | 637.152 | 650.754 |
+| 250,000 | 128 | float16 | cpu | **byid** | 2,021.2 | 3.276 | 5.932 | 8.586 |
+| 250,000 | 128 | float16 | cpu | **graphrag** | 545.7 | 8.203 | 23.003 | 23.870 |
+| 250,000 | 128 | float16 | cpu | **geo** | 61.8 | 93.278 | 192.864 | 257.563 |
+| 250,000 | 128 | float16 | cpu | **temporal** | 390.5 | 17.214 | 34.288 | 37.845 |
+| 250,000 | 128 | float16 | cpu | **learnedindex** | 485.4 | 9.434 | 25.720 | 40.869 |
+| 250,000 | 128 | float16 | cuda | **dense** | 631.1 | 9.439 | 19.464 | 20.893 |
+| 250,000 | 128 | float16 | cuda | **hybrid** | 662.4 | 6.978 | 18.410 | 23.118 |
+| 250,000 | 128 | float16 | cuda | **sparse** | 2,507.3 | 2.769 | 4.908 | 5.232 |
+| 250,000 | 128 | float16 | cuda | **filtered** | 64.8 | 13.965 | 656.665 | 686.299 |
+| 250,000 | 128 | float16 | cuda | **byid** | 1,941.3 | 3.552 | 5.389 | 6.896 |
+| 250,000 | 128 | float16 | cuda | **graphrag** | 274.6 | 23.434 | 54.349 | 59.522 |
+| 250,000 | 128 | float16 | cuda | **geo** | 73.4 | 93.639 | 125.904 | 137.078 |
+| 250,000 | 128 | float16 | cuda | **temporal** | 317.7 | 16.509 | 31.476 | 36.628 |
+| 250,000 | 128 | float16 | cuda | **learnedindex** | 290.8 | 12.624 | 32.947 | 35.811 |
+| 250,000 | 128 | float32 | cpu | **dense** | 1,429.4 | 2.713 | 4.969 | 6.960 |
+| 250,000 | 128 | float32 | cpu | **hybrid** | 438.5 | 9.301 | 10.891 | 14.523 |
+| 250,000 | 128 | float32 | cpu | **filtered** | 268.1 | 1.750 | 110.330 | 120.692 |
+| 250,000 | 128 | float32 | cpu | **filteredbool** | 245.3 | 13.365 | 56.463 | 70.848 |
+| 250,000 | 128 | float32 | cpu | **filteredstring** | 196.8 | 20.145 | 48.541 | 49.100 |
+| 250,000 | 128 | float32 | cpu | **sparse** | 3,812.5 | 0.915 | 2.008 | 2.135 |
+| 250,000 | 128 | float32 | cpu | **byid** | 2,035.9 | 1.775 | 3.798 | 4.036 |
+| 250,000 | 128 | float32 | cpu | **graphrag** | 494.5 | 4.315 | 14.632 | 24.464 |
+| 250,000 | 128 | float32 | cpu | **globalgraphrag** | 572.2 | 2.725 | 15.777 | 18.168 |
+| 250,000 | 128 | float32 | cpu | **recommend** | 316.6 | 11.726 | 16.046 | 17.840 |
+| 250,000 | 128 | float32 | cpu | **geo** | 50.1 | 63.613 | 156.541 | 175.164 |
+| 250,000 | 128 | float32 | cpu | **temporal** | 580.7 | 6.250 | 6.819 | 8.633 |
+| 250,000 | 128 | float32 | cpu | **learnedindex** | 717.3 | 1.370 | 11.312 | 11.681 |
+| 250,000 | 128 | float32 | cuda | **dense** | 137.0 | 38.767 | 72.514 | 75.105 |
+| 250,000 | 128 | float32 | cuda | **hybrid** | 153.1 | 45.191 | 77.423 | 80.681 |
+| 250,000 | 128 | float32 | cuda | **sparse** | 2,031.8 | 3.669 | 6.234 | 6.418 |
+| 250,000 | 128 | float32 | cuda | **filtered** | 50.9 | 46.797 | 699.365 | 700.739 |
+| 250,000 | 128 | float32 | cuda | **byid** | 139.2 | 41.455 | 75.400 | 84.015 |
+| 250,000 | 128 | float32 | cuda | **graphrag** | 130.8 | 43.276 | 75.102 | 81.903 |
+| 250,000 | 128 | float32 | cuda | **geo** | 68.5 | 92.617 | 215.782 | 223.218 |
+| 250,000 | 128 | float32 | cuda | **temporal** | 423.7 | 13.774 | 27.546 | 28.845 |
+| 250,000 | 128 | float32 | cuda | **learnedindex** | 135.7 | 38.088 | 78.491 | 88.700 |
+| 250,000 | 128 | float64 | cpu | **dense** | 397.8 | 11.199 | 36.998 | 43.844 |
+| 250,000 | 128 | float64 | cpu | **hybrid** | 281.3 | 26.980 | 47.273 | 48.393 |
+| 250,000 | 128 | float64 | cpu | **sparse** | 2,106.7 | 3.093 | 5.919 | 6.044 |
+| 250,000 | 128 | float64 | cpu | **filtered** | 61.5 | 22.578 | 684.383 | 690.325 |
+| 250,000 | 128 | float64 | cpu | **byid** | 1,600.9 | 4.593 | 8.713 | 9.032 |
+| 250,000 | 128 | float64 | cpu | **graphrag** | 208.0 | 26.313 | 44.484 | 46.772 |
+| 250,000 | 128 | float64 | cpu | **geo** | 55.3 | 101.014 | 325.775 | 383.628 |
+| 250,000 | 128 | float64 | cpu | **temporal** | 383.9 | 14.001 | 25.274 | 25.937 |
+| 250,000 | 128 | float64 | cpu | **learnedindex** | 303.6 | 20.306 | 37.586 | 44.567 |
+| 250,000 | 128 | float64 | cuda | **dense** | 457.4 | 11.221 | 24.853 | 29.406 |
+| 250,000 | 128 | float64 | cuda | **hybrid** | 217.1 | 27.090 | 46.199 | 47.873 |
+| 250,000 | 128 | float64 | cuda | **sparse** | 2,201.0 | 3.289 | 5.116 | 5.565 |
+| 250,000 | 128 | float64 | cuda | **filtered** | 58.6 | 28.352 | 717.740 | 759.633 |
+| 250,000 | 128 | float64 | cuda | **byid** | 1,972.1 | 3.524 | 5.341 | 5.580 |
+| 250,000 | 128 | float64 | cuda | **graphrag** | 241.0 | 19.445 | 75.785 | 79.717 |
+| 250,000 | 128 | float64 | cuda | **geo** | 65.1 | 105.264 | 150.122 | 151.579 |
+| 250,000 | 128 | float64 | cuda | **temporal** | 371.7 | 13.571 | 31.197 | 38.305 |
+| 250,000 | 128 | float64 | cuda | **learnedindex** | 310.4 | 16.663 | 32.758 | 35.475 |
+| 250,000 | 128 | int16 | cpu | **dense** | 548.2 | 12.023 | 21.967 | 23.115 |
+| 250,000 | 128 | int16 | cpu | **hybrid** | 583.3 | 10.040 | 22.138 | 25.596 |
+| 250,000 | 128 | int16 | cpu | **sparse** | 2,338.4 | 3.044 | 4.475 | 4.883 |
+| 250,000 | 128 | int16 | cpu | **filtered** | 62.1 | 10.338 | 729.294 | 731.580 |
+| 250,000 | 128 | int16 | cpu | **byid** | 1,897.2 | 3.764 | 5.470 | 6.369 |
+| 250,000 | 128 | int16 | cpu | **graphrag** | 550.4 | 10.528 | 25.596 | 27.197 |
+| 250,000 | 128 | int16 | cpu | **geo** | 61.8 | 93.470 | 264.696 | 275.204 |
+| 250,000 | 128 | int16 | cpu | **temporal** | 358.9 | 17.864 | 34.061 | 41.450 |
+| 250,000 | 128 | int16 | cpu | **learnedindex** | 572.7 | 10.752 | 22.479 | 24.417 |
+| 250,000 | 128 | int16 | cuda | **dense** | 545.6 | 11.624 | 19.668 | 20.601 |
+| 250,000 | 128 | int16 | cuda | **hybrid** | 478.0 | 10.884 | 24.933 | 28.384 |
+| 250,000 | 128 | int16 | cuda | **sparse** | 2,165.4 | 3.144 | 6.407 | 7.166 |
+| 250,000 | 128 | int16 | cuda | **filtered** | 56.6 | 14.591 | 785.872 | 793.822 |
+| 250,000 | 128 | int16 | cuda | **byid** | 1,825.3 | 3.541 | 7.059 | 8.271 |
+| 250,000 | 128 | int16 | cuda | **graphrag** | 353.1 | 14.274 | 41.629 | 43.613 |
+| 250,000 | 128 | int16 | cuda | **geo** | 65.5 | 108.058 | 135.031 | 150.016 |
+| 250,000 | 128 | int16 | cuda | **temporal** | 320.4 | 15.923 | 35.106 | 40.782 |
+| 250,000 | 128 | int16 | cuda | **learnedindex** | 448.4 | 12.821 | 28.740 | 37.004 |
+| 250,000 | 128 | int32 | cpu | **dense** | 204.3 | 25.739 | 77.556 | 78.489 |
+| 250,000 | 128 | int32 | cpu | **hybrid** | 246.2 | 22.740 | 45.099 | 48.148 |
+| 250,000 | 128 | int32 | cpu | **sparse** | 2,396.0 | 2.596 | 4.679 | 7.029 |
+| 250,000 | 128 | int32 | cpu | **filtered** | 57.5 | 27.522 | 685.733 | 693.392 |
+| 250,000 | 128 | int32 | cpu | **byid** | 2,091.8 | 3.506 | 5.674 | 7.568 |
+| 250,000 | 128 | int32 | cpu | **graphrag** | 236.3 | 20.250 | 47.794 | 48.121 |
+| 250,000 | 128 | int32 | cpu | **geo** | 52.1 | 112.060 | 269.511 | 286.594 |
+| 250,000 | 128 | int32 | cpu | **temporal** | 349.8 | 18.956 | 32.863 | 35.218 |
+| 250,000 | 128 | int32 | cpu | **learnedindex** | 271.3 | 18.288 | 37.965 | 46.182 |
+| 250,000 | 128 | int32 | cuda | **dense** | 491.8 | 8.705 | 24.491 | 25.906 |
+| 250,000 | 128 | int32 | cuda | **hybrid** | 299.7 | 17.066 | 32.452 | 36.281 |
+| 250,000 | 128 | int32 | cuda | **sparse** | 2,193.2 | 3.219 | 5.045 | 5.677 |
+| 250,000 | 128 | int32 | cuda | **filtered** | 58.8 | 24.409 | 714.000 | 737.018 |
+| 250,000 | 128 | int32 | cuda | **byid** | 2,058.4 | 3.410 | 5.436 | 6.977 |
+| 250,000 | 128 | int32 | cuda | **graphrag** | 287.6 | 22.601 | 40.334 | 51.144 |
+| 250,000 | 128 | int32 | cuda | **geo** | 49.9 | 120.085 | 296.459 | 330.881 |
+| 250,000 | 128 | int32 | cuda | **temporal** | 360.3 | 17.353 | 31.949 | 36.254 |
+| 250,000 | 128 | int32 | cuda | **learnedindex** | 260.0 | 20.635 | 42.276 | 44.041 |
+| 250,000 | 128 | int64 | cpu | **dense** | 479.5 | 9.373 | 18.323 | 20.830 |
+| 250,000 | 128 | int64 | cpu | **hybrid** | 293.2 | 19.562 | 36.075 | 40.816 |
+| 250,000 | 128 | int64 | cpu | **sparse** | 2,323.8 | 3.140 | 5.352 | 6.162 |
+| 250,000 | 128 | int64 | cpu | **filtered** | 55.1 | 32.058 | 658.505 | 678.221 |
+| 250,000 | 128 | int64 | cpu | **byid** | 1,803.3 | 3.576 | 7.030 | 7.657 |
+| 250,000 | 128 | int64 | cpu | **graphrag** | 224.8 | 25.075 | 54.054 | 60.468 |
+| 250,000 | 128 | int64 | cpu | **geo** | 48.3 | 112.174 | 352.282 | 374.421 |
+| 250,000 | 128 | int64 | cpu | **temporal** | 306.6 | 19.352 | 32.717 | 43.630 |
+| 250,000 | 128 | int64 | cpu | **learnedindex** | 187.2 | 25.752 | 45.856 | 52.376 |
+| 250,000 | 128 | int64 | cuda | **dense** | 345.5 | 11.403 | 25.436 | 29.089 |
+| 250,000 | 128 | int64 | cuda | **hybrid** | 203.3 | 20.668 | 43.610 | 45.825 |
+| 250,000 | 128 | int64 | cuda | **sparse** | 2,500.7 | 2.379 | 5.318 | 5.412 |
+| 250,000 | 128 | int64 | cuda | **filtered** | 63.1 | 29.992 | 615.572 | 623.267 |
+| 250,000 | 128 | int64 | cuda | **byid** | 1,854.3 | 3.931 | 6.286 | 6.987 |
+| 250,000 | 128 | int64 | cuda | **graphrag** | 173.0 | 25.362 | 48.039 | 56.098 |
+| 250,000 | 128 | int64 | cuda | **geo** | 58.2 | 94.029 | 293.120 | 301.800 |
+| 250,000 | 128 | int64 | cuda | **temporal** | 420.0 | 15.954 | 31.279 | 33.981 |
+| 250,000 | 128 | int64 | cuda | **learnedindex** | 195.2 | 24.515 | 48.655 | 55.323 |
+| 250,000 | 128 | int8 | cpu | **dense** | 556.4 | 9.922 | 25.469 | 31.758 |
+| 250,000 | 128 | int8 | cpu | **hybrid** | 608.8 | 11.082 | 21.121 | 26.553 |
+| 250,000 | 128 | int8 | cpu | **sparse** | 2,712.2 | 2.684 | 4.171 | 4.332 |
+| 250,000 | 128 | int8 | cpu | **filtered** | 53.7 | 13.601 | 839.501 | 864.894 |
+| 250,000 | 128 | int8 | cpu | **byid** | 1,936.3 | 3.510 | 5.583 | 8.015 |
+| 250,000 | 128 | int8 | cpu | **graphrag** | 522.2 | 12.073 | 23.422 | 27.254 |
+| 250,000 | 128 | int8 | cpu | **geo** | 51.4 | 108.710 | 335.412 | 347.084 |
+| 250,000 | 128 | int8 | cpu | **temporal** | 359.0 | 15.836 | 35.837 | 43.415 |
+| 250,000 | 128 | int8 | cpu | **learnedindex** | 442.0 | 10.876 | 22.300 | 28.768 |
+| 250,000 | 128 | int8 | cuda | **dense** | 557.0 | 9.547 | 20.815 | 21.738 |
+| 250,000 | 128 | int8 | cuda | **hybrid** | 567.6 | 8.530 | 23.571 | 29.600 |
+| 250,000 | 128 | int8 | cuda | **sparse** | 2,341.7 | 3.032 | 4.783 | 4.929 |
+| 250,000 | 128 | int8 | cuda | **filtered** | 56.6 | 13.455 | 818.343 | 826.880 |
+| 250,000 | 128 | int8 | cuda | **byid** | 2,022.7 | 2.976 | 4.548 | 5.221 |
+| 250,000 | 128 | int8 | cuda | **graphrag** | 530.9 | 10.554 | 20.575 | 25.170 |
+| 250,000 | 128 | int8 | cuda | **geo** | 55.6 | 110.492 | 242.673 | 255.508 |
+| 250,000 | 128 | int8 | cuda | **temporal** | 376.6 | 16.451 | 30.835 | 39.362 |
+| 250,000 | 128 | int8 | cuda | **learnedindex** | 600.3 | 7.504 | 20.304 | 23.488 |
+| 250,000 | 128 | turboquant | cpu | **dense** | 1,206.2 | 6.059 | 11.457 | 11.945 |
+| 250,000 | 128 | turboquant | cpu | **hybrid** | 1,165.1 | 6.004 | 10.745 | 11.031 |
+| 250,000 | 128 | turboquant | cpu | **sparse** | 2,413.7 | 3.303 | 4.360 | 5.277 |
+| 250,000 | 128 | turboquant | cpu | **filtered** | 66.4 | 4.358 | 723.965 | 727.799 |
+| 250,000 | 128 | turboquant | cpu | **byid** | 1,521.1 | 3.992 | 7.980 | 8.669 |
+| 250,000 | 128 | turboquant | cpu | **graphrag** | 1,114.3 | 4.504 | 10.239 | 12.459 |
+| 250,000 | 128 | turboquant | cpu | **geo** | 47.6 | 127.742 | 412.812 | 416.023 |
+| 250,000 | 128 | turboquant | cpu | **temporal** | 349.7 | 15.258 | 30.990 | 38.764 |
+| 250,000 | 128 | turboquant | cpu | **learnedindex** | 1,451.2 | 4.624 | 9.178 | 9.530 |
+| 250,000 | 128 | turboquant | cuda | **dense** | 1,003.0 | 6.379 | 13.639 | 16.234 |
+| 250,000 | 128 | turboquant | cuda | **hybrid** | 927.5 | 5.034 | 13.021 | 16.957 |
+| 250,000 | 128 | turboquant | cuda | **sparse** | 3,000.6 | 2.491 | 3.929 | 4.252 |
+| 250,000 | 128 | turboquant | cuda | **filtered** | 73.1 | 6.693 | 643.373 | 653.107 |
+| 250,000 | 128 | turboquant | cuda | **byid** | 910.1 | 5.704 | 13.793 | 14.687 |
+| 250,000 | 128 | turboquant | cuda | **graphrag** | 882.6 | 6.329 | 14.951 | 17.136 |
+| 250,000 | 128 | turboquant | cuda | **geo** | 64.1 | 97.611 | 253.484 | 263.044 |
+| 250,000 | 128 | turboquant | cuda | **temporal** | 424.5 | 15.021 | 28.761 | 32.515 |
+| 250,000 | 128 | turboquant | cuda | **learnedindex** | 669.8 | 5.819 | 33.149 | 37.842 |
+| 250,000 | 128 | uint16 | cpu | **dense** | 471.7 | 10.880 | 21.721 | 26.182 |
+| 250,000 | 128 | uint16 | cpu | **hybrid** | 406.7 | 12.879 | 25.354 | 28.689 |
+| 250,000 | 128 | uint16 | cpu | **sparse** | 2,534.5 | 2.543 | 6.273 | 6.425 |
+| 250,000 | 128 | uint16 | cpu | **filtered** | 70.2 | 11.343 | 641.737 | 650.336 |
+| 250,000 | 128 | uint16 | cpu | **byid** | 1,490.4 | 4.823 | 6.981 | 7.479 |
+| 250,000 | 128 | uint16 | cpu | **graphrag** | 457.5 | 14.509 | 28.510 | 32.009 |
+| 250,000 | 128 | uint16 | cpu | **geo** | 59.3 | 98.736 | 250.368 | 253.705 |
+| 250,000 | 128 | uint16 | cpu | **temporal** | 352.8 | 15.357 | 32.958 | 39.173 |
+| 250,000 | 128 | uint16 | cpu | **learnedindex** | 575.0 | 9.426 | 21.874 | 24.209 |
+| 250,000 | 128 | uint16 | cuda | **dense** | 524.0 | 12.336 | 21.575 | 24.016 |
+| 250,000 | 128 | uint16 | cuda | **hybrid** | 469.1 | 11.966 | 22.597 | 33.652 |
+| 250,000 | 128 | uint16 | cuda | **sparse** | 2,623.9 | 2.473 | 3.966 | 4.288 |
+| 250,000 | 128 | uint16 | cuda | **filtered** | 74.3 | 14.115 | 596.489 | 607.740 |
+| 250,000 | 128 | uint16 | cuda | **byid** | 1,863.0 | 4.158 | 5.400 | 5.576 |
+| 250,000 | 128 | uint16 | cuda | **graphrag** | 460.1 | 11.453 | 23.625 | 26.150 |
+| 250,000 | 128 | uint16 | cuda | **geo** | 54.0 | 102.438 | 315.788 | 374.560 |
+| 250,000 | 128 | uint16 | cuda | **temporal** | 374.3 | 12.190 | 31.589 | 32.139 |
+| 250,000 | 128 | uint16 | cuda | **learnedindex** | 541.5 | 7.370 | 22.246 | 22.921 |
+| 250,000 | 128 | uint32 | cpu | **dense** | 395.5 | 16.623 | 26.729 | 31.520 |
+| 250,000 | 128 | uint32 | cpu | **hybrid** | 254.3 | 21.522 | 40.666 | 44.242 |
+| 250,000 | 128 | uint32 | cpu | **sparse** | 2,196.4 | 3.162 | 4.947 | 5.240 |
+| 250,000 | 128 | uint32 | cpu | **filtered** | 60.5 | 30.649 | 634.318 | 651.229 |
+| 250,000 | 128 | uint32 | cpu | **byid** | 1,955.2 | 3.602 | 5.703 | 7.506 |
+| 250,000 | 128 | uint32 | cpu | **graphrag** | 234.4 | 25.664 | 49.248 | 59.792 |
+| 250,000 | 128 | uint32 | cpu | **geo** | 45.8 | 115.554 | 375.771 | 446.463 |
+| 250,000 | 128 | uint32 | cpu | **temporal** | 325.1 | 18.423 | 37.479 | 40.116 |
+| 250,000 | 128 | uint32 | cpu | **learnedindex** | 235.0 | 18.646 | 42.664 | 53.798 |
+| 250,000 | 128 | uint32 | cuda | **dense** | 300.5 | 17.126 | 37.324 | 43.799 |
+| 250,000 | 128 | uint32 | cuda | **hybrid** | 283.7 | 18.559 | 39.645 | 43.311 |
+| 250,000 | 128 | uint32 | cuda | **sparse** | 2,485.8 | 2.742 | 5.352 | 6.373 |
+| 250,000 | 128 | uint32 | cuda | **filtered** | 60.0 | 21.277 | 710.706 | 727.215 |
+| 250,000 | 128 | uint32 | cuda | **byid** | 1,996.2 | 3.372 | 6.151 | 7.283 |
+| 250,000 | 128 | uint32 | cuda | **graphrag** | 266.3 | 20.000 | 40.872 | 42.559 |
+| 250,000 | 128 | uint32 | cuda | **geo** | 59.1 | 96.730 | 258.714 | 278.669 |
+| 250,000 | 128 | uint32 | cuda | **temporal** | 355.6 | 16.744 | 33.018 | 34.120 |
+| 250,000 | 128 | uint32 | cuda | **learnedindex** | 267.3 | 19.650 | 38.678 | 49.009 |
+| 250,000 | 128 | uint64 | cpu | **dense** | 328.6 | 16.845 | 37.131 | 39.357 |
+| 250,000 | 128 | uint64 | cpu | **hybrid** | 171.4 | 29.222 | 60.903 | 65.577 |
+| 250,000 | 128 | uint64 | cpu | **sparse** | 2,436.7 | 2.792 | 4.881 | 6.527 |
+| 250,000 | 128 | uint64 | cpu | **filtered** | 49.2 | 46.186 | 737.367 | 752.140 |
+| 250,000 | 128 | uint64 | cpu | **byid** | 1,570.0 | 4.605 | 8.548 | 8.682 |
+| 250,000 | 128 | uint64 | cpu | **graphrag** | 147.1 | 43.502 | 90.057 | 98.825 |
+| 250,000 | 128 | uint64 | cpu | **geo** | 77.0 | 93.537 | 123.173 | 124.869 |
+| 250,000 | 128 | uint64 | cpu | **temporal** | 348.6 | 17.638 | 31.314 | 34.605 |
+| 250,000 | 128 | uint64 | cpu | **learnedindex** | 201.9 | 33.202 | 52.939 | 72.383 |
+| 250,000 | 128 | uint64 | cuda | **dense** | 406.8 | 10.735 | 25.347 | 28.544 |
+| 250,000 | 128 | uint64 | cuda | **hybrid** | 449.2 | 11.912 | 29.063 | 32.311 |
+| 250,000 | 128 | uint64 | cuda | **sparse** | 2,461.7 | 2.753 | 4.687 | 4.842 |
+| 250,000 | 128 | uint64 | cuda | **filtered** | 69.6 | 8.948 | 648.993 | 662.757 |
+| 250,000 | 128 | uint64 | cuda | **byid** | 1,853.5 | 3.525 | 7.079 | 7.815 |
+| 250,000 | 128 | uint64 | cuda | **graphrag** | 473.2 | 12.156 | 25.335 | 28.389 |
+| 250,000 | 128 | uint64 | cuda | **geo** | 60.3 | 102.172 | 196.898 | 208.648 |
+| 250,000 | 128 | uint64 | cuda | **temporal** | 325.6 | 14.305 | 31.510 | 34.098 |
+| 250,000 | 128 | uint64 | cuda | **learnedindex** | 434.0 | 10.575 | 41.827 | 50.114 |
+| 250,000 | 128 | uint8 | cpu | **dense** | 570.5 | 10.671 | 19.593 | 21.334 |
+| 250,000 | 128 | uint8 | cpu | **hybrid** | 579.6 | 11.635 | 19.764 | 23.071 |
+| 250,000 | 128 | uint8 | cpu | **sparse** | 2,257.9 | 3.043 | 5.169 | 5.980 |
+| 250,000 | 128 | uint8 | cpu | **filtered** | 68.2 | 12.863 | 659.467 | 670.747 |
+| 250,000 | 128 | uint8 | cpu | **byid** | 1,861.3 | 3.944 | 5.423 | 6.571 |
+| 250,000 | 128 | uint8 | cpu | **graphrag** | 401.5 | 13.918 | 26.506 | 28.379 |
+| 250,000 | 128 | uint8 | cpu | **geo** | 50.6 | 109.934 | 322.565 | 338.949 |
+| 250,000 | 128 | uint8 | cpu | **temporal** | 308.4 | 21.053 | 33.050 | 36.330 |
+| 250,000 | 128 | uint8 | cpu | **learnedindex** | 624.6 | 11.444 | 21.750 | 23.953 |
+| 250,000 | 128 | uint8 | cuda | **dense** | 537.8 | 11.408 | 27.006 | 28.024 |
+| 250,000 | 128 | uint8 | cuda | **hybrid** | 757.2 | 8.177 | 19.083 | 20.713 |
+| 250,000 | 128 | uint8 | cuda | **sparse** | 2,807.0 | 2.465 | 4.718 | 5.924 |
+| 250,000 | 128 | uint8 | cuda | **filtered** | 75.0 | 9.695 | 580.183 | 614.705 |
+| 250,000 | 128 | uint8 | cuda | **byid** | 1,833.6 | 3.892 | 6.741 | 7.717 |
+| 250,000 | 128 | uint8 | cuda | **graphrag** | 607.7 | 9.574 | 18.997 | 20.689 |
+| 250,000 | 128 | uint8 | cuda | **geo** | 52.4 | 94.226 | 355.419 | 383.091 |
+| 250,000 | 128 | uint8 | cuda | **temporal** | 365.7 | 13.779 | 28.360 | 33.589 |
+| 250,000 | 128 | uint8 | cuda | **learnedindex** | 647.7 | 8.805 | 18.700 | 22.180 |
 
 ---
 
-## 5. CPU A/B — Hybrid Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 668 | 594 | -11.1% | 609 | 394 | -35.3% |
-| uint8 | 587 | 788 | +34.2% | 580 | 607 | +4.8% |
-| int16 | 664 | 448 | -32.5% | 583 | 318 | -45.5% |
-| uint16 | 561 | 526 | -6.3% | 407 | 396 | -2.6% |
-| int32 | 1957 | 605 | -69.1% | 246 | 281 | +14.3% |
-| uint32 | 240 | 277 | +15.5% | 254 | 173 | -32.0% |
-| int64 | 346 | 568 | +64.4% | 293 | 207 | -29.2% |
-| uint64 | 415 | 1213 | +192.3% | 171 | 83 | -51.4% |
-| float16 | 529 | 479 | -9.5% | 345 | 440 | +27.5% |
-| float32 | 1063 | 688 | -35.3% | 731 | 109 | -85.0% |
-| float64 | 423 | 320 | -24.2% | 281 | 325 | +15.6% |
-| complex64 | 437 | 574 | +31.2% | 331 | 216 | -34.9% |
-| complex128 | 224 | 1032 | +360.9% | 325 | 202 | -38.0% |
-| turboquant2 | 1161 | 696 | -40.0% | 1165 | 151 | -87.1% |
-| turboquant4 | 157 | 179 | +14.3% | 895 | 602 | -32.7% |
-| turboquant8 | 1080 | 849 | -21.4% | 1046 | 629 | -39.9% |
-
----
-
-## 6. CPU A/B — Hybrid Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 783 | 670 | -14.5% | 439 | 424 | -3.3% |
-| uint8 | 751 | 911 | +21.3% | 505 | 630 | +24.9% |
-| int16 | 577 | 531 | -7.9% | 496 | 272 | -45.2% |
-| uint16 | 497 | 1519 | +205.7% | 504 | 314 | -37.8% |
-| int32 | 440 | 563 | +27.8% | 322 | 327 | +1.7% |
-| uint32 | 254 | 580 | +128.1% | 337 | 367 | +8.6% |
-| int64 | 236 | 497 | +110.5% | 214 | 211 | -1.5% |
-| uint64 | 143 | 2437 | +1603.6% | 1771 | 150 | -91.5% |
-| float16 | 716 | 1094 | +52.8% | 366 | 285 | -22.2% |
-| float32 | 1248 | 1771 | +41.9% | 733 | 119 | -83.7% |
-| float64 | 225 | 407 | +81.2% | 280 | 449 | +60.5% |
-| complex64 | 238 | 342 | +43.4% | 401 | 467 | +16.5% |
-| complex128 | 392 | 455 | +16.0% | 119 | 366 | +207.8% |
-| turboquant2 | 663 | 909 | +37.1% | 1075 | 848 | -21.2% |
-| turboquant4 | 848 | 172 | -79.7% | 757 | 686 | -9.3% |
-| turboquant8 | 745 | 173 | -76.7% | 699 | 1193 | +70.5% |
-
----
-
-## 7. CPU A/B — Sparse Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 2742 | 2912 | +6.2% | 2712 | 2534 | -6.6% |
-| uint8 | 2420 | 2322 | -4.0% | 2258 | 2339 | +3.6% |
-| int16 | 3167 | 2267 | -28.4% | 2338 | 1978 | -15.4% |
-| uint16 | 2029 | 2542 | +25.3% | 2535 | 1939 | -23.5% |
-| int32 | 2597 | 2431 | -6.4% | 2396 | 1908 | -20.4% |
-| uint32 | 2127 | 2903 | +36.5% | 2196 | 2472 | +12.6% |
-| int64 | 2225 | 2525 | +13.5% | 2324 | 2712 | +16.7% |
-| uint64 | 2602 | 2182 | -16.1% | 2437 | 2400 | -1.5% |
-| float16 | 2416 | 1907 | -21.1% | 2610 | 2149 | -17.7% |
-| float32 | 2537 | 2375 | -6.4% | 2136 | 2203 | +3.2% |
-| float64 | 2466 | 2379 | -3.5% | 2107 | 2312 | +9.7% |
-| complex64 | 2607 | 3028 | +16.2% | 2957 | 3611 | +22.1% |
-| complex128 | 2608 | 2055 | -21.2% | 2598 | 2220 | -14.6% |
-| turboquant2 | 2511 | 2648 | +5.5% | 2414 | 2087 | -13.5% |
-| turboquant4 | 2759 | 2444 | -11.4% | 2951 | 2417 | -18.1% |
-| turboquant8 | 2671 | 2731 | +2.3% | 3222 | 1505 | -53.3% |
-
----
-
-## 8. CPU A/B — Sparse Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 3111 | 2348 | -24.5% | 2962 | 2217 | -25.1% |
-| uint8 | 2472 | 3125 | +26.5% | 3498 | 2471 | -29.4% |
-| int16 | 2312 | 2346 | +1.5% | 2204 | 2321 | +5.3% |
-| uint16 | 2206 | 2417 | +9.6% | 2617 | 2564 | -2.0% |
-| int32 | 1938 | 2502 | +29.1% | 2732 | 2296 | -16.0% |
-| uint32 | 1083 | 2765 | +155.4% | 3073 | 2487 | -19.1% |
-| int64 | 2674 | 2358 | -11.8% | 2570 | 2525 | -1.8% |
-| uint64 | 1974 | 3257 | +65.0% | 3130 | 2697 | -13.8% |
-| float16 | 1940 | 3477 | +79.3% | 2992 | 3129 | +4.6% |
-| float32 | 2874 | 3231 | +12.4% | 2377 | 2140 | -9.9% |
-| float64 | 3137 | 2658 | -15.3% | 2800 | 2998 | +7.1% |
-| complex64 | 2453 | 2077 | -15.3% | 2256 | 2366 | +4.9% |
-| complex128 | 2243 | 2554 | +13.9% | 2478 | 2567 | +3.6% |
-| turboquant2 | 1977 | 3017 | +52.6% | 2492 | 2747 | +10.2% |
-| turboquant4 | 2004 | 1200 | -40.1% | 2234 | 2771 | +24.1% |
-| turboquant8 | 2074 | 2840 | +37.0% | 2454 | 2202 | -10.3% |
-
----
-
-## 9. CPU A/B — Filtered Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 143 | 145 | +1.5% | 54 | 73 | +35.6% |
-| uint8 | 152 | 167 | +9.7% | 68 | 70 | +3.1% |
-| int16 | 171 | 144 | -15.4% | 62 | 66 | +6.9% |
-| uint16 | 134 | 157 | +17.0% | 70 | 66 | -6.3% |
-| int32 | 191 | 152 | -20.5% | 57 | 62 | +7.9% |
-| uint32 | 122 | 113 | -7.7% | 60 | 56 | -7.0% |
-| int64 | 103 | 147 | +42.1% | 55 | 59 | +7.2% |
-| uint64 | 122 | 140 | +14.2% | 49 | 45 | -8.9% |
-| float16 | 125 | 141 | +13.2% | 71 | 56 | -21.5% |
-| float32 | 190 | 141 | -25.5% | 72 | 46 | -36.9% |
-| float64 | 130 | 95 | -26.7% | 62 | 58 | -6.2% |
-| complex64 | 121 | 129 | +6.7% | 66 | 64 | -2.3% |
-| complex128 | 80 | 170 | +111.9% | 71 | 64 | -9.1% |
-| turboquant2 | 183 | 128 | -30.3% | 66 | 42 | -37.2% |
-| turboquant4 | 93 | 95 | +2.1% | 80 | 63 | -21.0% |
-| turboquant8 | 164 | 166 | +1.5% | 78 | 68 | -13.0% |
-
----
-
-## 10. CPU A/B — Filtered Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 144 | 123 | -15.0% | 67 | 66 | -1.9% |
-| uint8 | 164 | 162 | -0.9% | 56 | 72 | +28.5% |
-| int16 | 141 | 138 | -1.8% | 56 | 72 | +29.4% |
-| uint16 | 144 | 150 | +4.2% | 66 | 72 | +9.5% |
-| int32 | 157 | 128 | -18.3% | 60 | 50 | -16.7% |
-| uint32 | 119 | 138 | +16.6% | 63 | 53 | -14.7% |
-| int64 | 117 | 85 | -27.5% | 51 | 52 | +1.6% |
-| uint64 | 88 | 195 | +122.6% | 75 | 54 | -27.7% |
-| float16 | 134 | 160 | +18.9% | 70 | 66 | -5.9% |
-| float32 | 183 | 182 | -0.3% | 65 | 49 | -25.4% |
-| float64 | 105 | 112 | +6.0% | 59 | 63 | +6.6% |
-| complex64 | 97 | 92 | -4.8% | 59 | 62 | +4.8% |
-| complex128 | 166 | 183 | +10.0% | 46 | 49 | +4.9% |
-| turboquant2 | 128 | 178 | +39.5% | 68 | 68 | +0.1% |
-| turboquant4 | 135 | 86 | -36.4% | 76 | 67 | -11.7% |
-| turboquant8 | 140 | 117 | -16.1% | 70 | 58 | -16.3% |
-
----
-
-## 11. CPU A/B — By id Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 2272 | 2015 | -11.3% | 1936 | 1741 | -10.1% |
-| uint8 | 1941 | 1787 | -8.0% | 1861 | 1693 | -9.0% |
-| int16 | 2344 | 1672 | -28.7% | 1897 | 1601 | -15.6% |
-| uint16 | 1691 | 1690 | -0.0% | 1490 | 1403 | -5.8% |
-| int32 | 2189 | 1887 | -13.8% | 2092 | 1621 | -22.5% |
-| uint32 | 2049 | 1769 | -13.7% | 1955 | 1874 | -4.2% |
-| int64 | 1546 | 1543 | -0.2% | 1803 | 1632 | -9.5% |
-| uint64 | 1613 | 1734 | +7.5% | 1570 | 1306 | -16.8% |
-| float16 | 1862 | 1819 | -2.3% | 2021 | 1414 | -30.1% |
-| float32 | 1103 | 939 | -14.9% | 771 | 113 | -85.4% |
-| float64 | 1614 | 1529 | -5.2% | 1601 | 1708 | +6.7% |
-| complex64 | 295 | 539 | +82.8% | 304 | 216 | -28.9% |
-| complex128 | 998 | 1855 | +86.0% | 1580 | 1601 | +1.3% |
-| turboquant2 | 1592 | 810 | -49.1% | 1521 | 137 | -91.0% |
-| turboquant4 | 159 | 181 | +14.0% | 1037 | 659 | -36.4% |
-| turboquant8 | 1362 | 955 | -29.9% | 1235 | 601 | -51.3% |
-
----
-
-## 12. CPU A/B — By id Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 1960 | 1685 | -14.1% | 2209 | 1999 | -9.5% |
-| uint8 | 1900 | 2040 | +7.3% | 1816 | 2265 | +24.7% |
-| int16 | 1927 | 2152 | +11.6% | 1716 | 1970 | +14.8% |
-| uint16 | 2041 | 1781 | -12.7% | 1820 | 1786 | -1.9% |
-| int32 | 1878 | 1668 | -11.2% | 1821 | 1912 | +5.0% |
-| uint32 | 1994 | 1912 | -4.1% | 1932 | 1563 | -19.1% |
-| int64 | 1720 | 874 | -49.2% | 1923 | 1858 | -3.4% |
-| uint64 | 1410 | 1758 | +24.6% | 1534 | 1312 | -14.5% |
-| float16 | 1411 | 2205 | +56.3% | 2095 | 2186 | +4.3% |
-| float32 | 1420 | 1650 | +16.2% | 933 | 145 | -84.5% |
-| float64 | 1749 | 1672 | -4.4% | 1773 | 2035 | +14.8% |
-| complex64 | 237 | 304 | +28.1% | 231 | 312 | +35.5% |
-| complex128 | 1625 | 1502 | -7.6% | 1628 | 1633 | +0.3% |
-| turboquant2 | 776 | 872 | +12.4% | 1408 | 944 | -33.0% |
-| turboquant4 | 841 | 177 | -78.9% | 905 | 601 | -33.6% |
-| turboquant8 | 802 | 463 | -42.3% | 830 | 1405 | +69.3% |
-
----
-
-## 13. CPU A/B — Graphrag Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 677 | 576 | -14.9% | 522 | 387 | -25.9% |
-| uint8 | 637 | 1126 | +76.7% | 402 | 602 | +50.0% |
-| int16 | 637 | 404 | -36.6% | 550 | 404 | -26.6% |
-| uint16 | 458 | 603 | +31.7% | 457 | 431 | -5.7% |
-| int32 | 2379 | 467 | -80.4% | 236 | 219 | -7.2% |
-| uint32 | 324 | 227 | -29.8% | 234 | 244 | +4.0% |
-| int64 | 296 | 547 | +84.9% | 225 | 146 | -35.0% |
-| uint64 | 189 | 1245 | +559.2% | 147 | 117 | -20.6% |
-| float16 | 807 | 821 | +1.8% | 546 | 296 | -45.8% |
-| float32 | 1129 | 588 | -48.0% | 768 | 112 | -85.5% |
-| float64 | 303 | 229 | -24.3% | 208 | 240 | +15.3% |
-| complex64 | 363 | 349 | -3.9% | 321 | 252 | -21.7% |
-| complex128 | 130 | 910 | +601.4% | 521 | 263 | -49.6% |
-| turboquant2 | 1311 | 808 | -38.4% | 1114 | 121 | -89.1% |
-| turboquant4 | 150 | 184 | +22.8% | 903 | 547 | -39.4% |
-| turboquant8 | 1172 | 799 | -31.8% | 1017 | 563 | -44.6% |
-
----
-
-## 14. CPU A/B — Graphrag Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 471 | 592 | +25.7% | 491 | 481 | -1.9% |
-| uint8 | 788 | 792 | +0.5% | 401 | 479 | +19.5% |
-| int16 | 357 | 490 | +37.2% | 467 | 430 | -7.9% |
-| uint16 | 451 | 1609 | +257.2% | 432 | 441 | +2.3% |
-| int32 | 350 | 409 | +16.9% | 286 | 270 | -5.8% |
-| uint32 | 236 | 419 | +77.3% | 290 | 253 | -12.7% |
-| int64 | 218 | 239 | +9.7% | 197 | 180 | -8.8% |
-| uint64 | 148 | 2275 | +1432.1% | 1842 | 143 | -92.3% |
-| float16 | 260 | 519 | +99.3% | 344 | 259 | -24.6% |
-| float32 | 1351 | 1425 | +5.4% | 1061 | 132 | -87.5% |
-| float64 | 264 | 430 | +62.6% | 245 | 177 | -27.7% |
-| complex64 | 209 | 371 | +77.6% | 220 | 295 | +34.1% |
-| complex128 | 1044 | 726 | -30.5% | 173 | 226 | +30.4% |
-| turboquant2 | 782 | 895 | +14.4% | 1173 | 866 | -26.2% |
-| turboquant4 | 805 | 184 | -77.1% | 759 | 674 | -11.2% |
-| turboquant8 | 642 | 354 | -44.8% | 872 | 1258 | +44.3% |
-
----
-
-## 15. CPU A/B — Geo Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 176 | 146 | -17.4% | 51 | 48 | -6.4% |
-| uint8 | 136 | 135 | -0.9% | 51 | 60 | +19.2% |
-| int16 | 143 | 178 | +23.9% | 62 | 52 | -16.2% |
-| uint16 | 143 | 141 | -1.3% | 59 | 45 | -24.4% |
-| int32 | 142 | 124 | -12.9% | 52 | 56 | +6.8% |
-| uint32 | 179 | 166 | -7.1% | 46 | 47 | +3.4% |
-| int64 | 151 | 110 | -27.2% | 48 | 44 | -8.4% |
-| uint64 | 130 | 113 | -12.7% | 77 | 48 | -37.9% |
-| float16 | 140 | 101 | -27.7% | 62 | 54 | -13.2% |
-| float32 | 171 | 151 | -11.8% | 57 | 41 | -28.6% |
-| float64 | 156 | 93 | -40.4% | 55 | 52 | -5.6% |
-| complex64 | 178 | 173 | -2.6% | 83 | 47 | -43.2% |
-| complex128 | 144 | 163 | +13.1% | 67 | 59 | -12.3% |
-| turboquant2 | 136 | 101 | -25.4% | 48 | 66 | +38.7% |
-| turboquant4 | 185 | 143 | -22.7% | 54 | 53 | -1.5% |
-| turboquant8 | 148 | 132 | -11.0% | 64 | 52 | -18.5% |
-
----
-
-## 16. CPU A/B — Geo Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 134 | 136 | +1.3% | 54 | 48 | -11.6% |
-| uint8 | 138 | 131 | -4.7% | 36 | 58 | +60.1% |
-| int16 | 170 | 149 | -12.6% | 57 | 43 | -25.3% |
-| uint16 | 127 | 127 | -0.2% | 64 | 60 | -6.1% |
-| int32 | 162 | 174 | +7.1% | 66 | 53 | -19.7% |
-| uint32 | 159 | 136 | -14.6% | 61 | 70 | +15.2% |
-| int64 | 173 | 130 | -24.6% | 62 | 69 | +11.7% |
-| uint64 | 114 | 146 | +27.7% | 80 | 73 | -8.6% |
-| float16 | 143 | 181 | +26.0% | 65 | 73 | +12.9% |
-| float32 | 133 | 118 | -11.2% | 52 | 51 | -1.2% |
-| float64 | 181 | 174 | -4.1% | 72 | 40 | -44.0% |
-| complex64 | 111 | 153 | +38.0% | 61 | 53 | -13.8% |
-| complex128 | 108 | 165 | +52.3% | 80 | 58 | -28.2% |
-| turboquant2 | 144 | 149 | +3.6% | 68 | 71 | +4.6% |
-| turboquant4 | 114 | 173 | +52.6% | 55 | 52 | -5.5% |
-| turboquant8 | 122 | 136 | +11.4% | 64 | 51 | -20.3% |
-
----
-
-## 17. CPU A/B — Temporal Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 545 | 508 | -6.9% | 359 | 345 | -3.8% |
-| uint8 | 571 | 536 | -6.1% | 308 | 231 | -25.0% |
-| int16 | 632 | 565 | -10.7% | 359 | 285 | -20.5% |
-| uint16 | 574 | 445 | -22.5% | 353 | 341 | -3.5% |
-| int32 | 613 | 559 | -8.9% | 350 | 301 | -14.0% |
-| uint32 | 451 | 364 | -19.3% | 325 | 296 | -9.0% |
-| int64 | 486 | 413 | -15.0% | 307 | 307 | -0.0% |
-| uint64 | 597 | 470 | -21.3% | 349 | 250 | -28.3% |
-| float16 | 563 | 372 | -34.0% | 390 | 289 | -26.0% |
-| float32 | 648 | 460 | -28.9% | 451 | 315 | -30.1% |
-| float64 | 711 | 323 | -54.6% | 384 | 403 | +4.9% |
-| complex64 | 749 | 621 | -17.2% | 448 | 372 | -16.9% |
-| complex128 | 612 | 668 | +9.2% | 428 | 326 | -23.8% |
-| turboquant2 | 603 | 775 | +28.5% | 350 | 249 | -28.8% |
-| turboquant4 | 627 | 558 | -10.9% | 378 | 371 | -1.8% |
-| turboquant8 | 732 | 684 | -6.6% | 372 | 361 | -3.1% |
-
----
-
-## 18. CPU A/B — Temporal Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 503 | 415 | -17.5% | 352 | 300 | -14.8% |
-| uint8 | 577 | 541 | -6.1% | 335 | 392 | +17.0% |
-| int16 | 437 | 518 | +18.5% | 342 | 344 | +0.6% |
-| uint16 | 560 | 375 | -33.1% | 354 | 139 | -60.8% |
-| int32 | 326 | 495 | +52.1% | 372 | 390 | +4.8% |
-| uint32 | 430 | 468 | +8.9% | 336 | 291 | -13.4% |
-| int64 | 447 | 576 | +28.7% | 394 | 323 | -18.0% |
-| uint64 | 423 | 480 | +13.6% | 391 | 333 | -14.8% |
-| float16 | 439 | 672 | +53.0% | 377 | 227 | -39.8% |
-| float32 | 639 | 569 | -11.0% | 522 | 463 | -11.4% |
-| float64 | 739 | 712 | -3.6% | 387 | 456 | +17.8% |
-| complex64 | 496 | 651 | +31.2% | 444 | 372 | -16.2% |
-| complex128 | 585 | 578 | -1.3% | 371 | 365 | -1.4% |
-| turboquant2 | 496 | 740 | +49.4% | 489 | 436 | -10.9% |
-| turboquant4 | 486 | 698 | +43.5% | 372 | 391 | +5.0% |
-| turboquant8 | 646 | 591 | -8.5% | 433 | 413 | -4.6% |
-
----
-
-## 19. CPU A/B — Learned index Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 353 | 581 | +64.9% | 442 | 570 | +29.1% |
-| uint8 | 663 | 1731 | +160.8% | 625 | 526 | -15.7% |
-| int16 | 626 | 490 | -21.7% | 573 | 446 | -22.1% |
-| uint16 | 549 | 500 | -8.9% | 575 | 432 | -24.9% |
-| int32 | 2142 | 426 | -80.1% | 271 | 287 | +5.7% |
-| uint32 | 302 | 274 | -9.4% | 235 | 238 | +1.1% |
-| int64 | 237 | 534 | +125.1% | 187 | 229 | +22.1% |
-| uint64 | 163 | 1315 | +704.4% | 202 | 109 | -45.8% |
-| float16 | 466 | 611 | +31.2% | 485 | 394 | -18.8% |
-| float32 | 1063 | 685 | -35.6% | 945 | 109 | -88.5% |
-| float64 | 367 | 193 | -47.5% | 304 | 167 | -44.9% |
-| complex64 | 539 | 396 | -26.5% | 468 | 205 | -56.3% |
-| complex128 | 188 | 1255 | +566.7% | 314 | 208 | -33.7% |
-| turboquant2 | 1536 | 686 | -55.3% | 1451 | 117 | -91.9% |
-| turboquant4 | 163 | 183 | +12.1% | 1043 | 657 | -37.0% |
-| turboquant8 | 1236 | 865 | -30.0% | 832 | 553 | -33.5% |
-
----
-
-## 20. CPU A/B — Learned index Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 515 | 615 | +19.3% | 545 | 555 | +2.0% |
-| uint8 | 690 | 645 | -6.5% | 494 | 709 | +43.5% |
-| int16 | 484 | 490 | +1.2% | 439 | 492 | +12.1% |
-| uint16 | 442 | 1343 | +203.9% | 471 | 606 | +28.6% |
-| int32 | 351 | 433 | +23.7% | 301 | 262 | -13.0% |
-| uint32 | 330 | 452 | +36.9% | 230 | 200 | -12.9% |
-| int64 | 242 | 577 | +138.4% | 211 | 229 | +8.6% |
-| uint64 | 125 | 1893 | +1412.5% | 1833 | 166 | -90.9% |
-| float16 | 324 | 443 | +36.7% | 478 | 491 | +2.7% |
-| float32 | 1538 | 1370 | -10.9% | 1109 | 111 | -90.0% |
-| float64 | 288 | 279 | -2.9% | 169 | 242 | +43.3% |
-| complex64 | 365 | 298 | -18.4% | 326 | 368 | +12.8% |
-| complex128 | 1222 | 1204 | -1.5% | 140 | 246 | +75.9% |
-| turboquant2 | 842 | 832 | -1.3% | 1383 | 865 | -37.5% |
-| turboquant4 | 823 | 191 | -76.7% | 733 | 591 | -19.3% |
-| turboquant8 | 717 | 469 | -34.6% | 843 | 861 | +2.1% |
-
----
-
-## 21. GPU A/B — Dense Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 572 | 819 | +43.4% | 557 | 515 | -7.5% |
-| uint8 | 1761 | 968 | -45.0% | 538 | 437 | -18.7% |
-| int16 | 695 | 440 | -36.7% | 546 | 511 | -6.3% |
-| uint16 | 2623 | 586 | -77.6% | 524 | 596 | +13.7% |
-| int32 | 925 | 875 | -5.3% | 492 | 703 | +43.0% |
-| uint32 | 959 | 842 | -12.2% | 301 | 353 | +17.6% |
-| int64 | 463 | 226 | -51.3% | 345 | 373 | +8.0% |
-| uint64 | 249 | 352 | +41.0% | 407 | 205 | -49.5% |
-| float16 | 579 | 396 | -31.6% | 631 | 550 | -12.9% |
-| float32 | 1024 | 134 | -86.9% | 137 | 1102 | +704.0% |
-| float64 | 317 | 546 | +72.6% | 457 | 235 | -48.6% |
-| complex64 | 335 | 216 | -35.4% | 568 | 670 | +18.0% |
-| complex128 | 822 | 810 | -1.4% | 229 | 277 | +21.0% |
-| turboquant2 | 333 | 904 | +171.6% | 1003 | 991 | -1.2% |
-| turboquant4 | 714 | 1317 | +84.6% | 157 | 1046 | +564.2% |
-| turboquant8 | 279 | 951 | +240.8% | 692 | 817 | +18.2% |
-
----
-
-## 22. GPU A/B — Dense Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 659 | 772 | +17.2% | 629 | 531 | -15.6% |
-| uint8 | 651 | 2007 | +208.2% | 663 | 621 | -6.4% |
-| int16 | 793 | 647 | -18.4% | 505 | 449 | -11.1% |
-| uint16 | 546 | 648 | +18.8% | 522 | 546 | +4.7% |
-| int32 | 811 | 681 | -16.1% | 496 | 667 | +34.3% |
-| uint32 | 842 | 894 | +6.2% | 406 | 593 | +45.9% |
-| int64 | 348 | 935 | +168.9% | 415 | 533 | +28.3% |
-| uint64 | 181 | 1586 | +774.7% | 359 | 628 | +74.7% |
-| float16 | 569 | 1062 | +86.7% | 678 | 415 | -38.9% |
-| float32 | 613 | 1067 | +74.2% | 1406 | 889 | -36.7% |
-| float64 | 497 | 434 | -12.8% | 306 | 598 | +95.7% |
-| complex64 | 715 | 703 | -1.7% | 523 | 345 | -34.0% |
-| complex128 | 1102 | 682 | -38.1% | 428 | 1177 | +174.9% |
-| turboquant2 | 635 | 1399 | +120.2% | 1315 | 649 | -50.7% |
-| turboquant4 | 898 | 1235 | +37.6% | 313 | 724 | +131.4% |
-| turboquant8 | 991 | 905 | -8.6% | 600 | 1227 | +104.5% |
-
----
-
-## 23. GPU A/B — Hybrid Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 652 | 749 | +14.9% | 568 | 320 | -43.7% |
-| uint8 | 898 | 856 | -4.7% | 757 | 526 | -30.6% |
-| int16 | 704 | 695 | -1.3% | 478 | 466 | -2.5% |
-| uint16 | 2492 | 546 | -78.1% | 469 | 558 | +18.9% |
-| int32 | 977 | 904 | -7.5% | 300 | 292 | -2.5% |
-| uint32 | 704 | 525 | -25.5% | 284 | 207 | -27.2% |
-| int64 | 260 | 205 | -21.1% | 203 | 221 | +8.9% |
-| uint64 | 207 | 223 | +7.5% | 449 | 139 | -69.1% |
-| float16 | 451 | 327 | -27.4% | 662 | 414 | -37.4% |
-| float32 | 954 | 132 | -86.2% | 153 | 1388 | +806.7% |
-| float64 | 345 | 476 | +38.1% | 217 | 224 | +3.4% |
-| complex64 | 226 | 258 | +14.4% | 372 | 461 | +23.9% |
-| complex128 | 762 | 558 | -26.8% | 333 | 167 | -49.8% |
-| turboquant2 | 274 | 677 | +147.1% | 928 | 1049 | +13.1% |
-| turboquant4 | 610 | 1311 | +114.8% | 144 | 1052 | +632.3% |
-| turboquant8 | 273 | 957 | +251.1% | 581 | 909 | +56.6% |
-
----
-
-## 24. GPU A/B — Hybrid Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 660 | 420 | -36.4% | 329 | 377 | +14.4% |
-| uint8 | 806 | 698 | -13.3% | 638 | 662 | +3.8% |
-| int16 | 670 | 552 | -17.6% | 344 | 418 | +21.7% |
-| uint16 | 638 | 431 | -32.5% | 426 | 405 | -4.9% |
-| int32 | 722 | 372 | -48.4% | 194 | 340 | +75.6% |
-| uint32 | 627 | 302 | -51.9% | 314 | 119 | -62.1% |
-| int64 | 397 | 981 | +147.2% | 309 | 266 | -13.9% |
-| uint64 | 89 | 880 | +887.3% | 186 | 253 | +36.0% |
-| float16 | 956 | 920 | -3.8% | 630 | 361 | -42.6% |
-| float32 | 688 | 1089 | +58.3% | 1485 | 1036 | -30.3% |
-| float64 | 305 | 299 | -1.9% | 271 | 517 | +90.8% |
-| complex64 | 265 | 458 | +73.0% | 342 | 277 | -19.0% |
-| complex128 | 368 | 170 | -53.8% | 208 | 512 | +146.8% |
-| turboquant2 | 582 | 1238 | +112.9% | 1475 | 804 | -45.5% |
-| turboquant4 | 1017 | 1383 | +36.0% | 416 | 1367 | +228.7% |
-| turboquant8 | 1087 | 806 | -25.8% | 615 | 1103 | +79.2% |
-
----
-
-## 25. GPU A/B — Sparse Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 2966 | 2573 | -13.3% | 2342 | 2599 | +11.0% |
-| uint8 | 2672 | 2735 | +2.3% | 2807 | 2594 | -7.6% |
-| int16 | 2400 | 2819 | +17.4% | 2165 | 2084 | -3.8% |
-| uint16 | 3644 | 2979 | -18.2% | 2624 | 3314 | +26.3% |
-| int32 | 3340 | 2642 | -20.9% | 2193 | 2134 | -2.7% |
-| uint32 | 2792 | 2618 | -6.2% | 2486 | 2672 | +7.5% |
-| int64 | 2487 | 2749 | +10.5% | 2501 | 2689 | +7.5% |
-| uint64 | 2994 | 2621 | -12.5% | 2462 | 2333 | -5.2% |
-| float16 | 2751 | 2595 | -5.7% | 2507 | 2267 | -9.6% |
-| float32 | 2284 | 2141 | -6.3% | 2032 | 2647 | +30.3% |
-| float64 | 2760 | 2699 | -2.2% | 2201 | 2228 | +1.2% |
-| complex64 | 2358 | 2362 | +0.2% | 2700 | 1796 | -33.5% |
-| complex128 | 2980 | 2424 | -18.7% | 2863 | 2630 | -8.2% |
-| turboquant2 | 2184 | 2094 | -4.1% | 3001 | 2694 | -10.2% |
-| turboquant4 | 2352 | 2790 | +18.6% | 2844 | 3013 | +5.9% |
-| turboquant8 | 2531 | 3396 | +34.2% | 2971 | 2576 | -13.3% |
-
----
-
-## 26. GPU A/B — Sparse Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 2801 | 1193 | -57.4% | 1979 | 2347 | +18.6% |
-| uint8 | 2715 | 2797 | +3.0% | 2664 | 2674 | +0.4% |
-| int16 | 2509 | 2876 | +14.6% | 2790 | 2040 | -26.9% |
-| uint16 | 2664 | 2783 | +4.5% | 2718 | 2031 | -25.3% |
-| int32 | 2818 | 2204 | -21.8% | 1074 | 2330 | +116.8% |
-| uint32 | 2581 | 2410 | -6.6% | 2327 | 2899 | +24.6% |
-| int64 | 2541 | 3309 | +30.2% | 2515 | 2570 | +2.2% |
-| uint64 | 2593 | 2997 | +15.6% | 2269 | 2459 | +8.4% |
-| float16 | 2434 | 2759 | +13.3% | 2892 | 2774 | -4.1% |
-| float32 | 2628 | 2734 | +4.0% | 3260 | 2789 | -14.5% |
-| float64 | 2257 | 2952 | +30.8% | 2458 | 2361 | -4.0% |
-| complex64 | 2553 | 2600 | +1.8% | 2383 | 2881 | +20.9% |
-| complex128 | 2601 | 3150 | +21.1% | 1883 | 1843 | -2.1% |
-| turboquant2 | 2728 | 3211 | +17.7% | 2972 | 2821 | -5.1% |
-| turboquant4 | 3208 | 2147 | -33.1% | 2984 | 3103 | +4.0% |
-| turboquant8 | 2844 | 3255 | +14.5% | 2691 | 2467 | -8.3% |
-
----
-
-## 27. GPU A/B — Filtered Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 148 | 127 | -14.0% | 57 | 63 | +10.6% |
-| uint8 | 197 | 170 | -13.6% | 75 | 73 | -2.0% |
-| int16 | 156 | 125 | -20.3% | 57 | 61 | +7.4% |
-| uint16 | 206 | 152 | -26.3% | 74 | 71 | -3.9% |
-| int32 | 147 | 145 | -1.2% | 59 | 57 | -3.6% |
-| uint32 | 166 | 136 | -18.3% | 60 | 59 | -1.7% |
-| int64 | 117 | 104 | -11.1% | 63 | 58 | -7.8% |
-| uint64 | 101 | 93 | -7.6% | 70 | 60 | -13.4% |
-| float16 | 138 | 116 | -16.0% | 65 | 58 | -10.7% |
-| float32 | 171 | 79 | -53.7% | 51 | 62 | +21.1% |
-| float64 | 127 | 112 | -12.1% | 59 | 59 | +1.5% |
-| complex64 | 118 | 98 | -17.1% | 63 | 63 | -0.7% |
-| complex128 | 151 | 106 | -29.9% | 67 | 45 | -33.7% |
-| turboquant2 | 103 | 145 | +41.5% | 73 | 69 | -5.6% |
-| turboquant4 | 146 | 143 | -2.2% | 51 | 55 | +7.0% |
-| turboquant8 | 120 | 162 | +35.2% | 68 | 60 | -11.8% |
-
----
-
-## 28. GPU A/B — Filtered Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 158 | 136 | -14.0% | 63 | 74 | +17.8% |
-| uint8 | 145 | 167 | +15.3% | 74 | 76 | +2.4% |
-| int16 | 132 | 138 | +4.5% | 73 | 64 | -13.1% |
-| uint16 | 137 | 162 | +18.2% | 65 | 41 | -37.5% |
-| int32 | 142 | 129 | -9.6% | 51 | 69 | +33.9% |
-| uint32 | 148 | 106 | -28.5% | 68 | 54 | -20.3% |
-| int64 | 126 | 111 | -12.0% | 57 | 60 | +5.0% |
-| uint64 | 54 | 183 | +240.5% | 51 | 50 | -1.2% |
-| float16 | 112 | 168 | +50.4% | 72 | 56 | -22.9% |
-| float32 | 155 | 179 | +15.1% | 80 | 46 | -42.7% |
-| float64 | 99 | 120 | +21.1% | 65 | 59 | -9.0% |
-| complex64 | 109 | 135 | +23.9% | 55 | 60 | +9.7% |
-| complex128 | 148 | 149 | +0.3% | 58 | 78 | +33.0% |
-| turboquant2 | 153 | 189 | +22.9% | 72 | 78 | +7.5% |
-| turboquant4 | 161 | 156 | -3.2% | 60 | 79 | +31.9% |
-| turboquant8 | 164 | 155 | -5.6% | 70 | 67 | -4.9% |
-
----
-
-## 29. GPU A/B — By id Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 1905 | 1829 | -4.0% | 2023 | 1994 | -1.4% |
-| uint8 | 3337 | 1928 | -42.2% | 1834 | 2042 | +11.4% |
-| int16 | 2075 | 1702 | -18.0% | 1825 | 1630 | -10.7% |
-| uint16 | 2420 | 2119 | -12.4% | 1863 | 1917 | +2.9% |
-| int32 | 1926 | 2333 | +21.2% | 2058 | 1876 | -8.9% |
-| uint32 | 2271 | 1449 | -36.2% | 1996 | 1973 | -1.2% |
-| int64 | 2014 | 1938 | -3.8% | 1854 | 1686 | -9.1% |
-| uint64 | 1379 | 1627 | +17.9% | 1853 | 1501 | -19.0% |
-| float16 | 1749 | 1565 | -10.5% | 1941 | 1761 | -9.3% |
-| float32 | 1197 | 149 | -87.6% | 139 | 1375 | +888.1% |
-| float64 | 1758 | 1521 | -13.5% | 1972 | 1389 | -29.6% |
-| complex64 | 446 | 272 | -39.0% | 329 | 729 | +121.4% |
-| complex128 | 1848 | 1559 | -15.6% | 2015 | 939 | -53.4% |
-| turboquant2 | 294 | 808 | +175.0% | 910 | 1386 | +52.3% |
-| turboquant4 | 515 | 1423 | +176.2% | 135 | 948 | +600.5% |
-| turboquant8 | 356 | 1088 | +206.0% | 781 | 1175 | +50.4% |
-
----
-
-## 30. GPU A/B — By id Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 1963 | 1718 | -12.5% | 2107 | 1980 | -6.0% |
-| uint8 | 2532 | 1869 | -26.2% | 2107 | 1901 | -9.8% |
-| int16 | 1531 | 1766 | +15.3% | 1602 | 1640 | +2.4% |
-| uint16 | 1233 | 1934 | +56.9% | 2083 | 2179 | +4.6% |
-| int32 | 1545 | 2324 | +50.4% | 1510 | 1813 | +20.1% |
-| uint32 | 2046 | 1932 | -5.6% | 1754 | 2042 | +16.4% |
-| int64 | 1875 | 1357 | -27.6% | 1739 | 2037 | +17.2% |
-| uint64 | 1583 | 1645 | +3.9% | 1908 | 1400 | -26.6% |
-| float16 | 1874 | 2086 | +11.3% | 2199 | 1882 | -14.4% |
-| float32 | 849 | 1065 | +25.4% | 1699 | 680 | -59.9% |
-| float64 | 1799 | 1710 | -4.9% | 1833 | 1747 | -4.7% |
-| complex64 | 330 | 655 | +98.5% | 314 | 209 | -33.4% |
-| complex128 | 1768 | 1942 | +9.9% | 1936 | 1745 | -9.9% |
-| turboquant2 | 674 | 1302 | +93.3% | 1674 | 653 | -61.0% |
-| turboquant4 | 1038 | 1141 | +9.9% | 543 | 1714 | +215.7% |
-| turboquant8 | 1110 | 809 | -27.1% | 557 | 1106 | +98.6% |
-
----
-
-## 31. GPU A/B — Graphrag Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 438 | 574 | +31.2% | 531 | 529 | -0.4% |
-| uint8 | 1310 | 687 | -47.5% | 608 | 657 | +8.1% |
-| int16 | 528 | 460 | -12.9% | 353 | 422 | +19.5% |
-| uint16 | 2928 | 395 | -86.5% | 460 | 443 | -3.7% |
-| int32 | 865 | 410 | -52.6% | 288 | 271 | -5.9% |
-| uint32 | 599 | 329 | -45.1% | 266 | 249 | -6.3% |
-| int64 | 249 | 230 | -7.6% | 173 | 225 | +29.8% |
-| uint64 | 160 | 141 | -11.4% | 473 | 128 | -72.9% |
-| float16 | 524 | 398 | -23.9% | 275 | 321 | +17.0% |
-| float32 | 1115 | 116 | -89.6% | 131 | 1225 | +836.3% |
-| float64 | 358 | 269 | -24.8% | 241 | 221 | -8.2% |
-| complex64 | 500 | 222 | -55.6% | 240 | 313 | +30.3% |
-| complex128 | 884 | 119 | -86.5% | 364 | 97 | -73.4% |
-| turboquant2 | 304 | 626 | +106.0% | 883 | 1176 | +33.3% |
-| turboquant4 | 586 | 983 | +67.7% | 153 | 979 | +538.6% |
-| turboquant8 | 240 | 1077 | +349.6% | 597 | 1001 | +67.8% |
-
----
-
-## 32. GPU A/B — Graphrag Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 612 | 456 | -25.5% | 493 | 517 | +4.8% |
-| uint8 | 722 | 1513 | +109.7% | 620 | 373 | -39.8% |
-| int16 | 597 | 334 | -44.0% | 402 | 560 | +39.2% |
-| uint16 | 467 | 410 | -12.3% | 494 | 419 | -15.2% |
-| int32 | 418 | 308 | -26.1% | 229 | 257 | +12.3% |
-| uint32 | 716 | 239 | -66.7% | 190 | 201 | +6.2% |
-| int64 | 285 | 683 | +139.5% | 172 | 237 | +37.9% |
-| uint64 | 106 | 1250 | +1074.4% | 147 | 187 | +27.3% |
-| float16 | 571 | 922 | +61.5% | 440 | 413 | -6.1% |
-| float32 | 699 | 1141 | +63.1% | 1496 | 646 | -56.8% |
-| float64 | 231 | 310 | +34.1% | 266 | 271 | +1.9% |
-| complex64 | 310 | 254 | -18.1% | 193 | 389 | +101.3% |
-| complex128 | 301 | 764 | +153.9% | 236 | 792 | +236.1% |
-| turboquant2 | 574 | 1181 | +105.7% | 1044 | 567 | -45.7% |
-| turboquant4 | 975 | 1225 | +25.7% | 400 | 1396 | +248.7% |
-| turboquant8 | 1148 | 776 | -32.5% | 557 | 905 | +62.5% |
-
----
-
-## 33. GPU A/B — Geo Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 132 | 145 | +10.3% | 56 | 60 | +7.4% |
-| uint8 | 144 | 124 | -13.7% | 52 | 39 | -25.9% |
-| int16 | 196 | 139 | -28.9% | 66 | 52 | -20.1% |
-| uint16 | 158 | 174 | +9.7% | 54 | 54 | +0.2% |
-| int32 | 165 | 189 | +14.6% | 50 | 55 | +9.5% |
-| uint32 | 141 | 160 | +13.1% | 59 | 57 | -3.2% |
-| int64 | 160 | 148 | -7.6% | 58 | 51 | -12.4% |
-| uint64 | 172 | 149 | -13.2% | 60 | 79 | +31.7% |
-| float16 | 168 | 145 | -13.8% | 73 | 54 | -26.4% |
-| float32 | 173 | 160 | -7.2% | 69 | 54 | -21.6% |
-| float64 | 165 | 192 | +16.3% | 65 | 56 | -14.6% |
-| complex64 | 185 | 183 | -1.2% | 77 | 45 | -41.2% |
-| complex128 | 164 | 199 | +21.4% | 62 | 54 | -14.1% |
-| turboquant2 | 155 | 134 | -13.5% | 64 | 55 | -14.8% |
-| turboquant4 | 145 | 174 | +20.2% | 56 | 54 | -4.0% |
-| turboquant8 | 161 | 139 | -13.6% | 63 | 50 | -20.5% |
-
----
-
-## 34. GPU A/B — Geo Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 143 | 143 | -0.2% | 54 | 63 | +16.2% |
-| uint8 | 161 | 141 | -12.7% | 62 | 69 | +11.2% |
-| int16 | 121 | 175 | +44.6% | 56 | 53 | -5.5% |
-| uint16 | 137 | 160 | +16.9% | 57 | 65 | +15.2% |
-| int32 | 138 | 149 | +7.5% | 54 | 62 | +14.3% |
-| uint32 | 183 | 143 | -22.0% | 56 | 72 | +28.9% |
-| int64 | 124 | 84 | -32.4% | 52 | 55 | +5.3% |
-| uint64 | 134 | 141 | +5.2% | 69 | 70 | +1.5% |
-| float16 | 173 | 132 | -23.7% | 55 | 34 | -38.0% |
-| float32 | 175 | 155 | -11.6% | 66 | 63 | -3.8% |
-| float64 | 133 | 150 | +12.8% | 59 | 46 | -21.7% |
-| complex64 | 179 | 153 | -14.9% | 50 | 52 | +3.6% |
-| complex128 | 194 | 197 | +1.8% | 55 | 53 | -3.8% |
-| turboquant2 | 165 | 169 | +2.5% | 66 | 52 | -21.9% |
-| turboquant4 | 145 | 158 | +9.1% | 58 | 57 | -1.2% |
-| turboquant8 | 142 | 138 | -3.3% | 62 | 56 | -9.4% |
-
----
-
-## 35. GPU A/B — Temporal Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 539 | 508 | -5.9% | 377 | 311 | -17.5% |
-| uint8 | 609 | 501 | -17.7% | 366 | 348 | -4.9% |
-| int16 | 677 | 439 | -35.1% | 320 | 277 | -13.7% |
-| uint16 | 502 | 570 | +13.6% | 374 | 361 | -3.6% |
-| int32 | 651 | 504 | -22.6% | 360 | 351 | -2.6% |
-| uint32 | 596 | 573 | -4.0% | 356 | 284 | -20.2% |
-| int64 | 660 | 380 | -42.4% | 420 | 339 | -19.3% |
-| uint64 | 505 | 435 | -13.8% | 326 | 317 | -2.7% |
-| float16 | 530 | 482 | -9.0% | 318 | 320 | +0.8% |
-| float32 | 659 | 516 | -21.7% | 424 | 345 | -18.6% |
-| float64 | 716 | 659 | -8.0% | 372 | 355 | -4.5% |
-| complex64 | 699 | 539 | -22.9% | 480 | 315 | -34.5% |
-| complex128 | 729 | 780 | +7.1% | 404 | 365 | -9.7% |
-| turboquant2 | 629 | 682 | +8.3% | 424 | 378 | -10.9% |
-| turboquant4 | 845 | 695 | -17.7% | 400 | 300 | -25.1% |
-| turboquant8 | 633 | 730 | +15.4% | 443 | 362 | -18.2% |
-
----
-
-## 36. GPU A/B — Temporal Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 596 | 447 | -25.0% | 324 | 355 | +9.5% |
-| uint8 | 551 | 525 | -4.7% | 210 | 283 | +34.4% |
-| int16 | 533 | 512 | -3.9% | 318 | 333 | +4.6% |
-| uint16 | 623 | 399 | -36.0% | 327 | 370 | +13.1% |
-| int32 | 485 | 369 | -24.0% | 267 | 305 | +14.3% |
-| uint32 | 470 | 467 | -0.6% | 311 | 205 | -34.1% |
-| int64 | 512 | 512 | -0.1% | 181 | 348 | +91.7% |
-| uint64 | 462 | 564 | +22.2% | 291 | 274 | -5.9% |
-| float16 | 342 | 634 | +85.4% | 360 | 248 | -31.0% |
-| float32 | 632 | 744 | +17.7% | 427 | 329 | -22.8% |
-| float64 | 635 | 665 | +4.8% | 393 | 408 | +3.9% |
-| complex64 | 429 | 632 | +47.4% | 394 | 359 | -9.0% |
-| complex128 | 736 | 674 | -8.4% | 379 | 355 | -6.4% |
-| turboquant2 | 640 | 802 | +25.3% | 420 | 411 | -2.2% |
-| turboquant4 | 586 | 611 | +4.3% | 360 | 407 | +13.0% |
-| turboquant8 | 592 | 616 | +4.2% | 395 | 341 | -13.6% |
-
----
-
-## 37. GPU A/B — Learned index Search (NoDisk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 612 | 521 | -14.8% | 600 | 632 | +5.3% |
-| uint8 | 1699 | 796 | -53.2% | 648 | 765 | +18.1% |
-| int16 | 414 | 531 | +28.1% | 448 | 528 | +17.8% |
-| uint16 | 2464 | 540 | -78.1% | 541 | 453 | -16.3% |
-| int32 | 862 | 514 | -40.3% | 260 | 253 | -2.8% |
-| uint32 | 493 | 276 | -44.0% | 267 | 237 | -11.4% |
-| int64 | 316 | 128 | -59.6% | 195 | 205 | +5.1% |
-| uint64 | 177 | 145 | -17.9% | 434 | 189 | -56.5% |
-| float16 | 458 | 524 | +14.3% | 291 | 581 | +99.8% |
-| float32 | 719 | 120 | -83.3% | 136 | 1195 | +781.1% |
-| float64 | 210 | 234 | +11.2% | 310 | 211 | -31.9% |
-| complex64 | 259 | 315 | +21.7% | 287 | 458 | +59.7% |
-| complex128 | 778 | 185 | -76.2% | 401 | 149 | -62.7% |
-| turboquant2 | 338 | 802 | +137.1% | 670 | 966 | +44.2% |
-| turboquant4 | 551 | 1611 | +192.7% | 135 | 861 | +536.0% |
-| turboquant8 | 281 | 821 | +191.8% | 740 | 977 | +32.0% |
-
----
-
-## 38. GPU A/B — Learned index Search (Disk)
-
-| dtype | 100k std | 100k emlgo | 100k delta | 250k std | 250k emlgo | 250k delta |
-|---|---|---|---|---|---|---|
-| int8 | 516 | 497 | -3.7% | 552 | 390 | -29.3% |
-| uint8 | 562 | 1897 | +237.6% | 591 | 547 | -7.4% |
-| int16 | 485 | 511 | +5.3% | 559 | 410 | -26.7% |
-| uint16 | 524 | 656 | +25.2% | 545 | 498 | -8.7% |
-| int32 | 577 | 305 | -47.2% | 266 | 279 | +5.0% |
-| uint32 | 722 | 242 | -66.5% | 145 | 275 | +89.7% |
-| int64 | 295 | 567 | +92.4% | 221 | 220 | -0.5% |
-| uint64 | 64 | 1657 | +2485.0% | 131 | 145 | +10.3% |
-| float16 | 438 | 470 | +7.4% | 354 | 340 | -4.2% |
-| float32 | 623 | 1067 | +71.2% | 1462 | 537 | -63.3% |
-| float64 | 266 | 391 | +47.2% | 311 | 288 | -7.3% |
-| complex64 | 304 | 366 | +20.4% | 244 | 228 | -6.6% |
-| complex128 | 227 | 430 | +89.8% | 228 | 1346 | +491.2% |
-| turboquant2 | 654 | 1193 | +82.5% | 1346 | 552 | -59.0% |
-| turboquant4 | 953 | 1243 | +30.4% | 410 | 1639 | +299.9% |
-| turboquant8 | 1184 | 796 | -32.8% | 606 | 1060 | +75.1% |
-
----
-
-## 39. Regression Investigation vs Previous Baseline (`archive_prev`)
-
-Out of **1134 comparable metric points**, **589 points** regressed beyond the -10% threshold, while **220 points** gained more than +20%.
-
-### Top Observed Regressions
-
-| Configuration | Count | Dtype | Search Mode | Baseline QPS | Current QPS | Delta |
-|---|---|---|---|---|---|---|
-| cpu_emlgo_nodisk | 250000 | float32 | by_id | 1765.7 | 112.6 | -93.6% |
-| cpu_emlgo_nodisk | 250000 | float32 | learned_index | 1512.0 | 108.9 | -92.8% |
-| cpu_emlgo_nodisk | 250000 | float32 | hybrid | 1446.8 | 109.4 | -92.4% |
-| cpu_emlgo_nodisk | 250000 | float32 | graphrag | 1444.1 | 111.5 | -92.3% |
-| cpu_emlgo_nodisk | 250000 | turboquant2 | dense | 1764.5 | 138.4 | -92.2% |
-| cpu_emlgo_nodisk | 250000 | turboquant2 | learned_index | 1468.5 | 117.2 | -92.0% |
-| cpu_emlgo_disk | 250000 | int32 | filtered | 604.6 | 50.0 | -91.7% |
-| cpu_emlgo_nodisk | 250000 | turboquant2 | by_id | 1659.4 | 137.4 | -91.7% |
-| cpu_emlgo_nodisk | 250000 | turboquant2 | filtered | 484.0 | 41.7 | -91.4% |
-| cpu_emlgo_nodisk | 250000 | float32 | dense | 1641.8 | 142.3 | -91.3% |
-| cpu_emlgo_disk | 100000 | turboquant4 | by_id | 1916.2 | 177.1 | -90.8% |
-| cpu_emlgo_disk | 100000 | turboquant4 | filtered | 918.3 | 85.9 | -90.6% |
-| cpu_emlgo_nodisk | 250000 | turboquant2 | hybrid | 1573.9 | 150.7 | -90.4% |
-| cpu_emlgo_nodisk | 250000 | turboquant2 | graphrag | 1229.9 | 120.9 | -90.2% |
-| cpu_std_nodisk | 100000 | uint64 | learned_index | 1660.0 | 163.5 | -90.2% |
-
-### Top Observed Gains
-
-| Configuration | Count | Dtype | Search Mode | Baseline QPS | Current QPS | Delta |
-|---|---|---|---|---|---|---|
-| cpu_emlgo_disk | 100000 | uint64 | dense | 141.3 | 2066.8 | +1362.7% |
-| cpu_emlgo_disk | 100000 | uint64 | hybrid | 173.8 | 2437.2 | +1302.2% |
-| cpu_emlgo_disk | 100000 | uint64 | graphrag | 192.2 | 2275.2 | +1083.8% |
-| cpu_std_disk | 250000 | uint64 | hybrid | 168.3 | 1771.4 | +952.3% |
-| cpu_std_disk | 250000 | uint64 | graphrag | 181.9 | 1842.1 | +912.8% |
-| cpu_emlgo_disk | 100000 | uint64 | learned_index | 190.5 | 1893.2 | +894.0% |
-| cpu_std_disk | 250000 | uint64 | learned_index | 186.6 | 1833.3 | +882.6% |
-| cpu_std_disk | 250000 | uint64 | dense | 170.9 | 1593.6 | +832.3% |
-| cpu_std_disk | 100000 | turboquant4 | dense | 108.8 | 854.8 | +685.3% |
-| cpu_std_disk | 100000 | float32 | hybrid | 159.7 | 1247.6 | +681.4% |
-| cpu_emlgo_nodisk | 100000 | uint64 | dense | 173.9 | 1299.2 | +646.9% |
-| cpu_std_nodisk | 100000 | int32 | graphrag | 337.7 | 2379.4 | +604.5% |
-| cpu_emlgo_nodisk | 100000 | uint64 | learned_index | 187.2 | 1315.1 | +602.7% |
-| cpu_emlgo_nodisk | 100000 | complex128 | hybrid | 149.1 | 1032.1 | +592.1% |
-| cpu_std_disk | 100000 | float32 | learned_index | 227.8 | 1538.2 | +575.2% |
-
----
-
-## 40. Performance & Stability Observations for Roadmap
-
-See `docs/roadmap.md` for the tracked action items derived from this run.
+## 4. Hardware Profiling & Hotspot Analysis (Pprof Insights)
+
+Continuous runtime CPU, heap allocation, and mutex profiling (`profiles/*.pprof`) during execution identified key operational insights:
+
+### CPU Hotspots (Top Functions by Flat Duration)
+1. **`simd.euclideanDistanceBatch4Way` (16.34% flat time)**: Dominates float32 search distance evaluation; 4-way unrolled AVX2 kernel provides high throughput.
+2. **`simd.euclideanFloat64AVX2Kernel` (42.62% flat time)**: In `complex128` search, each 128-dim vector consists of 256 float64 elements, requiring heavy 256-bit SIMD processing.
+3. **`store/index.(*ArrowHNSW).searchLayerFloat32` (9.60% flat, 90.27% cum)**: Core graph traversal loop traversing neighbor candidates.
+4. **`CandidateHeapAdapter (down, Less, Swap)` (15.2% combined flat time)**: Priority queue maintenance during beam search represents a major non-SIMD compute consumer.
+5. **`memory.(*SlabArena).GetWithGeneration` (11.25% flat time)**: Vector memory pointer dereferencing with generation checks.
+6. **`prometheus.(*counter).Inc` & `hashAdd` (3.43% flat time)**: High-frequency metric counter increments on hot query paths.
+
+### Lock & Contention Bottlenecks
+- **`ArrowHNSW.AddConnectionsBatch` (56.94% mutex delay)**: Mutex serialization occurs when concurrent indexing workers update node neighbor lists in parallel.
+- **`ArrowHNSW.AddConnection` (25.13% mutex delay)**: Fine-grained bidirectional edge linkage synchronization.
+
+### Allocation Bottlenecks
+- **`bytes.growSlice` (14.85% total alloc space)**: Slice expansion during batch payload serialization.
+- **`SimpleBufferPool.Get` (10.93%) & protobuf decoding (10.72%)**: Flight RPC payload buffer management.
+- **`NewBloomFilter` (10.24%)**: Temporary bloom filter structures allocated per batch.

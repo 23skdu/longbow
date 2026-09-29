@@ -643,33 +643,19 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 	}
 }
 
-func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.Record, _ *arrow.Schema) error {
-	desc := &flight.FlightDescriptor{
-		Type: flight.DescriptorPATH,
-		Path: []string{dataset},
+func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.Record, sch *arrow.Schema) error {
+	schema := sch
+	if schema == nil {
+		schema = rec.Schema()
 	}
-
-	stream, err := sc.DoPut(ctx, desc)
+	uploader, err := sc.NewStreamUploader(ctx, dataset, schema)
 	if err != nil {
 		return err
 	}
+	defer uploader.Close()
 
-	writer := flight.NewRecordWriter(stream)
-	writer.SetFlightDescriptor(desc)
-
-	if err := writer.Write(rec); err != nil {
-		_ = writer.Close()
+	if err := uploader.WriteChunked(rec, 10000); err != nil {
 		return err
 	}
-
-	if err := writer.Close(); err != nil {
-		return err
-	}
-
-	if err := stream.CloseSend(); err != nil {
-		return err
-	}
-
-	_, _ = stream.Recv()
-	return nil
+	return uploader.Close()
 }

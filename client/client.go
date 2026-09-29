@@ -3,13 +3,17 @@ package client
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/pkg/loadbalancing"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -334,4 +338,105 @@ func (s *smartDoPutStream) Send(data *flight.FlightData) error {
 // GetLastLoadHints returns the latest load balancing hints received from the server.
 func (c *SmartClient) GetLastLoadHints() *loadbalancing.LoadHints {
 	return c.lastLoad.Load()
+}
+
+// StreamUploader handles streaming chunk uploads over Flight DoPut.
+// It sends chunks of Arrow RecordBatches sequentially across the stream,
+// avoiding huge memory spikes on either client or server.
+type StreamUploader struct {
+	sc     *SmartClient
+	stream flight.FlightService_DoPutClient
+	writer *flight.Writer
+	desc   *flight.FlightDescriptor
+}
+
+// NewStreamUploader creates a stream uploader for streaming Arrow record batches/chunks into Longbow.
+func (c *SmartClient) NewStreamUploader(ctx context.Context, dataset string, schema *arrow.Schema) (*StreamUploader, error) {
+	desc := &flight.FlightDescriptor{
+		Type: flight.DescriptorPATH,
+		Path: []string{dataset},
+	}
+	stream, err := c.DoPut(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+
+	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	writer.SetFlightDescriptor(desc)
+
+	return &StreamUploader{
+		sc:     c,
+		stream: stream,
+		writer: writer,
+		desc:   desc,
+	}, nil
+}
+
+// Write writes a single Arrow record batch to the upload stream.
+func (u *StreamUploader) Write(record arrow.Record) error {
+	return u.writer.Write(record)
+}
+
+// WriteChunked writes a record batch, automatically splitting it into smaller chunks if it exceeds maxChunkSize.
+func (u *StreamUploader) WriteChunked(record arrow.Record, maxChunkSize int64) error {
+	if maxChunkSize <= 0 {
+		maxChunkSize = 10000
+	}
+	numRows := record.NumRows()
+	if numRows <= maxChunkSize {
+		return u.writer.Write(record)
+	}
+	for offset := int64(0); offset < numRows; offset += maxChunkSize {
+		end := offset + maxChunkSize
+		if end > numRows {
+			end = numRows
+		}
+		chunk := record.NewSlice(offset, end)
+		err := u.writer.Write(chunk)
+		chunk.Release()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Close closes the stream writer and completes the Flight DoPut exchange.
+func (u *StreamUploader) Close() error {
+	if err := u.writer.Close(); err != nil {
+		return err
+	}
+	if err := u.stream.CloseSend(); err != nil {
+		return err
+	}
+	if _, err := u.stream.Recv(); err != nil && err != io.EOF {
+		return err
+	}
+	return nil
+}
+
+// UploadTable streams an arrow.Table in chunks (default 10,000 rows per chunk) to Longbow.
+func (c *SmartClient) UploadTable(ctx context.Context, dataset string, tbl arrow.Table, chunkSize int64) error {
+	if chunkSize <= 0 {
+		chunkSize = 10000
+	}
+	uploader, err := c.NewStreamUploader(ctx, dataset, tbl.Schema())
+	if err != nil {
+		return err
+	}
+	defer uploader.Close()
+
+	tr := array.NewTableReader(tbl, chunkSize)
+	defer tr.Release()
+
+	for tr.Next() {
+		rec := tr.Record()
+		if err := uploader.Write(rec); err != nil {
+			return err
+		}
+	}
+	if tr.Err() != nil {
+		return tr.Err()
+	}
+	return uploader.Close()
 }

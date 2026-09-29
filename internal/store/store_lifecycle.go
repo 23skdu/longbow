@@ -481,8 +481,8 @@ func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
 }
 
 func (s *VectorStore) runIndexWorker(ctx context.Context) {
-	maxBatch := 32768
-	currentBatch := 1024
+	maxBatch := 16
+	currentBatch := 2
 
 	jobs := make([]IndexJob, 0, maxBatch)
 	var lastLogTime time.Time
@@ -754,24 +754,24 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 			jobs = jobs[:0]
 		}
 
-		// Adaptive logic
+		// Adaptive logic based on number of chunk jobs in queue
 		queueDepth := s.indexQueue.Len()
 
 		switch {
-		case queueDepth > 10000:
+		case queueDepth > 100:
 			if time.Since(lastLogTime) > 2*time.Second {
-				s.logger.Warn().Int("depth", queueDepth).Msg("Ingestion queue is BACKPRESSURED")
+				s.logger.Warn().Int("depth", queueDepth).Msg("Indexing queue is BACKPRESSURED")
 				lastLogTime = time.Now()
 			}
-			currentBatch = maxBatch // 32768
-		case queueDepth > 1000:
+			currentBatch = 4
+		case queueDepth > 20:
 			if time.Since(lastLogTime) > 5*time.Second {
-				s.logger.Info().Int("depth", queueDepth).Msg("Ingestion queue is filling up")
+				s.logger.Info().Int("depth", queueDepth).Msg("Indexing queue is filling up")
 				lastLogTime = time.Now()
 			}
-			currentBatch = 8192
+			currentBatch = 2
 		default:
-			currentBatch = 1024
+			currentBatch = 1
 		}
 
 		select {

@@ -160,6 +160,8 @@ Following the benchmark matrix analysis and performance investigation across 50k
 
 2. **Close the markdown-lint and docs-drift gap** — `docs/**` now passes `markdownlint-cli2` with 0 issues under the workflow's own glob. A `.markdownlint-cli2.jsonc` relaxes only `MD013` (line-length: tables, ASCII diagrams and shell transcripts run to ~735 columns) and `MD060` (table-column-style: the docs mix `|---|---|` and `| --- | --- |` to match column widths), each with the reason recorded in the file; every other default rule stays enabled and no per-file suppressions were added. The 248 genuine defects were fixed in the markup. Separately, `scripts/generate_performance_and_roadmap.py` was emitting headings glued to lists in `docs/performance.md` and would have deleted roadmap sections 6 and 7 wholesale on any run; both are fixed at the source, and generation is now idempotent.
 
+3. **Fix the negative-index guard on the roaring-backed `Bitset`** — `Set`, `Clear`, `Contains` and `Slice` all converted an `int` index to a roaring `uint32` without checking the sign, so `Set(-1)` set bit `4294967295` and `Contains(-1)` answered for it. All four now reject negatives, matching the convention `ArrowBitset` already used. The guards were confirmed by a regression test that fails without them, and the three `#nosec G115` annotations now carry the guard as their justification.
+
 ## 5. Ten Concrete Steps to Improve Performance Across Data and Search Types
 
 Based on empirical CPU, Heap, and Mutex pprof profile data collected during multi-scale benchmarking across all data types and search modalities, the following 10 optimization initiatives are prioritized. Each entry records the implemented outcome and the **measured** result on an Intel i7-12650H (16 vCPU, AVX2, no AVX-512); the original target is retained so the gap stays visible.
@@ -260,7 +262,7 @@ These IDs are duplicated in `.trivyignore` and the `ALLOWLIST` array in `scripts
 
 ---
 
-## 7. Next Eight Steps (Performance & Features)
+## 7. Next Seven Steps (Performance & Features)
 
 Derived from the measurements in §5 and the defects found while implementing it. Each states the evidence it rests on, so the ordering can be re-checked when the numbers change.
 
@@ -274,8 +276,6 @@ Derived from the measurements in §5 and the defects found while implementing it
 
 5. **Bring the AVX-512 path under test**: the AVX-512 float64 kernels were dead code until this work and remain unmeasurable on the current host (no AVX-512). Gate them behind a cpuid-guarded dispatch that is exercised by an emulated or hardware-backed lane, so the kernels are not carried untested indefinitely.
 
-6. **Fix the `Bitset.Set` negative-index guard**: `internal/store/types/bitmap.go` `Set(i int)` does not reject negatives, so `Set(-1)` sets bit `4294967295` (`ArrowBitset.Set` already guards). Found while writing the bitmap-ownership stress tests. Low blast radius, silent wrong-answer class of bug.
+6. **Track the Morton grid's measured result instead of the target**: the grid beats the quadtree on insert (2.3x, allocation-free) and loses on query (17-40%). Making it win needs per-cell adaptive subdivision in flat arrays. Either implement that and re-measure, or drop the `GeoIndexTypeMorton` option and record the write-path win only — an option that is slower on the read path is a maintenance cost unless someone has a write-heavy workload to use it.
 
-7. **Track the Morton grid's measured result instead of the target**: the grid beats the quadtree on insert (2.3x, allocation-free) and loses on query (17-40%). Making it win needs per-cell adaptive subdivision in flat arrays. Either implement that and re-measure, or drop the `GeoIndexTypeMorton` option and record the write-path win only — an option that is slower on the read path is a maintenance cost unless someone has a write-heavy workload to use it.
-
-8. **Correct the §5 target column to reflect measurements**: several entries missed their projected QPS impact while others exceeded it (item 7 regressed, item 4's end-to-end effect is ~0.07%). Targets were pprof-derived estimates, and the section now records both. Have future planning steps lead with the measured effect size and a confidence statement, and re-derive targets from the §5 numbers rather than carrying the original projections forward.
+7. **Correct the §5 target column to reflect measurements**: several entries missed their projected QPS impact while others exceeded it (item 7 regressed, item 4's end-to-end effect is ~0.07%). Targets were pprof-derived estimates, and the section now records both. Have future planning steps lead with the measured effect size and a confidence statement, and re-derive targets from the §5 numbers rather than carrying the original projections forward.

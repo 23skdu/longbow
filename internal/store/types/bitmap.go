@@ -67,31 +67,47 @@ func (b *Bitset) And(other *roaring.Bitmap) {
 	}
 }
 
+// Set marks the bit at index i. A negative index is ignored, matching
+// ArrowBitset: the index is converted to a roaring uint32, so without the
+// guard Set(-1) would set bit 4294967295 instead of doing nothing.
 func (b *Bitset) Set(i int) {
+	if i < 0 {
+		return
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.ensurePrivateLocked()
 	if b.bitmap != nil {
-		b.bitmap.Add(uint32(i)) // #nosec G115
+		b.bitmap.Add(uint32(i)) // #nosec G115 -- i >= 0 checked above
 	}
 }
 
+// Clear resets the bit at index i. A negative index is ignored, for the same
+// reason Set ignores one.
 func (b *Bitset) Clear(i int) {
+	if i < 0 {
+		return
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.ensurePrivateLocked()
 	if b.bitmap != nil {
-		b.bitmap.Remove(uint32(i)) // #nosec G115
+		b.bitmap.Remove(uint32(i)) // #nosec G115 -- i >= 0 checked above
 	}
 }
 
+// Contains reports whether the bit at index i is set. A negative index is
+// never contained; without the guard it would alias bit 4294967295.
 func (b *Bitset) Contains(i int) bool {
+	if i < 0 {
+		return false
+	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	if b.bitmap == nil {
 		return false
 	}
-	return b.bitmap.Contains(uint32(i)) // #nosec G115
+	return b.bitmap.Contains(uint32(i)) // #nosec G115 -- i >= 0 checked above
 }
 
 // Clone creates a thread-safe copy of the bitset. The copy holds a fresh
@@ -149,13 +165,15 @@ func (b *Bitset) Release() {
 }
 
 // Slice returns a new Bitset containing bits in range [offset, offset+length)
-// shifted by -offset. Used for splitting batches with tombstones.
+// shifted by -offset. Used for splitting batches with tombstones. A negative
+// offset or length yields an empty result rather than wrapping into a huge
+// uint32 bound.
 func (b *Bitset) Slice(offset, length int) *Bitset {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
 	newBm := NewBitset()
-	if b.bitmap == nil {
+	if b.bitmap == nil || offset < 0 || length <= 0 {
 		return newBm
 	}
 

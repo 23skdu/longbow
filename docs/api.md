@@ -496,7 +496,7 @@ LongbowClient(
 | Method | Signature | Returns | Description |
 |--------|-----------|---------|-------------|
 | `create_namespace` | `(name, dims=128, data_type="float32", force=False, **hnsw_config)` | `None` | Create namespace with HNSW config |
-| `create_dataset` | `(name, dimensions, vector_type="float32", turboquant_bits=8, geo_enabled=False, disk_enabled=False, metric="cosine")` | `None` | Create dataset with full feature config |
+| `create_dataset` | `(name, dimensions, vector_type="float32", turboquant_bits=4, geo_enabled=False, disk_enabled=False, metric="cosine")` | `None` | Create dataset with full feature config |
 | `delete_namespace` | `(dataset)` | `None` | Delete entire namespace |
 | `drop_dataset` | `(dataset)` | `None` | Drop dataset permanently |
 | `delete` | `(dataset, ids=None)` | `None` | Delete by IDs or entire namespace |

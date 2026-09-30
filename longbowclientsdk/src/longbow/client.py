@@ -393,7 +393,7 @@ class LongbowClient:
         name: str,
         dimensions: int,
         vector_type: str = "float32",
-        turboquant_bits: int = 8,
+        turboquant_bits: int = 4,
         geo_enabled: bool = False,
         disk_enabled: bool = False,
         metric: str = "cosine",
@@ -405,7 +405,8 @@ class LongbowClient:
             name: Name of the dataset (e.g. "tenant/vectors").
             dimensions: Vector dimensionality.
             vector_type: "float32", "turboquant" (tq), "int8", "float16".
-            turboquant_bits: Bit depth for TQ (4 or 8).
+            turboquant_bits: Bit depth for TQ (4 or 8; 1-3 encode but lose the vector
+                direction). Defaults to 4, matching the server-side default.
             geo_enabled: Enable geospatial indexing (Quadtree).
             disk_enabled: Enable Disk-ANN offloading.
             metric: Distance metric ("cosine", "l2", "ip").

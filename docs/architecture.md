@@ -134,7 +134,7 @@ graph LR
 
 ### 2.2 Auto-Sharding & Migration
 
-When a dataset exceeds the `ShardThreshold` (default 100k), the system triggers a background migration.
+When a dataset exceeds the `ShardThreshold` (default `10000`), the system triggers a background migration.
 
 ```mermaid
 graph TD
@@ -192,7 +192,7 @@ Implements **Exponential Backoff with Jitter** for transient failure recovery. I
 ### 3.1 Write-Ahead Log (WAL)
 
 - **Mechanism**: Every `DoPut` is synchronously written to a batched WAL before being acknowledged. The system employs a `BufferedWAL` utilizing a high-throughput **group commit** algorithm via a list of `syncWaiter` primitives.
-- **Zero-Allocation**: A double-buffering and `patchableBuffer` strategy ensures that mutations can be aggressively formatted and pushed to disk without incurring Go runtime allocations or GC pressure.
+- **Zero-Allocation**: A double-buffering strategy over a pooled `PatchableBuffer` (`internal/storage/patchable_buffer.go`) ensures that mutations can be aggressively formatted and pushed to disk without incurring Go runtime allocations or GC pressure. `swapBufferLocked` swaps the active buffer for a fresh one from the pool, hands the sealed buffer to the flusher, and recycles it on return.
 - **Performance**: High-throughput asynchronous persistence using platform-specific backends (`io_uring` on Linux, `O_DIRECT` equivalents on macOS).
 - **Recovery**: On startup, Longbow replays the WAL to reconstruct the in-memory HNSW index and Arrow buffers flawlessly.
 
@@ -296,13 +296,14 @@ longbow-cli export -dataset my-collection -file gs://my-bucket/exports/today.arr
 
 ### 3.9 Tiered Storage Configuration
 
-| Variable | Description |
-| :--- | :--- |
-| `STORAGE_REMOTE_TYPE` | `s3` or `gcs` |
-| `S3_BUCKET` | S3 bucket name |
-| `S3_ENDPOINT` | Custom S3 endpoint (e.g. MinIO) |
-| `GCS_BUCKET` | GCS bucket name |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google service account JSON key |
+The remote backends are configured **programmatically, not by environment variable**. There is no env-var path for tiered storage: neither `internal/storage/s3_remote.go` nor `internal/storage/gcs_backend.go` reads `os.Getenv`, and the server has no `STORAGE_REMOTE_TYPE`, `S3_BUCKET`, `S3_ENDPOINT`, `GCS_BUCKET`, or `GOOGLE_APPLICATION_CREDENTIALS` binding.
+
+Construct the backend directly and pass it to the snapshot/remote-storage layer:
+
+- **S3** -- `NewS3RemoteStorage(ctx, region, bucket, endpoint, accessKey, secretKey)` (`internal/storage/s3_remote.go:28`). An empty `region` defaults to `us-east-1`. Supplying `endpoint` switches the client to path-style addressing, which is what MinIO and other S3-compatible services require. Credentials fall back to the AWS SDK default chain when `accessKey`/`secretKey` are empty, so the usual `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / instance-role environment is honoured by the SDK rather than by Longbow.
+- **GCS** -- `NewGCSBackend(ctx, cfg *GCSBackendConfig)` (`internal/storage/gcs_backend.go:33`) with `Bucket` (required), `Prefix`, `CredentialsFile`, and `ProjectID`. `NewGCSRemoteStorage(ctx, bucketName, opts...)` (`internal/storage/gcs_remote.go:23`) is the lighter `RemoteStorage` variant.
+
+The Helm chart sets `LONGBOW_S3_ENABLED`, `LONGBOW_S3_BUCKET`, `LONGBOW_S3_REGION`, and `LONGBOW_S3_ENDPOINT` (`helm/longbow/templates/deployment.yaml`). Those reach the container but no Go code reads them, so they have no effect on a stock build -- treat them as reserved for an embedding application that constructs the backend itself.
 
 ---
 
@@ -344,7 +345,7 @@ sequenceDiagram
 
 - **ParallelRecordReader**: Distributes Arrow IPC decoding across multiple CPU cores.
 - **Reorder Buffer**: Ensures that batches are committed to the WAL and storage in the exact order they were sent by the client, even if decoding happens out of order.
-- **BufferedWAL & Group Commit**: The `BufferedWAL` utilizes a highly efficient double-buffering architecture coupled with `patchableBuffer` and `syncWaiter` primitives. This swap-buffer strategy enables zero-allocation, high-throughput logging with strict sequential persistence before acknowledgment.
+- **BufferedWAL & Group Commit**: The `BufferedWAL` utilizes a highly efficient double-buffering architecture coupled with `PatchableBuffer` and `syncWaiter` primitives. This swap-buffer strategy enables zero-allocation, high-throughput logging with strict sequential persistence before acknowledgment.
 - **GPU-Accelerated Ingestion**: Offloads HNSW upper-layer greedy searches and neighbor pruning to the GPU (Metal/CUDA) to eliminate CPU-GPU 'ping-pong' overhead.
 
 ---
@@ -415,8 +416,8 @@ Namespaces provide a bulk lifecycle management layer:
 
 ### 5.5 Operational Best Practices
 
-- **Monitor Fragmentation**: Use the `longbow_dataset_fragmentation_ratio` metric to monitor how much space is being consumed by tombstones.
-- **Tune Compaction**: If your workload involves heavy updates, consider lowering the `LONGBOW_COMPACTION_THRESHOLD` to reclaim memory more frequently.
+- **Monitor Fragmentation**: Tombstone pressure shows up as batch count and memory fragmentation -- watch `longbow_dataset_record_batches_count{dataset}` (high = fragmentation) alongside `longbow_memory_fragmentation_ratio` (reserved vs. used).
+- **Tune Compaction**: If your workload involves heavy updates, shorten `LONGBOW_COMPACTION_INTERVAL` (default `30s`) or lower `LONGBOW_COMPACTION_TARGET_BATCH_SIZE` (default `10000`) to reclaim memory more frequently. Compaction is enabled by default via `LONGBOW_COMPACTION_ENABLED`; `LONGBOW_COMPACTION_MIN_BATCHES` (default `10`) gates how many fragmented batches must accumulate before a dataset is considered for compaction.
 - **Bulk Cleanup**: For temporary data (e.g., a per-session cache), prefer using a dedicated **Namespace** and deleting the entire namespace when the session ends, rather than deleting individual records.
 
 ---
@@ -433,9 +434,13 @@ Find vectors as they existed at a specific point in time or within a sliding win
 - **Range Search**: Retrieve all updates within $[T_{start}, T_{end}]$.
 - **Sliding Window**: Search the $N$ most recent vectors back from now.
 
+`TemporalIndex.SearchAsOf`, `SearchRange`, and `SearchSlidingWindow` are all served by the **temporal columnar index** (`internal/store/temporal_columnar.go`). The `TemporalTree` maintains an immutable struct-of-arrays snapshot -- parallel `ts`, `groupOff`, `ids`, and `norms` columns flattened out of the chunked tree -- published through an `atomic.Pointer`. Writers mark the snapshot dirty under the tree's write lock and publish a rebuilt one; readers load the pointer and search without taking any lock, so a query never contends with an insert. A timestamp range resolves to a group range via a lower-bound descent over the sorted `ts` column, dispatched across scalar, 4-way unrolled, and AVX2 `VPCMPGTQ` kernels with a scalar fallback on CPUs without AVX2. Rebuilds are O(n) but amortized over a growth window.
+
 ### 6.2 Version History
 
-Maintain a log of changes per vector ID (configured via `TEMPORAL_MAX_VERSIONS`). This allows for audit trails and tracking model drift over time.
+Maintain a log of changes per vector ID (configured via `LONGBOW_TEMPORAL_MAX_VERSIONS`). This allows for audit trails and tracking model drift over time.
+
+`VersionHistory` uses the same columnar design as the temporal index, in `internal/store/version_history.go`. Every version is grouped into two flat columns -- a prefix-sum `entOff` plus per-version `ts` and `vers` -- and an immutable `versionHistoryIndex` snapshot is published through an `atomic.Pointer`. A point-in-time lookup therefore costs one ID resolution (a dense offset column for in-range IDs, a sparse slot map otherwise) plus a **binary search over a cache-dense `int64` timestamp column**, instead of a scan over per-ID slices. Resolving many IDs at a single timestamp (`GetVersionsAtBatch`) reuses the same lookup per ID, so batch temporal filters stay on the fast path.
 
 ### 6.3 Schema Evolution
 
@@ -444,6 +449,12 @@ Longbow allows datasets to evolve their metadata schema without requiring re-ind
 - **Additive Evolution**: New columns can be appended to existing Arrow schemas.
 - **Compatibility**: Existing columns must retain their name and data type to ensure backward compatibility for search and scans.
 - **Enforcement**: Mismatched schemas that break these rules are rejected at the ingestion layer.
+
+### 6.4 Geospatial Columnar Grid
+
+Geospatial filtering (`internal/store/morton_grid.go`) is backed by a **Morton (Z-order) grid** rather than a flat scan. Each `(lat, lon)` is quantized onto a per-axis cell grid and bit-interleaved into a 64-bit Z-order code (`mortonEncode`/`mortonDecode`), which preserves locality: points near each other on the globe land in nearby codes, so a bounding box maps to a contiguous set of cells. `NewMortonGrid` defaults to 12 bits per axis -- $2^{12} \times 2^{12}$ cells over the globe, roughly 5km x 8km at the equator -- and `NewMortonGridWithResolution` raises it up to the 32-bits-per-axis limit of a 64-bit code for fine-grained boxes.
+
+Cells are stored in a non-recursive open-addressed directory keyed by Fibonacci-hashed codes, doubling and rehashing at a 0.7 load factor, with the directory pre-sized up to $2^{20}$ slots. A cell is a filter, not an answer: `QueryRadius` converts the radius to a lat/lon bounding box (`BoundingBox`) and `appendBox` prunes cells by overlap and points by an inclusive lat/lon test, so it is a conservative superset. The exact great-circle test -- `HaversineDistance(center, p, 6371.0)` in `GeoPredicate.IsMatch` (`internal/store/geo_search.go`) -- is applied to the surviving candidates, so radius queries return no false positives or negatives.
 
 ---
 
@@ -632,13 +643,18 @@ A secondary controller that adjusts GOGC based on ingestion pressure. When `MaxM
 
 ### 12.1 Graceful Shutdown
 
-On SIGINT/SIGTERM, Longbow performs a 5-phase graceful shutdown:
+On SIGINT/SIGTERM the shutdown is sequenced in two layers: the process-level gRPC drain in `main()`, and the store-level `VectorStore.Shutdown`.
 
-1. **Drain gRPC servers** -- stop accepting new requests, wait for in-flight calls
-2. **Flush WAL** -- write pending WAL entries to disk
-3. **Final snapshot** -- take a final persistence snapshot (up to 120s timeout)
-4. **Close storage** -- release slab arenas, close WAL files
-5. **Exit**
+**Store shutdown** (`internal/store/shutdown.go`, sequenced steps bounded by the caller's context):
+
+1. **Stop background workers** -- signal every background worker to stop.
+2. **Wait for pending overflow jobs** -- block until in-flight overflow (spinner) jobs have enqueued.
+3. **Drain the index queue** -- flush queued index work before persistence is closed.
+4. **Wait for workers** -- join the tickers and cleanup goroutines so nothing touches persistence afterwards.
+5. **Final snapshot** -- safe only once workers are stopped; skipped entirely under `LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT=true`.
+6. **Close persistence** -- close the WAL batcher and storage engine.
+
+**Process shutdown** (`cmd/longbow/main.go`): stop the RDMA server, sleep 2s to let pending pprof collections finish, then run `GracefulStop()` on the data and meta servers plus the metrics server under a **15s** `shutdownCtx`, falling back to a hard `Stop()` on timeout. `vectorStore.Close()` is invoked **after** that drain completes, and it builds its **own 120s context** (`Close()` is an alias for `Shutdown(context.Background())` with a 120s timeout, reduced to 2s under test mode). The two timeouts are independent: the 15s budget covers only the gRPC drain, while the final snapshot and persistence close are governed by the store's own 120s budget.
 
 ### 12.2 Benchmark Mode Fast-Exit
 
@@ -676,13 +692,14 @@ The 20 GB config accommodates large payloads (e.g., 500k x 3072 x 4 = 5.7 GB for
 
 ## 14. Metrics & Observability
 
-Monitor storage health via Prometheus (Port 9090):
+Storage health is exposed over Prometheus. The listener reads `LONGBOW_METRICS_ADDR` directly and falls back to `:6000` when it is unset -- the `0.0.0.0:9090` value in the config struct is logged and validated but is not what binds the socket, so a bare binary serves metrics on port 6000 unless you set the variable.
 
-- `longbow_evictions_total{reason="ttl|lru"}`: Count of dataset evictions.
-- `longbow_persistence_wal_bytes_total`: WAL throughput.
+- `longbow_evictions_total{reason="..."}`: Records evicted due to memory limits. The `reason` label exists, but no `ttl` or `lru` value is ever emitted, so do not alert on those values.
+- `longbow_wal_bytes_written_total`: WAL throughput.
 - `longbow_remote_storage_duration_seconds{provider="s3|gcs"}`: Latency of remote operations.
 - `longbow_remote_storage_ops_total{status="success|error"}`: Remote operation counters.
-- `longbow_dataset_fragmentation_ratio`: Space consumed by tombstones.
+- `longbow_memory_fragmentation_ratio`: System memory reserved vs. used (fragmentation indicator).
+- `longbow_slab_fragmentation_ratio{size="..."}`: Fragmentation of the off-heap slab pools (pooled vs. active).
 - `longbow_gpu_memory_bytes`: VRAM/HBM utilization.
 - `longbow_onnx_inference_duration_seconds`: Latency per backend.
 - `longbow_simd_static_dispatch_type`: Active CPU kernel type.

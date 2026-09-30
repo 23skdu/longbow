@@ -1,9 +1,11 @@
 # Longbow Metrics Reference
 
-This document provides a comprehensive reference for all Prometheus metrics exported by the Longbow storage engine. These metrics are accessible via the `/metrics` endpoint (default port 9090).
+This document provides a comprehensive reference for all Prometheus metrics exported by the Longbow storage engine. These metrics are accessible via the `/metrics` endpoint on the HTTP listener bound to `LONGBOW_METRICS_ADDR`.
 
 > [!NOTE]
-> This list is automatically synchronized with the Go source code to ensure 100% coverage of all system signals.
+> **Default listen address.** The metrics listener reads `LONGBOW_METRICS_ADDR` directly and falls back to `:6000` when it is unset, so the bare binary serves metrics on port 6000. The `envconfig` default of `0.0.0.0:9090` is only logged and validated, never bound; the 9090 that most users see comes from the Helm chart and `docker-compose.yml`, which both set `LONGBOW_METRICS_ADDR=0.0.0.0:9090` explicitly.
+>
+> **Coverage.** This list covers all **783** `longbow_*` metric families the binary registers. The count is derived by enumerating every `Name: "longbow_..."` literal in non-vendor, non-`_test.go` Go sources, plus the one family composed from `Namespace: "longbow"` + `Name:` (`longbow_filter_execution_duration_seconds`, `internal/metrics/storage_metrics.go`). A handful of `longbow_test_*` families registered only inside `_test.go` files are deliberately excluded. Families declared without the `longbow_` namespace (the `graph_navigator_*` set in `internal/store/index/graph_navigator.go` and the `health_check_*` / `component_health_status` set in `internal/health/health_manager.go`) are not exported: the former is only registered when a `prometheus.Registerer` is supplied, which production code never does, and the latter goes into a private registry rather than the default one.
 
 | Metric Name | Description |
 | ------------- | ------------- |
@@ -25,6 +27,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_arena_fast_path_total` | Total number of allocations using the lock-free fast path |
 | `longbow_arena_hit_rate` | Arena fast-path hit rate (0-1, higher is better) |
 | `longbow_arena_memory_bytes` | Current bytes allocated in arena pools by size |
+| `longbow_arena_nil_error_total` | Total number of 'arena is nil' errors from TypedArena allocators |
 | `longbow_arena_off_heap_bytes` | Total off-heap bytes allocated by arenas |
 | `longbow_arena_overflow_total` | Total arena capacity overflow events requiring heap fallback |
 | `longbow_arena_pool_gets_total` | Total arena acquisitions from global pool |
@@ -34,6 +37,8 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_arena_slabs_total` | Total number of slabs allocated |
 | `longbow_arena_slow_path_total` | Total number of allocations using the mutex-based slow path |
 | `longbow_arrow_memory_used_bytes` | Current bytes used by Arrow memory allocators |
+| `longbow_auto_quantize_engaged_total` | Total times automatic TurboQuant standardization was triggered for high-scale datasets |
+| `longbow_auto_spill_to_disk_engaged_total` | Total times automatic spill to disk was triggered for high-scale or memory-constrained datasets |
 | `longbow_average_vector_norm` | Average L2 norm of vectors in the index |
 | `longbow_batch_distance_batch_size` | Distribution of batch sizes in distance calculations |
 | `longbow_batch_distance_calls_total` | Total number of batch distance calculation calls |
@@ -70,6 +75,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_buffer_pool_misses_total` | Total number of buffer pool misses |
 | `longbow_buffer_pool_size_bytes` | Current size of buffer pool in bytes |
 | `longbow_bulk_insert_dimension_errors_total` | Total number of dimension mismatch errors during bulk vector inserts |
+| `longbow_cache_blocked_traversal_chunks_total` | Total number of 64-vector cache-blocked traversal chunks processed |
 | `longbow_checkpoint_barrier_reached_total` | Total number of checkpoint barriers reached |
 | `longbow_checkpoint_epoch` | Current checkpoint epoch |
 | `longbow_checkpoint_timeouts_total` | Total number of checkpoint timeouts |
@@ -144,6 +150,12 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_embedding_normalization_duration_seconds` | Time spent normalizing embedding vectors |
 | `longbow_embedding_pooling_duration_seconds` | Time spent pooling token embeddings |
 | `longbow_eof_normalisation_total` | Total number of stream EOF normalisations (healthy stream terminations detected) |
+| `longbow_eviction_active_layers` | Number of HNSW layers currently evicted to disk |
+| `longbow_eviction_bytes_freed_total` | Total bytes freed by HNSW layer eviction to disk |
+| `longbow_eviction_errors_total` | Total number of eviction or restore errors |
+| `longbow_eviction_heap_utilization` | Heap utilization ratio when eviction was triggered |
+| `longbow_eviction_layers_evicted_total` | Total number of HNSW graph layers evicted to disk |
+| `longbow_eviction_layers_restored_total` | Total number of HNSW graph layers restored from disk |
 | `longbow_eviction_rejected_queries_total` | Total queries rejected because dataset was evicting |
 | `longbow_evictions_total` | Total number of evicted records due to memory limits |
 | `longbow_fast_path_usage_total` | Filter fast path usage count (fast/fallback) |
@@ -152,6 +164,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_filter_evaluator_allocations_total` | Total number of allocations during filter evaluation |
 | `longbow_filter_evaluator_duration_seconds` | Duration of filter evaluator operations |
 | `longbow_filter_evaluator_ops_total` | Total number of filter evaluator operations |
+| `longbow_filter_execution_duration_seconds` | Duration of filter execution by dataset |
 | `longbow_filter_memory_usage_bytes` | Memory used by active filter state |
 | `longbow_filter_optimization_total` | Total number of filter optimizations applied |
 | `longbow_filter_selectivity_ratio` | Filter selectivity ratio (output rows / input rows) |
@@ -257,6 +270,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_hnsw_active_readers` | Number of active zero-copy readers per dataset |
 | `longbow_hnsw_adaptive_adjustments_total` | Total number of times M has been adjusted dynamically |
 | `longbow_hnsw_adaptive_chunk_size` | Chunk sizes used in adaptive parallel search |
+| `longbow_hnsw_adaptive_m_fired_total` | Total number of times AdaptiveM doubling was triggered per dataset |
 | `longbow_hnsw_adaptive_m_value` | Current value of M parameter in HNSW graph |
 | `longbow_hnsw_arena_allocation_bytes_total` | Total bytes allocated in HNSW arenas per data type |
 | `longbow_hnsw_arrow_extraction_errors_total` | Total number of errors encountered while extracting vectors from Arrow record batches |
@@ -485,6 +499,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_metal_shader_compile_duration_seconds` | Duration of Metal shader compilation |
 | `longbow_metal_shader_compile_total` | Total number of Metal shader compilation attempts |
 | `longbow_metal_shader_kernel_count` | Number of Metal shader kernels compiled |
+| `longbow_morton_grid_cells_created_total` | Total number of cells allocated in linear Morton spatial grids |
 | `longbow_multi_gpu_device_errors` | Number of errors on each GPU device |
 | `longbow_multi_gpu_device_queries` | Number of queries processed by each GPU device |
 | `longbow_multi_gpu_fallback_total` | Total number of multi-GPU fallback events |
@@ -567,6 +582,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_raw_vectors_sent_total` | Total number of raw (F32/F16) vectors sent in search results |
 | `longbow_rdma_bytes_processed_total` | The total number of bytes processed via RDMA transport |
 | `longbow_rdma_errors_total` | The total number of RDMA-related errors encountered |
+| `longbow_readiness_exhausted_total` | Total number of readiness checks returning RESOURCE_EXHAUSTED due to memory pressure |
 | `longbow_recommendations_latency_seconds` | Latency of Recommend operations |
 | `longbow_recommendations_seed_count` | Number of seeds provided per Recommend request |
 | `longbow_recommendations_total` | Total number of Recommend operations |
@@ -621,6 +637,8 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_semaphore_waiting_requests` | Number of requests waiting for semaphore |
 | `longbow_shard_balance_imbalance_ratio` | Imbalance ratio across sharded indices |
 | `longbow_shard_lock_wait_duration_seconds` | Time spent waiting for shard-level locks |
+| `longbow_sharded_counter_flush_duration_seconds` | Time spent draining and publishing sharded metric accumulators |
+| `longbow_sharded_counter_flushes_total` | Total number of sharded counter drain and publish cycles |
 | `longbow_sharded_hnsw_load_factor` | Sharded HNSW load factor by shard (0-1) |
 | `longbow_sharded_hnsw_shard_size` | Number of vectors in each HNSW shard |
 | `longbow_sharded_hnsw_shard_split_total` | Total number of HNSW shard split events |
@@ -683,6 +701,11 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_temporal_tree_allocated_bytes_total` | Total bytes allocated in temporal trees |
 | `longbow_temporal_tree_cache_hit_ratio` | Cache hit ratio for temporal tree nodes |
 | `longbow_temporal_tree_nodes_total` | Total number of nodes in temporal trees |
+| `longbow_tensor_bytes_processed_total` | Total bytes processed during tensor operations |
+| `longbow_tensor_operation_duration_seconds` | Execution duration of tensor calculus operations in seconds |
+| `longbow_tensor_operations_total` | Total number of tensor calculus operations executed |
+| `longbow_tensor_optimizer_flops_saved_total` | Estimated floating-point operations saved by tensor DAG optimizations |
+| `longbow_tensor_optimizer_passes_total` | Total number of optimization rewrite passes applied to tensor DAGs |
 | `longbow_tombstones_total` | Total number of active tombstones |
 | `longbow_tpu_core_utilization_ratio` | TPU core utilization ratio (0.0 to 1.0) |
 | `longbow_tpu_d2d_latency_seconds` | TPU die-to-die (D2D) interconnect latency in seconds |
@@ -769,3 +792,36 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_work_queue_backlog` | Current number of items in work queue |
 | `longbow_work_queue_overflows_total` | Total number of work queue overflow rejections |
 | `longbow_zero_alloc_vector_search_parse_total` | Total number of zero-alloc vector search parses |
+
+---
+
+## Sharded Hotpath Counters
+
+The counters that sit directly on the query hot path are no longer plain Prometheus collectors. Each is fronted by a per-P (per-`runtime.procPin`) accumulator, padded to a 64-byte cache line so two shards never share one, and the aggregate is published into the wrapped counter on a timer.
+
+**Scrape semantics.** Because publishing is timer-driven, a scrape can miss increments made since the last tick, and the value you read lags reality by up to one interval. The families affected are:
+
+| Family | Labels |
+| :--- | :--- |
+| `longbow_hnsw_search_pool_get_total` | (none) |
+| `longbow_hnsw_search_pool_put_total` | (none) |
+| `longbow_hnsw_context_check_total` | (none) |
+| `longbow_prefetch_operations_total` | `name` |
+| `longbow_cache_blocked_traversal_chunks_total` | (none) |
+| `longbow_hnsw_branch_prediction_total` | `branch_type` |
+| `longbow_hnsw_nodes_skipped_total` | `dataset` |
+| `longbow_hnsw_search_early_exits_total` | `reason` |
+| `longbow_hnsw_early_termination_total` | `reason` |
+| `longbow_hnsw_prefiltered_searches_total` | `dataset` |
+| `longbow_filter_early_exit_total` | `dataset` |
+| `longbow_search_result_pool_get_total` | `capacity` |
+| `longbow_search_result_pool_hits_total` | `capacity` |
+| `longbow_search_result_pool_put_total` | `capacity` |
+
+The family names, label names and series values are unchanged from the previous inline `WithLabelValues` call sites, so existing dashboards and recording rules keep working. A counter may be written through either the inline collector or its sharded twin and the exported value stays exact and monotonic — the only difference is *when* the write becomes visible.
+
+The publish interval is `metrics.DefaultShardedFlushInterval` (`internal/metrics/sharded_counter.go`), which is **100ms**; the hotpath accumulators set `FlushInterval` to that same default (`internal/metrics/hotpath_counters.go`). One shared goroutine drains all of them on a single ticker — it is reference counted by store instance, so a process that creates and shuts down several stores keeps exactly one flusher alive and never leaves one behind.
+
+**Forcing a flush.** `metrics.FlushHotpathCounters()` drains every hotpath accumulator synchronously and publishes the totals, returning the value it published. Call it from tests and tooling that need to observe a hotpath metric without waiting for the next tick. `metrics.HotpathPending()` reports the accumulated-but-unpublished value without draining it, which is what you want when asserting that a scrape is lagging rather than that a metric is wrong.
+
+The mechanism is generic: `longbow_sharded_counter_flushes_total` and `longbow_sharded_counter_flush_duration_seconds` measure the drain-and-publish cycles themselves, across every sharded counter in the process rather than just the hotpath set. A flush that starts taking milliseconds is the signal that the timer goroutine is falling behind.

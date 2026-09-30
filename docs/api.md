@@ -6,7 +6,7 @@ Longbow provides **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data 
 
 - **Arrow Flight API** - Primary gRPC-based protocol for high-performance operations
 - **Admin Actions** - Flight-based administrative operations
-- **Prometheus Metrics** - HTTP metrics endpoint on port 9090
+- **Prometheus Metrics** - HTTP metrics endpoint on `LONGBOW_METRICS_ADDR` (falls back to `:6000`)
 
 ### Protocol Ports
 
@@ -14,7 +14,8 @@ Longbow provides **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data 
 |------|---------|----------|
 | 3000 | Data Server | gRPC/Arrow Flight |
 | 3001 | Meta Server | gRPC/Arrow Flight |
-| 9090 | Metrics | HTTP/Prometheus |
+| 6000 | Metrics (bare binary default) | HTTP/Prometheus |
+| 9090 | Metrics (helm / docker-compose) | HTTP/Prometheus |
 
 ### Data vs Meta Server
 
@@ -248,7 +249,7 @@ python3 scripts/ops_test.py search --dataset my_dataset --text-query "apple" --a
 | `delete-dataset` | `{"dataset": "name"}` | Permanently delete dataset | (Used in `validate` or `scripts/cleanup.py`) |
 | `delete` | `{"dataset": "ds", "id": "123"}` | Soft-delete by Primary ID | `ops_test.py delete --dataset <name> --ids 1,2` |
 | `delete-vector` | `{"dataset": "ds", "vector_id": 123}` | Soft-delete by Internal ID | (Internal) |
-| `compact` | name | Force compaction | (SDK) |
+| `Compact` | name | Force compaction | (SDK) |
 | `ForceSnapshot` | - | Force database snapshot to disk | `ops_test.py snapshot` |
 | `check_readiness` | `{"dataset": "ds"}` | Check if index is ready | (SDK) |
 | `wait-for-indexing` | `{"dataset": "ds"}` | Block until indexing completes | (SDK) |
@@ -340,7 +341,9 @@ Clients (including the Python SDK) monitor this metadata and should implement ba
 
 ## Prometheus Metrics
 
-Longbow exposes Prometheus metrics on port 9090 (configurable via `METRICS_ADDR`).
+Longbow serves `/metrics` from the HTTP listener bound to `LONGBOW_METRICS_ADDR`. When that variable is unset the bare binary falls back to `:6000` — the metrics listener reads the environment variable directly and does **not** use `cfg.MetricsAddr`, whose `envconfig` default of `0.0.0.0:9090` is only logged at startup and validated by `ValidateConfig`. The Helm chart and `docker-compose.yml` both set `LONGBOW_METRICS_ADDR=0.0.0.0:9090` explicitly, which is where the familiar 9090 comes from.
+
+The same listener also serves `/health`, `/ready`, `/progress`, `/diagnostics` and the `/debug/pprof/` endpoints. `/diagnostics` returns a JSON blob that includes a `max_memory_bytes` field; that is an HTTP response field, not a Prometheus series.
 
 ### Key Metrics
 
@@ -348,10 +351,11 @@ Longbow exposes Prometheus metrics on port 9090 (configurable via `METRICS_ADDR`
 |--------|------|-------------|
 | `longbow_flight_ops_total` | Counter | Total Flight operations |
 | `longbow_flight_duration_seconds` | Histogram | Operation latency |
-| `longbow_search_duration_seconds` | Histogram | Search latency |
+| `longbow_search_latency_seconds` | Histogram | Search latency |
 | `longbow_ingestion_records_total` | Counter | Ingested records |
-| `longbow_memory_bytes` | Gauge | Current memory usage |
-| `longbow_dataset_count` | Gauge | Number of datasets |
+| `longbow_arena_memory_bytes` | Gauge | Bytes currently held in arena pools, by size class |
+| `longbow_arrow_memory_used_bytes` | Gauge | Bytes used by the Arrow allocators |
+| `longbow_store_active_datasets` | Gauge | Number of datasets |
 | `longbow_gpu_memory_bytes` | Gauge | GPU memory usage |
 | `longbow_gc_pause_duration_seconds` | Histogram | GC pause times |
 
@@ -359,13 +363,17 @@ Longbow exposes Prometheus metrics on port 9090 (configurable via `METRICS_ADDR`
 
 ```promql
 # Search latency percentiles
-histogram_quantile(0.99, rate(longbow_search_duration_seconds_bucket[5m]))
+histogram_quantile(0.99, rate(longbow_search_latency_seconds_bucket[5m]))
 
 # Operations per second
 rate(longbow_flight_ops_total[1m])
 
-# Memory utilization
-longbow_memory_bytes / longbow_max_memory_bytes
+# Total bytes held in memory: arena pools + Arrow allocators.
+# There is no longbow_max_memory_bytes series to divide by. LONGBOW_MAX_MEMORY
+# is a config value, and the only place it surfaces is the max_memory_bytes
+# field of the /diagnostics JSON response, so a ratio has to be built in the
+# scrape config or a recording rule rather than read off /metrics.
+sum(longbow_arena_memory_bytes) + sum(longbow_arrow_memory_used_bytes)
 ```
 
 ## CLI Testing Tools
@@ -626,13 +634,15 @@ results := client.Search("my_dataset", []float32{0.15, 0.25}, 10)
 
 ## Environment Variables
 
+Configuration is loaded with `envconfig.Process("LONGBOW", &globalCfg)`, so every field of the `Config` struct is read from a `LONGBOW_`-prefixed environment variable.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LISTEN_ADDR` | `0.0.0.0:3000` | gRPC/Flight server |
-| `META_ADDR` | `0.0.0.0:3001` | Meta server |
-| `METRICS_ADDR` | `0.0.0.0:9090` | Prometheus metrics |
-| `DATA_PATH` | `./data` | Data directory |
-| `MAX_MEMORY` | `1073741824` | Max memory (bytes) |
+| `LONGBOW_LISTEN_ADDR` | `0.0.0.0:3000` | gRPC/Flight server |
+| `LONGBOW_META_ADDR` | `0.0.0.0:3001` | Meta server |
+| `LONGBOW_METRICS_ADDR` | `0.0.0.0:9090` | Prometheus metrics (config default; the bare binary's listener falls back to `:6000` when unset) |
+| `LONGBOW_DATA_PATH` | `./data` | Data directory |
+| `LONGBOW_MAX_MEMORY` | `1073741824` | Max memory (bytes) |
 | `LONGBOW_PQ_INGEST` | `0` | Enable PQ compression during ingest (1=enabled) |
 | `LONGBOW_GPU_ENABLED` | `false` | Enable GPU acceleration |
 | `LONGBOW_LOW_MEM` | `0` | Enable low memory mode for 512MB devices |

@@ -173,7 +173,9 @@ print(results_df[["id", "score"]])
 
 ## 4. Filtered Search
 
-Metadata filtering using post-filtering.
+Metadata filtering by result-set gating: the predicate is evaluated as the traversal expands, but it never prunes the frontier. Every candidate the HNSW walk reaches is pushed onto the search heap unconditionally, and the predicate (plus the metadata filter and the tombstone check) is only applied when a candidate is admitted to the result set. A node that matches the predicate is frequently reachable only through nodes that do not match it, so gating the frontier strands those matches; the traversal source documents this in `internal/store/index/search_float32.go`, with the same shape in `search_float64.go` and `distance_dispatch.go`.
+
+The practical consequence is that a filtered query costs about the same as an unfiltered one over the same subgraph, and its recall against an exact scan of the admitted IDs improved from 0.06 to 0.38 when the frontier was left open (`internal/store/index/predicate_traversal_test.go` pins the >= 0.25 floor). A rejected node is still counted for observability as `longbow_hnsw_nodes_skipped_total`, but it stays in the graph.
 
 ```python
 results = client.search(
@@ -261,7 +263,7 @@ versions = client.temporal_version_history(
 
 ## 7. Geo-Spatial Search
 
-Location-aware search using Quadtree index.
+Location-aware search using the Quadtree index. A linear Morton/Z-order grid is also available for write-heavy datasets by setting `IndexType: "morton"`; it inserts ~2.3x faster with no per-insert node allocation, but its fixed cell resolution makes queries 17-40% slower, so `quadtree` is the default.
 
 ```python
 # Radius search (Haversine distance)
@@ -351,7 +353,7 @@ communities = client.detect_communities(dataset="knowledge")
 
 ## 9. TurboQuant Search (Compressed)
 
-Two-stage vector compression achieving 4-64x storage reduction.
+Two-stage vector compression (PolarQuant + QJL sign correction) achieving roughly 2.5x-4.7x storage reduction at the usable bit depths.
 
 ### Usage
 
@@ -361,7 +363,7 @@ client.create_namespace(
     name="compressed",
     dims=768,
     data_type="turboquant",  # or "tq"
-    turboquant_bits=4       # 2, 4, or 8 bits
+    turboquant_bits=4       # 4 or 8; 1-3 encode but do not round-trip
 )
 
 # Search works the same
@@ -374,11 +376,15 @@ results = client.search(
 
 ### Compression Ratios
 
-| Bits | Compression | Typical Use |
-|------|-------------|-------------|
-| 2-bit | 16x | Archival |
-| 4-bit | 8x | Standard |
-| 8-bit | 4x | High recall |
+Compression is fixed by `PackedSize(dims, bits)` in `internal/store/index/turboquant.go`: 4 bytes of radius, `(pow2-1)` angles packed at `bits` each, `pow2` QJL sign bits, rounded up to 32 bytes, where `pow2` is the next power of two at or above `dims`.
+
+| Bits | Ratio (768D) | Round-trip cosine | Typical Use |
+|------|--------------|--------------------|-------------|
+| 1-3-bit | 5.7x-10.7x | 0.00-0.82 (unusable) | Not supported for retrieval |
+| 4-bit | 4.6x | 0.92-0.95 | Standard |
+| 8-bit | 2.6x | ~0.995 | High recall |
+
+The encoder accepts 1-8 bits, but `TestTurboQuantRoundTrip` only pins a cosine floor above 0.90 for 4-8 bits, and the measured round-trip at 2-3 bits falls well below it. The large ratios at those depths are not a usable trade: the reconstructed direction no longer retrieves.
 
 ---
 
@@ -388,7 +394,7 @@ Automatic index selection using k-NN classifier.
 
 ### Feature Vector
 
-11-dimensional features including:
+13-dimensional features including:
 
 - `DatasetSize` (Most discriminating)
 - `QueryComplexity`
@@ -481,7 +487,7 @@ results = client.search(
 | Metric | Description |
 |--------|-------------|
 | `longbow_global_search_fanout_size` | Peers contacted per search |
-| `longbow_global_search_partial_failures` | Failed peer queries |
+| `longbow_global_search_partial_failures_total` | Failed peer queries |
 | `longbow_global_search_duration_seconds` | Scatter-gather latency |
 | `longbow_gossip_active_members` | Healthy cluster nodes |
 | `longbow_global_rrf_latency_seconds` | Latency of global reciprocal rank fusion |
@@ -507,12 +513,12 @@ python3 scripts/unified_benchmark.py \
 - **Trip Conditions**: 10 consecutive failures
 - **Cooldown**: 30-second reset
 
-### Prometheus Metrics (Port 9090)
+### Prometheus Metrics (`LONGBOW_METRICS_ADDR`)
 
 | Metric | Description |
 |--------|-------------|
-| `longbow_search_ops_total` | Throughput per mode |
-| `longbow_search_duration_seconds` | Latency P50/P95/P99 |
+| `longbow_search_requests_total` | Throughput per mode |
+| `longbow_search_latency_seconds` | Latency P50/P95/P99 |
 | `longbow_vector_search_latency_seconds` | Search latency histogram |
 | `longbow_turboquant_search_total` | TurboQuant search count |
 | `longbow_learned_index_adaptations_total` | Adaptive index switches |

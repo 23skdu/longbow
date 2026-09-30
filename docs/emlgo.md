@@ -4,7 +4,13 @@
 
 This document describes the architecture, implementation, and evaluation of integrating [EMLGo](https://github.com/23skdu/emlgo) into Longbow.
 
-Longbow utilizes high-performance mathematical operations across its tensor engine, tensor calculus routines (Christoffel symbols, Riemann/Ricci curvature, differential forms), and SIMD distance baselines. Previously, Longbow relied on standard Go `math` library functions and pure Go Taylor series expansions. By integrating `emlgo`, Longbow leverages hardware-backed fast assembly routines (AVX2/AVX-512 and ARM NEON) and vectorized batch pipelines, achieving up to a **1.66x throughput improvement (40% cycle reduction)** in tensor operations while guaranteeing strict numerical parity.
+Longbow uses high-performance mathematical operations across its tensor engine, tensor calculus routines (Christoffel symbols, Riemann/Ricci curvature, differential forms), and SIMD distance baselines.
+
+### Historical Note
+
+Before the EMLGo integration, `internal/mathutil` did not exist as an abstraction layer: the tensor engine, the tensor calculus routines and the SIMD distance baselines each called into Go's `math` package (or, in the tensor engine's case, into the pure Go Taylor series helpers `expGo`, `sinGo`, `cosGo`, `logGo` and `sqrtGo` that still live in `internal/tensor/ops.go` and now back the `MathGo` implementation). That is the pre-integration architecture. Everything below describes the post-integration design, in which all of those call sites route through a single switchable facade instead.
+
+Integrating `emlgo` (github.com/23skdu/emlgo) added hardware-backed fast assembly routines (AVX2/AVX-512 and ARM NEON) and vectorized batch pipelines behind that facade, behind the `emlgo` build tag. In `-tags emlgo` builds this delivers up to a **1.66x throughput improvement (40% cycle reduction)** on tensor operations while keeping strict numerical parity. The default, untagged build is unaffected: it never links EMLGo, and `mathutil` resolves to the standard `math` package instead.
 
 ### Build Tag
 
@@ -129,7 +135,7 @@ Execution engines:
 - `MathSIMD`: Hand-rolled vector assembly.
 - `MathEML`: High-performance `emlgo` hardware kernels and batch operations.
 
-Use `tensor.SetMathImplementation(tensor.MathEML)` to switch the active tensor execution engine.
+Use `tensor.SetMathImpl(tensor.MathEML)` to switch the active tensor execution engine.
 
 #### B. Float64 Support & Vectorized Batch Dispatch
 
@@ -551,15 +557,26 @@ func main() {
     mathutil.SetBackend(mathutil.BackendEML)
 
     // 2. Set tensor engine dispatch to MathEML
-    tensor.SetMathImplementation(tensor.MathEML)
+    tensor.SetMathImpl(tensor.MathEML)
 
-    // 3. Create a Float64 tensor and evaluate hyperbolic sine
-    t, _ := tensor.NewTensor([]int{4}, tensor.DtypeFloat64, []float64{0.5, 1.0, 1.5, 2.0})
-    res, _ := tensor.Sinh(t)
+    // 3. Create a Float64 tensor and evaluate hyperbolic sine.
+    //    New takes (dtype, shape) and allocates the buffer; Float64s() is a
+    //    zero-copy view over it, so it is also how you fill the tensor in.
+    //    NewFromData(dtype, shape, data []byte) is the alternative when you
+    //    already have the bytes.
+    t := tensor.New(tensor.DtypeFloat64, tensor.Shape{4})
+    copy(t.Float64s(), []float64{0.5, 1.0, 1.5, 2.0})
+
+    res, err := tensor.Sinh(t)
+    if err != nil {
+        panic(err)
+    }
 
     fmt.Printf("Sinh result: %v\n", res.Float64s())
 }
 ```
+
+> **Note**: without `-tags emlgo` this still compiles and runs, but `mathutil.SetBackend(mathutil.BackendEML)` is a no-op (`internal/mathutil/mathutil.go` only stores a non-EML backend) and `tensor.SetMathImpl(tensor.MathEML)` falls through to `MathSIMD`, so the numbers come from the standard library rather than EMLGo.
 
 ### Using Fast FMA in Contractions
 

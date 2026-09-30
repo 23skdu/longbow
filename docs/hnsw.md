@@ -16,7 +16,7 @@ Longbow uses HNSW (Hierarchical Navigable Small World) graphs for approximate ne
 |----------|---------|-------------|
 | `LONGBOW_MAX_M0` | `64` (unset) | Caps max connections at layer 0; the benchmark script sets `32` |
 | `LONGBOW_HNSW_EF_CONSTRUCTION` | `400` | Dynamic candidate list size during insert |
-| `LONGBOW_ADAPTIVE_M_MAX_FACTOR` | — | Adaptive M scaling factor (benchmark sets `1.5`) |
+| `LONGBOW_ADAPTIVE_M_MAX_FACTOR` | `1.5` | Adaptive M scaling factor; the env var only overrides the built-in `1.5` default |
 
 Internal (Go) defaults: `M=32`, `MMax=64`, `MMax0=64`, `EfConstruction=400`, `EfSearch=50`.
 
@@ -160,15 +160,30 @@ Higher dimensions make distance computations more expensive. Mitigation strategi
 
 ## Adaptive ef_construction
 
-Longbow includes an adaptive mechanism that reduces ef_construction when the indexing queue backs up:
+Longbow can ramp ef_construction with the size of the graph instead of paying the full configured value on every insert. The mechanism is `getAdaptiveEf(nodeCount int)` (`internal/store/index/arrow_adaptive_ef.go:7`): a **linear interpolation on the number of nodes already in the graph**, not on queue depth.
 
-| Queue depth | Effective ef_construction |
-|-------------|--------------------------|
-| < 1000 | 400 (configured value) |
-| 1000–5000 | 200 |
-| > 5000 | 100 |
+| Graph size (nodes) | Effective ef_construction |
+|--------------------|--------------------------|
+| 0 | `AdaptiveEfMin` (default 50) |
+| threshold/2 | halfway between min and full |
+| >= threshold | `EfConstruction` (configured value) |
 
-This prevents unbounded build slowdowns during bulk loading. The adaptive value affects only new inserts, not already-queued work.
+```go
+// Linear ramp: minEf -> baseEf over [0, threshold]
+if nodeCount < threshold {
+    progress := float64(nodeCount) / float64(threshold)
+    return minEf + int(progress*float64(baseEf-minEf))
+}
+return baseEf
+```
+
+**Defaults** (`internal/store/types/index_types.go:161-164`):
+
+- `AdaptiveEf = false` — the ramp is opt-in; with it off, `getAdaptiveEf` returns the configured `EfConstruction` unchanged.
+- `AdaptiveEfMin = 50` — the floor of the ramp. If left at 0, the code falls back to `EfConstruction/4` with a hard minimum of 50.
+- `AdaptiveEfThreshold = 0` — means derive it from `InitialCapacity/2`, with a minimum of 1000. `InitialCapacity` defaults to 50000, so the threshold defaults to 25000.
+
+**Why this exists.** The first tens of thousands of inserts do not need a large candidate list: the graph is still sparse, every new node is trivially close to the entry point, and paying full `EfConstruction` on each of them dominates bulk-load wall time without buying recall. The ramp spends cheap search on a small graph and pays full price once the graph is dense enough for the candidate list to matter. The only caller passes the current node count (`int(h.nodeCount.Load())` at `internal/store/index/arrow_hnsw_bulk.go:707`), so each new insert re-reads the graph size; already-linked nodes are not revisited.
 
 ## Benchmark Configuration Recommendations
 
@@ -204,7 +219,7 @@ Total approximate memory for N=500k, M=32: 384MB (vectors) + 128MB (graph) = ~51
 2. **float64 and large integer types** build 3-8x slower than float32 due to half SIMD throughput on AVX2
 3. **M and ef are not per-table tunable via env vars** — `LONGBOW_MAX_M0` caps MMax0, `LONGBOW_HNSW_EF_CONSTRUCTION` overrides ef_construction
 4. **500k+ datasets with default settings (M=32, ef=400) can take hours** — use scale-adaptive values (M=16, ef=100-200) for practical build times
-5. **Adaptive ef_construction** automatically reduces ef when the indexing queue backs up (400 → 200 at depth 1000, → 100 at depth 5000)
+5. **Adaptive ef_construction** (opt-in) ramps ef from `AdaptiveEfMin` (50) up to the configured `EfConstruction` as the graph grows, reaching the full value at `InitialCapacity/2` (25000 by default) nodes
 6. **ef_search is tunable per-query** (no env var) but defaults to 50 — increase to 200+ for better recall during evaluation
 
 ## Concurrency & Lifecycle Safety
@@ -214,7 +229,7 @@ longbow, and it is shared across three concurrent surfaces:
 
 1. **Bulk inserts** — `ArrowHNSW.AddBatchBulk` (called by the async
    indexing queue) and the type-switch fast path in
-   `ArrowHNSW.AddBatch` (`arrow_hnsw_insert.go:996`).
+   `ArrowHNSW.AddBatch` (`arrow_hnsw_insert.go:1066`).
 2. **Search / GetNeighbors** — read-only paths that dereference
    `h.data.Load()` and walk the typed-arena fields
    (`Int8Arena`, `Float32Arena`, etc.).
@@ -230,11 +245,11 @@ described below.
 ### `inBulkInsert` — serialises the first-node spin-wait
 
 `ArrowHNSW.inBulkInsert` is a `atomic.Int64` (defined at
-`internal/store/index/arrow_hnsw.go:152`). It is incremented for the
+`internal/store/index/arrow_hnsw.go:166`). It is incremented for the
 duration of every bulk-insert call:
 
 ```go
-// arrow_hnsw_bulk.go:33-38
+// arrow_hnsw_bulk.go:46-51
 func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vecs any) error {
     h.bulkMu.Lock()
     h.inBulkInsert.Add(1)
@@ -246,7 +261,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 ```
 
 and in the fast-path switch inside `AddBatch`
-(`arrow_hnsw_insert.go:996-998`):
+(`arrow_hnsw_insert.go:1066-1068`):
 
 ```go
 h.inBulkInsert.Add(1)
@@ -255,7 +270,7 @@ h.inBulkInsert.Add(-1)
 ```
 
 The consumer is `insertInternal`
-(`insertion_core.go:331-343`):
+(`insertion_core.go:325-331`):
 
 ```go
 ep := h.entryPoint.Load()
@@ -286,10 +301,10 @@ landed in commit `0cddf75a`; the regression test is the existing
 
 - Every call site that invokes `addBatchBulkInternal` MUST bracket
   the call with `inBulkInsert.Add(+1)` / `inBulkInsert.Add(-1)`.
-  The current call sites are `AddBatchBulk` (line 35-37) and the
-  fast-path switch in `AddBatch` (line 996-998). New call sites
+  The current call sites are `AddBatchBulk` (line 48-50) and the
+  fast-path switch in `AddBatch` (line 1066-1068). New call sites
   (e.g. a future `AddBatchWithCallback`) must do the same.
-- The check at `insertion_core.go:336` is the only consumer. Adding
+- The check at `insertion_core.go:325` is the only consumer. Adding
   a new consumer is fine; removing the guard without first
   proving all `id > 0` inserts are reached only through bulk paths
   will reintroduce the stall.
@@ -297,9 +312,9 @@ landed in commit `0cddf75a`; the regression test is the existing
 ### `GraphData.readerCount` — pins the Slab during typed-arena reads
 
 `GraphData.readerCount` is a `atomic.Int32` (defined at
-`internal/store/types/graph_data.go:150`). It is incremented by
+`internal/store/types/graph_data.go:155`). It is incremented by
 `AcquireReader` / decremented by `ReleaseReader`
-(`graph_data.go:2422-2430`):
+(`graph_data.go:2616-2623`):
 
 ```go
 func (g *GraphData) AcquireReader() {
@@ -311,7 +326,7 @@ func (g *GraphData) ReleaseReader() {
 ```
 
 The consumer is `GraphData.Release()`
-(`graph_data.go:3501-3523`):
+(`graph_data.go:4012`, with the `readerCount` wait at 4032-4034):
 
 ```go
 func (g *GraphData) Release() {
@@ -367,9 +382,9 @@ Current call sites (verified 2026-06-06):
 | `internal/store/index/arrow_hnsw_memory.go:40,46,60,63,73` | `ensureChunkInternalLocked` — pin the chunk returned to the caller |
 | `internal/store/index/arrow_hnsw_memory.go:195-196` | `ensureChunksLocked` — defer-pin across the slice of chunks |
 | `internal/store/index/arrow_hnsw_bulk.go:215-217` | `addBatchBulkInternal` — pin the original `*GraphData` across its first `Clone()` (NOT across the whole function — that would deadlock with the later `compareAndSwapData`) |
-| `internal/store/index/arrow_hnsw_bulk.go:580-582` | `addBatchBulkInternal` — pin the freshly-published `*GraphData` across its `Clone()` |
-| `internal/store/index/arrow_hnsw_insert.go:817-818` | zero-copy `SetZeroCopyMapping` block — defer-pin across the mapping |
-| `internal/store/index/insertion_core.go:190,194` | `insertInternal` — release the pin returned by `ensureChunk` *before* reloading via `h.data.Load()+Clone()` (the pin covered the original; once we Clone, the pin is no longer needed) |
+| `internal/store/index/arrow_hnsw_bulk.go:551-553` | `addBatchBulkInternal` — pin the freshly-published `*GraphData` across its `Clone()` |
+| `internal/store/index/arrow_hnsw_insert.go:829-830` | zero-copy `SetZeroCopyMapping` block — defer-pin across the mapping |
+| `internal/store/index/insertion_core.go:175,179` | `insertInternal` — release the pin returned by `ensureChunk` *before* reloading via `h.data.Load()+Clone()` (the pin covered the original; once we Clone, the pin is no longer needed) |
 
 If a new read path is added that touches a typed-arena field
 (`Int8Arena`, `Float32Arena`, `Float16Arena`, `Int16Arena`,
@@ -398,7 +413,8 @@ through this list before opening an issue:
    If the 50k int8 stress test fails, the reader pin is missing
    at a call site listed in the table above.
 3. **Check `GraphData.Release()`** at
-   `internal/store/types/graph_data.go:3501-3523` — the spin-wait
+   `internal/store/types/graph_data.go:4012` (readerCount wait at
+   4032-4034) — the spin-wait
    on `readerCount` must be present. If it is missing, this is
    the root cause of every `arena is nil` failure in the field.
 4. **Check the new call site** — every typed-arena read MUST be
@@ -421,6 +437,51 @@ through this list before opening an issue:
    typed-arenas. The fix template is the reader pin pattern: one
    goroutine mutates the published `*GraphData` while another is
    reading it.
+
+### Layer-0 chain links in bulk insert
+
+Bulk linking used to be able to strand whole sub-batches. Every node in a
+sub-batch searches the *same frozen graph*, so no node of the sub-batch
+can appear in another node's candidate list. A fresh node's only inbound
+edges are therefore the reverse links it hands to its pre-batch
+neighbours, and those are pruned away as soon as such a neighbour is
+already at its connection limit. On degenerate geometry (collinear
+points, which is what the connectivity test generates) every node in the
+sub-batch picks the same neighbours, so entire sub-batches end up with
+in-degree zero and are unreachable from the entry point even when `ef`
+covers the whole dataset. Measured 99 of 512 nodes unreachable.
+
+The bulk linker now chain-links every node to its insertion-order
+predecessor at layer 0, before anything else touches the graph
+(`internal/store/index/arrow_hnsw_bulk.go:768-772`):
+
+```go
+if lc == 0 && node.id > 0 {
+    var chainDist [1]float32
+    h.computeDistances(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:])
+    _ = h.AddConnectionsBatch(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:], lc, int(h.mMax0.Load()))
+    _ = h.AddConnectionsBatch(ctxLink, data, node.id, []uint32{node.id - 1}, chainDist[:], lc, int(h.mMax0.Load()))
+}
+```
+
+The link is added in both directions — the predecessor gains the reverse
+edge, the new node gains a forward edge — and the insertion-order
+predecessor is always linked and adjacent in distance for sorted-ish
+data, so the edge both exists and survives pruning.
+
+Because a node can now hold `chainLinksPerNode = 2` extra degree slots
+(`internal/store/index/arrow_hnsw_bulk.go:39-42`), the layer-0
+neighbour selection caps the forward links at
+`mMax0 - chainLinksPerNode` so a node cannot fill its own budget and
+have the chain links pruned away again
+(`internal/store/index/arrow_hnsw_bulk.go:799-804`).
+
+**Contract.** The chain link is not an optimisation — dropping it
+reintroduces stranded nodes. `internal/store/index/arrow_hnsw_bulk_connectivity_test.go`
+(`TestBulkInsert_CollinearGraphStaysConnected` and
+`TestSequentialInsert_CollinearGraphStaysConnected`) pins the invariant
+that every inserted node stays reachable from the entry point, and that
+an exhaustive search (`ef = k = n`) returns all 512 nodes.
 
 ### Why both counters (and not one)
 

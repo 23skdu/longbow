@@ -60,13 +60,17 @@ helm install my-release ./helm/longbow
 
 ### Docker & Multi-Platform Support
 
-Official images are available on GitHub Container Registry (`ghcr.io/23skdu/longbow`):
+Official images are available on GitHub Container Registry (`ghcr.io/23skdu/longbow`). `.github/workflows/release.yml` builds exactly two of them:
 
-- **Apple Silicon (`arm64`)**: `latest-arm64-metal` - Optimized for Metal GPU and Mach CPU clusters.
-- **NVIDIA GPU (`amd64`)**: `latest-amd64-nvidia` - Includes custom CUDA 12.8 kernels and zero-copy tensor bridge.
-- **General CPU (`amd64`)**: `latest-amd64-cpu` - Broadwell-level AVX2 optimizations with `io_uring` support.
-- **EMLGo CPU (`amd64`)**: `latest-amd64-emlgo-cpu` - Standard build with EMLGo SIMD math backend (`-tags emlgo`).
-- **EMLGo GPU (`amd64`)**: `latest-amd64-emlgo-gpu` - CUDA + EMLGo SIMD math backend for maximum throughput.
+- **Standard image** -- Multi-arch (`linux/amd64`, `linux/arm64`), published as `latest`. The `linux/arm64` slice covers ARM64 hosts such as AWS Graviton.
+- **NVIDIA image** -- `linux/amd64` only, built from `Dockerfile.nvidia` with the custom CUDA kernels and zero-copy tensor bridge, published with the `-nvidia` suffix as `latest-nvidia`.
+
+Each is also published under a `sha-<short-sha>` tag and, on a git tag push, under the tag name. The Helm chart defaults to `image.tag: "latest"`.
+
+Two caveats when reproducing this locally:
+
+- The standard-image build step sets no `file:`, so it resolves to a `Dockerfile` at the repository root. The repo does not track one -- the only Dockerfiles present are `Dockerfile.cpu`, `Dockerfile.metal`, `Dockerfile.nvidia`, `Dockerfile.tpu`, and `Dockerfile.emlgo-cpu` / `Dockerfile.emlgo-gpu`. Pass `-f` explicitly when building.
+- There is no separate Metal, CPU-only, or EMLGo image tag. `Dockerfile.metal` and the `Dockerfile.emlgo-*` variants are not referenced by any workflow, so build them yourself if you need those configurations (see below).
 
 ### Building Docker Images Locally
 
@@ -115,7 +119,7 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | :--- | :--- | :--- |
 | `LONGBOW_LISTEN_ADDR` | `0.0.0.0:3000` | gRPC Data Plane (Arrow Flight). |
 | `LONGBOW_META_ADDR` | `0.0.0.0:3001` | gRPC Control Plane. |
-| `LONGBOW_METRICS_ADDR` | `0.0.0.0:9090` | Prometheus metrics and health checks. |
+| `LONGBOW_METRICS_ADDR` | `:6000` | Prometheus metrics and health checks. The Helm chart and `docker-compose.yml` both set this to `0.0.0.0:9090`; the bare binary falls back to `:6000` when the variable is unset. |
 | `LONGBOW_DATA_PATH` | `./data` | Base directory for WAL, snapshots, and indexes. |
 | `LONGBOW_MAX_MEMORY` | `1GB` | Bound the total memory usage for vector storage. |
 
@@ -123,13 +127,17 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 
 | Variable | Default | Tuning Recommendation |
 | :--- | :--- | :--- |
-| `LONGBOW_HNSW_M` | `16` | Connections per node. Use `32-48` for high-dim (768+). |
-| `LONGBOW_HNSW_EF_CONSTRUCTION` | `200` | Increase to `400-800` for 99.9% recall. |
-| `LONGBOW_HNSW_SQ8_ENABLED` | `false` | 4x memory reduction via 8-bit quantization. |
-| `LONGBOW_HNSW_TURBOQUANT_ENABLED`| `true` | **Default 0.1.9**: SIMD-accelerated bit-packing. |
+| `LONGBOW_HNSW_M` | `32` | Connections per node. Use `32-48` for high-dim (768+). |
+| `LONGBOW_HNSW_MMAX` | `64` | Ceiling on connections per node for the upper layers (level 1+). |
+| `LONGBOW_HNSW_MMAX0` | `64` | Ceiling on connections per node at level 0, which dominates memory. Lower it to trade recall for footprint. |
+| `LONGBOW_HNSW_EF_CONSTRUCTION` | `400` | Increase to `400-800` for 99.9% recall. |
+| `LONGBOW_LOW_MEM` | unset (off) | Set to `1` or `true` to start from a reduced baseline: `M=16`, `MMAX`/`MMAX0=32`, initial capacity 5,000. Individual HNSW overrides above still win. |
+| `LONGBOW_AUTO_QUANTIZE` | `false` | Standardize a dataset on 4-bit TurboQuant once it passes `LONGBOW_AUTO_QUANTIZE_THRESHOLD` (`100000`). |
 | `LONGBOW_USE_DISK` | `false` | Force all vector reads through disk (including HNSW indexing). **Warning:** Makes HNSW graph construction 10-100x slower. Prefer `LONGBOW_AUTO_SPILL_DISK` for most use cases. |
 | `LONGBOW_AUTO_SPILL_DISK` | `true` | Auto-spill vectors to disk when memory exceeds threshold. HNSW indexing still runs in-memory; only spills after indexing completes. Recommended for large datasets. |
 | `LONGBOW_SPILL_THRESHOLD_RATIO` | `0.70` | Memory threshold (0.0-1.0) at which auto-spill triggers. Lower values spill earlier, using more disk but less RAM. |
+
+`SQ8Enabled` and `TurboQuantEnabled` are not controlled by per-feature environment switches. They are `ArrowHNSWConfig` fields (`internal/store/types/index_types.go`) set programmatically: both default to `false`, SQ8 follows the configured `ArrowHNSWConfig` carried on the dataset, and TurboQuant is switched on when a dataset is created with the `turboquant` vector type (`internal/store/store_actions.go`, `internal/store/index/arrow_hnsw.go`). Use `LONGBOW_AUTO_QUANTIZE` (or `LONGBOW_LOW_MEM` for the memory budget) to influence the outcome from the environment.
 
 ### Storage & Persistence
 
@@ -145,8 +153,8 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | :--- | :--- | :--- |
 | `LONGBOW_MAX_MEMORY` | `1GB` | Soft memory limit enforced by GC tuner. Exceeding this triggers eviction of least-recently-used record batches to disk and applies exponential backpressure delay (5ms to 100ms) on ingestion. |
 | `LONGBOW_MAX_MEMORY_HARD` | `0` (off) | Hard memory ceiling. If exceeded, server immediately stops accepting ingestion and returns `ResourceExhausted` (gRPC status code 8). Protects against OOM crashes. |
-| `LONGBOW_MAX_WAL_SIZE` | `1GB` | Maximum WAL size. |
-| `LONGBOW_TTL_SECONDS` | `0` (off) | Time-to-live for records in seconds. |
+| `LONGBOW_MAX_WAL_SIZE` | `100MB` | Maximum WAL size before segments rotate. |
+| `LONGBOW_TTL` | `0s` (off) | Time-to-live for records, as a Go duration (e.g. `24h`, `30m`). There is no integer-seconds variant. |
 
 ### Temporal Search & Advanced Modules
 
@@ -158,7 +166,8 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | `LONGBOW_CDC_ENABLED` | `false` | Enable Change Data Capture for streaming data out. |
 | `LONGBOW_MQ_ENABLED` | `false` | Export vectors/CDC via Kafka/Pulsar. |
 | `LONGBOW_LEARNED_INDEX_ENABLED` | `false` | Enable ML-based index selection for faster routing. |
-| `LONGBOW_STRICT_MODELS` | `false` | **New in 0.1.9**: If `true`, fail fast if embedding models are missing instead of using stubs. |
+
+The server has no "strict models" mode. The Helm chart sets `LONGBOW_STRICT_MODELS`, but no Go code reads it, and builds without the `onnx` build tag return `ONNX Runtime not available in this build` from `internal/onnx/onnx_stub.go` rather than failing fast on missing configuration.
 
 ---
 
@@ -323,19 +332,20 @@ longbow-cli temporal-search -dataset <name> -type <as_of|range|window> [options]
 
 | Limit | Default | Env Variable | Description |
 |-------|---------|-------------|-------------|
-| Max receive | 512MB | `GRPC_MAX_RECV_MSG_SIZE` | Max size of any single gRPC request (ingest, search, etc.) |
-| Max send | 512MB | `GRPC_MAX_SEND_MSG_SIZE` | Max size of any single gRPC response (DoGet results) |
+| Max receive | 2GB | `LONGBOW_GRPC_MAX_RECV_MSG_SIZE` | Max size of any single gRPC request (ingest, search, etc.) |
+| Max send | 2GB | `LONGBOW_GRPC_MAX_SEND_MSG_SIZE` | Max size of any single gRPC response (DoGet results) |
 
-Both limits are configurable per-deployment. All ingest requests (vectors + metadata + all columns) must fit within the receive limit. All search results must fit within the send limit.
+Both limits are configurable per-deployment, and the Helm chart raises them to 20GB by default. All ingest requests (vectors + metadata + all columns) must fit within the receive limit. All search results must fit within the send limit. Note that a 2GB gRPC message is bounded in practice by the client: a single Arrow Flight `DoPut` still has to fit in one call, so chunk large ingests client-side.
 
 ### Metadata / Text Storage
 
 There is no hardcoded per-field size limit on metadata columns. Metadata is stored as part of the Arrow RecordBatch payload, which is bounded by the gRPC receive limit.
 
-Practical text storage estimates at 512MB request limit:
+Practical text storage estimates at the 2GB default request limit:
 
 | Text Size | Characters | Approximate Pages |
 |-----------|------------|-----------------|
+| 2GB | ~2,147,483,648 | ~430,000 |
 | 512MB | ~536,870,912 | ~107,000 |
 | 100MB | ~104,857,600 | ~21,000 |
 | 10MB | ~10,485,760 | ~2,100 |
@@ -343,7 +353,7 @@ Practical text storage estimates at 512MB request limit:
 | 100KB | ~102,400 | ~20 |
 | 10KB | ~10,240 | ~2 |
 
-**Recommendation**: For agent memory use cases, typical text chunks are 512-4,096 tokens (~0.5-4KB). This allows storing millions of memory records comfortably within the 512MB window. Avoid embedding multi-megabyte text strings in a single metadata cell -- chunk text externally and store a reference ID instead.
+**Recommendation**: For agent memory use cases, typical text chunks are 512-4,096 tokens (~0.5-4KB). At the 2GB receive limit that is hundreds of thousands of chunks per request. The binding constraint is no longer the gRPC window -- it is `LONGBOW_MAX_MEMORY`, the per-batch memory pressure, and how long a single write transaction holds the index. Avoid embedding multi-megabyte text strings in a single metadata cell -- chunk text externally and store a reference ID instead, and batch ingest in the low hundreds of MB rather than pushing the full 2GB in one call.
 
 ### Record & Batch Sizes
 
@@ -524,8 +534,8 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 **Check Metrics**:
 
-- `longbow_learned_index_adaptations_total{status="running"}`: Is a background index swap in progress?
-- `longbow_store_memory_usage_bytes`: Identify the spike onset.
+- `longbow_learned_index_adaptations_total{status="triggered"}`: A background index swap has started. Match `status` against the real lifecycle values (`triggered`, `completed`, `failed`, `rolled_back`, `rollback_failed`); a `triggered` count that never reaches `completed` identifies a stalled migration.
+- `longbow_store_vectors_managed_count`: Track vector population across datasets, and correlate the spike onset with this gauge.
 
 **Cause**: Longbow's **Adaptive Learned Index** and **Auto-Sharding** mechanisms build replacement indices in the background to ensure zero-downtime search. This process temporarily doubles the memory footprint of the index being replaced.
 
@@ -533,13 +543,13 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 1. **Increase Buffer**: Ensure `LONGBOW_MAX_MEMORY` is set with at least a 50% buffer above your steady-state index size.
 2. **Limit Concurrent Migrations**: Avoid triggering multiple collection migrations simultaneously.
-3. **Disable Auto-Adaptation**: If memory is critical, disable automatic switching via config:
+3. **Disable Learned Index Adaptation**: If memory is critical, disable it via environment variable (`false` is the default, so leave it unset in production):
 
-   ```yaml
-   learned_index:
-     adaptation:
-       enable_adaptation: false
+   ```bash
+   LONGBOW_LEARNED_INDEX_ENABLED=false
    ```
+
+   Related knobs: `LONGBOW_LEARNED_INDEX_MIN_SAMPLES` (`100`), `LONGBOW_LEARNED_INDEX_CONFIDENCE_THRESH` (`0.7`), `LONGBOW_LEARNED_INDEX_UPDATE_INTERVAL` (`1h`). Learned index has no config-file equivalent.
 
 ### Slow Startup
 
@@ -620,7 +630,7 @@ Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/50
 
 ### Metrics
 
-Metrics are available at `http://<METRICS_ADDR>/metrics`. Key namespaces include:
+Metrics are available at `http://<LONGBOW_METRICS_ADDR>/metrics` -- `http://localhost:9090/metrics` under the Helm chart or `docker-compose.yml`, `http://localhost:6000/metrics` for a bare binary that has not set the variable. Key namespaces include:
 
 - **longbow_onnx_metal_memory_used_bytes**: (Gauge) VRAM utilization on Apple Silicon.
 - **longbow_gpu_memory_bytes**: (Gauge) VRAM utilization on NVIDIA/CUDA systems.

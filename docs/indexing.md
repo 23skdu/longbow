@@ -34,7 +34,7 @@ TurboQuant implements a two-stage compression pipeline:
 
 2. **Stage 1 - Recursive PolarQuant**: The rotated vector is converted to polar coordinates:
    - 1 radius value (float32)
-   - (pow2-1) angles that are bit-packed (2, 3, 4, or 8 bits per angle)
+   - (pow2-1) angles that are bit-packed at 4-8 bits per angle (see the bit-depth contract below)
 
 3. **Stage 2 - QJL Correction**: A Quantized JL correction term that stores the sign bit of the reconstruction residual for improved accuracy.
 
@@ -46,16 +46,49 @@ TurboQuant implements a two-stage compression pipeline:
 |--------------|--------------|--------------|---------|--------------|
 | 128 | 4-bit | 512 bytes | ~128 bytes | **4x** |
 | 384 | 4-bit | 1536 bytes | ~288 bytes | **5.3x** |
-| 768 | 3-bit | 3072 bytes | ~385 bytes | **8x** |
-| 768 | 2-bit | 3072 bytes | ~256 bytes | **12x** |
 | 768 | 8-bit | 3072 bytes | ~640 bytes | **4.8x** |
+
+Depths below 4 bits are accepted by the encoder but cannot be retrieved
+reliably; see the bit-depth contract below.
+
+#### Bit-depth contract
+
+The encoder accepts 1-8 bits per angle, but **only 4-8 bits preserve the
+vector direction well enough to retrieve from**. The recursive polar
+transform spends one angle per reconstructed coordinate, so a coarse
+angular grid caps the achievable round-trip cosine. Measured on a linear
+ramp at dims 128/384/768:
+
+| Bits per angle | Round-trip cosine (approx.) | Retrievable |
+|----------------|-----------------------------|-------------|
+| 1 | ~0.06 / 0.00 / 0.00 | no |
+| 2 | ~0.50 / 0.39 / 0.34 | no |
+| 3 | ~0.82 / 0.72 / 0.72 | no |
+| 4 | ~0.95 / 0.93 / 0.92 | yes |
+| 5 | ~0.99 / 0.98 / 0.97 | yes |
+| 6 | ~0.992 | yes |
+| 7 | ~0.994 | yes |
+| 8 | ~0.995 | yes |
+
+`NewTurboQuantEncoder` only clamps `bits <= 0 || bits > 8`
+(`internal/store/index/turboquant.go:100`), so 2 and 3 bits encode and
+decode without error — they just return the wrong neighbours.
+`TestTurboQuantRoundTrip` pins the **4-8 at cosine > 0.90** contract.
+The angle-grid LUT is bounded to depths 1-8
+(`internal/simd/turboquant.go:34-37`) for correctness, not as a
+statement of which depths are supported.
 
 #### Features
 
-- **Configurable bit depth**: 2, 3, 4, or 8 bits per angle
+- **Configurable bit depth**: 4-8 bits per angle for retrievable vectors
 - **Automatic power-of-2 padding** for dimensions not a power of 2
 - **Lossy compression** with tunable accuracy vs. storage trade-off
-- **Dimensions supported**: 128 to 3072 (non-power-of-2 dims like 384, 768 work correctly; the SIMD kernel truncates query vectors to the original dimension length, not the padded power-of-2 length)
+- **Dimensions supported**: nominally 128 to 3072, but this range is
+  undocumented in code and **not enforced** — `create_dataset` only
+  rejects `Dimension < 0 || Dimension > math.MaxInt32`
+  (`internal/store/store_actions.go:726-728`). Non-power-of-2 dims like
+  384, 768 work correctly; the SIMD kernel truncates query vectors to the
+  original dimension length, not the padded power-of-2 length
 - **HNSW index support** for fast approximate k-NN search
 - **CPU SIMD acceleration** using AVX2/NEON
 - **GPU (CUDA) kernels** for accelerated distance computation
@@ -85,8 +118,8 @@ Adaptive re-quantization is supported for live datasets.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `vector_type` | string | - | Set to `"turboquant"` or `"tq"` |
-| `turboquant_bits` | int | 4 | Bits per angle (2, 4, or 8) |
-| `dimension` | int | - | Vector dimensions (128-3072) |
+| `turboquant_bits` | int | 4 | Bits per angle (4-8 retrieve reliably; 1-3 encode but lose the vector direction) |
+| `dimension` | int | - | Vector dimensions (nominally 128-3072; not enforced by `create_dataset`, which only rejects `< 0` or `> math.MaxInt32`) |
 | `metric` | string | `"cosine"` | Distance metric |
 
 #### Usage
@@ -174,8 +207,8 @@ longbow-cli create-namespace -name my_ns -dims 768 -data_type turboquant
 
 | File | Purpose |
 |------|---------|
-| `internal/store/internal/core/turboquant.go` | Primary encoder/decoder |
-| `internal/store/internal/core/arrow_hnsw_compute_tq.go` | HNSW TQ compute |
+| `internal/store/index/turboquant.go` | Primary encoder/decoder |
+| `internal/store/index/arrow_hnsw_compute_tq.go` | HNSW TQ compute |
 | `internal/store/turboquant_storage.go` | Storage constants/helpers |
 | `internal/gpu/cuda/kernels.cu` | CUDA distance kernel |
 | `internal/store/quantization_tuner.go` | Auto-tuner |
@@ -232,7 +265,7 @@ Version 0.2.0-rc2 introduces a high-throughput multi-phase bulk ingestion pipeli
 1. **Parallel Vector Ingestion**: Vectors are streamed into SlabArena chunks in parallel.
 2. **Layer Probability Sampling**: Nodes are assigned layers according to HNSW probability distribution.
 3. **Sequential/Parallel Bootstrap**: Lower layers are linked in bulk using a diversity-aware linkage strategy.
-4. **Dynamic EfConstruction**: The indexing pool automatically throttles construction quality based on ingestion queue depth to maintain system responsiveness.
+4. **Dynamic EfConstruction**: Construction quality is ramped with graph size — `getAdaptiveEf(nodeCount)` interpolates linearly from `AdaptiveEfMin` up to the configured `EfConstruction` as nodes accumulate, reaching the full value at the adaptive threshold (`internal/store/index/arrow_adaptive_ef.go:7`).
 
 ---
 
@@ -252,9 +285,10 @@ This eliminates runtime branching in the hot loop and ensures that every CPU cyc
 
 ### Geospatial Indexing
 
-- **Structure**: S2-based quadtree integrated with the HNSW graph.
+- **Structure**: A plain lat/lon recursive quadtree integrated with the HNSW graph (`Quadtree` in `internal/store/geo_search.go:203`, four child pointers per node). This is the default, selected by `IndexType: "quadtree"`.
 - **Search**: Supports range searches (within X meters) and filtered vector searches.
 - **Optimization**: Coordinate packing reduces memory footprint for 2D points.
+- **Alternative — Morton/Z-order grid**: `internal/store/morton_grid.go` provides a linear grid selectable with `IndexType: "morton"` (`GeoIndexTypeMorton`, `internal/store/geo_search.go:95`). Points are interleaved into a single contiguous arena indexed by a 64-bit Morton code, so an insert only grows flat slices and allocates no per-insert node the way the quadtree's `subdivide` does. It is opt-in: it measured ~2.3x faster inserts, but its fixed resolution is non-adaptive and queries came out 17% (selective box) to 40% (global box) slower, so the quadtree remains the default. See `NewMortonGridWithResolution` to tune cell size for write-heavy datasets.
 
 ### Temporal Indexing
 

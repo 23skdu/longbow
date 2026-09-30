@@ -230,7 +230,7 @@ This section details the test plan for running comprehensive regression benchmar
 |-----------|-------|
 | Dimensions | 128, 384 |
 | Vector counts | 10,000, 50,000 |
-| Data types | float32, float64, float16, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant (4-bit), turboquant2 (2-bit), turboquant4 (4-bit), turboquant8 (8-bit) |
+| Data types | float32, float64, float16, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant (4-bit), turboquant4 (4-bit), turboquant8 (8-bit) |
 | Search queries | 500 per config |
 | Search modes | all (13 modes: dense, hybrid, filtered, filteredbool, filteredstring, sparse, byid, graphrag, globalgraphrag, recommend, geo, temporal, learnedindex) |
 | Memory limit | 16 GB (`LONGBOW_MAX_MEMORY=17179869184`) |
@@ -287,7 +287,7 @@ python3 scripts/unified_benchmark.py \
   --mode cpu \
   --dims 128,384 \
   --counts 10000,50000 \
-  --dtypes float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant,turboquant2,turboquant4,turboquant8 \
+  --dtypes float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant,turboquant4,turboquant8 \
   --queries 500 \
   --memory 17179869184 \
   --timeout 3600 \

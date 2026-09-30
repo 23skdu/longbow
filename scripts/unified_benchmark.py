@@ -50,7 +50,7 @@ except ImportError:
     HAS_LONGBOW_SDK = False
 
 # All supported data types
-ALL_DTYPES = "float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant,turboquant2,turboquant4,turboquant8"
+ALL_DTYPES = "float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant,turboquant4,turboquant8"
 
 # Bytes per element for each dtype
 DTYPE_BYTES = {
@@ -68,7 +68,6 @@ DTYPE_BYTES = {
     "float64": 8,
     "complex128": 8,
     "turboquant": 1,
-    "turboquant2": 1,
     "turboquant4": 1,
     "turboquant8": 1,
 }
@@ -911,11 +910,7 @@ class BenchmarkRunner:
         # Handle TurboQuant bit-packs
         is_turboquant = False
         tq_bits = 0
-        if dtype == "turboquant2":
-            dtype = "turboquant"
-            tq_bits = 2
-            is_turboquant = True
-        elif dtype == "turboquant4":
+        if dtype == "turboquant4":
             dtype = "turboquant"
             tq_bits = 4
             is_turboquant = True
@@ -2256,17 +2251,22 @@ class BenchmarkRunner:
 
                         # Create dataset with correct type
                         vtype = dtype
-                        tq_bits = 0
+                        create_kwargs = {}
                         if dtype == "turboquant":
                             vtype = "turboquant"
-                            tq_bits = 8
+                        elif dtype == "turboquant4":
+                            vtype = "turboquant"
+                            create_kwargs["turboquant_bits"] = 4
+                        elif dtype == "turboquant8":
+                            vtype = "turboquant"
+                            create_kwargs["turboquant_bits"] = 8
 
                         client.create_dataset(
                             dataset_name,
                             dimensions=dim,
                             vector_type=vtype,
-                            turboquant_bits=tq_bits,
-                            metric="cosine"
+                            metric="cosine",
+                            **create_kwargs
                         )
 
                         # Insert data

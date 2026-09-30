@@ -7,7 +7,7 @@ set -uo pipefail
 
 cd /home/rsd/REPOS/longbow
 
-DTYPES="int8,uint8,int16,uint16,int32,uint32,int64,uint64,float16,float32,float64,complex64,complex128,turboquant2,turboquant4,turboquant8"
+DTYPES="int8,uint8,int16,uint16,int32,uint32,int64,uint64,float16,float32,float64,complex64,complex128,turboquant4,turboquant8"
 DIMS="128"
 COUNTS="100000,250000"
 SEARCH="dense,hybrid,sparse,filtered,byid,graphrag,geo,temporal,learned_index"

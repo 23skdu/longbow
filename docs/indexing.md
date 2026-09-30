@@ -109,7 +109,6 @@ Adaptive re-quantization is supported for live datasets.
 | String | Alias |
 |--------|-------|
 | `"turboquant"` | `"tq"` |
-| `"turboquant2"` | - |
 | `"turboquant4"` | - |
 | `"turboquant8"` | - |
 

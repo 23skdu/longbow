@@ -35,7 +35,7 @@ VARIANTS = [
 DTYPES = [
     "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64",
     "float16", "float32", "float64", "complex64", "complex128",
-    "turboquant2", "turboquant4", "turboquant8",
+    "turboquant4", "turboquant8",
 ]
 
 # Display order from docs/testplan.md §3.5 (bench-tool key -> testplan name)

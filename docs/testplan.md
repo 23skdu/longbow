@@ -74,9 +74,8 @@ Longbow supports a full spectrum of scalar, floating-point, complex, and quantiz
 11. `float64`: 64-bit double-precision floating point.
 12. `complex64`: Paired 32-bit float real/imaginary (quantum & Fourier states).
 13. `complex128`: Paired 64-bit float real/imaginary.
-14. `turboquant2`: 2-bit quantized polar representation (ultra-low bandwidth).
-15. `turboquant4`: 4-bit quantized polar representation (balanced accuracy/memory).
-16. `turboquant8`: 8-bit quantized polar representation (high-fidelity quantized).
+14. `turboquant4`: 4-bit quantized polar representation (balanced accuracy/memory).
+15. `turboquant8`: 8-bit quantized polar representation (high-fidelity quantized).
 
 ### 3.5 Full Search Modes Taxonomy
 

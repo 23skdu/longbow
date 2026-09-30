@@ -5,6 +5,7 @@ package index
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/store/types"
@@ -419,7 +420,27 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 		candidates[i] = types.Candidate{ID: pool[i], Dist: dists[i]}
 	}
 
-	selected := h.selectNeighborsFloat32(ctx, candidates, maxConn, data)
+	// The diversity heuristic is only defined over candidates in ascending
+	// distance order, while the pool arrives as "existing links, then new
+	// ones". Sorting it first makes the selection keep the closest links -
+	// without the ordering the first entry wins unconditionally, and every
+	// later candidate is measured against it instead of against the query.
+	slices.SortFunc(candidates, func(a, b types.Candidate) int {
+		switch {
+		case a.Dist < b.Dist:
+			return -1
+		case a.Dist > b.Dist:
+			return 1
+		default:
+			return 0
+		}
+	})
+
+	// Type-aware selection: the float32 kernel reads the float32 vector arena,
+	// which is empty for every other element type, so passing a non-float32
+	// pool to it rejected every candidate and left the node with the single
+	// oldest link in the pool.
+	selected := h.selectNeighbors(ctx, candidates, maxConn, data)
 
 	var result []uint32
 	if ctx != nil {

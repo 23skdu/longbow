@@ -1,6 +1,8 @@
 package index
 
 import (
+	"math"
+
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -28,6 +30,13 @@ type distanceFallbacks[T any] struct {
 
 func resolveDistanceKernel[T any](sm simd.MetricType, dims int, fb distanceFallbacks[T]) simd.DistanceKernel[T] {
 	k := simd.GetKernel[T](sm, dims)
+	if k != nil && !kernelMatchesReference(k, sm, fb, dims) {
+		// A kernel that does not reproduce the scalar reference would feed
+		// wrong distances into neighbour selection and into the candidate
+		// ordering of the search, which silently corrupts the graph instead
+		// of failing loudly. Prefer the slower scalar kernel.
+		k = nil
+	}
 	if k == nil {
 		switch sm {
 		case simd.MetricCosine:
@@ -56,6 +65,92 @@ func resolveDistanceKernel[T any](sm simd.MetricType, dims int, fb distanceFallb
 		}
 	}
 	return k
+}
+
+// kernelMatchesReference reports whether a resolved SIMD kernel agrees with the
+// scalar reference kernel for the same metric on a probe pair of the requested
+// width. Kernels are specialised for one element type and one dimension, and a
+// kernel that is wrong for its type - an unsigned one that differences before
+// widening, say - returns plausible-looking distances that are off by many
+// orders of magnitude, which is far worse than falling back to the scalar path.
+func kernelMatchesReference[T any](k simd.DistanceKernel[T], sm simd.MetricType, fb distanceFallbacks[T], dims int) bool {
+	if dims <= 0 {
+		return true
+	}
+	var ref simd.DistanceKernel[T]
+	switch sm {
+	case simd.MetricCosine:
+		ref = fb.cosine
+	case simd.MetricDotProduct:
+		ref = fb.dot
+	case simd.MetricL2Squared:
+		ref = fb.l2Squared
+		if ref == nil {
+			ref = fb.euclidean
+		}
+	default:
+		ref = fb.euclidean
+	}
+	if ref == nil {
+		// Nothing to check against; trust the kernel.
+		return true
+	}
+
+	// a < b element-wise, so a kernel that differences before widening wraps
+	// around for unsigned types instead of going negative.
+	a := make([]T, dims)
+	b := make([]T, dims)
+	fillProbe(a, 1)
+	fillProbe(b, 3)
+
+	got, gotErr := k(a, b)
+	want, wantErr := ref(a, b)
+	if gotErr != nil || wantErr != nil {
+		return false
+	}
+	gotF := float64(got)
+	if math.IsNaN(gotF) || math.IsInf(gotF, 0) {
+		return false
+	}
+	scale := math.Max(math.Abs(float64(want)), 1)
+	return math.Abs(gotF-float64(want)) <= 1e-3*scale
+}
+
+// fillProbe writes base, base+1, ... into a numeric slice. A type parameter
+// cannot be converted from an int (and float16.Num is not numeric at all), so
+// the concrete element types are spelled out once here.
+func fillProbe[T any](dst []T, base int) {
+	for i := range dst {
+		v := base + i
+		switch p := any(&dst[i]).(type) {
+		case *float32:
+			*p = float32(v)
+		case *float64:
+			*p = float64(v)
+		case *int8:
+			*p = int8(v) // #nosec G115 -- base is 1 or 3 and i < dims
+		case *int16:
+			*p = int16(v) // #nosec G115 -- base is 1 or 3 and i < dims
+		case *int32:
+			*p = int32(v) // #nosec G115 -- base is 1 or 3 and i < dims
+		case *int64:
+			*p = int64(v) // #nosec G115 -- base is 1 or 3 and i < dims
+		case *uint8:
+			*p = uint8(v) // #nosec G115 -- base is 1 or 3 and i < dims
+		case *uint16:
+			*p = uint16(v) // #nosec G115 -- base is 1 or 3 and i < dims
+		case *uint32:
+			*p = uint32(v) // #nosec G115 -- base is 1 or 3 and i < dims
+		case *uint64:
+			*p = uint64(v) // #nosec G115 -- base is 1 or 3 and i < dims
+		case *complex64:
+			*p = complex(float32(v), float32(v))
+		case *complex128:
+			*p = complex(float64(v), float64(v))
+		case *float16.Num:
+			*p = float16.New(float32(v))
+		}
+	}
 }
 
 func resolveL2SquaredKernel[T any](dims int, fallback simd.DistanceKernel[T]) simd.DistanceKernel[T] {
@@ -97,7 +192,9 @@ func (h *ArrowHNSW) resolveAllDistanceFuncs() {
 	h.distFuncInt8Squared = resolveL2SquaredKernel[int8](dims, nil)
 	h.distFuncUint8 = resolveDistanceKernel(sm, dims, distanceFallbacks[uint8]{
 		cosine: simd.CosineDistanceUint8, dot: simd.DotProductUint8,
-		euclidean: simd.EuclideanDistanceUint8,
+		// The unsigned reference differences in its own width, which wraps
+		// around; use the widening implementation in this package.
+		euclidean: func(a, b []uint8) (float32, error) { return euclideanDistanceUint8(a, b), nil },
 	})
 	h.distFuncUint8Squared = resolveL2SquaredKernel[uint8](dims, nil)
 	h.distFuncInt16 = resolveDistanceKernel(sm, dims, distanceFallbacks[int16]{
@@ -122,7 +219,9 @@ func (h *ArrowHNSW) resolveAllDistanceFuncs() {
 	})
 	h.distFuncUint64 = resolveDistanceKernel(sm, dims, distanceFallbacks[uint64]{
 		cosine: simd.CosineDistanceUint64, dot: simd.DotProductUint64,
-		euclidean: simd.EuclideanDistanceUint64,
+		// The unsigned reference differences in its own width, which wraps
+		// around; use the widening implementation in this package.
+		euclidean: func(a, b []uint64) (float32, error) { return euclideanDistanceUint64(a, b), nil },
 	})
 
 	if h.navigator != nil {

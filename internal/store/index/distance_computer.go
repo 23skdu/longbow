@@ -777,6 +777,21 @@ func euclideanDistanceUint16(a, b []uint16) float32 {
 	return float32(math.Sqrt(sum))
 }
 
+// euclideanDistanceUint8 widens to float64 before subtracting. The unsigned
+// element types cannot be differenced in their own width: it wraps around
+// instead of going negative.
+func euclideanDistanceUint8(a, b []uint8) float32 {
+	if len(a) != len(b) || len(a) == 0 {
+		return math.MaxFloat32
+	}
+	var sum float64
+	for i := range a {
+		diff := float64(a[i]) - float64(b[i])
+		sum += diff * diff
+	}
+	return float32(math.Sqrt(sum))
+}
+
 func euclideanDistanceInt32(a, b []int32) float32 {
 	if len(a) != len(b) || len(a) == 0 {
 		return math.MaxFloat32

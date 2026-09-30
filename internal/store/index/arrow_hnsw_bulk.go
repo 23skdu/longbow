@@ -36,6 +36,11 @@ var BulkInsertThreshold = func() int {
 // ShardedLockCount is the number of shards for node locking.
 const ShardedLockCount = 131072
 
+// chainLinksPerNode is the number of degree slots the bulk linker reserves for
+// the insertion-order chain links (one to the predecessor, one from the
+// successor) it adds to every node at layer 0.
+const chainLinksPerNode = 2
+
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
 func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vecs any) error {
@@ -738,8 +743,38 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 						continue
 					}
 
+					meta := h.metadataRegistry.Load()
+					ctxLink := h.searchPool.Get()
+					ctxLink.MaxNodeCount = h.nodeCount.Load()
+					ctxLink.MaxGeneration = meta.Generation
+					ctxLink.Reset()
+					ctxLink.AllowUncommitted = true
+
+					// Chain this node to the one inserted just before it, in both
+					// directions, before anything else touches the graph.
+					//
+					// Every node in a sub-batch searches the same frozen graph, so
+					// no node of the sub-batch can appear in another node's
+					// candidate list, and a fresh node's only inbound edges are the
+					// reverse links it hands to its pre-batch neighbours. Those
+					// are pruned away as soon as such a neighbour already sits at
+					// its connection limit, and on degenerate geometry (collinear
+					// points) every node in the sub-batch picks the same
+					// neighbours, so entire sub-batches end up with in-degree
+					// zero and are unreachable from the entry point even when ef
+					// covers the whole dataset. The insertion-order predecessor is
+					// always linked and adjacent in distance for sorted-ish
+					// data, so this edge both exists and survives pruning.
+					if lc == 0 && node.id > 0 {
+						var chainDist [1]float32
+						h.computeDistances(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:])
+						_ = h.AddConnectionsBatch(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:], lc, int(h.mMax0.Load()))
+						_ = h.AddConnectionsBatch(ctxLink, data, node.id, []uint32{node.id - 1}, chainDist[:], lc, int(h.mMax0.Load()))
+					}
+
 					candidatesBuf := graphCandidates[idx]
 					if candidatesBuf == nil {
+						h.searchPool.PutWithMetrics(ctxLink, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 						continue
 					}
 
@@ -752,6 +787,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					}
 
 					if len(candidates) == 0 {
+						h.searchPool.PutWithMetrics(ctxLink, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 						continue
 					}
 
@@ -760,8 +796,13 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					if lc == 0 {
 						m = h.m.Load() * 2
 						maxConn = h.mMax0.Load()
-					}
-					if m > maxConn {
+						// Reserve slots for the chain links added above, so a node
+						// cannot fill its own degree budget and have them pruned
+						// away again.
+						if m > maxConn-chainLinksPerNode {
+							m = maxConn - chainLinksPerNode
+						}
+					} else if m > maxConn {
 						m = maxConn
 					}
 
@@ -775,16 +816,9 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 						return 0
 					})
 
-					meta := h.metadataRegistry.Load()
-					ctxPrune := h.searchPool.Get()
-					ctxPrune.MaxNodeCount = h.nodeCount.Load()
-					ctxPrune.MaxGeneration = meta.Generation
-					ctxPrune.Reset()
-					ctxPrune.AllowUncommitted = true
-
-					neighbors := h.selectNeighbors(ctxPrune, candidates, int(m), data)
+					neighbors := h.selectNeighbors(ctxLink, candidates, int(m), data)
 					if len(neighbors) == 0 {
-						h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+						h.searchPool.PutWithMetrics(ctxLink, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 						continue
 					}
 
@@ -795,13 +829,17 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 						fDists = append(fDists, n.Dist)
 					}
 
-					_ = h.AddConnectionsBatch(ctxPrune, data, node.id, fSources, fDists, lc, int(maxConn))
+					_ = h.AddConnectionsBatch(ctxLink, data, node.id, fSources, fDists, lc, int(maxConn))
 
-					for _, neighbor := range neighbors {
-						_ = h.AddConnectionsBatch(ctxPrune, data, neighbor.ID, []uint32{node.id}, []float32{neighbor.Dist}, lc, int(maxConn))
+					// Iterate the private copy: AddConnectionsBatch re-enters
+					// neighbour selection (to prune an over-capacity target),
+					// which overwrites the shared scratch buffer that
+					// selectNeighbors returned.
+					for i, nID := range fSources {
+						_ = h.AddConnectionsBatch(ctxLink, data, nID, []uint32{node.id}, []float32{fDists[i]}, lc, int(maxConn))
 					}
 
-					h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+					h.searchPool.PutWithMetrics(ctxLink, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 				}
 			})
 

@@ -134,28 +134,28 @@ var (
 	cosineDistanceInt16Impl  func(a, b []int16) (float32, error)
 	cosineDistanceUint16Impl func(a, b []uint16) (float32, error)
 
-	euclideanDistanceInt32Impl  func(a, b []int32) (float32, error)
-	dotProductInt32Impl         func(a, b []int32) (float32, error)
-	cosineDistanceInt32Impl     func(a, b []int32) (float32, error)
+	euclideanDistanceInt32Impl func(a, b []int32) (float32, error)
+	dotProductInt32Impl        func(a, b []int32) (float32, error)
+	cosineDistanceInt32Impl    func(a, b []int32) (float32, error)
 
-	euclideanDistanceUint32Impl  func(a, b []uint32) (float32, error)
-	dotProductUint32Impl         func(a, b []uint32) (float32, error)
-	cosineDistanceUint32Impl     func(a, b []uint32) (float32, error)
+	euclideanDistanceUint32Impl func(a, b []uint32) (float32, error)
+	dotProductUint32Impl        func(a, b []uint32) (float32, error)
+	cosineDistanceUint32Impl    func(a, b []uint32) (float32, error)
 
-	euclideanDistanceInt64Impl  func(a, b []int64) (float32, error)
-	dotProductInt64Impl         func(a, b []int64) (float32, error)
-	cosineDistanceInt64Impl     func(a, b []int64) (float32, error)
+	euclideanDistanceInt64Impl func(a, b []int64) (float32, error)
+	dotProductInt64Impl        func(a, b []int64) (float32, error)
+	cosineDistanceInt64Impl    func(a, b []int64) (float32, error)
 
-	euclideanDistanceUint64Impl  func(a, b []uint64) (float32, error)
-	dotProductUint64Impl         func(a, b []uint64) (float32, error)
-	cosineDistanceUint64Impl     func(a, b []uint64) (float32, error)
+	euclideanDistanceUint64Impl func(a, b []uint64) (float32, error)
+	dotProductUint64Impl        func(a, b []uint64) (float32, error)
+	cosineDistanceUint64Impl    func(a, b []uint64) (float32, error)
 
-	dotProductUint8Impl      func(a, b []uint8) (float32, error)
-	dotProductInt16Impl      func(a, b []int16) (float32, error)
-	dotProductUint16Impl     func(a, b []uint16) (float32, error)
+	dotProductUint8Impl  func(a, b []uint8) (float32, error)
+	dotProductInt16Impl  func(a, b []int16) (float32, error)
+	dotProductUint16Impl func(a, b []uint16) (float32, error)
 
-	dotProductInt4Impl       func(a, b []byte) (float32, error)
-	dotProductInt2Impl       func(a, b []byte) (float32, error)
+	dotProductInt4Impl func(a, b []byte) (float32, error)
+	dotProductInt2Impl func(a, b []byte) (float32, error)
 
 	memcpyNTAImpl func(dst, src unsafe.Pointer, n int)
 

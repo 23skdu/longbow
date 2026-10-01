@@ -113,12 +113,12 @@ type Dataset struct {
 	isRequantizing atomic.Bool // Marks dataset as being re-quantized
 
 	// In-flight Indexing Tracking (Compaction Safety)
-	PendingIndexJobs    atomic.Int64
-	PendingIngestion    atomic.Int64
+	PendingIndexJobs        atomic.Int64
+	PendingIngestion        atomic.Int64
 	LastIngestionCompletion atomic.Int64 // Unix timestamp of last successful ingestion job completion (for stale-PendingIngestion watchdog)
-	ActiveIngestStreams atomic.Int64 // Number of active DoPut streams for this dataset
-	IsReady             atomic.Bool  // Set to true after first successful ingestion (v0.2.0)
-	RegistryPublished   atomic.Bool  // Set to true when advertised to the cluster
+	ActiveIngestStreams     atomic.Int64 // Number of active DoPut streams for this dataset
+	IsReady                 atomic.Bool  // Set to true after first successful ingestion (v0.2.0)
+	RegistryPublished       atomic.Bool  // Set to true when advertised to the cluster
 
 	// LWW State
 	LWW *TimestampMap
@@ -395,7 +395,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		NumericPrimaryIndex: make(map[int64]RowLocation),
 		Uint64PrimaryIndex:  make(map[uint64]RowLocation),
 		LWW:                 NewTimestampMap(),
-		Merkle: NewMerkleTree(),
+		Merkle:              NewMerkleTree(),
 		queryStats: &QueryStats{
 			lastReset: time.Now(),
 		},

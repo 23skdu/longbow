@@ -52,4 +52,3 @@ func (p *PinnedHostPool) Put(ptr any, size int64) {}
 func (p *PinnedHostPool) Close() error {
 	return nil
 }
-

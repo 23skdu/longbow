@@ -133,7 +133,6 @@ func (r *UringReader) ReadAt(buf []byte, offset int64) (int, error) {
 	return total, nil
 }
 
-
 func (r *UringReader) completionLoop() {
 	for {
 		select {

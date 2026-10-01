@@ -599,7 +599,9 @@ func (a *PluggableInternalAdapter) GetPQEncoder() *pq.PQEncoder { return nil }
 
 // DeleteBatch deletes multiple vectors from the index.
 func (a *PluggableInternalAdapter) DeleteBatch(ctx context.Context, ids []uint32) error {
-	if db, ok := a.inner.(interface{ DeleteBatch(context.Context, []uint32) error }); ok {
+	if db, ok := a.inner.(interface {
+		DeleteBatch(context.Context, []uint32) error
+	}); ok {
 		return db.DeleteBatch(ctx, ids)
 	}
 	return nil
@@ -639,7 +641,9 @@ func (a *PluggableInternalAdapter) ImportGraph(r io.Reader) error {
 
 // ExportDelta exports the delta since the given version.
 func (a *PluggableInternalAdapter) ExportDelta(v uint64) (*lbtypes.DeltaSync, error) {
-	if ed, ok := a.inner.(interface{ ExportDelta(uint64) (*lbtypes.DeltaSync, error) }); ok {
+	if ed, ok := a.inner.(interface {
+		ExportDelta(uint64) (*lbtypes.DeltaSync, error)
+	}); ok {
 		return ed.ExportDelta(v)
 	}
 	return nil, nil
@@ -647,7 +651,9 @@ func (a *PluggableInternalAdapter) ExportDelta(v uint64) (*lbtypes.DeltaSync, er
 
 // ApplyDelta applies the given delta sync to the index.
 func (a *PluggableInternalAdapter) ApplyDelta(d *lbtypes.DeltaSync) error {
-	if ad, ok := a.inner.(interface{ ApplyDelta(*lbtypes.DeltaSync) error }); ok {
+	if ad, ok := a.inner.(interface {
+		ApplyDelta(*lbtypes.DeltaSync) error
+	}); ok {
 		return ad.ApplyDelta(d)
 	}
 	return nil

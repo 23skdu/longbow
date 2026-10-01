@@ -135,24 +135,24 @@ func (r *Ring) mmapRings() error {
 // setupPointers initializes ring structure pointers
 func (r *Ring) setupPointers() {
 	// SQ ring pointers
-	sqBase := (*[1 << 30]byte)(unsafe.Pointer(&r.sqRingArea[0])) // #nosec G103
-	r.sqHead = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Head])) // #nosec G103
-	r.sqTail = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Tail])) // #nosec G103
-	r.sqRingMask = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.RingMask])) // #nosec G103
+	sqBase := (*[1 << 30]byte)(unsafe.Pointer(&r.sqRingArea[0]))                         // #nosec G103
+	r.sqHead = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Head]))               // #nosec G103
+	r.sqTail = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Tail]))               // #nosec G103
+	r.sqRingMask = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.RingMask]))       // #nosec G103
 	r.sqRingEntries = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.RingEntries])) // #nosec G103
-	r.sqFlags = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Flags])) // #nosec G103
-	r.sqDropped = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Dropped])) // #nosec G103
-	r.sqArray = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Array])) // #nosec G103
+	r.sqFlags = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Flags]))             // #nosec G103
+	r.sqDropped = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Dropped]))         // #nosec G103
+	r.sqArray = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Array]))             // #nosec G103
 
 	// CQ ring pointers
-	cqBase := (*[1 << 30]byte)(unsafe.Pointer(&r.cqRingArea[0])) // #nosec G103
-	r.cqHead = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Head])) // #nosec G103
-	r.cqTail = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Tail])) // #nosec G103
-	r.cqRingMask = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.RingMask])) // #nosec G103
+	cqBase := (*[1 << 30]byte)(unsafe.Pointer(&r.cqRingArea[0]))                         // #nosec G103
+	r.cqHead = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Head]))               // #nosec G103
+	r.cqTail = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Tail]))               // #nosec G103
+	r.cqRingMask = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.RingMask]))       // #nosec G103
 	r.cqRingEntries = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.RingEntries])) // #nosec G103
-	r.cqOverflow = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Overflow])) // #nosec G103
-	r.cqFlags = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Flags])) // #nosec G103
-	r.cqes = (*CQE)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Cqes])) // #nosec G103
+	r.cqOverflow = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Overflow]))       // #nosec G103
+	r.cqFlags = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Flags]))             // #nosec G103
+	r.cqes = (*CQE)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Cqes]))                    // #nosec G103
 
 	// SQEs array
 	r.sqes = unsafe.Slice((*SQE)(unsafe.Pointer(&r.sqesArea[0])), r.params.SqEntries) // #nosec G103

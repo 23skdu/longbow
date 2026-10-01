@@ -228,5 +228,3 @@ func TestIVFHNSWCompositeIndex_ConcurrentAddBatch(t *testing.T) {
 	wg.Wait()
 	assert.Equal(t, numGoroutines*batchRows, idx.Size())
 }
-
-

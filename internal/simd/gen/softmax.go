@@ -1,4 +1,5 @@
 //go:build ignore
+
 package main
 
 import (
@@ -10,7 +11,7 @@ import (
 func main() {
 	TEXT("SoftmaxAVX512", NOSPLIT, "func(src, dst []float32)")
 	Doc("SoftmaxAVX512 computes the softmax activation using AVX-512 instructions.")
-	
+
 	src := Mem{Base: Load(Param("src").Base(), GP64())}
 	dst := Mem{Base: Load(Param("dst").Base(), GP64())}
 	n := Load(Param("src").Len(), GP64())
@@ -23,32 +24,32 @@ func main() {
 	// 1. Find Max
 	maxVec := ZMM()
 	VBROADCASTSS(negInf, maxVec)
-	
+
 	i := GP64()
 	XORQ(i, i)
-	
+
 	Label("max_loop")
 	CMPQ(i, n)
 	JGE(Label("max_done"))
-	
+
 	// Check for tail
 	rem := GP64()
 	MOVQ(n, rem)
 	SUBQ(i, rem)
 	CMPQ(rem, Imm(16))
 	JL(Label("max_tail"))
-	
+
 	v := ZMM()
 	VMOVUPS(src.Offset(i, 4), v)
 	VMAXPS(v, maxVec, maxVec)
 	ADDQ(Imm(16), i)
 	JMP(Label("max_loop"))
-	
+
 	Label("max_tail")
 	// Masked max for tail
 	mask := K()
 	// (Simplified mask generation for this demo)
-	KMOVW(Imm(0xFFFF), mask) 
+	KMOVW(Imm(0xFFFF), mask)
 	VMAXPS_BCST(src.Offset(i, 4), maxVec, mask, maxVec)
 	JMP(Label("max_done"))
 

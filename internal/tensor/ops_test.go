@@ -137,10 +137,10 @@ func TestReshape(t *testing.T) {
 
 func TestAt(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 2})
-	a.Float32s()[0] = 1  // [0,0]
-	a.Float32s()[1] = 2  // [0,1]
-	a.Float32s()[2] = 3  // [1,0]
-	a.Float32s()[3] = 4  // [1,1]
+	a.Float32s()[0] = 1 // [0,0]
+	a.Float32s()[1] = 2 // [0,1]
+	a.Float32s()[2] = 3 // [1,0]
+	a.Float32s()[3] = 4 // [1,1]
 	assertEq32(t, *(*float32)(a.At(0, 1)), 2, 1e-6)
 	assertEq32(t, *(*float32)(a.At(1, 0)), 3, 1e-6)
 	assertPanic(t, func() { a.At(0) })
@@ -284,10 +284,10 @@ func TestTranspose(t *testing.T) {
 
 func TestReduceSum(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 2})
-	a.Float32s()[0] = 1  // [0,0]
-	a.Float32s()[1] = 2  // [0,1]
-	a.Float32s()[2] = 3  // [1,0]
-	a.Float32s()[3] = 4  // [1,1]
+	a.Float32s()[0] = 1 // [0,0]
+	a.Float32s()[1] = 2 // [0,1]
+	a.Float32s()[2] = 3 // [1,0]
+	a.Float32s()[3] = 4 // [1,1]
 	sum, err := ReduceSum(a, 0)
 	assertNoErr(t, err)
 	assertEq(t, sum.Rank(), 1)
@@ -314,15 +314,15 @@ func TestTensorContract(t *testing.T) {
 
 func TestMatMul(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 2})
-	a.Float32s()[0] = 1  // [0,0]
-	a.Float32s()[1] = 2  // [0,1]
-	a.Float32s()[2] = 3  // [1,0]
-	a.Float32s()[3] = 4  // [1,1]
+	a.Float32s()[0] = 1 // [0,0]
+	a.Float32s()[1] = 2 // [0,1]
+	a.Float32s()[2] = 3 // [1,0]
+	a.Float32s()[3] = 4 // [1,1]
 	b := New(DtypeFloat32, Shape{2, 2})
-	b.Float32s()[0] = 5  // [0,0]
-	b.Float32s()[1] = 6  // [0,1]
-	b.Float32s()[2] = 7  // [1,0]
-	b.Float32s()[3] = 8  // [1,1]
+	b.Float32s()[0] = 5 // [0,0]
+	b.Float32s()[1] = 6 // [0,1]
+	b.Float32s()[2] = 7 // [1,0]
+	b.Float32s()[3] = 8 // [1,1]
 	a.SetLabels([]string{"i", "k"})
 	b.SetLabels([]string{"k", "j"})
 	out, err := MatMul(a, b)

@@ -83,4 +83,3 @@ func TestBuildSoakSchema(t *testing.T) {
 		t.Errorf("second field name = %s; want embedding", sch.Field(1).Name)
 	}
 }
-

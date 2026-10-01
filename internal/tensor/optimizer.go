@@ -6,16 +6,16 @@ import "fmt"
 type RewriteRule int
 
 const (
-	RuleNone              RewriteRule = iota
-	RuleMulByZero                    // A * 0 -> 0
-	RuleAddZero                     // A + 0 -> A
-	RuleDoubleNeg                   // -(-A) -> A
-	RuleTransposeOfTranspose        // T(T(A)) -> A
-	RuleReshapeOfReshape            // R(R(A)) -> A (if shapes allow)
-	RuleExpOfLog                    // exp(log(A)) -> A (domain permitting)
-	RuleLogOfExp                    // log(exp(A)) -> A
-	RuleConstantFolding             // Op(Const, Const) -> Const
-	RuleCSE                         // Common Subexpression Elimination
+	RuleNone                 RewriteRule = iota
+	RuleMulByZero                        // A * 0 -> 0
+	RuleAddZero                          // A + 0 -> A
+	RuleDoubleNeg                        // -(-A) -> A
+	RuleTransposeOfTranspose             // T(T(A)) -> A
+	RuleReshapeOfReshape                 // R(R(A)) -> A (if shapes allow)
+	RuleExpOfLog                         // exp(log(A)) -> A (domain permitting)
+	RuleLogOfExp                         // log(exp(A)) -> A
+	RuleConstantFolding                  // Op(Const, Const) -> Const
+	RuleCSE                              // Common Subexpression Elimination
 )
 
 // Optimizer rewrites a tensor IR graph for efficiency.

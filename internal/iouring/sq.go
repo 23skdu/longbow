@@ -56,7 +56,7 @@ func (r *Ring) SubmitVectored(fd int, iovs []IOVec, offset uint64, userData uint
 		Fd:       int32(fd), // #nosec G115
 		Off:      offset,
 		Addr:     uint64(uintptr(unsafe.Pointer(&iovs[0]))), // #nosec G103
-		Len:      uint32(len(iovs)), // #nosec G115
+		Len:      uint32(len(iovs)),                         // #nosec G115
 		UserData: userData,
 	}
 
@@ -74,7 +74,7 @@ func (r *Ring) SubmitWrite(fd int, buf []byte, offset uint64, userData uint64) e
 		Fd:       int32(fd), // #nosec G115
 		Off:      offset,
 		Addr:     uint64(uintptr(unsafe.Pointer(&buf[0]))), // #nosec G103
-		Len:      uint32(len(buf)), // #nosec G115
+		Len:      uint32(len(buf)),                         // #nosec G115
 		UserData: userData,
 	}
 
@@ -92,7 +92,7 @@ func (r *Ring) SubmitRead(fd int, buf []byte, offset uint64, userData uint64) er
 		Fd:       int32(fd), // #nosec G115
 		Off:      offset,
 		Addr:     uint64(uintptr(unsafe.Pointer(&buf[0]))), // #nosec G103
-		Len:      uint32(len(buf)), // #nosec G115
+		Len:      uint32(len(buf)),                         // #nosec G115
 		UserData: userData,
 	}
 

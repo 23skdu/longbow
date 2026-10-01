@@ -364,6 +364,6 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 	if err := f.Close(); err != nil {
 		return err
 	}
-	
+
 	return os.Rename(tmpPath, path)
 }

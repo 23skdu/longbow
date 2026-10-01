@@ -19,12 +19,12 @@ type CPUFeatures struct {
 	HasAVX512FP16 bool // AVX512-FP16 (Sapphire Rapids+)
 	HasVBMI       bool // AVX512-VBMI (Ice Lake+)
 	HasNEON       bool
-	HasDotProd    bool  // ARM64 FEAT_DotProd (udot/sdot)
-	HasAMX        bool  // AMX-TILE (Sapphire Rapids+)
-	HasAMXINT8    bool  // AMX-INT8 tile dot product
-	HasAMXBF16    bool  // AMX-BF16 tile dot product
-	HasAMXFP16    bool  // AMX-FP16 tile dot product (Granite Rapids+)
-	HasAMXCOMPLEX bool  // AMX-COMPLEX (Granite Rapids+)
+	HasDotProd    bool // ARM64 FEAT_DotProd (udot/sdot)
+	HasAMX        bool // AMX-TILE (Sapphire Rapids+)
+	HasAMXINT8    bool // AMX-INT8 tile dot product
+	HasAMXBF16    bool // AMX-BF16 tile dot product
+	HasAMXFP16    bool // AMX-FP16 tile dot product (Granite Rapids+)
+	HasAMXCOMPLEX bool // AMX-COMPLEX (Granite Rapids+)
 }
 
 // Global CPU detection state

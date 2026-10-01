@@ -22,7 +22,7 @@ func bm25ScoreBatchArch(tfs []int, docLengths []int, avgDL float32, idf float32,
 			invAvgDL = 1.0 / avgDL
 		}
 		bm25ScoreBatchAVX512(
-			unsafe.Pointer(&tfs[0]), // #nosec G103
+			unsafe.Pointer(&tfs[0]),        // #nosec G103
 			unsafe.Pointer(&docLengths[0]), // #nosec G103
 			len(tfs),
 			invAvgDL,
@@ -39,7 +39,7 @@ func bm25ScoreBatchArch(tfs []int, docLengths []int, avgDL float32, idf float32,
 			invAvgDL = 1.0 / avgDL
 		}
 		bm25ScoreBatchAVX2(
-			unsafe.Pointer(&tfs[0]), // #nosec G103
+			unsafe.Pointer(&tfs[0]),        // #nosec G103
 			unsafe.Pointer(&docLengths[0]), // #nosec G103
 			len(tfs),
 			invAvgDL,

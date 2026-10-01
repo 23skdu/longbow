@@ -81,7 +81,7 @@ func BenchmarkWALStandard(b *testing.B) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	file, err := os.OpenFile(filepath.Join(tmpDir, "wal.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)  // #nosec G304 -- path is built from the test's own temp dir, never user input
+	file, err := os.OpenFile(filepath.Join(tmpDir, "wal.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		b.Fatalf("failed to create WAL file: %v", err)
 	}
@@ -147,4 +147,3 @@ func TestStorageBenchmarkSmoke(t *testing.T) {
 		t.Fatalf("failed to write WAL entries: %v", err)
 	}
 }
-

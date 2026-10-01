@@ -8,13 +8,13 @@ import (
 type OpKind int
 
 const (
-	OpContract   OpKind = iota // tensor contraction (sum over shared indices)
-	OpTranspose                // axis permutation
-	OpReshape                  // shape change (no data movement)
-	OpElementwise              // element-wise unary/binary operation
-	OpReduce                   // reduction along axis (sum, max, min)
-	OpConstant                 // constant tensor (leaf)
-	OpInput                    // input tensor (leaf)
+	OpContract    OpKind = iota // tensor contraction (sum over shared indices)
+	OpTranspose                 // axis permutation
+	OpReshape                   // shape change (no data movement)
+	OpElementwise               // element-wise unary/binary operation
+	OpReduce                    // reduction along axis (sum, max, min)
+	OpConstant                  // constant tensor (leaf)
+	OpInput                     // input tensor (leaf)
 )
 
 // IRNode is a node in the tensor expression DAG.
@@ -39,8 +39,8 @@ type IRNode struct {
 	ElemOp string // "add", "mul", "sub", "div", "sin", "cos", "tan", "exp", "log", "neg", "pow"
 
 	// OpInput / OpConstant
-	InputIdx int       // index into input tensor list
-	ConstVal *Tensor   // constant tensor value
+	InputIdx int     // index into input tensor list
+	ConstVal *Tensor // constant tensor value
 }
 
 // NewInput creates an IR leaf node for an input tensor.

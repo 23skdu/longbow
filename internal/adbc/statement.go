@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/23skdu/longbow/internal/store"
+	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -344,7 +344,7 @@ func serializeFloat32s(vec []float32) []byte {
 	b := make([]byte, len(vec)*4)
 	for i, v := range vec {
 		bits := math.Float32bits(v)
-		b[i*4] = byte(bits)       // #nosec G115 -- shifted to low byte, always fits
+		b[i*4] = byte(bits)         // #nosec G115 -- shifted to low byte, always fits
 		b[i*4+1] = byte(bits >> 8)  // #nosec G115
 		b[i*4+2] = byte(bits >> 16) // #nosec G115
 		b[i*4+3] = byte(bits >> 24) // #nosec G115

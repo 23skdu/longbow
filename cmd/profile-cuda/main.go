@@ -112,7 +112,7 @@ func runTQV2(dim, count, pow2, bitsPerAngle int) {
 	fmt.Printf("--- turboquant_distance_kernel_v2 dim=%d count=%d pow2=%d bitsPerAngle=%d ---\n", dim, count, pow2, bitsPerAngle)
 
 	angleCount := pow2 - 1
-	angleBytes := (angleCount * bitsPerAngle + 7) / 8
+	angleBytes := (angleCount*bitsPerAngle + 7) / 8
 	qjlBytes := (pow2 + 7) / 8
 	rawStride := 4 + angleBytes + qjlBytes
 	stride := (rawStride + 3) & ^3

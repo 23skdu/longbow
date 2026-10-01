@@ -7,8 +7,8 @@ import (
 
 // EinsumOp describes a parsed Einstein summation operation.
 type EinsumOp struct {
-	Inputs  [][]string // index labels per input tensor
-	Output  []string   // output index labels
+	Inputs     [][]string // index labels per input tensor
+	Output     []string   // output index labels
 	NumIndices int
 }
 
@@ -70,8 +70,8 @@ func ParseEinsum(expr string) (*EinsumOp, error) {
 	numIndices := len(idxSet)
 
 	op := &EinsumOp{
-		Inputs:  inputs,
-		Output:  output,
+		Inputs:     inputs,
+		Output:     output,
 		NumIndices: numIndices,
 	}
 
@@ -325,8 +325,8 @@ func (op *EinsumOp) InferOutputShape(shapes []Shape) Shape {
 
 // Contract describes a pairwise tensor contraction.
 type Contract struct {
-	LHS       int   // index into operand list
-	RHS       int   // index into operand list
+	LHS       int      // index into operand list
+	RHS       int      // index into operand list
 	SumLabels []string // labels being summed (contracted)
 	OutLabels []string // labels in the output
 }

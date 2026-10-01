@@ -413,4 +413,3 @@ func BenchmarkFloat64_HNSWSearch(b *testing.B) {
 		_, _ = hnsw.SearchVectorsWithBitmap(ctx, query, 10, nil, searchOpts)
 	}
 }
-

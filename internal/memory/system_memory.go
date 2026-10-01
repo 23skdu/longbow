@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	physicalMemOnce sync.Once
+	physicalMemOnce   sync.Once
 	cachedPhysicalMem int64
 )
 

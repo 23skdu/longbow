@@ -60,4 +60,3 @@ func TestIOBenchHelpers(t *testing.T) {
 		t.Errorf("prepFile size = %d; want at least 1MB", size)
 	}
 }
-

@@ -350,4 +350,3 @@ func (p *PinnedHostPool) Close() error {
 	}
 	return nil
 }
-

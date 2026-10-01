@@ -40,5 +40,5 @@ func (p *PinnedBuffer) Float32Slice() []float32 {
 		return nil
 	}
 	ptr := (*float32)(unsafe.Pointer(&p.Data[0])) // #nosec G103
-	return unsafe.Slice(ptr, len(p.Data)/4) // #nosec G103
+	return unsafe.Slice(ptr, len(p.Data)/4)       // #nosec G103
 }

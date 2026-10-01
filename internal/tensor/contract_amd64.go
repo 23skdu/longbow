@@ -80,16 +80,16 @@ func matMulTiledAMD64(a, b, out *Tensor, m, n, k int) bool {
 							kChunk = k - kc
 						}
 						packBPanel(bdata, bpack, n, kc, j0, kChunk)
-						aPtr := uintptr(unsafe.Pointer(&adata[i0*k+kc])) // #nosec G103
-						bPtr := uintptr(unsafe.Pointer(&bpack[0]))      // #nosec G103
+						aPtr := uintptr(unsafe.Pointer(&adata[i0*k+kc]))   // #nosec G103
+						bPtr := uintptr(unsafe.Pointer(&bpack[0]))         // #nosec G103
 						cPtr := uintptr(unsafe.Pointer(&outdata[i0*n+j0])) // #nosec G103
 						gemm4x8KernelPacked(aPtr, bPtr, cPtr, kChunk, k, n)
 					}
 				} else {
 					// Single pass: K ≤ tileKC — one pack, one call, overwrite C
 					packBPanel(bdata, bpack, n, 0, j0, k)
-					aPtr := uintptr(unsafe.Pointer(&adata[i0*k])) // #nosec G103
-					bPtr := uintptr(unsafe.Pointer(&bpack[0]))    // #nosec G103
+					aPtr := uintptr(unsafe.Pointer(&adata[i0*k]))      // #nosec G103
+					bPtr := uintptr(unsafe.Pointer(&bpack[0]))         // #nosec G103
 					cPtr := uintptr(unsafe.Pointer(&outdata[i0*n+j0])) // #nosec G103
 					// Zero C before the call (micro-kernel accumulates)
 					for i := i0; i < imax; i++ {

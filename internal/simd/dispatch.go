@@ -115,8 +115,6 @@ var (
 	initTableOnce sync.Once
 )
 
-
-
 func initDispatchTable() {
 	initTableOnce.Do(func() {
 		dispatchTable["avx512"] = &ImplementationDispatch{

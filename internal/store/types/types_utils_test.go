@@ -1,11 +1,11 @@
 package types
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
 	"testing"
-	"bytes"
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/mesh"
@@ -66,7 +66,7 @@ func TestToGRPCStatus(t *testing.T) {
 func TestLogClientAction(t *testing.T) {
 	var buf bytes.Buffer
 	logger := zerolog.New(&buf)
-	
+
 	// without peer context
 	LogClientAction(context.Background(), logger, nil, "test_action", map[string]any{"key": "val"})
 	assert.Contains(t, buf.String(), "test_action")
@@ -78,7 +78,7 @@ func TestLogClientAction(t *testing.T) {
 	addr := &net.TCPAddr{IP: net.ParseIP("192.168.1.1"), Port: 1234}
 	p := &peer.Peer{Addr: addr}
 	ctx := peer.NewContext(context.Background(), p)
-	
+
 	LogClientAction(ctx, logger, nil, "test_peer", map[string]any{})
 	assert.Contains(t, buf.String(), "test_peer")
 	assert.Contains(t, buf.String(), "192.168.1.1:1234")

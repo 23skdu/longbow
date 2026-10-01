@@ -57,10 +57,10 @@ type AutoShardingIndex struct {
 	sharded      bool
 	interimIndex VectorIndex // NEW: Used during migration to handle new writes
 
-	migrating       atomic.Bool    // Added migrating field
-	waitGroup       sync.WaitGroup // Track active AddBatch ops on old index
-	migrationPause  chan struct{}  // Blocks ingestion AddBatch during migration
-	migrationPauseMu sync.Mutex    // Protects migrationPause
+	migrating        atomic.Bool    // Added migrating field
+	waitGroup        sync.WaitGroup // Track active AddBatch ops on old index
+	migrationPause   chan struct{}  // Blocks ingestion AddBatch during migration
+	migrationPauseMu sync.Mutex     // Protects migrationPause
 }
 
 // NewAutoShardingIndex creates a new auto-sharding index.

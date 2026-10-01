@@ -274,8 +274,8 @@ func newTestGraphDataWithPackedNeighbors(t *testing.T, name string, numLayers in
 	t.Helper()
 	slab := memory.NewSlabArena(1024 * 1024)
 	gd := &types.GraphData{
-		Name:          name,
-		Uint32Arena:   memory.NewTypedArena[uint32](slab),
+		Name:            name,
+		Uint32Arena:     memory.NewTypedArena[uint32](slab),
 		PackedNeighbors: make([]types.PackedNeighbors, numLayers),
 	}
 	t.Cleanup(func() { gd.Uint32Arena.Free() })

@@ -109,7 +109,7 @@ func TestSegmentTree_Concurrency(t *testing.T) {
 func TestSegmentTree_QueryRangeNilNode(t *testing.T) {
 	st := NewSegmentTree(0, 100)
 	st.Insert(10, 20, 1) // left branch
-	
+
 	// Querying range [80, 90] should traverse to the right branch, which is nil.
 	bm := st.QueryRange(80, 90)
 	assert.True(t, bm.IsEmpty())
@@ -119,7 +119,7 @@ func TestSegmentTree_QueryRangeEmptyNode(t *testing.T) {
 	st := NewSegmentTree(0, 100)
 	st.Insert(10, 20, 1)
 	st.Remove(10, 20, 1) // node now has empty IDs
-	
+
 	bm := st.QueryRange(10, 20)
 	assert.True(t, bm.IsEmpty())
 }

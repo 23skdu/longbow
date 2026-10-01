@@ -49,31 +49,57 @@ type diskVectorStoreIntf interface {
 func extractFirstVector(res any) any {
 	switch v := res.(type) {
 	case [][]float32:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]float64:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]uint8:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]int8:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]float16.Num:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]int16:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]uint16:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]int32:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]uint32:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]int64:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]uint64:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]complex64:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	case [][]complex128:
-		if len(v) > 0 { return v[0] }
+		if len(v) > 0 {
+			return v[0]
+		}
 	}
 	return nil
 }

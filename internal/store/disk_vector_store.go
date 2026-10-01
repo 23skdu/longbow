@@ -43,7 +43,7 @@ type DiskVectorStore struct {
 	backend     storage.StorageBackend
 	mu          sync.RWMutex
 	writeMu     sync.Mutex // isolates disk writes and flushes from read traversal (RCU/double-buffering)
-	compression string // "zstd", "lz4", "none"
+	compression string     // "zstd", "lz4", "none"
 	zstdEnc     *zstd.Encoder
 	zstdDec     *zstd.Decoder
 	blocks      []BlockEntry

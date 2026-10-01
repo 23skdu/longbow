@@ -481,4 +481,3 @@ func TestResilienceSuiteSmoke(t *testing.T) {
 
 	suite.Reset()
 }
-

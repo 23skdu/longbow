@@ -68,4 +68,3 @@ func packTQ4AVX512Kernel(src, dst unsafe.Pointer, n int) // #nosec G103
 
 //go:noescape
 func packTQ8AVX512Kernel(src, dst unsafe.Pointer, n int) // #nosec G103
-

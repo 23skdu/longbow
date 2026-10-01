@@ -3,8 +3,8 @@ package index
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 

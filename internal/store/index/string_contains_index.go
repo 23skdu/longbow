@@ -12,7 +12,7 @@ import (
 // Maps each trigram (3-char substring) to the row positions containing that trigram.
 // Supports O(1) contains/prefix/suffix lookups via trigram intersection.
 type trigramIndex struct {
-	mu     sync.RWMutex
+	mu       sync.RWMutex
 	trigrams map[string][]RowPosition
 }
 

@@ -16,7 +16,7 @@ func buildMockLazyMetadata(t *testing.T, data map[string]interface{}) *LazyMetad
 
 func TestAndExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"status": "active", "age": int64(30)})
-	
+
 	expr := &AndExpr{
 		Conditions: []FilterExpr{
 			&EqExpr{Field: "status", Value: "active"},
@@ -39,7 +39,7 @@ func TestAndExpr_Evaluate(t *testing.T) {
 
 func TestOrExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"status": "active", "age": int64(30)})
-	
+
 	expr := &OrExpr{
 		Conditions: []FilterExpr{
 			&EqExpr{Field: "status", Value: "inactive"},
@@ -62,7 +62,7 @@ func TestOrExpr_Evaluate(t *testing.T) {
 
 func TestNotExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"status": "active"})
-	
+
 	expr := &NotExpr{
 		Condition: &EqExpr{Field: "status", Value: "inactive"},
 	}
@@ -76,7 +76,7 @@ func TestNotExpr_Evaluate(t *testing.T) {
 
 func TestEqExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"status": "active"})
-	
+
 	expr := &EqExpr{Field: "status", Value: "active"}
 	assert.True(t, expr.Evaluate(meta))
 
@@ -89,10 +89,10 @@ func TestEqExpr_Evaluate(t *testing.T) {
 
 func TestGtExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{
-		"int64val": int64(30),
+		"int64val":   int64(30),
 		"float64val": float64(30.5),
 	})
-	
+
 	assert.True(t, (&GtExpr{Field: "int64val", Value: int64(20)}).Evaluate(meta))
 	assert.False(t, (&GtExpr{Field: "int64val", Value: int64(40)}).Evaluate(meta))
 	assert.False(t, (&GtExpr{Field: "missing", Value: int64(20)}).Evaluate(meta))
@@ -102,7 +102,7 @@ func TestGtExpr_Evaluate(t *testing.T) {
 
 func TestGeExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"int64val": int64(30)})
-	
+
 	assert.True(t, (&GeExpr{Field: "int64val", Value: int64(30)}).Evaluate(meta))
 	assert.True(t, (&GeExpr{Field: "int64val", Value: int64(20)}).Evaluate(meta))
 	assert.False(t, (&GeExpr{Field: "int64val", Value: int64(40)}).Evaluate(meta))
@@ -111,7 +111,7 @@ func TestGeExpr_Evaluate(t *testing.T) {
 
 func TestLtExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"int64val": int64(30)})
-	
+
 	assert.True(t, (&LtExpr{Field: "int64val", Value: int64(40)}).Evaluate(meta))
 	assert.False(t, (&LtExpr{Field: "int64val", Value: int64(20)}).Evaluate(meta))
 	assert.False(t, (&LtExpr{Field: "missing", Value: int64(40)}).Evaluate(meta))
@@ -119,7 +119,7 @@ func TestLtExpr_Evaluate(t *testing.T) {
 
 func TestLeExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"int64val": int64(30)})
-	
+
 	assert.True(t, (&LeExpr{Field: "int64val", Value: int64(30)}).Evaluate(meta))
 	assert.True(t, (&LeExpr{Field: "int64val", Value: int64(40)}).Evaluate(meta))
 	assert.False(t, (&LeExpr{Field: "int64val", Value: int64(20)}).Evaluate(meta))
@@ -128,7 +128,7 @@ func TestLeExpr_Evaluate(t *testing.T) {
 
 func TestContainsExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"role": "admin_user", "age": int64(30)})
-	
+
 	assert.True(t, (&ContainsExpr{Field: "role", Value: "admin"}).Evaluate(meta))
 	assert.False(t, (&ContainsExpr{Field: "role", Value: "guest"}).Evaluate(meta))
 	assert.False(t, (&ContainsExpr{Field: "age", Value: "30"}).Evaluate(meta)) // not a string

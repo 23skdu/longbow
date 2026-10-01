@@ -86,8 +86,8 @@ func haversineBatchAVX2(centerLat, centerLon float64, points []lbcore.GeoPoint, 
 	scratch := getHaversineScratch(n)
 	defer putHaversineScratch(scratch)
 
-	dLatBuf := scratch.lat2Rad[:n] // reuse lat2Rad for dLat
-	dLonBuf := scratch.sinDLat[:n] // reuse sinDLat for dLon temporarily
+	dLatBuf := scratch.lat2Rad[:n]       // reuse lat2Rad for dLat
+	dLonBuf := scratch.sinDLat[:n]       // reuse sinDLat for dLon temporarily
 	lat2OffsetBuf := scratch.cosLat2[:n] // reuse cosLat2 for lat2Offset
 
 	// Phase 1: Compute inputs for transcendentals
@@ -100,10 +100,10 @@ func haversineBatchAVX2(centerLat, centerLon float64, points []lbcore.GeoPoint, 
 		lat2OffsetBuf[i] = lat2 + lat1
 	}
 
-	sinDLat := scratch.sqrtA[:n] // reuse sqrtA for sinDLat
+	sinDLat := scratch.sqrtA[:n]   // reuse sqrtA for sinDLat
 	sinDLon := scratch.sqrt1mA[:n] // reuse sqrt1mA for sinDLon
-	cosLat2 := scratch.a[:n] // reuse a for cosLat2
-	
+	cosLat2 := scratch.a[:n]       // reuse a for cosLat2
+
 	// Vectorized transcendentals
 	sinAVX2(dLatBuf, sinDLat)
 	sinAVX2(dLonBuf, sinDLon)
@@ -111,15 +111,15 @@ func haversineBatchAVX2(centerLat, centerLon float64, points []lbcore.GeoPoint, 
 
 	cosLat1 := cosPolyF32(lat1)
 	aBuf := dLatBuf // reuse dLatBuf for a
-	
+
 	// Phase 2: Compute a
 	for i := 0; i < n; i++ {
 		aBuf[i] = sinDLat[i]*sinDLat[i] + cosLat1*cosLat2[i]*sinDLon[i]*sinDLon[i]
 	}
 
-	sqrtA := sinDLat // reuse sinDLat for sqrtA
+	sqrtA := sinDLat   // reuse sinDLat for sqrtA
 	sqrt1mA := sinDLon // reuse sinDLon for sqrt1mA
-	
+
 	// Phase 3: batch SIMD sqrt
 	sqrtAVX2(aBuf, sqrtA)
 	for i := 0; i < n; i++ {
@@ -128,10 +128,10 @@ func haversineBatchAVX2(centerLat, centerLon float64, points []lbcore.GeoPoint, 
 	sqrtAVX2(sqrt1mA, sqrt1mA)
 
 	cBuf := aBuf // reuse aBuf for c
-	
+
 	// Phase 4: Vectorized atan2
 	atan2AVX2(sqrtA, sqrt1mA, cBuf)
-	
+
 	twoRad := 2 * rad
 	for i := 0; i < n; i++ {
 		results[i] = cBuf[i] * twoRad

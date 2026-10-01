@@ -13,7 +13,7 @@ import (
 
 func TestShouldAutoQuantize_Thresholds(t *testing.T) {
 	constrainedRAM := int64(16) * 1024 * 1024 * 1024 // 16 GB RAM
-	generousRAM := int64(128) * 1024 * 1024 * 1024  // 128 GB RAM
+	generousRAM := int64(128) * 1024 * 1024 * 1024   // 128 GB RAM
 
 	// 1. Below threshold (100k < 500k default threshold) -> false
 	assert.False(t, ShouldAutoQuantize(100000, 128, types.VectorTypeFloat32, constrainedRAM, 500000))

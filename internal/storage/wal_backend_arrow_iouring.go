@@ -105,7 +105,7 @@ func (b *ArrowIOUringBackend) Write(p []byte) (int, error) {
 			}
 		}
 
-		// Use async write directly for large writes, but MUST wait for completion 
+		// Use async write directly for large writes, but MUST wait for completion
 		// because the caller (e.g. WALBatcher) will reuse the buffer 'p' immediately.
 		return b.writeAsyncSync(p)
 	}
@@ -165,8 +165,6 @@ func (b *ArrowIOUringBackend) flushBuffer() error {
 
 	return err
 }
-
-
 
 // writeAsyncSync submits an async write and waits for completion
 func (b *ArrowIOUringBackend) writeAsyncSync(p []byte) (int, error) {

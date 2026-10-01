@@ -46,8 +46,8 @@ type MemoryBackpressureController struct {
 // NewMemoryBackpressureController creates a new backpressure controller.
 func NewMemoryBackpressureController(cfg BackpressureConfig) *MemoryBackpressureController {
 	ctrl := &MemoryBackpressureController{
-		config:  cfg,
-		signal:  make(chan struct{}),
+		config:   cfg,
+		signal:   make(chan struct{}),
 		stopChan: make(chan struct{}),
 	}
 	return ctrl

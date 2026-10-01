@@ -172,4 +172,3 @@ func TestArrowHNSW_Complex_Float64Query(t *testing.T) {
 	require.Equal(t, uint32(0), uint32(results[0].ID))
 	require.InDelta(t, 0.0, results[0].Dist, 1e-5)
 }
-

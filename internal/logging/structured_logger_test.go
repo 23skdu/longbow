@@ -51,7 +51,7 @@ func TestNewStructuredLoggerJSON(t *testing.T) {
 func TestGetZerologLevel(t *testing.T) {
 	tests := []struct {
 		input LogLevel
-		want zerolog.Level
+		want  zerolog.Level
 	}{
 		{DebugLevel, zerolog.DebugLevel},
 		{InfoLevel, zerolog.InfoLevel},

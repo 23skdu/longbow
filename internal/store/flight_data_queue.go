@@ -127,7 +127,6 @@ func (q *FlightDataQueue) Dequeue(ctx context.Context) (*FlightDataChunk, bool) 
 	}
 }
 
-
 // Len returns current queue length.
 func (q *FlightDataQueue) Len() int {
 	return len(q.ch)

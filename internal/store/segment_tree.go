@@ -34,14 +34,14 @@ func NewSegmentTree(min, max int64) *SegmentTree {
 
 // InsertBatch adds multiple vector IDs to their intervals, locking once for the batch.
 func (st *SegmentTree) InsertBatch(starts, ends []int64, ids []uint32) {
-    if len(ids) == 0 {
-        return
-    }
-    st.mu.Lock()
-    defer st.mu.Unlock()
-    for i := range ids {
-        st.insert(st.root, st.min, st.max, starts[i], ends[i], ids[i])
-    }
+	if len(ids) == 0 {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for i := range ids {
+		st.insert(st.root, st.min, st.max, starts[i], ends[i], ids[i])
+	}
 }
 
 // Insert adds a vector ID to the interval [start, end].

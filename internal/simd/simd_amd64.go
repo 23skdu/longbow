@@ -277,7 +277,7 @@ func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results
 				prefetchNTA(uintptr(unsafe.Pointer(&vectors[i+4][0]))) // #nosec G103
 			}
 
-			results[i] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v0[0])), qLen)     // #nosec G103
+			results[i] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v0[0])), qLen)   // #nosec G103
 			results[i+1] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v1[0])), qLen) // #nosec G103
 			results[i+2] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v2[0])), qLen) // #nosec G103
 			results[i+3] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v3[0])), qLen) // #nosec G103
@@ -314,7 +314,7 @@ func euclideanVerticalBatchAVX2(query []float32, vectors [][]float32, results []
 		}
 		euclideanVertical4AVX2(
 			uintptr(qPtr),
-			uintptr(unsafe.Pointer(&vectors[i][0])), // #nosec G103
+			uintptr(unsafe.Pointer(&vectors[i][0])),   // #nosec G103
 			uintptr(unsafe.Pointer(&vectors[i+1][0])), // #nosec G103
 			uintptr(unsafe.Pointer(&vectors[i+2][0])), // #nosec G103
 			uintptr(unsafe.Pointer(&vectors[i+3][0])), // #nosec G103
@@ -687,7 +687,6 @@ func cosineFloat64AVX2(a, b []float64) (float32, error) {
 // =============================================================================
 // Int8 Implementations
 // =============================================================================
-
 
 func euclideanInt8AVX2(a, b []int8) (float32, error) {
 	if len(a) == 0 {
@@ -1092,8 +1091,8 @@ func matMulAVX2(a, b []float32, m, n, k int, dst []float32) {
 	}
 
 	matMulAVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
-		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&a[0])),   // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])),   // #nosec G103
 		uintptr(unsafe.Pointer(&dst[0])), // #nosec G103
 		m, n, k,
 	)

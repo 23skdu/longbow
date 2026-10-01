@@ -129,7 +129,7 @@ func TestBitset_Slice(t *testing.T) {
 	slice2 := b.Slice(0, 20) // should return 4 items
 	assert.NotNil(t, slice2)
 	assert.Equal(t, uint64(4), slice2.Count())
-	
+
 	slice1.Release()
 	slice2.Release()
 }

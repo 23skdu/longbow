@@ -38,7 +38,7 @@ func BenchmarkThroughput(b *testing.B) {
 	}()
 
 	type testCase struct {
-		name      string
+		name       string
 		newBackend func() (storage.WALBackend, string) // factory returning (backend, skipReason)
 	}
 
@@ -101,7 +101,6 @@ func BenchmarkThroughput(b *testing.B) {
 		})
 	}
 }
-
 
 // createStandardBackend creates a standard WAL backend for testing
 func createStandardBackend(b *testing.B, dir string) storage.WALBackend {
@@ -214,4 +213,3 @@ func TestBenchmarkSmoke(t *testing.T) {
 		t.Fatal("expected valid temp directory")
 	}
 }
-

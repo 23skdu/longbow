@@ -193,7 +193,7 @@ func (rm *RingManager) updateIndexBoundaries(member *mesh.Member) {
 							router = mesh.NewRouter()
 							rm.geoRouters[dataset] = router
 						}
-						
+
 						// Create unique region ID based on member.ID hash
 						h := fnv.New64a()
 						_, _ = h.Write([]byte(member.ID))

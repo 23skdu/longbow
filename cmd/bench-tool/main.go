@@ -454,9 +454,9 @@ func main() {
 	}
 	indexingSeconds := time.Since(indexingStart).Seconds()
 	results = append(results, BenchmarkResult{
-		Name:            "Indexing",
-		DurationSeconds: indexingSeconds,
-		Rows:            int64(*scale),
+		Name:             "Indexing",
+		DurationSeconds:  indexingSeconds,
+		Rows:             int64(*scale),
 		IndexingDuration: indexingSeconds,
 	})
 	log.Printf("Indexing complete in %.4fs (status: %s).", indexingSeconds, readyStatus)

@@ -141,11 +141,11 @@ func matMulAVX2(a, b []float32, m, n, k int, dst []float32) { matMulGeneric(a, b
 func argMaxAVX2(src []float32) int                          { return argMaxGeneric(src) }
 func argMinAVX2(src []float32) int                          { return argMinGeneric(src) }
 
-func sinAVX2(src, dst []float32)          { sinFloat32Generic(src, dst) }
-func cosAVX2(src, dst []float32)          { cosFloat32Generic(src, dst) }
+func sinAVX2(src, dst []float32)               { sinFloat32Generic(src, dst) }
+func cosAVX2(src, dst []float32)               { cosFloat32Generic(src, dst) }
 func sincosAVX2(src, sinDst, cosDst []float32) { sincosFloat32Generic(src, sinDst, cosDst) }
-func sqrtAVX2(src, dst []float32)         { sqrtFloat32Generic(src, dst) }
-func atan2AVX2(y, x, dst []float32)       { atan2Float32Generic(y, x, dst) }
+func sqrtAVX2(src, dst []float32)              { sqrtFloat32Generic(src, dst) }
+func atan2AVX2(y, x, dst []float32)            { atan2Float32Generic(y, x, dst) }
 
 func haversineBatchAVX2(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32) {
 	haversineBatchGeneric(centerLat, centerLon, points, earthRadius, results)
@@ -200,14 +200,14 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 	return euclideanBatchGeneric(query, vectors, results)
 }
 
-func cosineInt8AVX2(a, b []int8) (float32, error)           { return cosineDistanceInt8Unrolled4x(a, b) }
-func cosineUint8AVX2(a, b []uint8) (float32, error)        { return cosineDistanceUint8Unrolled4x(a, b) }
-func cosineInt16AVX2(a, b []int16) (float32, error)        { return cosineDistanceInt16Unrolled4x(a, b) }
-func cosineUint16AVX2(a, b []uint16) (float32, error)      { return cosineDistanceUint16Unrolled4x(a, b) }
-func cosineInt32AVX2(a, b []int32) (float32, error)        { return cosineDistanceInt32Unrolled4x(a, b) }
-func cosineUint32AVX2(a, b []uint32) (float32, error)      { return cosineDistanceUint32Unrolled4x(a, b) }
-func cosineInt64AVX2(a, b []int64) (float32, error)        { return cosineDistanceInt64Unrolled4x(a, b) }
-func cosineUint64AVX2(a, b []uint64) (float32, error)      { return cosineDistanceUint64Unrolled4x(a, b) }
+func cosineInt8AVX2(a, b []int8) (float32, error)     { return cosineDistanceInt8Unrolled4x(a, b) }
+func cosineUint8AVX2(a, b []uint8) (float32, error)   { return cosineDistanceUint8Unrolled4x(a, b) }
+func cosineInt16AVX2(a, b []int16) (float32, error)   { return cosineDistanceInt16Unrolled4x(a, b) }
+func cosineUint16AVX2(a, b []uint16) (float32, error) { return cosineDistanceUint16Unrolled4x(a, b) }
+func cosineInt32AVX2(a, b []int32) (float32, error)   { return cosineDistanceInt32Unrolled4x(a, b) }
+func cosineUint32AVX2(a, b []uint32) (float32, error) { return cosineDistanceUint32Unrolled4x(a, b) }
+func cosineInt64AVX2(a, b []int64) (float32, error)   { return cosineDistanceInt64Unrolled4x(a, b) }
+func cosineUint64AVX2(a, b []uint64) (float32, error) { return cosineDistanceUint64Unrolled4x(a, b) }
 
 func euclideanInt8AVX2(a, b []int8) (float32, error)     { return euclideanInt8Unrolled4x(a, b) }
 func dotInt8AVX2(a, b []int8) (float32, error)           { return dotInt8Unrolled4x(a, b) }

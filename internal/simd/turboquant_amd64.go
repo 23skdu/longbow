@@ -73,4 +73,3 @@ func packTQ4AVX2Kernel(src, dst unsafe.Pointer, n int)
 
 //go:noescape
 func packTQ8AVX2Kernel(src, dst unsafe.Pointer, n int)
-

@@ -37,6 +37,14 @@ jobs:
       - name: Build
         run: go build -v ./...
 
+      - name: Verify generated SIMD is reproducible
+        run: ./scripts/check_simd_generation.sh
+
+      - name: Verify ARM64 still cross-compiles
+        run: |
+          GOARCH=arm64 go build ./...
+          GOARCH=arm64 go vet ./...
+
       - name: Test
         run: go test -v -race -coverprofile=coverage.txt ./...
 

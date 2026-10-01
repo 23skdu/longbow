@@ -1,4 +1,19 @@
 //go:build ignore
+
+// STALE -- DO NOT WIRE THIS UP TO //go:generate.
+//
+// softmax_avx512_amd64.s is hand-maintained and is no longer generated. This
+// generator emits a smaller softmaxAVX512Kernel than the committed file: it
+// omits 165 lines of the committed kernel and evaluates a reduced-order exp
+// polynomial in ascending order (c0, c1, ... ) rather than the committed
+// degree-5 Horner form (c5, c4, ... , c0). Running it silently downgrades the
+// kernel while looking like a successful regeneration.
+//
+// Porting the committed kernel into Avo is only safe with an AVX-512 host to
+// validate the result, which this repository does not currently have. Until
+// then, the //go:generate line stays removed from ../generate.go.
+// See docs/roadmap.md.
+
 package main
 
 import (

@@ -166,10 +166,11 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	}
 
 	selectivity := 1.0
-	totalNodes := int(meta.NodeCount)
-	// Node IDs are uint32, so the addressable ID space bounds the count used
-	// for selectivity estimation. Clamping here keeps the uint32 narrowing in
-	// the sampling loop below provably in range.
+	// Keep the count in int64/uint64 throughout: int is 32-bit on some
+	// platforms, and meta.NodeCount is int64. Node IDs are uint32, so the
+	// addressable ID space bounds selectivity estimation and keeps the
+	// uint32 narrowing below provably in range.
+	totalNodes := meta.NodeCount
 	if totalNodes > math.MaxUint32 {
 		totalNodes = math.MaxUint32
 	}
@@ -184,7 +185,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 			selectivity = 0.0
 		}
 	} else if searchCtx.predicate != nil && totalNodes > 0 {
-		sampleN := 64
+		sampleN := int64(64)
 		if totalNodes < sampleN {
 			sampleN = totalNodes
 		}
@@ -193,7 +194,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 			stride = 1
 		}
 		matched := 0
-		for i := 0; i < sampleN; i++ {
+		for i := int64(0); i < sampleN; i++ {
 			sampleID := uint64(i) * stride
 			if sampleID > math.MaxUint32 {
 				sampleID = math.MaxUint32

@@ -133,7 +133,9 @@ func (g *MortonGrid) Insert(vec *GeoIndexedVector) bool {
 	code := g.cellCode(lat, lon)
 
 	g.mu.Lock()
-	if len(g.entries) >= math.MaxUint32 {
+	// Compare in uint64 space: math.MaxUint32 overflows int on 32-bit
+	// platforms, where this guard is trivially false anyway.
+	if uint64(len(g.entries)) >= math.MaxUint32 {
 		g.mu.Unlock()
 		return false
 	}

@@ -249,7 +249,9 @@ func (sa *SegmentedArena) runPromotionCycle() {
 				return true
 			}
 			size := len(sz)
-			if size > math.MaxUint32 {
+			// Compare in uint64 space: math.MaxUint32 overflows int on 32-bit
+			// platforms, where the check is trivially false anyway.
+			if uint64(size) > math.MaxUint32 {
 				return true
 			}
 			dstOffset, err := sa.allocWithAccess(nextTier, size)

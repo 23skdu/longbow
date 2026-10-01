@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/client"
+	"github.com/23skdu/longbow/pkg/safe"
 	"github.com/23skdu/longbow/pkg/version"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -312,10 +313,10 @@ func main() {
 				// *scale and *dim are CLI flags bounded to [1, 10_000_000] and [1, 65536].
 				// Both fit safely in uint32; the guards below make that explicit for
 				// static analysis (gosec G115).
-				if *scale < 0 || *scale > int(^uint32(0)) {
+				if _, err := safe.Int64ToUint32(int64(*scale)); err != nil {
 					log.Fatalf("scale %d out of uint32 range", *scale)
 				}
-				if *dim < 0 || *dim > int(^uint32(0)) {
+				if _, err := safe.Int64ToUint32(int64(*dim)); err != nil {
 					log.Fatalf("dim %d out of uint32 range", *dim)
 				}
 				if err := binary.Write(f, binary.LittleEndian, uint32(*scale)); err != nil { // #nosec G115 -- bounds checked above

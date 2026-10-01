@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,18 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+// maxCallMsgSizeBytes is the gRPC message size cap, sized for large Arrow
+// payloads (e.g. 500k x 3072 x 4 = 6GB). The constant is clamped to
+// math.MaxInt so the package still builds on 32-bit platforms, where int is
+// 32 bits and the 20GB target cannot be represented.
+var maxCallMsgSizeBytes = func() int {
+	target := int64(20) * 1024 * 1024 * 1024 // 20GB
+	if target > int64(math.MaxInt) {
+		return math.MaxInt
+	}
+	return int(target)
+}()
 
 // SmartClient is a wrapper around flight.Client that handles strict sharding redirects
 type SmartClient struct {
@@ -50,8 +63,8 @@ func NewSmartClient(addr string) (*SmartClient, error) {
 		dialOpts: []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithDefaultCallOptions(
-				grpc.MaxCallRecvMsgSize(21474836470), // 20GB max (for 500k×3072×4 = 6GB payloads)
-				grpc.MaxCallSendMsgSize(21474836470),
+				grpc.MaxCallRecvMsgSize(maxCallMsgSizeBytes),
+				grpc.MaxCallSendMsgSize(maxCallMsgSizeBytes),
 			),
 		},
 		timeout: 30 * time.Second,

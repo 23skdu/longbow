@@ -1073,6 +1073,12 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					}
 					return ids, nil
 				}
+				// A cancelled or expired context is terminal: falling back to
+				// the sequential path would redo the whole batch and blow
+				// through the deadline we were supposed to respect.
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return nil, ctxErr
+				}
 			}
 		}
 	}
@@ -1136,6 +1142,11 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	for i := 0; i < len(rowIdxs); i++ {
+		// This fallback runs one InsertWithVector per row, so it must honour
+		// the caller's deadline instead of running the whole batch blind.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		id := startID + uint32(i) // #nosec G115
 
 		var rec arrow.RecordBatch

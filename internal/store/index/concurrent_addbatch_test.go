@@ -71,7 +71,11 @@ func TestArrowHNSW_ConcurrentAddBatch_Int8_2Batches(t *testing.T) {
 	config.Dims = dims
 	idx := NewArrowHNSW(ds, &config, nil)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// This deadline is a deadlock guard, not a performance budget: the work
+	// is ~0.85s natively but ~20s under -race. It was never enforced while
+	// AddBatch ignored ctx, and now that cancellation is honoured it has to
+	// leave headroom for race instrumentation so it does not flake.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	var wg sync.WaitGroup

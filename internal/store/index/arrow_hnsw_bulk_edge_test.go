@@ -5,11 +5,13 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
+	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,4 +98,81 @@ func TestArrowHNSW_AddBatchBulk_EdgeCases(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "dimension mismatch")
 	})
+}
+
+// TestArrowHNSW_AddBatch_CancelMidFlight verifies that AddBatch honours a
+// context deadline that expires partway through a bulk-insertable batch,
+// instead of silently redoing the whole batch on the sequential fallback path
+// and reporting success.
+//
+// Regression test: addBatchBulkInternal aborted on ctx but AddBatch discarded
+// that error and fell through to sequential insertion, which checked neither
+// ctx nor the already-expired deadline. A 400ms deadline over a 20k float32
+// batch previously ran for ~2 minutes and returned nil.
+func TestArrowHNSW_AddBatch_CancelMidFlight(t *testing.T) {
+	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer mem.AssertSize(t, 0)
+
+	const dims = 128
+	const n = 20000
+
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vec", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
+	}, nil)
+
+	builder := arrowarray.NewRecordBuilder(mem, schema)
+	idB := builder.Field(0).(*arrowarray.Int64Builder)
+	vecB := builder.Field(1).(*arrowarray.FixedSizeListBuilder)
+	valB := vecB.ValueBuilder().(*arrowarray.Float32Builder)
+	for i := 0; i < n; i++ {
+		idB.Append(int64(i))
+		vecB.Append(true)
+		v := make([]float32, dims)
+		for j := range v {
+			v[j] = float32((i*7 + j*13) % 251)
+		}
+		valB.AppendValues(v, nil)
+	}
+	rec := builder.NewRecordBatch()
+	builder.Release()
+	defer rec.Release()
+
+	ds := index.NewMockDataset("test_cancel_midflight", schema)
+	cfg := types.DefaultArrowHNSWConfig()
+	cfg.Dims = dims
+
+	idx := index.NewArrowHNSW(ds, &cfg, nil)
+	defer func() { _ = idx.Close() }()
+
+	rowIdxs := make([]int, n)
+	batchIdxs := make([]int, n)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := idx.AddBatch(ctx, []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		elapsed := time.Since(start)
+		if err == nil {
+			t.Fatalf("AddBatch ignored its 400ms deadline: returned success after %v", elapsed)
+		}
+		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context error, got %v", err)
+		}
+		// The batch takes ~11s on its own, so a prompt abort must be far
+		// quicker than running it to completion.
+		if elapsed > 30*time.Second {
+			t.Fatalf("cancellation took %v; deadline was not honoured", elapsed)
+		}
+	case <-time.After(90 * time.Second):
+		t.Fatal("AddBatch ignored cancellation and hung past its deadline")
+	}
 }

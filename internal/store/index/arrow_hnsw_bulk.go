@@ -613,6 +613,12 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	})
 
 	for lc := topL; lc >= 0; lc-- {
+		// Honour cancellation between layers: a single layer over a large
+		// batch can run for minutes, so the caller must not be stuck waiting
+		// on a deadline that has already passed.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 
 		// Identify nodes active at this layer
 		activeIndices := make([]int, 0, numRemaining)
@@ -649,6 +655,12 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		}
 
 		for i := 0; i < len(activeIndices); i += subBatchSize {
+			// Sub-batches are the unit of work between two graph clones, so
+			// this is the natural place to bail out without leaving a
+			// half-linked layer behind.
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			endBatch := i + subBatchSize
 			if endBatch > len(activeIndices) {
 				endBatch = len(activeIndices)
@@ -685,6 +697,16 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 				defer h.searchPool.PutWithMetrics(ctxSearch, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 
 				for _, idx := range indices {
+					// Check per node so an in-flight layer aborts promptly
+					// instead of running to completion past its deadline.
+					if err := ctx.Err(); err != nil {
+						layerMu.Lock()
+						if errLayer == nil {
+							errLayer = err
+						}
+						layerMu.Unlock()
+						return
+					}
 					node := remainingNodes[idx]
 					currEp := currentEps[idx]
 
@@ -738,6 +760,18 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 
 			pool.ParallelFor(len(subIndices), linkageChunkSize, func(start, end int) {
 				for _, idx := range subIndices[start:end] {
+					// Linkage is the expensive half of a layer (neighbour
+					// selection per node), so check cancellation here too.
+					// Checked before ctxLink is taken so there is no pooled
+					// context to return on the abort path.
+					if err := ctx.Err(); err != nil {
+						layerMu.Lock()
+						if errLayer == nil {
+							errLayer = err
+						}
+						layerMu.Unlock()
+						return
+					}
 					node := remainingNodes[idx]
 					if lc > node.level {
 						continue
@@ -844,6 +878,13 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			})
 
 			runtime.KeepAlive(data) // Keep GraphData alive during blocking parallel linkage
+
+			// Surface an abort raised by the linkage workers before the
+			// snapshot clone below, which would otherwise publish a
+			// partially linked layer as if it had succeeded.
+			if errLayer != nil {
+				return errLayer
+			}
 
 			// Update the global snapshot for organic growth so next sub-batch sees these nodes
 			// Only clone if there are more sub-batches to process to avoid final redundant clone

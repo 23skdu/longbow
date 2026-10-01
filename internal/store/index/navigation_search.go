@@ -165,6 +165,41 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		}
 	}
 
+	selectivity := 1.0
+	totalNodes := int(meta.NodeCount)
+	if filter != nil && totalNodes > 0 {
+		card := filter.GetCardinality()
+		if card > 0 {
+			selectivity = float64(card) / float64(totalNodes)
+			if selectivity > 1.0 {
+				selectivity = 1.0
+			}
+		} else {
+			selectivity = 0.0
+		}
+	} else if searchCtx.predicate != nil && totalNodes > 0 {
+		sampleN := 64
+		if totalNodes < sampleN {
+			sampleN = totalNodes
+		}
+		stride := totalNodes / sampleN
+		if stride <= 0 {
+			stride = 1
+		}
+		matched := 0
+		for i := 0; i < sampleN; i++ {
+			id := uint32(i * stride)
+			if searchCtx.predicate.IsMatch(id) {
+				matched++
+			}
+		}
+		if matched > 0 {
+			selectivity = float64(matched) / float64(sampleN)
+		} else {
+			selectivity = 1.0 / float64(sampleN*2)
+		}
+	}
+
 	defer func() {
 		searchCtx.filterBitmap = nil
 		searchCtx.filterMask = nil
@@ -355,55 +390,63 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 search_layer0:
 	// 2. Search at layer 0 with adaptive retry
-	efSearch := int(h.config.EfSearch)
+	baseEf := int(h.config.EfSearch)
 	if searchOptions.Ef > 0 {
-		efSearch = searchOptions.Ef
+		baseEf = searchOptions.Ef
 	}
-	if h.config.SQ8Enabled && efSearch < 100 {
+	if h.config.SQ8Enabled && baseEf < 100 {
 		// Provide more search buffer by default for SQ8 to compensate for quantization noise
-		efSearch = 100
+		baseEf = 100
+	}
+	if k > baseEf {
+		baseEf = k
 	}
 
-	if k > efSearch {
+	maxEf := 2000
+	if h.efTuner != nil {
+		if tunerMax := h.efTuner.GetMaxEf(); tunerMax > 0 {
+			maxEf = tunerMax
+		}
+	}
+	maxNodeCount := int(meta.NodeCount)
+	if maxNodeCount > 0 && maxEf > maxNodeCount {
+		maxEf = maxNodeCount
+	}
+
+	efSearch := baseEf
+	// Step 1: Adaptive ef Scaling for Filtered Graph Traversal (roadmap.md §7 item 1)
+	// When a selective predicate or filter is active, scaling efSearch upfront ensures
+	// layer-0 graph traversal collects sufficient matching candidates on attempt 0,
+	// avoiding 2-3x latency penalties from iterative retries and short result sets.
+	if selectivity > 0.0 && selectivity < 0.8 {
+		scaledEf := int(math.Ceil(float64(k) / selectivity * 1.25))
+		if scaledEf > efSearch {
+			efSearch = scaledEf
+		}
+	}
+
+	if efSearch > maxEf {
+		efSearch = maxEf
+	}
+	if efSearch < baseEf {
+		efSearch = baseEf
+	}
+	if efSearch < k {
 		efSearch = k
 	}
 
-	var results []types.SearchResult
-	var qv []float32
-	var ok bool
-	if qv, ok = queryVec.([]float32); !ok {
-		// Fallback to non-retry path if not float32 (unlikely for this path)
-		var res []types.Candidate
-		var err error
-		if compF32, ok := computer.(*float32ToFloat32Computer); ok {
-			res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, efSearch, 0, searchCtx, data)
-		} else if compF64, ok := computer.(*float64Computer); ok {
-			res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, efSearch, 0, searchCtx, data)
-		} else {
-			res, err = h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
+	// Ensure searchCtx.visitedNodesBudget accommodates the scaled efSearch
+	minBudget := efSearch * 40
+	if searchCtx.visitedNodesBudget < minBudget {
+		searchCtx.visitedNodesBudget = minBudget
+		if searchCtx.visitedNodesBudget > 200000 {
+			searchCtx.visitedNodesBudget = 200000
 		}
-		if err != nil {
-			return nil, err
-		}
-		sort.Slice(res, func(i, j int) bool { return res[i].Dist < res[j].Dist })
-		fm := searchCtx.filterMask
-		result := make([]types.SearchResult, 0, k)
-		for _, c := range res {
-			if h.IsDeleted(c.ID) || (fm != nil && !fm.allows(c.ID)) {
-				continue
-			}
-			result = append(result, types.SearchResult{ID: types.VectorID(c.ID), Distance: c.Dist, Score: 1.0 / (1.0 + c.Dist)})
-			if len(result) >= k {
-				break
-			}
-		}
-		return result, nil
 	}
 
-	maxNodeCount := int(h.GetMetadataSnapshot().NodeCount)
+	var results []types.SearchResult
 	for attempt := 0; attempt < 3; attempt++ {
 		if err := ctx.Err(); err != nil {
-			h.flushSearchMetrics(searchCtx)
 			return nil, err
 		}
 
@@ -420,29 +463,36 @@ search_layer0:
 			res, err = h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
 		}
 		if err != nil {
-			h.flushSearchMetrics(searchCtx)
 			return nil, err
 		}
 
-		results = h.ProcessResultsParallel(ctx, qv, queryVec, res, k, filter)
+		results = h.ProcessResultsParallel(ctx, queryVec, queryVec, res, k, filter)
+		if len(results) == 0 && len(res) > 0 {
+			results = h.extractSearchResults(res, k, searchCtx)
+		}
+
 		if len(results) >= k || attempt == 2 || efSearch >= maxNodeCount {
 			break
 		}
 
-		// Item 3: Adaptive Search Expansion Policy
-		// Instead of a blind 5x multiplier, use a heuristic based on the distance distribution
-		// and the number of results found vs requested.
-		// Use PID-based autonomous efSearch tuning
-		// Proxy recall = len(results) / k
+		// Adaptive Search Expansion Policy:
+		// Instead of a blind multiplier, use PID-based autonomous efSearch tuning
 		recallProxy := float64(len(results)) / float64(k)
 		if recallProxy > 1.0 {
 			recallProxy = 1.0
 		}
 
-		efSearch = h.efTuner.Update(recallProxy)
+		nextEf := h.efTuner.Update(recallProxy)
+		if nextEf <= efSearch {
+			efSearch = int(float64(efSearch) * 1.5)
+		} else {
+			efSearch = nextEf
+		}
+		if efSearch > maxNodeCount && maxNodeCount > 0 {
+			efSearch = maxNodeCount
+		}
 	}
 
-	h.flushSearchMetrics(searchCtx)
 	return results, nil
 }
 
@@ -657,6 +707,46 @@ func (h *ArrowHNSW) ProcessResultsParallel(ctx context.Context, qv any, original
 		}
 	}
 	return nil
+}
+
+// extractSearchResults translates raw traversal candidates to SearchResults, enforcing
+// deletion status, bitmap/dense filter constraints, and metadata predicates.
+func (h *ArrowHNSW) extractSearchResults(candidates []types.Candidate, k int, searchCtx *ArrowSearchContext) []types.SearchResult {
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Dist < candidates[j].Dist })
+	fm := searchCtx.filterMask
+	bm := searchCtx.filterBitmap
+	limit := k
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	results := make([]types.SearchResult, 0, limit)
+	for _, c := range candidates {
+		if h.IsDeleted(c.ID) {
+			continue
+		}
+		if fm != nil {
+			if !fm.allows(c.ID) {
+				continue
+			}
+		} else if bm != nil {
+			if !bm.Contains(c.ID) {
+				continue
+			}
+		}
+		if searchCtx.predicate != nil && !searchCtx.predicate.IsMatch(c.ID) {
+			continue
+		}
+		score := float32(1.0 / (1.0 + float64(c.Dist)))
+		results = append(results, types.SearchResult{
+			ID:       types.VectorID(c.ID),
+			Distance: c.Dist,
+			Score:    score,
+		})
+		if len(results) >= k {
+			break
+		}
+	}
+	return results
 }
 
 func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowSearchContext, queryVal any, squared bool, options any) DistanceComputer {

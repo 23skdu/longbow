@@ -200,6 +200,7 @@ func (h *ArrowHNSW) flushSearchMetrics(ctx *ArrowSearchContext) {
 	// Always increment global distance counter (low overhead atomic)
 	if ctx.distComputeCount > 0 {
 		metrics.HnswDistanceCalculations.Add(float64(ctx.distComputeCount))
+		ctx.distComputeCount = 0
 	}
 
 	// Sampling for Histogram metrics (e.g. nodes visited)

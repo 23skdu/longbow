@@ -74,3 +74,13 @@ func (t *PIDTuner) GetCurrentEf() int {
 	defer t.mu.Unlock()
 	return int(t.currentEf)
 }
+
+// GetMaxEf returns the maximum configured efSearch limit.
+func (t *PIDTuner) GetMaxEf() int {
+	if t == nil {
+		return 2000
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return int(t.maxEf)
+}

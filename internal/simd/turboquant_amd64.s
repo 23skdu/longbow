@@ -154,6 +154,34 @@ DATA pack2_weights_1<>+0x00(SB)/8, $0x0010000100100001
 DATA pack2_weights_1<>+0x08(SB)/8, $0x0010000100100001
 GLOBL pack2_weights_1<>(SB), RODATA, $16
 
+// tq4_maddubs weights the adjacent byte pairs [1,16] so VPMADDUBSW sums
+// c[2k] + 16*c[2k+1], which is one 4-bit output byte with the low nibble
+// holding the earlier element.
+DATA tq4_maddubs<>+0x00(SB)/8, $0x1001100110011001
+DATA tq4_maddubs<>+0x08(SB)/8, $0x1001100110011001
+GLOBL tq4_maddubs<>(SB), RODATA, $16
+
+// tq4_evenbytes keeps byte 0 of each word for VPSHUFB.
+DATA tq4_evenbytes<>+0x00(SB)/8, $0x0E0C0A0806040200
+DATA tq4_evenbytes<>+0x08(SB)/8, $0xFFFFFFFFFFFFFFFF
+GLOBL tq4_evenbytes<>(SB), RODATA, $16
+
+// tq2_maddubs repeats the field weights [1,4,16,64], so each
+// VPMADDUBSW destination word is one complete 2-bit output byte.
+DATA tq2_maddubs<>+0x00(SB)/8, $0x4010040140100401
+DATA tq2_maddubs<>+0x08(SB)/8, $0x4010040140100401
+GLOBL tq2_maddubs<>(SB), RODATA, $16
+
+// tq2_maddwd adds each pair of half-bytes with unit weights.
+DATA tq2_maddwd<>+0x00(SB)/8, $0x0001000100010001
+DATA tq2_maddwd<>+0x08(SB)/8, $0x0001000100010001
+GLOBL tq2_maddwd<>(SB), RODATA, $16
+
+// tq2_evenbytes keeps byte 0 of each dword for VPSHUFB.
+DATA tq2_evenbytes<>+0x00(SB)/8, $0x000000000C080400
+DATA tq2_evenbytes<>+0x08(SB)/8, $0xFFFFFFFFFFFFFFFF
+GLOBL tq2_evenbytes<>(SB), RODATA, $16
+
 // func unpackTQ2AVX2Kernel(src, dst unsafe.Pointer, n int, scale, bias float32)
 TEXT ·unpackTQ2AVX2Kernel(SB), NOSPLIT, $0-32
     MOVQ    src+0(FP), SI
@@ -647,69 +675,85 @@ done_pack2_vbmi:
     VZEROUPPER
     RET
 // func packTQ4AVX2Kernel(src, dst unsafe.Pointer, n int)
+// func packTQ4AVX2Kernel(src, dst unsafe.Pointer, n int)
 TEXT ·packTQ4AVX2Kernel(SB), NOSPLIT, $0-24
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
-    
-    VMOVSS  tq_pi<>(SB), X0
-    VBROADCASTSS X0, Y0
-    VMOVSS  tq_inv2pi<>(SB), X0
-    VBROADCASTSS X0, Y1
-    VMOVSS  tq_max4<>(SB), X0
-    VBROADCASTSS X0, Y2
-    VMOVSS  tq_half<>(SB), X0
-    VBROADCASTSS X0, Y3
+
+    // Constants are broadcast straight from memory. Chaining
+    // "VMOVSS tq_x<>(SB), X0" into "VBROADCASTSS X0, Y0" does not work: Go
+    // assembles the two-operand VMOVSS m32, Xn with VEX.L=1, so the CPU
+    // zeroes bits [255:32] of the destination YMM, and the next reload of X0
+    // wipes lanes 4-7 of the vector that was just built.
+    VBROADCASTSS tq_pi<>(SB), Y0
+    VBROADCASTSS tq_inv2pi<>(SB), Y1
+    VBROADCASTSS tq_max4<>(SB), Y2
+    VBROADCASTSS tq_half<>(SB), Y3
     VPXOR   Y4, Y4, Y4
-    VMOVSS  $1.0, X6
-    VBROADCASTSS X6, Y6
-    
-    MOVQ    $0x00FF00FF00FF00FF, AX
-    VMOVQ   AX, X15 // Mask for e0, e2, ...
+    VBROADCASTSS tq_one<>(SB), Y6
 
 loop_pack4:
     CMPQ    CX, $16
     JL      tail_pack4
-    
+
     VMOVDQU (SI), Y7
     VMOVDQU 32(SI), Y8
-    
+
+    // (src + pi) * inv2pi, clamped to [0,1], scaled to [0,max4], plus half,
+    // then floored. The explicit VROUNDPS matters: VCVTPS2DQ rounds half to
+    // even, while the scalar reference computes floor(norm*max + 0.5), which
+    // skews nearly every code by one.
     VADDPS  Y0, Y7, Y7
     VMULPS  Y1, Y7, Y7
     VMAXPS  Y4, Y7, Y7
     VMINPS  Y6, Y7, Y7
     VMULPS  Y2, Y7, Y7
     VADDPS  Y3, Y7, Y7
+    VROUNDPS $1, Y7, Y7
     VCVTPS2DQ Y7, Y7
-    
+
     VADDPS  Y0, Y8, Y8
     VMULPS  Y1, Y8, Y8
     VMAXPS  Y4, Y8, Y8
     VMINPS  Y6, Y8, Y8
     VMULPS  Y2, Y8, Y8
     VADDPS  Y3, Y8, Y8
+    VROUNDPS $1, Y8, Y8
     VCVTPS2DQ Y8, Y8
 
-    // Narrow to 16 bytes: [e15, ..., e0]
-    VPERMPD $0xD8, Y7, Y7
-    VPERMPD $0xD8, Y8, Y8
-    VEXTRACTI128 $0, Y7, X11
-    VEXTRACTI128 $1, Y7, X12
-    VPACKUSDW X12, X11, X11
-    VEXTRACTI128 $0, Y8, X13
-    VEXTRACTI128 $1, Y8, X14
-    VPACKUSDW X14, X13, X13
-    VPACKUSWB X13, X11, X11 // X11 = [e15, ..., e0]
-    
-    // Combine nibbles
-    VPAND   X11, X15, X13 // X13 = [0, e14, 0, e12, ..., 0, e0]
-    VPSRLW  $8, X11, X12  // X12 = [0, e15, 0, e13, ..., 0, e1]
-    VPSLLW  $4, X12, X12  // X12 = [0, e15<<4, 0, e13<<4, ..., 0, e1<<4]
-    VPOR    X12, X13, X13 // X13 = [0, e15:e14, 0, e13:e12, ..., 0, e1:e0]
-    
-    VPACKUSWB X13, X13, X13
-    VMOVQ   X13, (DI)
-    
+    // Narrow eight int32 codes to eight bytes in element order.
+    // VEXTRACTI128 lands the upper four in X5, VPACKUSDW merges them below
+    // the lower four, VPACKUSWB then narrows the eight words. X5 is the
+    // scratch because X0-X3 and X6 still hold the live constants, and Xk is
+    // the low half of Yk, so extracting into one of those would corrupt it.
+    VEXTRACTI128 $1, Y7, X5
+    VPACKUSDW  Y5, Y7, Y7
+    VPACKUSWB  X7, X7, X7
+
+    VEXTRACTI128 $1, Y8, X5
+    VPACKUSDW  Y5, Y8, Y8
+    VPACKUSWB  X8, X8, X8
+
+    // Gather the sixteen codes into one vector as [c0..c15].
+    MOVQ    X7, AX
+    MOVQ    X8, BX
+    MOVQ    AX, X9
+    PINSRQ  $1, BX, X9
+
+    // Two codes per output byte, low nibble first, matching the reference's
+    // dst[i/2] = q1 | q2<<4. VPMADDUBSW multiplies adjacent unsigned bytes
+    // by these weights and sums each pair, so weight 1 for the low nibble and
+    // 16 for the high one assembles the byte directly.
+    VMOVDQU tq4_maddubs<>(SB), X10
+    VPMADDUBSW X10, X9, X9
+
+    // Each word now holds one output byte in its low 8 bits; keep the even
+    // byte of each word.
+    VMOVDQU tq4_evenbytes<>(SB), X10
+    VPSHUFB  X10, X9, X9
+    VMOVQ    X9, (DI)
+
     ADDQ    $64, SI
     ADDQ    $8, DI
     SUBQ    $16, CX
@@ -718,6 +762,19 @@ loop_pack4:
 tail_pack4:
     TESTQ   CX, CX
     JZ      done_pack4
+    // Reload the scalars the tail needs from memory rather than reading them
+    // out of the broadcast vectors.
+    VMOVSS  tq_pi<>(SB), X0
+    VMOVSS  tq_inv2pi<>(SB), X1
+    VMOVSS  tq_max4<>(SB), X2
+    VMOVSS  tq_half<>(SB), X3
+    VPXOR   X4, X4, X4
+    VMOVSS  tq_one<>(SB), X6
+
+    XORL    R8, R8       // byte under construction
+    MOVQ    $2, R13      // elements still wanted in that byte
+
+tail_elem4:
     VMOVSS  (SI), X5
     VADDSS  X0, X5, X5
     VMULSS  X1, X5, X5
@@ -725,33 +782,36 @@ tail_pack4:
     VMINSS  X6, X5, X5
     VMULSS  X2, X5, X5
     VADDSS  X3, X5, X5
-    VCVTSS2SI X5, AX
-    ANDL    $0x0F, AX
-    
-    DECQ    CX
-    JZ      last_e0_4
-    VMOVSS  4(SI), X5
-    VADDSS  X0, X5, X5
-    VMULSS  X1, X5, X5
-    VMAXSS  X4, X5, X5
-    VMINSS  X6, X5, X5
-    VMULSS  X2, X5, X5
-    VADDSS  X3, X5, X5
-    VCVTSS2SI X5, BX
-    ANDL    $0x0F, BX
-    SHLL    $4, BX
-    ORL     BX, AX
-    MOVB    AL, (DI)
-    ADDQ    $8, SI
-    INCQ    DI
-    DECQ    CX
-    JMP     tail_pack4
-
-last_e0_4:
-    MOVB    AL, (DI)
-    INCQ    DI
+    VROUNDPS $1, X5, X5
+    VCVTSS2SI X5, R11
+    ANDL    $0x0F, R11
     ADDQ    $4, SI
-    
+
+    DECQ    R13
+    JNZ     tail_low4
+    // Second element of the byte: high nibble.
+    SHLL    $4, R11
+    ORL     R11, R8
+    MOVB    R8, (DI)
+    INCQ    DI
+    XORL    R8, R8
+    MOVQ    $2, R13
+    JMP     tail_next4
+
+tail_low4:
+    MOVL    R11, R8
+
+tail_next4:
+    DECQ    CX
+    JNZ     tail_elem4
+
+    // R13 == 1 means a low nibble was placed and never completed. The
+    // reference leaves the matching high nibble zero in exactly the same way.
+    CMPQ    R13, $1
+    JNE     done_pack4
+    MOVB    R8, (DI)
+    INCQ    DI
+
 done_pack4:
     VZEROUPPER
     RET
@@ -761,67 +821,73 @@ TEXT ·packTQ2AVX2Kernel(SB), NOSPLIT, $0-24
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
-    
-    VMOVSS  tq_pi<>(SB), X0
-    VBROADCASTSS X0, Y0
-    VMOVSS  tq_inv2pi<>(SB), X0
-    VBROADCASTSS X0, Y1
-    VMOVSS  tq_max2<>(SB), X0
-    VBROADCASTSS X0, Y2
-    VMOVSS  tq_half<>(SB), X0
-    VBROADCASTSS X0, Y3
+
+    VBROADCASTSS tq_pi<>(SB), Y0
+    VBROADCASTSS tq_inv2pi<>(SB), Y1
+    VBROADCASTSS tq_max2<>(SB), Y2
+    VBROADCASTSS tq_half<>(SB), Y3
     VPXOR   Y4, Y4, Y4
-    VMOVSS  $1.0, X6
-    VBROADCASTSS X6, Y6
-    
-    MOVQ    $0x00FF00FF00FF00FF, AX
-    VMOVQ   AX, X15 // 8-bit mask
+    VBROADCASTSS tq_one<>(SB), Y6
 
 loop_pack2:
     CMPQ    CX, $16
     JL      tail_pack2
-    
+
     VMOVDQU (SI), Y7
     VMOVDQU 32(SI), Y8
-    
+
     VADDPS  Y0, Y7, Y7
     VMULPS  Y1, Y7, Y7
     VMAXPS  Y4, Y7, Y7
     VMINPS  Y6, Y7, Y7
     VMULPS  Y2, Y7, Y7
     VADDPS  Y3, Y7, Y7
+    VROUNDPS $1, Y7, Y7
     VCVTPS2DQ Y7, Y7
-    
+
     VADDPS  Y0, Y8, Y8
     VMULPS  Y1, Y8, Y8
     VMAXPS  Y4, Y8, Y8
     VMINPS  Y6, Y8, Y8
     VMULPS  Y2, Y8, Y8
     VADDPS  Y3, Y8, Y8
+    VROUNDPS $1, Y8, Y8
     VCVTPS2DQ Y8, Y8
 
-    VCVTPS2DQ Y8, Y8
+    VEXTRACTI128 $1, Y7, X5
+    VPACKUSDW  Y5, Y7, Y7
+    VPACKUSWB  X7, X7, X7
 
-    // Narrow to bytes
-    VPACKUSDW Y8, Y7, Y7 // Y7 = [Y8_high, Y8_low, Y7_high, Y7_low] as words? No.
-    // Use VPERMQ to fix order if needed.
-    VPERMPD $0xD8, Y7, Y7
-    VPACKUSWB Y7, Y7, Y7 // Narrow to bytes
-    
-    // Now X7 has 16 bytes: [e15, ..., e0]
-    // Use VPMADDUBSW to pack 2 elements into 1 word
-    VMOVDQU pack2_weights_0<>(SB), X8
-    VPMADDUBSW X8, X7, X7 // X7 = [e15*4+e14, ..., e1*4+e0] (words)
-    
-    // Use VPMADDWD to pack 2 words into 1 dword
-    VMOVDQU pack2_weights_1<>(SB), X8
-    VPMADDWD X8, X7, X7 // X7 = [e15:e14:e13:e12, ..., e3:e2:e1:e0] (dwords)
-    
-    // Pack dwords to bytes
-    VPACKUSDW X7, X7, X7
-    VPACKUSWB X7, X7, X7
-    VMOVD   X7, (DI)
-    
+    VEXTRACTI128 $1, Y8, X5
+    VPACKUSDW  Y5, Y8, Y8
+    VPACKUSWB  X8, X8, X8
+
+    MOVQ    X7, AX
+    MOVQ    X8, BX
+    MOVQ    AX, X9
+    PINSRQ  $1, BX, X9
+
+    // Four codes per output byte, field 0 in the low bits, matching the
+    // reference's b |= q << (2*j). With the weight vector repeating
+    // [1,4,16,64], each VPMADDUBSW destination word already holds a whole
+    // output byte: word j = c[2j]*w[2j] + c[2j+1]*w[2j+1], so words 0 and 1
+    // carry codes 0-3 and codes 2-3, words 2 and 3 carry codes 4-7, and so on.
+    // The top is 3 + 12 + 48 + 192 = 255, which still fits the low byte.
+    VMOVDQU tq2_maddubs<>(SB), X10
+    VPMADDUBSW X10, X9, X9
+
+    // Each word holds one half of an output byte: with the [1,4,16,64]
+    // weights, word 0 is c[0] + 4*c[1] and word 1 is 16*c[2] + 64*c[3].
+    // Adding the two with unit weights folds them into the single byte the
+    // reference builds, so dst[0] = c[0] + 4*c[1] + 16*c[2] + 64*c[3].
+    VMOVDQU tq2_maddwd<>(SB), X10
+    VPMADDWD  X10, X9, X9
+
+    // Keep byte 0 of each dword.
+    VMOVDQU tq2_evenbytes<>(SB), X10
+    VPSHUFB  X10, X9, X9
+    VMOVD    X9, (DI)
+
     ADDQ    $64, SI
     ADDQ    $4, DI
     SUBQ    $16, CX
@@ -830,40 +896,17 @@ loop_pack2:
 tail_pack2:
     TESTQ   CX, CX
     JZ      done_pack2
-    XORL    AX, AX // byte accumulator
-    
-    // Element 0
-    VMOVSS  (SI), X5
-    VADDSS  X0, X5, X5
-    VMULSS  X1, X5, X5
-    VMAXSS  X4, X5, X5
-    VMINSS  X6, X5, X5
-    VMULSS  X2, X5, X5
-    VADDSS  X3, X5, X5
-    VCVTSS2SI X5, DX
-    ANDL    $0x03, DX
-    ORL     DX, AX
-    ADDQ    $4, SI
-    DECQ    CX
-    JZ      flush_pack2
-    
-    // Element 1
-    VMOVSS  (SI), X5
-    VADDSS  X0, X5, X5
-    VMULSS  X1, X5, X5
-    VMAXSS  X4, X5, X5
-    VMINSS  X6, X5, X5
-    VMULSS  X2, X5, X5
-    VADDSS  X3, X5, X5
-    VCVTSS2SI X5, DX
-    ANDL    $0x03, DX
-    SHLL    $2, DX
-    ORL     DX, AX
-    ADDQ    $4, SI
-    DECQ    CX
-    JZ      flush_pack2
+    VMOVSS  tq_pi<>(SB), X0
+    VMOVSS  tq_inv2pi<>(SB), X1
+    VMOVSS  tq_max2<>(SB), X2
+    VMOVSS  tq_half<>(SB), X3
+    VPXOR   X4, X4, X4
+    VMOVSS  tq_one<>(SB), X6
 
-    // Element 2
+    XORL    R8, R8       // byte under construction
+    MOVQ    $4, R13      // elements still wanted in that byte
+
+tail_elem2:
     VMOVSS  (SI), X5
     VADDSS  X0, X5, X5
     VMULSS  X1, X5, X5
@@ -871,37 +914,53 @@ tail_pack2:
     VMINSS  X6, X5, X5
     VMULSS  X2, X5, X5
     VADDSS  X3, X5, X5
-    VCVTSS2SI X5, DX
-    ANDL    $0x03, DX
-    SHLL    $4, DX
-    ORL     DX, AX
+    VROUNDPS $1, X5, X5
+    VCVTSS2SI X5, R11
+    ANDL    $0x03, R11
     ADDQ    $4, SI
-    DECQ    CX
-    JZ      flush_pack2
 
-    // Element 3
-    VMOVSS  (SI), X5
-    VADDSS  X0, X5, X5
-    VMULSS  X1, X5, X5
-    VMAXSS  X4, X5, X5
-    VMINSS  X6, X5, X5
-    VMULSS  X2, X5, X5
-    VADDSS  X3, X5, X5
-    VCVTSS2SI X5, DX
-    ANDL    $0x03, DX
-    SHLL    $6, DX
-    ORL     DX, AX
-    ADDQ    $4, SI
-    DECQ    CX
+    // Place the code in field (4 - R13) of the byte under construction.
+    CMPQ    R13, $4
+    JE      tq2_or
+    CMPQ    R13, $3
+    JE      tq2_f1
+    CMPQ    R13, $2
+    JE      tq2_f2
+    SHLL    $6, R11
+    JMP     tq2_or
+tq2_f2:
+    SHLL    $4, R11
+    JMP     tq2_or
+tq2_f1:
+    SHLL    $2, R11
+tq2_or:
+    ORL     R11, R8
+    DECQ    R13
+    JZ      tq2_flush
+    JMP     tail_next2
 
-flush_pack2:
-    MOVB    AL, (DI)
+tq2_flush:
+    MOVB    R8, (DI)
     INCQ    DI
-    JMP     tail_pack2
+    XORL    R8, R8
+    MOVQ    $4, R13
+
+tail_next2:
+    DECQ    CX
+    JNZ     tail_elem2
+
+    // R13 == 4 means the last byte was flushed and none is half-built; any
+    // smaller value means the run ended mid-byte and the reference leaves the
+    // remaining fields zero, which is what R8 holds.
+    CMPQ    R13, $4
+    JE      done_pack2
+    MOVB    R8, (DI)
+    INCQ    DI
 
 done_pack2:
     VZEROUPPER
     RET
+
 
 // func packTQ8AVX512Kernel(src, dst unsafe.Pointer, n int)
 TEXT ·packTQ8AVX512Kernel(SB), NOSPLIT, $0-24

@@ -2454,6 +2454,16 @@ func (g *GraphData) GetNeighborsWithGen(layer int, id uint32, buf []uint32, maxG
 			}
 			return nil
 		}
+		// SetNeighbors clamps writes to MaxNeighbors, so any other value
+		// means we are reading a slot that is not a live count: a torn
+		// seqlock read, or a counts chunk that was swapped under us by a
+		// concurrent EnsureChunk (the three chunk offsets are loaded
+		// independently, so they are not guaranteed to be consistent).
+		// Rejecting it here keeps a garbage count from reaching the slice
+		// bounds below, where a negative value panics.
+		if count < 0 || count > MaxNeighbors {
+			return nil
+		}
 		if base+count > len(neighbors) {
 			return nil
 		}
@@ -2499,6 +2509,12 @@ func (g *GraphData) GetNeighborsLockFree(layer int, id uint32) []uint32 {
 
 	count := int(atomic.LoadInt32(&counts[cOff]))
 	if count == 0 {
+		return nil
+	}
+	// Same invariant as GetNeighborsWithGen: SetNeighbors never writes a
+	// count outside [0, MaxNeighbors], so anything else is a torn or
+	// chunk-swapped read and must not reach make([]uint32, count).
+	if count < 0 || count > MaxNeighbors {
 		return nil
 	}
 

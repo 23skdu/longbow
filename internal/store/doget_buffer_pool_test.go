@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"io"
+	"math"
 	"runtime"
 	"runtime/debug"
 	"sync"
@@ -257,6 +258,28 @@ func TestPooledFlightWriter_RoundTripReadable(t *testing.T) {
 	require.Equal(t, int64(512), total)
 }
 
+// minAllocsPerRun returns the lowest allocs/op observed across several
+// AllocsPerRun samples.
+//
+// AllocsPerRun reads process-global allocation counters, so it cannot isolate
+// the measured closure: any background goroutine allocating inside the window
+// (indexing workers, WAL replay, metrics collectors left running by earlier
+// tests) is counted too. That noise is purely additive, and the two sides of a
+// comparison can be polluted differently, which is what made this test fail
+// intermittently in full-package runs. Taking the minimum of several samples
+// picks the window least affected by unrelated activity, which makes the
+// comparison reflect the code under test instead of the scheduler.
+func minAllocsPerRun(runs int, f func()) float64 {
+	const samples = 5
+	best := math.MaxFloat64
+	for i := 0; i < samples; i++ {
+		if v := testing.AllocsPerRun(runs, f); v < best {
+			best = v
+		}
+	}
+	return best
+}
+
 func TestDoGetBufferPool_SizedGetReusesBuffer(t *testing.T) {
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
 	schema := doGetTestSchema(true, 0)
@@ -274,13 +297,13 @@ func TestDoGetBufferPool_SizedGetReusesBuffer(t *testing.T) {
 	pool.Put(buf)
 
 	const runs = 200
-	pooledAllocs := testing.AllocsPerRun(runs, func() {
+	pooledAllocs := minAllocsPerRun(runs, func() {
 		b := pool.GetSized(size)
 		b.Write(payload)
 		pool.Put(b)
 	})
 
-	unpooledAllocs := testing.AllocsPerRun(runs, func() {
+	unpooledAllocs := minAllocsPerRun(runs, func() {
 		b := &bytes.Buffer{}
 		b.Write(payload)
 	})
@@ -314,7 +337,7 @@ func TestPooledFlightWriter_FewerAllocsThanStock(t *testing.T) {
 	require.NoError(t, warm.Close())
 
 	const runs = 200
-	stockAllocs := testing.AllocsPerRun(runs, func() {
+	stockAllocs := minAllocsPerRun(runs, func() {
 		w := flight.NewRecordWriter(discardFlightStream{}, ipc.WithSchema(schema))
 		if err := w.Write(rec); err != nil {
 			t.Error(err)
@@ -324,7 +347,7 @@ func TestPooledFlightWriter_FewerAllocsThanStock(t *testing.T) {
 		}
 	})
 
-	pooledAllocs := testing.AllocsPerRun(runs, func() {
+	pooledAllocs := minAllocsPerRun(runs, func() {
 		w := newRecordWriterWithPool(pool, discardFlightStream{}, schema, rows, measured)
 		if err := w.Write(rec); err != nil {
 			t.Error(err)

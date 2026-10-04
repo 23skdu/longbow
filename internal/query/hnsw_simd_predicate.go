@@ -18,10 +18,16 @@ type HNSWSIMDPredicate struct {
 	dt      arrow.Type
 
 	// Reusable buffers to avoid allocations in MatchBatch
-	bufInt64 []int64
-	bufInt32 []int32
-	bufF32   []float32
-	bufF64   []float64
+	bufInt64  []int64
+	bufInt32  []int32
+	bufF32    []float32
+	bufF64    []float64
+	bufUint16 []uint16
+
+	strDict    *StringDictionary
+	strCodes   [][]uint16
+	strValCode uint16
+	hasStrCode bool
 }
 
 // NewHNSWSIMDPredicate creates a new SIMD-accelerated predicate for HNSW traversal.
@@ -40,7 +46,7 @@ func NewHNSWSIMDPredicate(records []arrow.RecordBatch, colName string, op simd.C
 
 	// Supported types for SIMD acceleration
 	switch dt {
-	case arrow.INT64, arrow.INT32, arrow.FLOAT32, arrow.FLOAT64:
+	case arrow.INT64, arrow.INT32, arrow.FLOAT32, arrow.FLOAT64, arrow.STRING:
 		// OK
 	default:
 		return nil
@@ -64,6 +70,17 @@ func NewHNSWSIMDPredicate(records []arrow.RecordBatch, colName string, op simd.C
 		p.valF64 = v
 	case float32:
 		p.valF64 = float64(v)
+	case string:
+		if dt == arrow.STRING {
+			p.strDict = NewStringDictionary()
+			p.strCodes = make([][]uint16, len(records))
+			for i, rec := range records {
+				if strCol, ok := rec.Column(colIdx).(*array.String); ok {
+					p.strCodes[i] = p.strDict.EncodeArray(strCol)
+				}
+			}
+			p.strValCode, p.hasStrCode = p.strDict.Lookup(v)
+		}
 	}
 
 	return p
@@ -94,6 +111,18 @@ func (p *HNSWSIMDPredicate) IsMatch(id uint32) bool {
 	case arrow.FLOAT64:
 		val := col.(*array.Float64).Value(rowIdx)
 		return p.compareFloat64(val)
+	case arrow.STRING:
+		if p.strCodes != nil && batchIdx < len(p.strCodes) {
+			codes := p.strCodes[batchIdx]
+			if rowIdx < len(codes) {
+				if p.op == simd.CompareEq {
+					return p.hasStrCode && codes[rowIdx] == p.strValCode
+				} else if p.op == simd.CompareNeq {
+					return !p.hasStrCode || codes[rowIdx] != p.strValCode
+				}
+			}
+		}
+		return false
 	}
 	return true
 }
@@ -149,6 +178,43 @@ func (p *HNSWSIMDPredicate) MatchBatch(ids []uint32, dst []byte) {
 			buf[i] = p.records[batchIdx].Column(p.colIdx).(*array.Float64).Value(rowIdx)
 		}
 		_ = simd.MatchFloat64(buf, p.valF64, p.op, dst)
+	case arrow.STRING:
+		if len(p.bufUint16) < n {
+			p.bufUint16 = make([]uint16, n*2)
+		}
+		buf := p.bufUint16[:n]
+		for i, id := range ids {
+			batchIdx := int(id / uint32(types.ChunkSize))
+			rowIdx := int(id % uint32(types.ChunkSize))
+			if batchIdx < len(p.strCodes) && rowIdx < len(p.strCodes[batchIdx]) {
+				buf[i] = p.strCodes[batchIdx][rowIdx]
+			} else {
+				buf[i] = 0
+			}
+		}
+		if p.op == simd.CompareEq {
+			if !p.hasStrCode {
+				clear(dst)
+			} else {
+				_ = simd.MatchUint16(buf, p.strValCode, simd.CompareEq, dst)
+			}
+		} else if p.op == simd.CompareNeq {
+			if !p.hasStrCode {
+				for i := range dst {
+					dst[i] = 1
+				}
+			} else {
+				_ = simd.MatchUint16(buf, p.strValCode, simd.CompareNeq, dst)
+			}
+		} else {
+			for i, id := range ids {
+				if p.IsMatch(id) {
+					dst[i] = 1
+				} else {
+					dst[i] = 0
+				}
+			}
+		}
 	default:
 		// Fallback to scalar
 		for i, id := range ids {

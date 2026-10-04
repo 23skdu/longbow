@@ -1641,6 +1641,15 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	}
 	s.indexTextColumnsForHybridSearch(ds, rec, baseRowID)
 
+	// Index categorical string columns into 16-bit dictionary codes for vectorized SIMD filter evaluation
+	for i, f := range rec.Schema().Fields() {
+		if f.Type.ID() == arrow.STRING {
+			if strCol, ok := rec.Column(i).(*array.String); ok {
+				ds.IndexStringColumn(f.Name, batchIdx, strCol)
+			}
+		}
+	}
+
 	// Mark dataset as ready after first successful ingestion
 	if !ds.IsReady.Load() {
 		ds.IsReady.Store(true)

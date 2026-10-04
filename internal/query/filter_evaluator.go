@@ -1052,6 +1052,19 @@ type stringFilterOp struct {
 	val      string
 	operator string
 	colIdx   int
+
+	dict    *StringDictionary
+	valCode uint16
+	hasCode bool
+	codes   []uint16
+}
+
+func (o *stringFilterOp) SetDictionaryCodes(codes []uint16, dict *StringDictionary) {
+	o.codes = codes
+	o.dict = dict
+	if dict != nil {
+		o.valCode, o.hasCode = dict.Lookup(o.val)
+	}
 }
 
 func (o *stringFilterOp) Compound() bool { return false }
@@ -1084,6 +1097,11 @@ func (o *stringFilterOp) Bind(col arrow.Array) error {
 		return fmt.Errorf("expected String column, got %s", col.DataType())
 	}
 	o.col = col.(*array.String)
+	if o.dict == nil {
+		o.dict = NewStringDictionary()
+	}
+	o.codes = o.dict.EncodeArray(o.col)
+	o.valCode, o.hasCode = o.dict.Lookup(o.val)
 	return nil
 }
 
@@ -1095,18 +1113,30 @@ func (o *stringFilterOp) Reset(rec arrow.RecordBatch) error {
 }
 
 func (o *stringFilterOp) Match(rowIdx int) bool {
+	if o.col.NullN() > 0 && o.col.IsNull(rowIdx) {
+		return false
+	}
+
+	if o.codes != nil && rowIdx < len(o.codes) {
+		switch o.operator {
+		case "=", "eq", "==":
+			if !o.hasCode {
+				return false
+			}
+			return o.codes[rowIdx] == o.valCode
+		case "!=", "neq":
+			if !o.hasCode {
+				return true
+			}
+			return o.codes[rowIdx] != o.valCode
+		}
+	}
+
 	data := o.col.Data()
 	off := data.Offset()
 	idx := rowIdx + off
 	offsets := arrow.Int32Traits.CastFromBytes(data.Buffers()[1].Bytes())
 	dataBuf := data.Buffers()[2].Bytes()
-
-	if o.col.NullN() > 0 {
-		validity := data.Buffers()[0].Bytes()
-		if len(validity) > 0 && (validity[idx/8]>>(idx%8))&1 == 0 {
-			return false
-		}
-	}
 
 	s := offsets[idx]
 	e := offsets[idx+1]
@@ -1136,6 +1166,44 @@ func (o *stringFilterOp) MatchBitmap(dst []byte) {
 		metrics.StringFilterOpsTotal.WithLabelValues(o.operator, "optimized").Inc()
 		metrics.StringFilterDurationSeconds.WithLabelValues(o.operator, "optimized").Observe(time.Since(start).Seconds())
 	}()
+
+	if o.codes != nil && len(o.codes) == len(dst) {
+		switch o.operator {
+		case "=", "eq", "==":
+			metrics.StringFilterEqualLengthTotal.Inc()
+			if !o.hasCode {
+				clear(dst)
+				return
+			}
+			_ = simd.MatchUint16(o.codes, o.valCode, simd.CompareEq, dst)
+			if o.col.NullN() > 0 {
+				offset := o.col.Data().Offset()
+				for i := 0; i < len(dst); i++ {
+					if o.col.IsNull(i + offset) {
+						dst[i] = 0
+					}
+				}
+			}
+			return
+		case "!=", "neq":
+			if !o.hasCode {
+				for i := range dst {
+					dst[i] = 1
+				}
+			} else {
+				_ = simd.MatchUint16(o.codes, o.valCode, simd.CompareNeq, dst)
+			}
+			if o.col.NullN() > 0 {
+				offset := o.col.Data().Offset()
+				for i := 0; i < len(dst); i++ {
+					if o.col.IsNull(i + offset) {
+						dst[i] = 0
+					}
+				}
+			}
+			return
+		}
+	}
 
 	data := o.col.Data()
 	off := data.Offset()
@@ -1329,6 +1397,15 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 		return nil, fmt.Errorf("failed to bind any filters to schema fields")
 	}
 	return &FilterEvaluator{ops: ops}, nil
+}
+
+// SetStringColumnCodes applies precomputed dictionary codes to all string filter operations targeting colIdx.
+func (e *FilterEvaluator) SetStringColumnCodes(colIdx int, codes []uint16, dict *StringDictionary) {
+	for _, op := range e.ops {
+		if sOp, ok := op.(*stringFilterOp); ok && sOp.colIdx == colIdx {
+			sOp.SetDictionaryCodes(codes, dict)
+		}
+	}
 }
 
 func buildFilterOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filterOp, error) {

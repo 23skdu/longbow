@@ -40,6 +40,67 @@ func MatchFloat64(src []float64, val float64, op CompareOp, dst []byte) error {
 	return matchFloat64Impl(src, val, op, dst)
 }
 
+// MatchUint16 performs an accelerated comparison of 16-bit unsigned integer values (e.g. dictionary codes).
+func MatchUint16(src []uint16, val uint16, op CompareOp, dst []byte) error {
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	return matchUint16Generic(src, val, op, dst)
+}
+
+func matchUint16Generic(src []uint16, val uint16, op CompareOp, dst []byte) error {
+	n := len(src)
+	switch op {
+	case CompareEq:
+		i := 0
+		for ; i+8 <= n; i += 8 {
+			if src[i] == val { dst[i] = 1 } else { dst[i] = 0 }
+			if src[i+1] == val { dst[i+1] = 1 } else { dst[i+1] = 0 }
+			if src[i+2] == val { dst[i+2] = 1 } else { dst[i+2] = 0 }
+			if src[i+3] == val { dst[i+3] = 1 } else { dst[i+3] = 0 }
+			if src[i+4] == val { dst[i+4] = 1 } else { dst[i+4] = 0 }
+			if src[i+5] == val { dst[i+5] = 1 } else { dst[i+5] = 0 }
+			if src[i+6] == val { dst[i+6] = 1 } else { dst[i+6] = 0 }
+			if src[i+7] == val { dst[i+7] = 1 } else { dst[i+7] = 0 }
+		}
+		for ; i < n; i++ {
+			if src[i] == val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareNeq:
+		i := 0
+		for ; i+8 <= n; i += 8 {
+			if src[i] != val { dst[i] = 1 } else { dst[i] = 0 }
+			if src[i+1] != val { dst[i+1] = 1 } else { dst[i+1] = 0 }
+			if src[i+2] != val { dst[i+2] = 1 } else { dst[i+2] = 0 }
+			if src[i+3] != val { dst[i+3] = 1 } else { dst[i+3] = 0 }
+			if src[i+4] != val { dst[i+4] = 1 } else { dst[i+4] = 0 }
+			if src[i+5] != val { dst[i+5] = 1 } else { dst[i+5] = 0 }
+			if src[i+6] != val { dst[i+6] = 1 } else { dst[i+6] = 0 }
+			if src[i+7] != val { dst[i+7] = 1 } else { dst[i+7] = 0 }
+		}
+		for ; i < n; i++ {
+			if src[i] != val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	default:
+		for i, v := range src {
+			if v == val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	}
+	return nil
+}
+
 func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) error {
 	switch op {
 	case CompareEq:

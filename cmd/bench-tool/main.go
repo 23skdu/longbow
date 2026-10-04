@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -254,33 +255,73 @@ func main() {
 		}
 		*scale = totalUploaded
 	} else {
-		log.Printf("[PUT] Generating vectors...\n")
-
 		chunkSize := 10000
 		if *scale < chunkSize {
 			chunkSize = *scale
 		}
 		numChunks := (*scale + chunkSize - 1) / chunkSize
+		numWorkers := runtime.GOMAXPROCS(0)
+		if numWorkers < 1 {
+			numWorkers = 1
+		}
+		log.Printf("[PUT] Generating vectors across %d parallel workers (chunk size: %d, chunks: %d)...\n", numWorkers, chunkSize, numChunks)
+
+		type chunkJob struct {
+			index  int
+			offset int
+			count  int
+		}
+		type chunkOutput struct {
+			index  int
+			rec    arrow.Record
+			schema *arrow.Schema
+			err    error
+		}
+
+		sem := make(chan struct{}, numWorkers*2)
+		chunkChans := make([]chan chunkOutput, numChunks)
+		for i := range chunkChans {
+			chunkChans[i] = make(chan chunkOutput, 1)
+		}
+
+		jobs := make(chan chunkJob, numChunks)
+		for idx := 0; idx < numChunks; idx++ {
+			offset := idx * chunkSize
+			count := chunkSize
+			if offset+count > *scale {
+				count = *scale - offset
+			}
+			jobs <- chunkJob{index: idx, offset: offset, count: count}
+		}
+		close(jobs)
+
+		for w := 0; w < numWorkers; w++ {
+			workerSeed := time.Now().UnixNano() + int64(w*10007)
+			go func(seed int64) {
+				rng := rand.New(rand.NewSource(seed)) // #nosec G404 -- non-cryptographic PRNG for benchmark
+				for job := range jobs {
+					sem <- struct{}{}
+					rec, schema, err := generateRecordBatch(rng, job.offset, job.count, *dim, *dtype, *tqBits)
+					chunkChans[job.index] <- chunkOutput{index: job.index, rec: rec, schema: schema, err: err}
+				}
+			}(workerSeed)
+		}
 
 		// Check for generation-only mode (saving to file) — must pre-generate
 		if *outputArrow != "" || *outputFbin != "" {
 			var genSchema *arrow.Schema
 			preGenerated := make([]arrow.Record, 0, numChunks)
 
-			for i := 0; i < *scale; {
-				currentChunk := chunkSize
-				if i+currentChunk > *scale {
-					currentChunk = *scale - i
+			for idx := 0; idx < numChunks; idx++ {
+				out := <-chunkChans[idx]
+				<-sem
+				if out.err != nil {
+					log.Fatalf("Pre-generation failed at chunk %d: %v", idx, out.err)
 				}
-				rec, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
-				if err != nil {
-					log.Fatalf("Pre-generation failed: %v", err)
-				}
-				preGenerated = append(preGenerated, rec)
+				preGenerated = append(preGenerated, out.rec)
 				if genSchema == nil {
-					genSchema = schema
+					genSchema = out.schema
 				}
-				i += currentChunk
 			}
 
 			if *outputArrow != "" {
@@ -310,19 +351,16 @@ func main() {
 				if err != nil {
 					log.Fatalf("Failed to create output file: %v", err)
 				}
-				// *scale and *dim are CLI flags bounded to [1, 10_000_000] and [1, 65536].
-				// Both fit safely in uint32; the guards below make that explicit for
-				// static analysis (gosec G115).
 				if _, err := safe.Int64ToUint32(int64(*scale)); err != nil {
 					log.Fatalf("scale %d out of uint32 range", *scale)
 				}
 				if _, err := safe.Int64ToUint32(int64(*dim)); err != nil {
 					log.Fatalf("dim %d out of uint32 range", *dim)
 				}
-				if err := binary.Write(f, binary.LittleEndian, uint32(*scale)); err != nil { // #nosec G115 -- bounds checked above
+				if err := binary.Write(f, binary.LittleEndian, uint32(*scale)); err != nil { // #nosec G115
 					log.Fatalf("Failed to write .fbin header (count): %v", err)
 				}
-				if err := binary.Write(f, binary.LittleEndian, uint32(*dim)); err != nil { // #nosec G115 -- bounds checked above
+				if err := binary.Write(f, binary.LittleEndian, uint32(*dim)); err != nil { // #nosec G115
 					log.Fatalf("Failed to write .fbin header (dim): %v", err)
 				}
 				for _, rec := range preGenerated {
@@ -344,24 +382,21 @@ func main() {
 			os.Exit(0)
 		}
 
-		log.Printf("[PUT] Uploading %d chunks (streaming)...\n", numChunks)
+		log.Printf("[PUT] Uploading %d chunks (parallel streaming pipeline)...\n", numChunks)
 		totalUploaded = 0
 		start = time.Now()
 		var uploader *StreamUploader
 
-		for i := 0; i < *scale; {
-			currentChunk := chunkSize
-			if i+currentChunk > *scale {
-				currentChunk = *scale - i
+		for idx := 0; idx < numChunks; idx++ {
+			out := <-chunkChans[idx]
+			<-sem
+			if out.err != nil {
+				log.Fatalf("Record generation failed at chunk %d: %v", idx, out.err)
 			}
-
-			rec, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
-			if err != nil {
-				log.Fatalf("Record generation failed at %d: %v", i, err)
-			}
+			rec := out.rec
 
 			if uploader == nil {
-				uploader, err = newStreamUploader(sc, *dataset, schema)
+				uploader, err = newStreamUploader(sc, *dataset, out.schema)
 				if err != nil {
 					rec.Release()
 					log.Fatalf("Failed to init uploader for generated records: %v", err)
@@ -370,25 +405,14 @@ func main() {
 
 			if err := uploader.Write(rec); err != nil {
 				rec.Release()
-				log.Fatalf("DoPut write failed: %v", err)
+				log.Fatalf("DoPut write failed at chunk %d: %v", idx, err)
 			}
+			totalUploaded += int(rec.NumRows())
 			rec.Release()
 
-			totalUploaded += currentChunk
-
 			if totalUploaded%50000 == 0 || totalUploaded == *scale {
-				// Exclude the breather sleep from measured upload time so throughput
-				// reflects actual wire speed, not idle pauses.
-				sleepStart := time.Now()
 				log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
-
-				if totalUploaded < *scale {
-					time.Sleep(500 * time.Millisecond) // Small breather for server
-				}
-				// Adjust start forward by the sleep duration to keep duration accurate.
-				start = start.Add(time.Since(sleepStart))
 			}
-			i += currentChunk
 		}
 		if uploader != nil {
 			if err := uploader.Close(); err != nil {
@@ -902,8 +926,14 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 	}
 }
 
-// generateRecord is a multi-type arrow table builder
+// generateRecord is a multi-type arrow table builder (backward compatible wrapper)
 func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record, *arrow.Schema, error) {
+	rng := rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404
+	return generateRecordBatch(rng, 0, count, dim, dtype, tqBits)
+}
+
+// generateRecordBatch builds an Arrow record batch using an isolated PRNG and base offset for lock-free parallel generation
+func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype string, tqBits int) (arrow.Record, *arrow.Schema, error) {
 	pool := memory.NewGoAllocator()
 	var dt arrow.DataType
 
@@ -944,7 +974,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 	}
 	var meta arrow.Metadata
 	if dtype == "turboquant" {
-		meta = arrow.NewMetadata([]string{"longbow.vector_type", "longbow.turboquant_bits"}, []string{dtype, fmt.Sprintf("%d", tqBits)})
+		meta = arrow.NewMetadata([]string{"longbow.vector_type", "longbow.turboquant_bits"}, []string{dtype, strconv.Itoa(tqBits)})
 	} else {
 		meta = arrow.NewMetadata([]string{"longbow.vector_type"}, []string{dtype})
 	}
@@ -968,12 +998,12 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		nil,
 	)
 
-	// 1. Build IDs
+	// 1. Build IDs using strconv.Itoa (fast zero-reflection string formatting)
 	idBldr := array.NewStringBuilder(pool)
 	defer idBldr.Release()
 	idBldr.Reserve(count)
 	for i := 0; i < count; i++ {
-		idBldr.Append(fmt.Sprintf("%d", i))
+		idBldr.Append(strconv.Itoa(offset + i))
 	}
 	idArr := idBldr.NewArray()
 	defer idArr.Release()
@@ -995,7 +1025,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * stride)
 		vals := make([]float32, count*stride)
 		for i := range vals {
-			vals[i] = rand.Float32() // #nosec G404
+			vals[i] = rng.Float32() // #nosec G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1007,7 +1037,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * stride)
 		vals := make([]float64, count*stride)
 		for i := range vals {
-			vals[i] = rand.Float64() // #nosec G404
+			vals[i] = rng.Float64() // #nosec G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1018,7 +1048,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * dim)
 		vals := make([]float16.Num, count*dim)
 		for i := range vals {
-			vals[i] = float16.New(rand.Float32()) // #nosec G404
+			vals[i] = float16.New(rng.Float32()) // #nosec G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1029,7 +1059,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * dim)
 		vals := make([]int32, count*dim)
 		for i := range vals {
-			vals[i] = int32(rand.Intn(1000)) // #nosec G115,G404
+			vals[i] = int32(rng.Intn(1000)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1040,7 +1070,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * dim)
 		vals := make([]int16, count*dim)
 		for i := range vals {
-			vals[i] = int16(rand.Intn(1000)) // #nosec G115,G404
+			vals[i] = int16(rng.Intn(1000)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1051,7 +1081,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * dim)
 		vals := make([]int8, count*dim)
 		for i := range vals {
-			vals[i] = int8(rand.Intn(127)) // #nosec G115,G404
+			vals[i] = int8(rng.Intn(127)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1062,7 +1092,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * dim)
 		vals := make([]uint32, count*dim)
 		for i := range vals {
-			vals[i] = uint32(rand.Intn(1000)) // #nosec G115,G404
+			vals[i] = uint32(rng.Intn(1000)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1073,7 +1103,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * dim)
 		vals := make([]uint16, count*dim)
 		for i := range vals {
-			vals[i] = uint16(rand.Intn(1000)) // #nosec G115,G404
+			vals[i] = uint16(rng.Intn(1000)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1084,7 +1114,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * dim)
 		vals := make([]uint8, count*dim)
 		for i := range vals {
-			vals[i] = uint8(rand.Intn(255)) // #nosec G115,G404
+			vals[i] = uint8(rng.Intn(255)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1095,7 +1125,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * dim)
 		vals := make([]int64, count*dim)
 		for i := range vals {
-			vals[i] = int64(rand.Intn(1000)) // #nosec G404
+			vals[i] = int64(rng.Intn(1000)) // #nosec G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1106,7 +1136,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 		vb.Reserve(count * dim)
 		vals := make([]uint64, count*dim)
 		for i := range vals {
-			vals[i] = uint64(rand.Intn(1000)) // #nosec G115,G404
+			vals[i] = uint64(rng.Intn(1000)) // #nosec G115,G404
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1136,8 +1166,8 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 	geoValBldr.Reserve(count * 2)
 	for i := 0; i < count; i++ {
 		geoBldr.Append(true)
-		geoValBldr.Append(40.7128 + rand.Float64()*0.1)  // #nosec G404 -- non-cryptographic use for benchmark data
-		geoValBldr.Append(-74.0060 + rand.Float64()*0.1) // #nosec G404 -- non-cryptographic use for benchmark data
+		geoValBldr.Append(40.7128 + rng.Float64()*0.1)  // #nosec G404 -- non-cryptographic use for benchmark data
+		geoValBldr.Append(-74.0060 + rng.Float64()*0.1) // #nosec G404 -- non-cryptographic use for benchmark data
 	}
 	geoArr := geoBldr.NewArray()
 	defer geoArr.Release()
@@ -1147,7 +1177,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 	defer boolBldr.Release()
 	boolBldr.Reserve(count)
 	for i := 0; i < count; i++ {
-		boolBldr.Append(rand.Float32() > 0.5) // #nosec G404
+		boolBldr.Append(rng.Float32() > 0.5) // #nosec G404
 	}
 	activeArr := boolBldr.NewArray()
 	defer activeArr.Release()
@@ -1158,7 +1188,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 	strBldr.Reserve(count)
 	categories := []string{"electronics", "clothing", "home", "books"}
 	for i := 0; i < count; i++ {
-		strBldr.Append(categories[rand.Intn(len(categories))]) // #nosec G404
+		strBldr.Append(categories[rng.Intn(len(categories))]) // #nosec G404
 	}
 	catArr := strBldr.NewArray()
 	defer catArr.Release()

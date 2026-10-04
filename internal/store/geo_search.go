@@ -105,6 +105,7 @@ type GeoPointIndex interface {
 	Insert(vec *GeoIndexedVector) bool
 	Contains(point GeoPoint) bool
 	QueryBox(box GeoBoundingBox) []*GeoIndexedVector
+	QueryBoxBitmap(box GeoBoundingBox, bm *roaring.Bitmap)
 	QueryRadius(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector)
 }
 
@@ -183,6 +184,16 @@ func (gp *GeoPredicate) IsMatch(id uint32) bool {
 }
 
 func (gp *GeoPredicate) MatchBatch(ids []uint32, dst []byte) {
+	if gp.allowed != nil {
+		for i, id := range ids {
+			if gp.allowed.Contains(id) {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+		return
+	}
 	for i, id := range ids {
 		if gp.IsMatch(id) {
 			dst[i] = 1
@@ -361,6 +372,31 @@ func (q *Quadtree) QueryBox(box GeoBoundingBox) []*GeoIndexedVector {
 	results := make([]*GeoIndexedVector, 0, 128)
 	q.queryBoxRecursive(box, &results)
 	return results
+}
+
+// QueryBoxBitmap pre-computes a Roaring Bitmap of valid geospatial candidates via Quadtree bounding boxes.
+func (q *Quadtree) QueryBoxBitmap(box GeoBoundingBox, bm *roaring.Bitmap) {
+	if !q.intersects(box) {
+		return
+	}
+
+	q.mu.RLock()
+	if !q.divided.Load() {
+		for _, v := range q.vectors {
+			if v.GeoPoint.Lat >= box.MinLat && v.GeoPoint.Lat <= box.MaxLat &&
+				v.GeoPoint.Lon >= box.MinLon && v.GeoPoint.Lon <= box.MaxLon {
+				bm.Add(uint32(v.ID)) // #nosec G115
+			}
+		}
+		q.mu.RUnlock()
+		return
+	}
+	q.mu.RUnlock()
+
+	q.northwest.QueryBoxBitmap(box, bm)
+	q.northeast.QueryBoxBitmap(box, bm)
+	q.southwest.QueryBoxBitmap(box, bm)
+	q.southeast.QueryBoxBitmap(box, bm)
 }
 
 func (q *Quadtree) intersects(box GeoBoundingBox) bool {
@@ -679,6 +715,18 @@ func (gi *GeoIndex) SearchBox(ctx context.Context, box GeoBoundingBox, k int) ([
 	return searchResults, nil
 }
 
+// PrecomputeGeoCandidateBitmap pre-computes a Roaring Bitmap of valid candidates via Quadtree bounding boxes.
+func (gi *GeoIndex) PrecomputeGeoCandidateBitmap(center GeoPoint, radiusKm float64) *roaring.Bitmap {
+	bm := roaring.New()
+	index := gi.pointIndexRef()
+	if index == nil {
+		return bm
+	}
+	box := BoundingBox(center, radiusKm)
+	index.QueryBoxBitmap(box, bm)
+	return bm
+}
+
 // HybridSearch combines vector similarity and geographic proximity.
 func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, center GeoPoint, radiusKm float64, k int) ([]lbtypes.SearchResult, error) {
 	start := time.Now()
@@ -689,17 +737,7 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 
 	vIdx := gi.GetVectorIndex()
 	if vIdx != nil {
-		index := gi.pointIndexRef()
-		var allowed *roaring.Bitmap
-		if index != nil {
-			candidates := make([]*GeoIndexedVector, 0, 128)
-			index.QueryRadius(center, radiusKm, &candidates)
-			allowed = roaring.New()
-			for _, c := range candidates {
-				allowed.Add(uint32(c.ID)) // #nosec G115 — safe: VectorID is uint32
-			}
-		}
-
+		allowed := gi.PrecomputeGeoCandidateBitmap(center, radiusKm)
 		pred := &GeoPredicate{
 			center:   center,
 			radiusKm: radiusKm,
@@ -707,7 +745,7 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 			allowed:  allowed,
 		}
 		// Query HNSW with bitmap pre-filter (shortcut: avoids per-node
-		// HaversineDistance during HNSW traversal).
+		// HaversineDistance and sync.Map lookups during HNSW traversal).
 		options := lbtypes.SearchOptions{
 			Predicate: pred,
 		}

@@ -2,6 +2,7 @@ package index
 
 import (
 	"encoding/binary"
+	"errors"
 	"math"
 
 	"github.com/23skdu/longbow/internal/simd"
@@ -348,14 +349,21 @@ func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 	}
 }
 
-// Decode reconstrucs the (rotated) vector from the byte stream.
-// Note: Inverse Hadamard must be applied afterwards.
-func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
+// DecodeInto reconstructs the (rotated) vector from the byte stream directly into dst.
+// dst must have length >= e.pow2 (or e.dims).
+// Note: Inverse Hadamard must be applied afterwards if full Cartesian reconstruction is needed.
+func (e *TurboQuantEncoder) DecodeInto(data []byte, dst []float32) error {
+	if len(data) < 4 {
+		return errors.New("invalid tq data: length < 4")
+	}
 	radius := math.Float32frombits(binary.LittleEndian.Uint32(data[0:4]))
 
 	angleCount := e.pow2 - 1
 	angleBytes := (angleCount*e.params.BitsPerAngle + 7) / 8
 	qjlOffset := 4 + angleBytes
+	if len(data) < qjlOffset {
+		return errors.New("invalid tq data: truncated angle stream")
+	}
 
 	// Unpack the quantized angle codes: Decode only needs the code, because the
 	// sin/cos grid is served by the LUT.
@@ -375,25 +383,30 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 
 	// Apply QJL Correction
 	qjlBits := data[qjlOffset:]
-	// The QJL term in the estimator is often added as a bias or scale.
-	// Here we'll treat it as a sign bit of the residual to improve accuracy.
-	// In the paper, QJL error correction allows the model to calculate
-	// attention scores more accurately by eliminating bias.
-	// Hoist the loop-invariant correction scale out of the hot loop.
 	correction := radius / float32(math.Sqrt(float64(e.pow2))) * 0.1 // Heuristic
 	for i := 0; i < e.pow2; i++ {
-		if (qjlBits[i/8] & (byte(1) << (i % 8))) != 0 {
-			// If bit is set, the residual was positive.
-			// Add a small correction factor based on the radius/dims.
+		if i/8 < len(qjlBits) && (qjlBits[i/8]&(byte(1)<<(i%8))) != 0 {
 			recon[i] += correction
 		} else {
 			recon[i] -= correction
 		}
 	}
 
-	// Return a copy: callers own the result and the workspace is recycled.
+	n := e.pow2
+	if len(dst) < n {
+		n = len(dst)
+	}
+	copy(dst[:n], recon[:n])
+	return nil
+}
+
+// Decode reconstrucs the (rotated) vector from the byte stream.
+// Note: Inverse Hadamard must be applied afterwards.
+func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	out := make([]float32, e.pow2)
-	copy(out, recon)
+	if err := e.DecodeInto(data, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

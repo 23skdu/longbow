@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -170,6 +171,14 @@ func (g *MortonGrid) QueryBox(box GeoBoundingBox) []*GeoIndexedVector {
 	results := make([]*GeoIndexedVector, 0, 128)
 	g.appendBox(box, &results)
 	return results
+}
+
+// QueryBoxBitmap populates bm with matching VectorIDs within box.
+func (g *MortonGrid) QueryBoxBitmap(box GeoBoundingBox, bm *roaring.Bitmap) {
+	candidates := g.QueryBox(box)
+	for _, c := range candidates {
+		bm.Add(uint32(c.ID)) // #nosec G115
+	}
 }
 
 // Len returns the number of indexed points.

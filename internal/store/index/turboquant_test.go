@@ -255,3 +255,45 @@ func BenchmarkTurboQuant_Decode(b *testing.B) {
 		})
 	}
 }
+
+func TestTurboQuant_DecodeInto(t *testing.T) {
+	dims := 128
+	encoder := NewTurboQuantEncoder(dims, 4, 42)
+	vec := make([]float32, dims)
+	for i := 0; i < dims; i++ {
+		vec[i] = float32(i) / float32(dims)
+	}
+	encoded, err := encoder.Encode(vec)
+	assert.NoError(t, err)
+
+	decodedAlloc, err := encoder.Decode(encoded)
+	assert.NoError(t, err)
+
+	decodedInto := make([]float32, encoder.pow2)
+	err = encoder.DecodeInto(encoded, decodedInto)
+	assert.NoError(t, err)
+
+	assert.Equal(t, decodedAlloc, decodedInto)
+}
+
+func BenchmarkTurboQuant_DecodeInto(b *testing.B) {
+	dims := 128
+	enc := NewTurboQuantEncoder(dims, 4, 42)
+	vec := make([]float32, dims)
+	for i := range vec {
+		vec[i] = float32(i) / float32(dims)
+	}
+	encoded, err := enc.Encode(vec)
+	if err != nil {
+		b.Fatal(err)
+	}
+	dst := make([]float32, enc.pow2)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if err := enc.DecodeInto(encoded, dst); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+

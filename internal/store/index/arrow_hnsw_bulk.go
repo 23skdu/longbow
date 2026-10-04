@@ -578,20 +578,27 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		topL = batchMaxLevel
 	}
 
-	// Pre-decode TQ vectors to float32 for fast construction
+	// Pre-decode TQ vectors to float32 for fast construction across all cores
 	if h.config.DataType == types.VectorTypeTQ && h.tqCompute != nil {
 		dim := int(h.dims.Load())
 		totalIDs := int(startID + uint32(n))
 		cache := make([]float32, totalIDs*dim)
-		for _, node := range activeNodes {
-			tqCode, err := h.tqCompute.getTQBytes(node.id, nil, math.MaxUint64)
-			if err == nil && len(tqCode) > 0 {
-				decoded, err := h.tqCompute.encoder.Decode(tqCode)
-				if err == nil && len(decoded) >= dim {
-					copy(cache[int(node.id)*dim:(int(node.id)+1)*dim], decoded[:dim])
+		numNodes := len(activeNodes)
+		chunkSize := (numNodes + runtime.NumCPU() - 1) / runtime.NumCPU()
+		if chunkSize < 64 {
+			chunkSize = 64
+		}
+		pool.ParallelFor(numNodes, chunkSize, func(start, end int) {
+			for idx := start; idx < end; idx++ {
+				node := activeNodes[idx]
+				tqCode, err := h.tqCompute.getTQBytes(node.id, nil, math.MaxUint64)
+				if err == nil && len(tqCode) > 0 {
+					startOffset := int(node.id) * dim
+					target := cache[startOffset : startOffset+dim]
+					_ = h.tqCompute.encoder.DecodeInto(tqCode, target)
 				}
 			}
-		}
+		})
 		h.tqDecodeCache.Store(&tqDecodeCache{data: cache})
 		defer func() { h.tqDecodeCache.Store(nil) }()
 	}

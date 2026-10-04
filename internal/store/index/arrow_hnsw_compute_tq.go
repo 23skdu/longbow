@@ -26,6 +26,16 @@ func NewTurboQuantCompute(h *ArrowHNSW) *TurboQuantCompute {
 
 // Distance computes the distance between two vectors by their IDs using TurboQuant.
 func (c *TurboQuantCompute) Distance(id1, id2 uint32) (float32, error) {
+	if p := c.h.tqDecodeCache.Load(); p != nil {
+		dim := int(c.h.dims.Load())
+		if dim > 0 {
+			off1 := int(id1) * dim
+			off2 := int(id2) * dim
+			if off1+dim <= len(p.data) && off2+dim <= len(p.data) {
+				return c.h.distFunc(p.data[off1:off1+dim], p.data[off2:off2+dim])
+			}
+		}
+	}
 	vec1, err := c.getVector(id1)
 	if err != nil {
 		return 0, err
@@ -39,17 +49,26 @@ func (c *TurboQuantCompute) Distance(id1, id2 uint32) (float32, error) {
 
 // DistanceWithVector computes the distance between a vector ID and a raw vector using TurboQuant.
 func (c *TurboQuantCompute) DistanceWithVector(id uint32, vec []float32) (float32, error) {
-	vec1, err := c.getVector(id)
-	if err != nil {
-		return 0, err
-	}
-
 	rotatedQuery := make([]float32, c.encoder.pow2)
 	copy(rotatedQuery, vec)
 	if err := simd.RandomRotation(rotatedQuery, c.encoder.params.Seed); err != nil {
 		return 0, err
 	}
 
+	if p := c.h.tqDecodeCache.Load(); p != nil {
+		dim := int(c.h.dims.Load())
+		if dim > 0 && len(rotatedQuery) >= dim {
+			offset := int(id) * dim
+			if offset+dim <= len(p.data) {
+				return c.h.distFunc(p.data[offset:offset+dim], rotatedQuery[:dim])
+			}
+		}
+	}
+
+	vec1, err := c.getVector(id)
+	if err != nil {
+		return 0, err
+	}
 	return c.h.distFunc(vec1, rotatedQuery)
 }
 
@@ -60,6 +79,15 @@ func (c *TurboQuantCompute) DistanceWithRotatedQuery(id uint32, rotatedQuery []f
 
 // DistanceWithRotatedQueryAndDisk computes the distance using a pre-rotated query, allowing fallback to a DiskGraph.
 func (c *TurboQuantCompute) DistanceWithRotatedQueryAndDisk(id uint32, rotatedQuery []float32, dg *DiskGraph, maxGen uint64) (float32, error) {
+	if p := c.h.tqDecodeCache.Load(); p != nil {
+		dim := int(c.h.dims.Load())
+		if dim > 0 && len(rotatedQuery) >= dim {
+			offset := int(id) * dim
+			if offset+dim <= len(p.data) {
+				return c.h.distFunc(p.data[offset:offset+dim], rotatedQuery[:dim])
+			}
+		}
+	}
 	vec1, err := c.getVectorWithDisk(id, dg, maxGen)
 	if err != nil {
 		return 0, err
@@ -97,6 +125,17 @@ func (c *TurboQuantCompute) getVector(id uint32) ([]float32, error) {
 }
 
 func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph, maxGen uint64) ([]float32, error) {
+	if p := c.h.tqDecodeCache.Load(); p != nil {
+		dim := int(c.h.dims.Load())
+		if dim > 0 {
+			offset := int(id) * dim
+			if offset+dim <= len(p.data) {
+				res := make([]float32, dim)
+				copy(res, p.data[offset:offset+dim])
+				return res, nil
+			}
+		}
+	}
 	cID := types.ChunkID(id)
 	cOff := types.ChunkOffset(id)
 	data := c.h.data.Load()

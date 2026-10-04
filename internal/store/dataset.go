@@ -161,6 +161,10 @@ type Dataset struct {
 	filterMu    sync.RWMutex
 	ColumnIndex *ColumnInvertedIndex
 
+	stringDictMu     sync.RWMutex
+	StringDicts      map[string]*qry.StringDictionary
+	BatchStringCodes map[string]map[int][]uint16
+
 	TemporalIndex *TemporalIndex
 
 	Admission *AdmissionController
@@ -569,6 +573,15 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 		for batchIdx, rec := range records {
 			if err := eval.Reset(rec); err != nil {
 				continue
+			}
+
+			// Apply precomputed 16-bit dictionary codes for categorical string filter SIMD acceleration
+			for i, f := range rec.Schema().Fields() {
+				if f.Type.ID() == arrow.STRING {
+					if codes, dict := d.GetStringCodes(f.Name, batchIdx); codes != nil {
+						eval.SetStringColumnCodes(i, codes, dict)
+					}
+				}
 			}
 
 			matches, err := eval.MatchesAll(int(rec.NumRows()))
@@ -1183,4 +1196,50 @@ func (d *Dataset) SetPreferredVectorType(t types.VectorDataType) {
 	d.pvtMu.Lock()
 	defer d.pvtMu.Unlock()
 	d.PreferredVectorType = t
+}
+
+// IndexStringColumn maps categorical strings to 16-bit integer IDs at ingest for vectorized SIMD filter evaluation.
+func (d *Dataset) IndexStringColumn(colName string, batchIdx int, col *array.String) {
+	if d == nil || col == nil {
+		return
+	}
+	d.stringDictMu.Lock()
+	defer d.stringDictMu.Unlock()
+
+	if d.StringDicts == nil {
+		d.StringDicts = make(map[string]*qry.StringDictionary)
+	}
+	if d.BatchStringCodes == nil {
+		d.BatchStringCodes = make(map[string]map[int][]uint16)
+	}
+
+	dict, ok := d.StringDicts[colName]
+	if !ok {
+		dict = qry.NewStringDictionary()
+		d.StringDicts[colName] = dict
+	}
+
+	codes := dict.EncodeArray(col)
+	if d.BatchStringCodes[colName] == nil {
+		d.BatchStringCodes[colName] = make(map[int][]uint16)
+	}
+	d.BatchStringCodes[colName][batchIdx] = codes
+}
+
+// GetStringCodes returns precomputed 16-bit dictionary codes for a string column in a batch.
+func (d *Dataset) GetStringCodes(colName string, batchIdx int) ([]uint16, *qry.StringDictionary) {
+	if d == nil {
+		return nil, nil
+	}
+	d.stringDictMu.RLock()
+	defer d.stringDictMu.RUnlock()
+	if d.BatchStringCodes == nil || d.StringDicts == nil {
+		return nil, nil
+	}
+	dict := d.StringDicts[colName]
+	batchMap := d.BatchStringCodes[colName]
+	if batchMap == nil {
+		return nil, dict
+	}
+	return batchMap[batchIdx], dict
 }

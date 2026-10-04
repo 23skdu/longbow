@@ -62,6 +62,75 @@ func tqLUTFor(bitsPerAngle int) []float32 {
 	return tqPolarLUT[2*base : 2*(base+(1<<bitsPerAngle))]
 }
 
+// Precomputed trigonometric distance and inner product matrices for quantized codebooks
+// Eliminates trigonometric calls and dequantization stalls.
+var (
+	tqAngleInnerProductMatrix2 [4 * 4]float32
+	tqAngleDistanceMatrix2     [4 * 4]float32
+
+	tqAngleInnerProductMatrix4 [16 * 16]float32
+	tqAngleDistanceMatrix4     [16 * 16]float32
+
+	tqAngleInnerProductMatrix8 [256 * 256]float32
+	tqAngleDistanceMatrix8     [256 * 256]float32
+)
+
+// GetTurboQuantAngleInnerProductMatrix returns the precomputed inner product matrix for bits (2, 4, 8).
+func GetTurboQuantAngleInnerProductMatrix(bits int) []float32 {
+	switch bits {
+	case 2:
+		return tqAngleInnerProductMatrix2[:]
+	case 4:
+		return tqAngleInnerProductMatrix4[:]
+	case 8:
+		return tqAngleInnerProductMatrix8[:]
+	default:
+		return nil
+	}
+}
+
+// GetTurboQuantAngleDistanceMatrix returns the precomputed distance matrix for bits (2, 4, 8).
+func GetTurboQuantAngleDistanceMatrix(bits int) []float32 {
+	switch bits {
+	case 2:
+		return tqAngleDistanceMatrix2[:]
+	case 4:
+		return tqAngleDistanceMatrix4[:]
+	case 8:
+		return tqAngleDistanceMatrix8[:]
+	default:
+		return nil
+	}
+}
+
+// TurboQuantAngleDistance returns the precomputed squared distance between two quantized angle codes.
+func TurboQuantAngleDistance(bits int, q1, q2 byte) float32 {
+	switch bits {
+	case 2:
+		return tqAngleDistanceMatrix2[(int(q1)&3)*4+(int(q2)&3)]
+	case 4:
+		return tqAngleDistanceMatrix4[(int(q1)&15)*16+(int(q2)&15)]
+	case 8:
+		return tqAngleDistanceMatrix8[int(q1)*256+int(q2)]
+	default:
+		return 0
+	}
+}
+
+// TurboQuantAngleInnerProduct returns the precomputed inner product between two quantized angle codes.
+func TurboQuantAngleInnerProduct(bits int, q1, q2 byte) float32 {
+	switch bits {
+	case 2:
+		return tqAngleInnerProductMatrix2[(int(q1)&3)*4+(int(q2)&3)]
+	case 4:
+		return tqAngleInnerProductMatrix4[(int(q1)&15)*16+(int(q2)&15)]
+	case 8:
+		return tqAngleInnerProductMatrix8[int(q1)*256+int(q2)]
+	default:
+		return 0
+	}
+}
+
 func init() {
 	for bits := tqLUTMinBits; bits <= tqLUTMaxBits; bits++ {
 		n := 1 << bits
@@ -74,6 +143,37 @@ func init() {
 			s, c := math.Sincos(float64(theta))
 			tqPolarLUT[2*(base+i)] = float32(c)
 			tqPolarLUT[2*(base+i)+1] = float32(s)
+		}
+	}
+
+	// Precompute trigonometric inner product and distance matrices for 2, 4, 8 bits
+	for _, bits := range []int{2, 4, 8} {
+		n := 1 << bits
+		base := tqLUTBase(bits)
+		for i := 0; i < n; i++ {
+			c1 := tqPolarLUT[2*(base+i)]
+			s1 := tqPolarLUT[2*(base+i)+1]
+			for j := 0; j < n; j++ {
+				c2 := tqPolarLUT[2*(base+j)]
+				s2 := tqPolarLUT[2*(base+j)+1]
+				ip := c1*c2 + s1*s2
+				dist := (c1-c2)*(c1-c2) + (s1-s2)*(s1-s2)
+				if i == j {
+					dist = 0
+					ip = 1.0
+				}
+				switch bits {
+				case 2:
+					tqAngleInnerProductMatrix2[i*4+j] = ip
+					tqAngleDistanceMatrix2[i*4+j] = dist
+				case 4:
+					tqAngleInnerProductMatrix4[i*16+j] = ip
+					tqAngleDistanceMatrix4[i*16+j] = dist
+				case 8:
+					tqAngleInnerProductMatrix8[i*256+j] = ip
+					tqAngleDistanceMatrix8[i*256+j] = dist
+				}
+			}
 		}
 	}
 }

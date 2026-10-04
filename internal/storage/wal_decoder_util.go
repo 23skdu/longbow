@@ -14,6 +14,28 @@ import (
 	"github.com/pierrec/lz4/v4"
 )
 
+// maxWALBlockDecompressedSize caps the decompressed size a WAL block may
+// declare. WAL blocks are read back from disk, so the declared size is data,
+// not a trusted value: without a bound a corrupt or hostile length prefix can
+// request an arbitrarily large allocation.
+const maxWALBlockDecompressedSize = 1 << 31 // 2GiB
+
+// validateWALDecompressedSize checks a block's declared decompressed size
+// before it is used as an allocation length.
+//
+// The size is a signed integer read straight from the block header. A negative
+// value reached make([]byte, size) directly and panicked with
+// "makeslice: len out of range", and an oversized one could exhaust memory.
+func validateWALDecompressedSize(size int64) error {
+	if size < 0 {
+		return fmt.Errorf("invalid decompressed size %d: must not be negative", size)
+	}
+	if size > maxWALBlockDecompressedSize {
+		return fmt.Errorf("invalid decompressed size %d: exceeds limit %d", size, maxWALBlockDecompressedSize)
+	}
+	return nil
+}
+
 // DecodeWALBlock decodes a single raw WAL block (as written to disk) into entries.
 func DecodeWALBlock(data []byte, mem memory.Allocator) ([]DecodedWALEntry, error) {
 	if len(data) < 32 {
@@ -61,6 +83,9 @@ func DecodeWALBlock(data []byte, mem memory.Allocator) ([]DecodedWALEntry, error
 			decoder, _ := zstd.NewReader(nil)
 			decompressed, err = decoder.DecodeAll(recBytes, nil)
 		case 3:
+			if err := validateWALDecompressedSize(ts); err != nil {
+				return nil, err
+			}
 			decompressed = make([]byte, ts)
 			_, err = lz4.UncompressBlock(recBytes, decompressed)
 		default:

@@ -1,4 +1,4 @@
-//go:build amd64 && avx512
+//go:build amd64
 
 package simd
 
@@ -20,6 +20,10 @@ func PackTQ2AVX512(src []float32, dst []byte) {
 	if len(src) == 0 {
 		return
 	}
+	if !features.HasAVX512 {
+		PackTQ2AVX2(src, dst)
+		return
+	}
 	packTQ2AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 }
 
@@ -27,11 +31,19 @@ func PackTQ4AVX512(src []float32, dst []byte) {
 	if len(src) == 0 {
 		return
 	}
+	if !features.HasAVX512 {
+		PackTQ4AVX2(src, dst)
+		return
+	}
 	packTQ4AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 }
 
 func PackTQ8AVX512(src []float32, dst []byte) {
 	if len(src) == 0 {
+		return
+	}
+	if !features.HasAVX512 {
+		PackTQ8AVX2(src, dst)
 		return
 	}
 	packTQ8AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
@@ -42,11 +54,19 @@ func UnpackTQ2AVX512VBMI(src []byte, dst []float32, scale, bias float32) {
 	if len(dst) == 0 {
 		return
 	}
+	if !features.HasAVX512 || !features.HasVBMI {
+		UnpackTQ2AVX512(src, dst, scale, bias)
+		return
+	}
 	unpackTQ2AVX512VBMIKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(dst), scale, bias) // #nosec G103
 }
 
 func PackTQ2AVX512VBMI(src []float32, dst []byte) {
 	if len(src) == 0 {
+		return
+	}
+	if !features.HasAVX512 || !features.HasVBMI {
+		PackTQ2AVX512(src, dst)
 		return
 	}
 	packTQ2AVX512VBMIKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103

@@ -356,7 +356,7 @@ func BenchmarkFastPath_Int64Equal(b *testing.B) {
 	builder.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mask, _ := FastPathEqual(ctx, arr, "500")
 		mask.Release()
 	}
@@ -379,7 +379,7 @@ func BenchmarkArrowCompute_Int64Equal(b *testing.B) {
 	vf := NewVectorizedFilter(alloc)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Force Arrow Compute path
 		mask, _ := vf.applyComparisonFilter(ctx, arr, FilterOpEqual, "500")
 		mask.Release()
@@ -401,7 +401,7 @@ func BenchmarkFastPath_Float64Equal(b *testing.B) {
 	builder.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mask, _ := FastPathEqual(ctx, arr, "500.0")
 		mask.Release()
 	}

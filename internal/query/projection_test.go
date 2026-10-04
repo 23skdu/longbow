@@ -217,7 +217,7 @@ func BenchmarkProjection_Apply(b *testing.B) {
 	builder := array.NewRecordBuilder(mem, schema)
 	for i := 0; i < numRows; i++ {
 		builder.Field(0).(*array.Int64Builder).AppendValues([]int64{int64(i)}, nil)
-		for j := 1; j < 4; j++ {
+		for j := 1; j < 5; j++ {
 			builder.Field(j).(*array.Float64Builder).AppendValues([]float64{float64(i)}, nil)
 		}
 	}
@@ -229,7 +229,7 @@ func BenchmarkProjection_Apply(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = proj.Apply(rec)
 	}
 }

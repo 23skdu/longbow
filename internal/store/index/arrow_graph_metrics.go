@@ -125,15 +125,24 @@ func (h *ArrowHNSW) bfsComponentSize(data *types.GraphData, layer int, startNode
 		if countsChunk == nil {
 			continue
 		}
-		neighborCount := atomic.LoadInt32(&countsChunk[cOff])
+		neighborCount := int(atomic.LoadInt32(&countsChunk[cOff]))
 
 		baseIdx := int(cOff) * types.MaxNeighbors
 		neighborsChunk := data.GetNeighborsChunk(layer, cID)
 		if neighborsChunk == nil {
 			continue
 		}
+		// Clamp to the chunk we actually hold: the count is read from shared
+		// memory and is not guaranteed to be a live value, and baseIdx+i must
+		// stay inside neighborsChunk.
+		if neighborCount < 0 || neighborCount > types.MaxNeighbors {
+			continue
+		}
+		if baseIdx+neighborCount > len(neighborsChunk) {
+			continue
+		}
 
-		for i := 0; i < int(neighborCount); i++ {
+		for i := 0; i < neighborCount; i++ {
 			neighbor := neighborsChunk[baseIdx+i]
 			if !visited.IsSet(int(neighbor)) {
 				visited.Set(int(neighbor))
@@ -176,7 +185,15 @@ func (h *ArrowHNSW) bfsDiameter(data *types.GraphData, layer int, startNode uint
 				continue
 			}
 
+			// Same invariant as above: keep the loop inside the chunk.
+			if neighborCount < 0 || neighborCount > types.MaxNeighbors {
+				continue
+			}
+
 			baseIdx := int(cOff) * types.MaxNeighbors
+			if baseIdx+neighborCount > len(neighborsChunk) {
+				continue
+			}
 			for k := 0; k < neighborCount; k++ {
 				neighbor := neighborsChunk[baseIdx+k]
 				if !visited.IsSet(int(neighbor)) {

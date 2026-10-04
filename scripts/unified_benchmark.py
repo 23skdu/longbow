@@ -1726,28 +1726,37 @@ class BenchmarkRunner:
                         )
 
                         print(f"  Testing temporal search types...")
+                        dataset_name = f"temporal_{dtype}_{dim}"
                         for stype in search_types:
                             try:
                                 if stype == "as_of":
                                     res = client.temporal_search(
                                         search_type=stype,
+                                        dataset=dataset_name,
                                         timestamp=base_timestamp + count * 500000000,
                                         k=10,
                                     )
                                 elif stype == "range":
                                     res = client.temporal_search(
                                         search_type=stype,
+                                        dataset=dataset_name,
                                         start_time=base_timestamp,
                                         end_time=base_timestamp + count * 1000000000,
                                         k=10,
                                     )
                                 elif stype == "sliding_window":
                                     res = client.temporal_search(
-                                        search_type=stype, window_size=100, k=10
+                                        search_type=stype,
+                                        dataset=dataset_name,
+                                        window_size=100,
+                                        k=10,
                                     )
                                 elif stype == "sliding_window_time":
                                     res = client.temporal_search(
-                                        search_type=stype, duration=3600 * 1000000000, k=10
+                                        search_type=stype,
+                                        dataset=dataset_name,
+                                        duration=3600 * 1000000000,
+                                        k=10,
                                     )
 
                                 results.append(
@@ -1760,7 +1769,7 @@ class BenchmarkRunner:
 
                         print(f"  Testing version history and aggregation...")
                         try:
-                            history = client.temporal_version_history(vector_id=0)
+                            history = client.temporal_version_history(vector_id=0, dataset=dataset_name)
                             print(f"    Version history: {len(history) if history else 0} versions")
                             results.append(
                                 {"version_history_count": len(history) if history else 0}
@@ -1771,6 +1780,7 @@ class BenchmarkRunner:
                         try:
                             agg = client.temporal_aggregation(
                                 aggregation_type="count",
+                                dataset=dataset_name,
                                 start_time=base_timestamp,
                                 end_time=base_timestamp + count * 1000000000,
                                 interval=360000000000,
@@ -2868,6 +2878,7 @@ class BenchmarkRunner:
             for mode in modes:
                 mode = mode.strip()
                 self.current_mode = mode
+                self.results = []
                 print(f"\n{'#' * 80}")
                 print(f"SWITCHING TO MODE: {mode}{numa_suffix}")
                 print(f"{'#' * 80}")
@@ -3115,6 +3126,8 @@ class BenchmarkRunner:
             print("─" * 100)
 
             for r in self.results:
+                if not isinstance(r, dict) or "alpha" not in r:
+                    continue
                 print(
                     f"{r['alpha']:<8} "
                     f"{r['k']:<6} "

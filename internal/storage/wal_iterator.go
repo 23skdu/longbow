@@ -187,6 +187,9 @@ func (it *WALIterator) nextLocked() (seq uint64, ts int64, name string, rec arro
 			}
 			decompressed, err = it.zstdDec.DecodeAll(recBytes, nil)
 		case 3: // LZ4
+			if szErr := validateWALDecompressedSize(ts); szErr != nil {
+				return 0, 0, "", nil, szErr
+			}
 			rawSize := ts
 			decompressed = make([]byte, rawSize)
 			_, err = lz4.UncompressBlock(recBytes, decompressed)
@@ -273,6 +276,9 @@ func (it *WALIterator) nextRawLocked() (seq uint64, ts int64, name string, recBy
 			}
 			decompressed, err = it.zstdDec.DecodeAll(recBytes, nil)
 		case 3: // LZ4
+			if szErr := validateWALDecompressedSize(ts); szErr != nil {
+				return 0, 0, "", nil, szErr
+			}
 			rawSize := ts
 			decompressed = make([]byte, rawSize)
 			_, err = lz4.UncompressBlock(recBytes, decompressed)

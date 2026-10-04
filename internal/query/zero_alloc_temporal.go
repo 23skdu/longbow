@@ -54,6 +54,13 @@ func (p *ZeroAllocTemporalParser) ParseSearch(data []byte) (TemporalSearchReques
 		i = SkipWhitespace(data, i)
 
 		switch key {
+		case "dataset":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return res, err
+			}
+			res.Dataset = val
+			i = newPos
 		case "search_type":
 			val, newPos, err := ParseString(data, i)
 			if err != nil {
@@ -162,6 +169,13 @@ func (p *ZeroAllocTemporalParser) ParseAggregation(data []byte) (TemporalAggrega
 		i = SkipWhitespace(data, i)
 
 		switch key {
+		case "dataset":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return res, err
+			}
+			res.Dataset = val
+			i = newPos
 		case "aggregation_type":
 			val, newPos, err := ParseString(data, i)
 			if err != nil {

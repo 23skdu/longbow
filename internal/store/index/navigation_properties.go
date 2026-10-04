@@ -260,9 +260,22 @@ func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {
 	if count == 0 {
 		return nil, nil
 	}
+	// SetNeighbors clamps every write to [0, MaxNeighbors], so a count outside
+	// that range is not a live count: a torn read, or a counts chunk swapped
+	// underneath us by a concurrent EnsureChunk (the chunk offsets above are
+	// loaded independently, so neighborhood and counts need not agree).
+	// Validating here keeps a garbage count from reaching the slice bounds
+	// below, where a negative value panics.
+	if count < 0 || count > types.MaxNeighbors {
+		return nil, nil
+	}
+
+	startIdx := int(cOff) * types.MaxNeighbors // #nosec G115
+	if startIdx+int(count) > len(neighborhood) {
+		return nil, nil
+	}
 
 	neighbors := make([]uint32, count)
-	startIdx := int(cOff) * types.MaxNeighbors                  // #nosec G115
 	copy(neighbors, neighborhood[startIdx:startIdx+int(count)]) // #nosec G115
 
 	return neighbors, nil

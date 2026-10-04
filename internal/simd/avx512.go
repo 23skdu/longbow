@@ -1,5 +1,4 @@
-//go:build amd64 && avx512
-// +build amd64,avx512
+//go:build amd64
 
 package simd
 
@@ -205,20 +204,7 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 }
 
 func euclideanSQ8BatchAVX512(query []byte, vectors [][]byte, results []float32) error {
-	if !features.HasAVX512 {
-		return euclideanSQ8BatchAVX2(query, vectors, results)
-	}
-
-	qLen := len(query)
-	qPtr := uintptr(unsafe.Pointer(&query[0])) // #nosec G103
-
-	for i, v := range vectors {
-		if len(v) != qLen {
-			return errors.New("simd: batch dimension mismatch")
-		}
-		results[i] = float32(euclideanSQ8AVX512Kernel(qPtr, uintptr(unsafe.Pointer(&v[0])), qLen)) // #nosec G103
-	}
-	return nil
+	return euclideanSQ8BatchGeneric(query, vectors, results)
 }
 
 func euclideanF16BatchAVX512(query []float16.Num, vectors [][]float16.Num, results []float32) error {
@@ -243,47 +229,19 @@ func euclideanF16BatchAVX512(query []float16.Num, vectors [][]float16.Num, resul
 // =============================================================================
 
 func matchInt64AVX512(src []int64, val int64, op CompareOp, dst []byte) error {
-	if len(src) == 0 {
-		return nil
-	}
-	if !features.HasAVX512 {
-		return matchInt64AVX2(src, val, op, dst)
-	}
-	matchInt64AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), val, int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
-	return nil
+	return matchInt64Generic(src, val, op, dst)
 }
 
 func matchInt32AVX512(src []int32, val int32, op CompareOp, dst []byte) error {
-	if len(src) == 0 {
-		return nil
-	}
-	if !features.HasAVX512 {
-		return matchInt32AVX2(src, val, op, dst)
-	}
-	matchInt32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), int64(val), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
-	return nil
+	return matchInt32Generic(src, val, op, dst)
 }
 
 func matchFloat32AVX512(src []float32, val float32, op CompareOp, dst []byte) error {
-	if len(src) == 0 {
-		return nil
-	}
-	if !features.HasAVX512 {
-		return matchFloat32AVX2(src, val, op, dst)
-	}
-	matchFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), int64(math.Float32bits(val)), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
-	return nil
+	return matchFloat32Generic(src, val, op, dst)
 }
 
 func matchFloat64AVX512(src []float64, val float64, op CompareOp, dst []byte) error {
-	if len(src) == 0 {
-		return nil
-	}
-	if !features.HasAVX512 {
-		return matchFloat64AVX2(src, val, op, dst)
-	}
-	matchFloat64AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), int64(math.Float64bits(val)), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
-	return nil
+	return matchFloat64Generic(src, val, op, dst)
 }
 
 // =============================================================================
@@ -522,7 +480,8 @@ func euclidean16AVX512Wrapper(a, b []float32) (float32, error) {
 	if !features.HasAVX512 {
 		return euclideanGeneric(a, b)
 	}
-	return euclidean16AVX512(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
+	res := euclidean16AVX512(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))) // #nosec G103
+	return float32(math.Sqrt(float64(res))), nil
 }
 
 func cosine16AVX512Wrapper(a, b []float32) (float32, error) {

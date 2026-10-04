@@ -588,18 +588,12 @@ TEXT ·packTQ2AVX512VBMIKernel(SB), NOSPLIT, $0-24
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
     
-    VMOVSS  tq_pi<>(SB), X0
-    VBROADCASTSS X0, Z0 // PI
-    VMOVSS  tq_inv2pi<>(SB), X0
-    VBROADCASTSS X0, Z1 // 1/2PI
-    VMOVSS  tq_max2<>(SB), X0
-    VBROADCASTSS X0, Z2 // 3.0
-    VMOVSS  tq_half<>(SB), X0
-    VBROADCASTSS X0, Z3 // 0.5
-    
-    VPXORQ  Z4, Z4, Z4  // 0.0
-    VMOVSS  $1.0, X5
-    VBROADCASTSS X5, Z5 // 1.0
+    VBROADCASTSS tq_pi<>(SB), Z0 // PI
+    VBROADCASTSS tq_inv2pi<>(SB), Z1 // 1/2PI
+    VBROADCASTSS tq_max2<>(SB), Z2 // 3.0
+    VBROADCASTSS tq_half<>(SB), Z3 // 0.5
+    VPXORD  Z4, Z4, Z4  // 0.0
+    VBROADCASTSS tq_one<>(SB), Z5 // 1.0
     
 loop_pack2_vbmi:
     CMPQ    CX, $64
@@ -612,10 +606,10 @@ loop_pack2_vbmi:
     VMOVDQU32 192(SI), Z9
     
     // Quantize 
-    VADDPS  Z0, Z6, Z6; VMULPS  Z1, Z6, Z6; VMAXPS  Z4, Z6, Z6; VMINPS  Z5, Z6, Z6; VMULPS  Z2, Z6, Z6; VADDPS  Z3, Z6, Z6; VCVTPS2DQ Z6, Z6
-    VADDPS  Z0, Z7, Z7; VMULPS  Z1, Z7, Z7; VMAXPS  Z4, Z7, Z7; VMINPS  Z5, Z7, Z7; VMULPS  Z2, Z7, Z7; VADDPS  Z3, Z7, Z7; VCVTPS2DQ Z7, Z7
-    VADDPS  Z0, Z8, Z8; VMULPS  Z1, Z8, Z8; VMAXPS  Z4, Z8, Z8; VMINPS  Z5, Z8, Z8; VMULPS  Z2, Z8, Z8; VADDPS  Z3, Z8, Z8; VCVTPS2DQ Z8, Z8
-    VADDPS  Z0, Z9, Z9; VMULPS  Z1, Z9, Z9; VMAXPS  Z4, Z9, Z9; VMINPS  Z5, Z9, Z9; VMULPS  Z2, Z9, Z9; VADDPS  Z3, Z9, Z9; VCVTPS2DQ Z9, Z9
+    VADDPS  Z0, Z6, Z6; VMULPS  Z1, Z6, Z6; VMAXPS  Z4, Z6, Z6; VMINPS  Z5, Z6, Z6; VMULPS  Z2, Z6, Z6; VADDPS  Z3, Z6, Z6; VRNDSCALEPS $0x01, Z6, Z6; VCVTPS2DQ Z6, Z6
+    VADDPS  Z0, Z7, Z7; VMULPS  Z1, Z7, Z7; VMAXPS  Z4, Z7, Z7; VMINPS  Z5, Z7, Z7; VMULPS  Z2, Z7, Z7; VADDPS  Z3, Z7, Z7; VRNDSCALEPS $0x01, Z7, Z7; VCVTPS2DQ Z7, Z7
+    VADDPS  Z0, Z8, Z8; VMULPS  Z1, Z8, Z8; VMAXPS  Z4, Z8, Z8; VMINPS  Z5, Z8, Z8; VMULPS  Z2, Z8, Z8; VADDPS  Z3, Z8, Z8; VRNDSCALEPS $0x01, Z8, Z8; VCVTPS2DQ Z8, Z8
+    VADDPS  Z0, Z9, Z9; VMULPS  Z1, Z9, Z9; VMAXPS  Z4, Z9, Z9; VMINPS  Z5, Z9, Z9; VMULPS  Z2, Z9, Z9; VADDPS  Z3, Z9, Z9; VRNDSCALEPS $0x01, Z9, Z9; VCVTPS2DQ Z9, Z9
     
     // Narrow to bytes
     VPMOVDB Z6, X6
@@ -668,8 +662,62 @@ loop_pack2_vbmi:
 tail_pack2_vbmi:
     TESTQ   CX, CX
     JZ      done_pack2_vbmi
-    // Fallback to AVX2 kernel for tail
-    JMP     ·packTQ2AVX2Kernel(SB)
+    VMOVSS  tq_pi<>(SB), X0
+    VMOVSS  tq_inv2pi<>(SB), X1
+    VMOVSS  tq_max2<>(SB), X2
+    VMOVSS  tq_half<>(SB), X3
+    VPXOR   X4, X4, X4
+    VMOVSS  tq_one<>(SB), X6
+
+    XORL    R8, R8       // byte under construction
+    MOVQ    $4, R13      // elements still wanted in that byte
+
+tail_elem2_vbmi:
+    VMOVSS  (SI), X5
+    VADDSS  X0, X5, X5
+    VMULSS  X1, X5, X5
+    VMAXSS  X4, X5, X5
+    VMINSS  X6, X5, X5
+    VMULSS  X2, X5, X5
+    VADDSS  X3, X5, X5
+    VROUNDPS $1, X5, X5
+    VCVTSS2SI X5, R11
+    ANDL    $0x03, R11
+    ADDQ    $4, SI
+
+    CMPQ    R13, $4
+    JE      tq2_or_vbmi
+    CMPQ    R13, $3
+    JE      tq2_f1_vbmi
+    CMPQ    R13, $2
+    JE      tq2_f2_vbmi
+    SHLL    $6, R11
+    JMP     tq2_or_vbmi
+tq2_f2_vbmi:
+    SHLL    $4, R11
+    JMP     tq2_or_vbmi
+tq2_f1_vbmi:
+    SHLL    $2, R11
+tq2_or_vbmi:
+    ORL     R11, R8
+    DECQ    R13
+    JZ      tq2_flush_vbmi
+    JMP     tail_next2_vbmi
+
+tq2_flush_vbmi:
+    MOVB    R8, (DI)
+    INCQ    DI
+    XORL    R8, R8
+    MOVQ    $4, R13
+
+tail_next2_vbmi:
+    DECQ    CX
+    JNZ     tail_elem2_vbmi
+
+    CMPQ    R13, $4
+    JE      done_pack2_vbmi
+    MOVB    R8, (DI)
+    INCQ    DI
 
 done_pack2_vbmi:
     VZEROUPPER
@@ -968,14 +1016,10 @@ TEXT ·packTQ8AVX512Kernel(SB), NOSPLIT, $0-24
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
     
-    VMOVSS  tq_pi<>(SB), X0
-    VBROADCASTSS X0, Z0
-    VMOVSS  tq_inv2pi<>(SB), X0
-    VBROADCASTSS X0, Z1
-    VMOVSS  tq_max8<>(SB), X0
-    VBROADCASTSS X0, Z2
-    VMOVSS  tq_half<>(SB), X0
-    VBROADCASTSS X0, Z3
+    VBROADCASTSS tq_pi<>(SB), Z0
+    VBROADCASTSS tq_inv2pi<>(SB), Z1
+    VBROADCASTSS tq_max8<>(SB), Z2
+    VBROADCASTSS tq_half<>(SB), Z3
     VPXORD  Z4, Z4, Z4
     VBROADCASTSS tq_one<>(SB), Z6
 
@@ -990,6 +1034,7 @@ loop_pack8_512:
     VMINPS  Z6, Z7, Z7
     VMULPS  Z2, Z7, Z7
     VADDPS  Z3, Z7, Z7
+    VRNDSCALEPS $0x01, Z7, Z7
     VCVTPS2DQ Z7, Z7
     
     VPMOVDB Z7, X7 // 16 dwords -> 16 bytes
@@ -1003,8 +1048,6 @@ loop_pack8_512:
 tail_pack8_512:
     TESTQ   CX, CX
     JZ      done_pack8_512
-    // The broadcasts above live in Z0..Z6, so the scalar tail has to reload
-    // the constants into X registers of its own.
     VMOVSS  tq_pi<>(SB), X0
     VMOVSS  tq_inv2pi<>(SB), X1
     VMOVSS  tq_max8<>(SB), X2
@@ -1037,17 +1080,12 @@ TEXT ·packTQ4AVX512Kernel(SB), NOSPLIT, $0-24
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
     
-    VMOVSS  tq_pi<>(SB), X0
-    VBROADCASTSS X0, Z0
-    VMOVSS  tq_inv2pi<>(SB), X0
-    VBROADCASTSS X0, Z1
-    VMOVSS  tq_max4<>(SB), X0
-    VBROADCASTSS X0, Z2
-    VMOVSS  tq_half<>(SB), X0
-    VBROADCASTSS X0, Z3
+    VBROADCASTSS tq_pi<>(SB), Z0
+    VBROADCASTSS tq_inv2pi<>(SB), Z1
+    VBROADCASTSS tq_max4<>(SB), Z2
+    VBROADCASTSS tq_half<>(SB), Z3
     VPXORD  Z4, Z4, Z4
-    VMOVSS  $1.0, X6
-    VBROADCASTSS X6, Z6
+    VBROADCASTSS tq_one<>(SB), Z6
 
 loop_pack4_512:
     CMPQ    CX, $16
@@ -1060,20 +1098,16 @@ loop_pack4_512:
     VMINPS  Z6, Z7, Z7
     VMULPS  Z2, Z7, Z7
     VADDPS  Z3, Z7, Z7
+    VRNDSCALEPS $0x01, Z7, Z7
     VCVTPS2DQ Z7, Z7
     
-    VPMOVDB Z7, X7 // 16 bytes (low nibbles)
+    VPMOVDB Z7, X9 // 16 bytes (low nibbles in element order 0..15)
     
-    // Combine nibbles: [e1:e0], [e3:e2], ...
-    VPSRLW  $8, X7, X8
-    VPSLLW  $4, X8, X8
-    MOVQ    $0x00FF00FF00FF00FF, AX
-    VMOVQ   AX, X9
-    VPAND   X7, X9, X7
-    VPOR    X8, X7, X7
-    
-    VPACKUSWB X7, X7, X7
-    VMOVQ   X7, (DI)
+    VMOVDQU tq4_maddubs<>(SB), X10
+    VPMADDUBSW X10, X9, X9
+    VMOVDQU tq4_evenbytes<>(SB), X10
+    VPSHUFB X10, X9, X9
+    VMOVQ   X9, (DI)
     
     ADDQ    $64, SI
     ADDQ    $8, DI
@@ -1081,7 +1115,56 @@ loop_pack4_512:
     JMP     loop_pack4_512
 
 tail_pack4_512:
-    JMP ·packTQ4AVX2Kernel+0(SB) // Reuse tail
+    TESTQ   CX, CX
+    JZ      done_pack4_512
+    VMOVSS  tq_pi<>(SB), X0
+    VMOVSS  tq_inv2pi<>(SB), X1
+    VMOVSS  tq_max4<>(SB), X2
+    VMOVSS  tq_half<>(SB), X3
+    VPXOR   X4, X4, X4
+    VMOVSS  tq_one<>(SB), X6
+
+    XORL    R8, R8       // byte under construction
+    MOVQ    $2, R13      // elements still wanted in that byte
+
+tail_elem4_512:
+    VMOVSS  (SI), X5
+    VADDSS  X0, X5, X5
+    VMULSS  X1, X5, X5
+    VMAXSS  X4, X5, X5
+    VMINSS  X6, X5, X5
+    VMULSS  X2, X5, X5
+    VADDSS  X3, X5, X5
+    VROUNDPS $1, X5, X5
+    VCVTSS2SI X5, R11
+    ANDL    $0x0F, R11
+    ADDQ    $4, SI
+
+    DECQ    R13
+    JNZ     tail_low4_512
+    SHLL    $4, R11
+    ORL     R11, R8
+    MOVB    R8, (DI)
+    INCQ    DI
+    XORL    R8, R8
+    MOVQ    $2, R13
+    JMP     tail_next4_512
+
+tail_low4_512:
+    MOVL    R11, R8
+
+tail_next4_512:
+    DECQ    CX
+    JNZ     tail_elem4_512
+
+    CMPQ    R13, $1
+    JNE     done_pack4_512
+    MOVB    R8, (DI)
+    INCQ    DI
+
+done_pack4_512:
+    VZEROUPPER
+    RET
 
 // func packTQ2AVX512Kernel(src, dst unsafe.Pointer, n int)
 TEXT ·packTQ2AVX512Kernel(SB), NOSPLIT, $0-24
@@ -1089,17 +1172,12 @@ TEXT ·packTQ2AVX512Kernel(SB), NOSPLIT, $0-24
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
     
-    VMOVSS  tq_pi<>(SB), X0
-    VBROADCASTSS X0, Z0
-    VMOVSS  tq_inv2pi<>(SB), X0
-    VBROADCASTSS X0, Z1
-    VMOVSS  tq_max2<>(SB), X0
-    VBROADCASTSS X0, Z2
-    VMOVSS  tq_half<>(SB), X0
-    VBROADCASTSS X0, Z3
+    VBROADCASTSS tq_pi<>(SB), Z0
+    VBROADCASTSS tq_inv2pi<>(SB), Z1
+    VBROADCASTSS tq_max2<>(SB), Z2
+    VBROADCASTSS tq_half<>(SB), Z3
     VPXORD  Z4, Z4, Z4
-    VMOVSS  $1.0, X6
-    VBROADCASTSS X6, Z6
+    VBROADCASTSS tq_one<>(SB), Z6
 
 loop_pack2_512:
     CMPQ    CX, $16
@@ -1112,29 +1190,18 @@ loop_pack2_512:
     VMINPS  Z6, Z7, Z7
     VMULPS  Z2, Z7, Z7
     VADDPS  Z3, Z7, Z7
+    VRNDSCALEPS $0x01, Z7, Z7
     VCVTPS2DQ Z7, Z7
     
-    VPMOVDB Z7, X7 // 16 bytes (low bits)
+    VPMOVDB Z7, X9 // 16 bytes (low 2 bits in element order 0..15)
     
-    // Combine 4x2 bits
-    VPSRLW  $8, X7, X8
-    VPSLLW  $2, X8, X8
-    MOVQ    $0x00FF00FF00FF00FF, AX
-    VMOVQ   AX, X9
-    VPAND   X7, X9, X7
-    VPOR    X8, X7, X7 // 8 words, each e1:e0
-    
-    VMOVDQU X7, X8
-    VPSRLD  $16, X8, X8
-    VPSLLD  $4, X8, X8
-    MOVQ    $0x0000FFFF0000FFFF, AX
-    VMOVQ   AX, X9
-    VPAND   X7, X9, X7
-    VPOR    X8, X7, X7 // 4 dwords, each e3:e2:e1:e0
-    
-    VPACKUSWB X7, X7, X7
-    VPACKUSDW X7, X7, X7
-    VMOVD   X7, (DI)
+    VMOVDQU tq2_maddubs<>(SB), X10
+    VPMADDUBSW X10, X9, X9
+    VMOVDQU tq2_maddwd<>(SB), X10
+    VPMADDWD X10, X9, X9
+    VMOVDQU tq2_evenbytes<>(SB), X10
+    VPSHUFB X10, X9, X9
+    VMOVD   X9, (DI)
     
     ADDQ    $64, SI
     ADDQ    $4, DI
@@ -1142,4 +1209,65 @@ loop_pack2_512:
     JMP     loop_pack2_512
 
 tail_pack2_512:
-    JMP ·packTQ2AVX2Kernel+0(SB)
+    TESTQ   CX, CX
+    JZ      done_pack2_512
+    VMOVSS  tq_pi<>(SB), X0
+    VMOVSS  tq_inv2pi<>(SB), X1
+    VMOVSS  tq_max2<>(SB), X2
+    VMOVSS  tq_half<>(SB), X3
+    VPXOR   X4, X4, X4
+    VMOVSS  tq_one<>(SB), X6
+
+    XORL    R8, R8       // byte under construction
+    MOVQ    $4, R13      // elements still wanted in that byte
+
+tail_elem2_512:
+    VMOVSS  (SI), X5
+    VADDSS  X0, X5, X5
+    VMULSS  X1, X5, X5
+    VMAXSS  X4, X5, X5
+    VMINSS  X6, X5, X5
+    VMULSS  X2, X5, X5
+    VADDSS  X3, X5, X5
+    VROUNDPS $1, X5, X5
+    VCVTSS2SI X5, R11
+    ANDL    $0x03, R11
+    ADDQ    $4, SI
+
+    CMPQ    R13, $4
+    JE      tq2_or_512
+    CMPQ    R13, $3
+    JE      tq2_f1_512
+    CMPQ    R13, $2
+    JE      tq2_f2_512
+    SHLL    $6, R11
+    JMP     tq2_or_512
+tq2_f2_512:
+    SHLL    $4, R11
+    JMP     tq2_or_512
+tq2_f1_512:
+    SHLL    $2, R11
+tq2_or_512:
+    ORL     R11, R8
+    DECQ    R13
+    JZ      tq2_flush_512
+    JMP     tail_next2_512
+
+tq2_flush_512:
+    MOVB    R8, (DI)
+    INCQ    DI
+    XORL    R8, R8
+    MOVQ    $4, R13
+
+tail_next2_512:
+    DECQ    CX
+    JNZ     tail_elem2_512
+
+    CMPQ    R13, $4
+    JE      done_pack2_512
+    MOVB    R8, (DI)
+    INCQ    DI
+
+done_pack2_512:
+    VZEROUPPER
+    RET

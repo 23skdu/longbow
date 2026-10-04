@@ -214,8 +214,9 @@ func TurboQuantDistanceGeneric(query []float32, tqData []byte, dim int, pow2 int
 }
 
 func TurboQuantDistanceAVX512(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
-	// Fallback to NEON-optimized Go version for now until AVX512 assembly is finalized
-	return TurboQuantDistanceNEON(query, tqData, dim, pow2, bitsPerAngle)
+	buf := tqScratchPool.Get().(*tqScratchBuf)
+	defer tqScratchPool.Put(buf)
+	return turboQuantDistanceAVX2Scratch(query, tqData, dim, pow2, bitsPerAngle, buf.recon, buf.indices)
 }
 
 func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
@@ -307,8 +308,14 @@ func turboQuantDistanceAVX2Scratch(query []float32, tqData []byte, dim int, pow2
 		}
 	}
 
-	// Use AVX2 float32 L2 kernel on the corrected reconstruction
-	sum, err := l2SquaredAVX2(query[:dim], recon[:dim])
+	// Use AVX-512 / AVX2 float32 L2 kernel on the corrected reconstruction
+	var sum float32
+	var err error
+	if features.HasAVX512 {
+		sum, err = l2SquaredAVX512(query[:dim], recon[:dim])
+	} else {
+		sum, err = l2SquaredAVX2(query[:dim], recon[:dim])
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -344,10 +351,10 @@ func GetTurboQuantPolarTransformFunc() TurboQuantPolarTransformFunc {
 var cachedTQDistFunc TurboQuantDistanceFunc
 
 func init() {
-	if features.HasAVX2 {
-		cachedTQDistFunc = TurboQuantDistanceAVX2
-	} else if features.HasAVX512 {
+	if features.HasAVX512 {
 		cachedTQDistFunc = TurboQuantDistanceAVX512
+	} else if features.HasAVX2 {
+		cachedTQDistFunc = TurboQuantDistanceAVX2
 	} else {
 		cachedTQDistFunc = TurboQuantDistanceNEON
 	}

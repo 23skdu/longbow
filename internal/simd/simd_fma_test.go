@@ -41,7 +41,7 @@ func referenceEuclideanFMA(a, b []float32) float32 {
 		d := float64(a[i]) - float64(b[i])
 		sum += d * d
 	}
-	return float32(math.Sqrt(sum))
+	return float32(sum)
 }
 
 func referenceCosineFMA(a, b []float32) float32 {

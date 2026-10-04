@@ -358,6 +358,13 @@ func (e *StorageEngine) walDecoderRoutine(ctx context.Context, in <-chan rawWALB
 						decoder.Close()
 					}
 				case 3: // LZ4
+					if szErr := validateWALDecompressedSize(block.ts); szErr != nil {
+						select {
+						case <-ctx.Done():
+						case out <- DecodedWALEntry{Err: fmt.Errorf("wal decompression rejected at seq %d: %w", block.seq, szErr)}:
+						}
+						return
+					}
 					rawSize := block.ts
 					decompressed = make([]byte, rawSize)
 					_, err = lz4.UncompressBlock(block.recBytes, decompressed)

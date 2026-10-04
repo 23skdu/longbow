@@ -83,12 +83,21 @@ func (e *PQEncoder) ADCDistance(table []float32, code []byte) (float32, error) {
 	if len(code) != e.M {
 		return 0, errors.New("invalid code length")
 	}
+	// Same guards as ADCDistanceBatch. Each code byte is a 0..255 index into
+	// that subspace's row of the table, so a code byte >= K (from corrupt PQ
+	// data or a K mismatch) would otherwise read past the end of table.
+	if len(table) != e.M*e.K {
+		return 0, errors.New("invalid table size")
+	}
 
 	var sum float32
 	// Fallback / Scalar version for single distance
 	// Can be optimized but usually batch is preferred.
 	for m := 0; m < e.M; m++ {
 		idx := int(code[m])
+		if idx >= e.K {
+			return 0, errors.New("code index out of range")
+		}
 		dist := table[m*e.K+idx]
 		sum += dist
 	}

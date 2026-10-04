@@ -235,7 +235,11 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 
 	if countsChunk != nil && neighborsChunk != nil {
 		slot := int(atomic.LoadInt32(&countsChunk[cOff]))
-		if slot >= maxConn {
+		// Enforce the writer invariant on read as well as write: SetNeighbors
+		// never stores a count outside [0, MaxNeighbors], so a negative slot
+		// means a torn read or a chunk swap. Without this, baseIdx+slot goes
+		// negative and the store below panics.
+		if slot < 0 || slot >= maxConn {
 			return
 		}
 		baseIdx := int(cOff) * types.MaxNeighbors
@@ -269,6 +273,14 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 	countAddr := &countsChunk[cOff]
 	currentCount := atomic.LoadInt32(countAddr)
 	baseIdx := int(cOff) * types.MaxNeighbors
+
+	// A count outside [0, MaxNeighbors] is a torn read or a chunk swap, not a
+	// live count. Bailing out here keeps it from indexing neighborsChunk with a
+	// negative index and from being written back below, which would poison
+	// every subsequent reader of this node.
+	if currentCount < 0 || currentCount > types.MaxNeighbors {
+		return
+	}
 
 	if int(currentCount)+len(sources) > maxConn {
 		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer, sources)

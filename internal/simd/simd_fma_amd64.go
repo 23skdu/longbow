@@ -3,7 +3,6 @@
 package simd
 
 import (
-	"math"
 	"unsafe"
 )
 
@@ -145,7 +144,7 @@ func sqrt32(x float32) float32 {
 // DotProductFMA dispatches to AVX512 or fallback implementation
 func DotProductFMA(a, b []float32) (float32, error) {
 	if features.HasAVX512 {
-		return dotAVX512(a, b)
+		return DotProductFMA_AVX512(a, b)
 	}
 	return dotGeneric(a, b)
 }
@@ -153,19 +152,15 @@ func DotProductFMA(a, b []float32) (float32, error) {
 // EuclideanDistanceFMA dispatches to AVX512 or fallback implementation
 func EuclideanDistanceFMA(a, b []float32) (float32, error) {
 	if features.HasAVX512 {
-		sum, err := l2SquaredAVX512(a, b)
-		if err != nil {
-			return 0, err
-		}
-		return float32(math.Sqrt(float64(sum))), nil
+		return EuclideanDistanceFMA_AVX512(a, b)
 	}
-	return euclideanGeneric(a, b)
+	return L2SquaredFloat32(a, b)
 }
 
 // CosineDistanceFMA dispatches to AVX512 or fallback implementation
 func CosineDistanceFMA(a, b []float32) (float32, error) {
 	if features.HasAVX512 {
-		return cosineAVX512(a, b)
+		return CosineDistanceFMA_AVX512(a, b)
 	}
 	return cosineGeneric(a, b)
 }

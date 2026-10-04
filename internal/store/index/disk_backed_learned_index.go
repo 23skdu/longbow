@@ -297,8 +297,17 @@ func (idx *DiskBackedLearnedIndex) getDistance(query []float32, nodeID uint32) (
 		return simd.EuclideanDistance(query, cachedVec)
 	}
 
-	offset := idx.vectorOffset + uint64(nodeID)*uint64(idx.dimension)*4 // #nosec G115
-	vecData := idx.data[offset : offset+uint64(idx.dimension)*4]        // #nosec G115
+	if nodeID >= idx.numNodes {
+		return 0, fmt.Errorf("node %d out of range (numNodes=%d)", nodeID, idx.numNodes)
+	}
+	vecBytes := uint64(idx.dimension) * 4
+	offset := idx.vectorOffset + uint64(nodeID)*vecBytes
+	// parseHeader bounds the vector section, but nodeID is caller-supplied, so
+	// check the actual slice before casting it to a []float32.
+	if offset+vecBytes > uint64(len(idx.data)) {
+		return 0, fmt.Errorf("vector for node %d out of range", nodeID)
+	}
+	vecData := idx.data[offset : offset+vecBytes] // #nosec G115
 
 	// Zero-copy direct memory cast using unsafe.Slice for sub-nanosecond access
 	nodeVec := unsafe.Slice((*float32)(unsafe.Pointer(&vecData[0])), idx.dimension) // #nosec G103
@@ -313,13 +322,23 @@ func (idx *DiskBackedLearnedIndex) getDistance(query []float32, nodeID uint32) (
 
 func (idx *DiskBackedLearnedIndex) getNeighbors(nodeID uint32) []uint32 {
 	maxDegree := uint32(idx.config.MaxDegree) // #nosec G115
-	offset := idx.graphOffset + uint64(nodeID)*uint64(maxDegree+1)*4
+	stride := uint64(maxDegree+1) * 4
+	offset := idx.graphOffset + uint64(nodeID)*stride
+	// The count and the neighbor run are both read from disk; validate before
+	// slicing so a truncated or corrupt file cannot panic or read past the
+	// mapping.
+	if nodeID >= idx.numNodes || offset+4 > uint64(len(idx.data)) {
+		return nil
+	}
 
 	count := binary.LittleEndian.Uint32(idx.data[offset : offset+4])
 	if count > maxDegree {
 		count = maxDegree
 	}
 	if count == 0 {
+		return nil
+	}
+	if offset+4+uint64(count)*4 > uint64(len(idx.data)) {
 		return nil
 	}
 
@@ -380,8 +399,23 @@ func (idx *DiskBackedLearnedIndex) parseHeader() error {
 	idx.vectorOffset = binary.LittleEndian.Uint64(idx.data[16:24])
 	idx.graphOffset = binary.LittleEndian.Uint64(idx.data[24:32])
 
-	// Optional: read MaxDegree from header if available
-	// if len(idx.data) >= 36 { ... }
+	// These fields come straight off disk and every later offset is derived
+	// from them, so validate them here rather than at each use site. A zero
+	// dimension in particular would make vectorOffset/stride arithmetic
+	// degenerate into a zero-length read.
+	if idx.dimension <= 0 {
+		return fmt.Errorf("invalid dimension: %d", idx.dimension)
+	}
+	if idx.vectorOffset >= uint64(len(idx.data)) || idx.graphOffset >= uint64(len(idx.data)) {
+		return fmt.Errorf("section offsets out of range: vector=%d graph=%d size=%d",
+			idx.vectorOffset, idx.graphOffset, len(idx.data))
+	}
+	// The vector section must be able to hold every node's vector.
+	vectorBytes := uint64(idx.numNodes) * uint64(idx.dimension) * 4
+	if uint64(idx.vectorOffset)+vectorBytes > uint64(len(idx.data)) {
+		return fmt.Errorf("vector section overruns file: need %d bytes at offset %d, file is %d",
+			vectorBytes, idx.vectorOffset, len(idx.data))
+	}
 
 	idx.built = true
 	return nil

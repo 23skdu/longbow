@@ -302,7 +302,7 @@ func BenchmarkFilterEvaluator_MatchesBatch(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = eval.MatchesBatch(allIndices)
 	}
 }
@@ -341,7 +341,7 @@ func BenchmarkFilterEvaluator_MatchesBatchFused(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = eval.MatchesBatchFused(allIndices)
 	}
 }
@@ -766,7 +766,7 @@ func BenchmarkFilterEvaluator_MatchesAll(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = eval.MatchesAll(numRows)
 	}
 }
@@ -797,7 +797,7 @@ func BenchmarkFilterEvaluator_MatchesAll_SelectiveEarlyExit(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = eval.MatchesAll(numRows)
 	}
 }
@@ -1167,7 +1167,7 @@ func BenchmarkStringFilterEvaluator_MatchBitmap(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		eval.ops[0].MatchBitmap(bitmap)
 	}
 }
@@ -1204,7 +1204,7 @@ func BenchmarkStringFilterEvaluator_MatchesAll(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = eval.MatchesAll(numRows)
 	}
 }

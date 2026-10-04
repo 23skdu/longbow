@@ -287,6 +287,14 @@ func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 		count = uint32(c)           // #nosec G115
 		start = int(dataOffset) + n // #nosec G115
 
+		// Bound the count before allocating. It comes from a uvarint in the
+		// file, so it is data rather than a trusted length: each delta needs
+		// at least one byte, so a count larger than the remaining bytes cannot
+		// be satisfied and would otherwise drive a huge make up front.
+		if int64(count) > int64(len(dg.data)-start) {
+			return nil
+		}
+
 		// Decode Deltas
 		var res []uint32
 		if cap(buf) >= int(count) {

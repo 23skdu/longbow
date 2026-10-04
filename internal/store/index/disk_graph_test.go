@@ -84,7 +84,7 @@ func TestDiskGraph_GetNeighborsBufReuse(t *testing.T) {
 	first := dg.GetNeighbors(0, 0, nil)
 	require.NotEmpty(t, first)
 
-	buf := make([]uint32, len(first), len(first))
+	buf := make([]uint32, len(first))
 	second := dg.GetNeighbors(0, 0, buf)
 	require.Equal(t, first, second)
 	// same backing array → buf was reused
@@ -139,8 +139,10 @@ func BenchmarkDiskGraph_GetNeighborsNilBuf(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		_ = dg.GetNeighbors(0, uint32(i%n), nil) // #nosec G115
+		i++
 	}
 }
 
@@ -160,7 +162,9 @@ func BenchmarkDiskGraph_GetNeighborsReusedBuf(b *testing.B) {
 	buf := make([]uint32, 0, types.MaxNeighbors)
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		buf = dg.GetNeighbors(0, uint32(i%n), buf) // #nosec G115
+		i++
 	}
 }

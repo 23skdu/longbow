@@ -346,20 +346,6 @@ type idDist struct {
 	Dist float32
 }
 
-func sortedCandidates(res []types.Candidate) []idDist {
-	out := make([]idDist, 0, len(res))
-	for _, c := range res {
-		out = append(out, idDist{ID: c.ID, Dist: c.Dist})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].ID != out[j].ID {
-			return out[i].ID < out[j].ID
-		}
-		return out[i].Dist < out[j].Dist
-	})
-	return out
-}
-
 func sortedResults(res []types.SearchResult) []idDist {
 	out := make([]idDist, 0, len(res))
 	for _, r := range res {

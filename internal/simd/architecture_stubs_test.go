@@ -30,6 +30,7 @@ func TestArchitectureStubs_Coverage(t *testing.T) {
 
 	// Match Stubs
 	_ = matchInt64AVX2(i64, 0, CompareEq, dst)
+	_ = matchInt32AVX2(i32, 0, CompareEq, dst)
 	_ = matchFloat32AVX2(f32, 0, CompareEq, dst)
 	_ = matchFloat64AVX2(f64, 0, CompareEq, dst)
 	_ = matchFloat64AVX512(f64, 0, CompareEq, dst)
@@ -40,6 +41,7 @@ func TestArchitectureStubs_Coverage(t *testing.T) {
 	_ = adcBatchAVX2(f32, []byte{0}, 1, results)
 	_ = adcBatchAVX512(f32, []byte{0}, 1, results)
 	_ = adcBatchVNNI(f32, []byte{0}, 1, results)
+	_ = euclideanPQVNNI([]byte{0}, []byte{0}, 1, 1, results)
 
 	_ = euclideanBatchAVX2(f32, batch, results)
 	_ = euclideanBatchAVX512(f32, batch, results)

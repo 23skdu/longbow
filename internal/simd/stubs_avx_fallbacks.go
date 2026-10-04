@@ -106,6 +106,9 @@ func adcBatchAVX512(table []float32, flatCodes []byte, m int, results []float32)
 func adcBatchVNNI(table []float32, flatCodes []byte, m int, results []float32) error {
 	return adcBatchGeneric(table, flatCodes, m, results)
 }
+func euclideanPQVNNI(query []byte, centroids []byte, subDim int, k int, results []float32) error {
+	return errors.New("simd: VNNI not supported")
+}
 
 func int8ToFloat32AVX2(src []int8, dst []float32)           { int8ToFloat32Generic(src, dst) }
 func uint8ToFloat32AVX2(src []uint8, dst []float32)         { uint8ToFloat32Generic(src, dst) }

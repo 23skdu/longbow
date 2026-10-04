@@ -79,7 +79,7 @@ func BenchmarkUnpackTQ4(b *testing.B) {
 	bias := -float32(math.Pi)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		UnpackTQ4(src, dst, scale, bias)
 	}
 }
@@ -92,7 +92,8 @@ func BenchmarkUnpackTQ2(b *testing.B) {
 	bias := -float32(math.Pi)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		UnpackTQ2(src, dst, scale, bias)
 	}
 }
+

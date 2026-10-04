@@ -54,7 +54,7 @@ func BenchmarkGraphNavigator_FindPath(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, err := nav.FindPath(ctx, query); err != nil {
 			b.Fatal(err)
 		}
@@ -81,7 +81,7 @@ func BenchmarkGraphNavigator_FindPathCached(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, err := nav.FindPath(ctx, query); err != nil {
 			b.Fatal(err)
 		}

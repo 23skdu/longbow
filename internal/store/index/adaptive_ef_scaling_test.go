@@ -325,7 +325,7 @@ func BenchmarkAdaptiveEfScaling_SelectiveFilter(b *testing.B) {
 	opts := types.SearchOptions{Ef: 16}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res, err := idx.SearchVectorsWithBitmap(ctx, query, k, filter, opts)
 		if err != nil || len(res) < k {
 			b.Fatalf("search failed: err=%v, res=%d", err, len(res))

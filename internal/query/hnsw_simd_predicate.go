@@ -115,9 +115,10 @@ func (p *HNSWSIMDPredicate) IsMatch(id uint32) bool {
 		if p.strCodes != nil && batchIdx < len(p.strCodes) {
 			codes := p.strCodes[batchIdx]
 			if rowIdx < len(codes) {
-				if p.op == simd.CompareEq {
+				switch p.op {
+				case simd.CompareEq:
 					return p.hasStrCode && codes[rowIdx] == p.strValCode
-				} else if p.op == simd.CompareNeq {
+				case simd.CompareNeq:
 					return !p.hasStrCode || codes[rowIdx] != p.strValCode
 				}
 			}
@@ -192,13 +193,14 @@ func (p *HNSWSIMDPredicate) MatchBatch(ids []uint32, dst []byte) {
 				buf[i] = 0
 			}
 		}
-		if p.op == simd.CompareEq {
+		switch p.op {
+		case simd.CompareEq:
 			if !p.hasStrCode {
 				clear(dst)
 			} else {
 				_ = simd.MatchUint16(buf, p.strValCode, simd.CompareEq, dst)
 			}
-		} else if p.op == simd.CompareNeq {
+		case simd.CompareNeq:
 			if !p.hasStrCode {
 				for i := range dst {
 					dst[i] = 1
@@ -206,7 +208,7 @@ func (p *HNSWSIMDPredicate) MatchBatch(ids []uint32, dst []byte) {
 			} else {
 				_ = simd.MatchUint16(buf, p.strValCode, simd.CompareNeq, dst)
 			}
-		} else {
+		default:
 			for i, id := range ids {
 				if p.IsMatch(id) {
 					dst[i] = 1

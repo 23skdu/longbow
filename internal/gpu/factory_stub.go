@@ -1,4 +1,6 @@
-//go:build !gpu
+// Covers !gpu, plus -tags gpu on platforms with no real backend
+// implementation (i.e. anything that is not darwin/arm64 or linux/amd64).
+//go:build !gpu || ((!darwin || !arm64) && (!linux || !amd64))
 
 package gpu
 

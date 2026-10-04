@@ -1,3 +1,5 @@
+//go:build gpu && darwin && arm64 && cgo
+
 package metal
 
 import (

@@ -1,4 +1,4 @@
-//go:build gpu && darwin && arm64
+//go:build gpu && darwin && arm64 && cgo
 
 package memory
 

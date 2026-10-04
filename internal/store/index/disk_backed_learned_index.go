@@ -300,7 +300,7 @@ func (idx *DiskBackedLearnedIndex) getDistance(query []float32, nodeID uint32) (
 	if nodeID >= idx.numNodes {
 		return 0, fmt.Errorf("node %d out of range (numNodes=%d)", nodeID, idx.numNodes)
 	}
-	vecBytes := uint64(idx.dimension) * 4
+	vecBytes := uint64(idx.dimension) * 4 // #nosec G115 -- dimension is validated > 0 at construction and load
 	offset := idx.vectorOffset + uint64(nodeID)*vecBytes
 	// parseHeader bounds the vector section, but nodeID is caller-supplied, so
 	// check the actual slice before casting it to a []float32.

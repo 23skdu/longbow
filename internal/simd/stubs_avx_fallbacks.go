@@ -3,6 +3,8 @@
 package simd
 
 import (
+	"errors"
+
 	lbcore "github.com/23skdu/longbow/internal/core"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )

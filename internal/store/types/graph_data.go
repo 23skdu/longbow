@@ -474,6 +474,13 @@ func (b *VectorChunkBatch[T]) Chunk(chunkID int) []T {
 	return nil
 }
 
+// Width returns the per-vector element count the batch strides by: the padded
+// dimension count for the fixed-width types, and the packed byte stride for
+// TurboQuant. It is the length to pass as the dims argument of Vector.
+func (b *VectorChunkBatch[T]) Width() int {
+	return b.pd
+}
+
 // Vector returns the dims-long vector stored at index within chunkID, or nil
 // when the reference per-vector accessor would not have served it (chunk not
 // resident, hidden by generation isolation, or index past the chunk).
@@ -528,6 +535,22 @@ func (g *GraphData) BeginFloat64ChunkBatch(maxGen uint64) VectorChunkBatch[float
 	}
 	return newVectorChunkBatch[float64](g.Float64Arena, g.VectorsFloat64Offsets, g.VectorsFloat64,
 		g.GetPaddedDimsForType(VectorTypeFloat64), maxGen, true)
+}
+
+// BeginTQChunkBatch opens a batch-scoped view over the TurboQuant chunk table,
+// matching GetVectorsTQChunkWithGen / GetVectorsTQChunkFast.
+//
+// TurboQuant rows have a fixed packed stride rather than padded dimensions, so
+// the stride is passed as the batch's element width: Vector(chunkID, index,
+// stride) returns exactly the bytes GetVectorsTQChunkWithGen would have sliced
+// for that id, with the same nil results for a non-resident chunk, a zero
+// offset and a generation-hidden slab.
+func (g *GraphData) BeginTQChunkBatch(maxGen uint64) VectorChunkBatch[byte] {
+	if g == nil {
+		return VectorChunkBatch[byte]{}
+	}
+	return newVectorChunkBatch[byte](g.Uint8Arena, g.VectorsTQ, nil,
+		g.PackedSize(), maxGen, true)
 }
 
 // GetVectorsChunk returns the vector chunk for the given ID.

@@ -150,6 +150,46 @@ type tqComputer struct {
 	rotatedQuery []float32
 	diskGraph    *DiskGraph
 	maxGen       uint64
+
+	// Small direct-mapped cache of the TurboQuant chunks a search has touched,
+	// used by Prefetch. HNSW traversal is local but not contiguous - a node's
+	// neighbours are spread over the whole corpus, so a one-entry cache misses
+	// almost every call and Prefetch ends up repeating the slab-table load and
+	// pointer chase for every candidate, in addition to the lookup the caller
+	// already did. A small associative cache absorbs the repeats without
+	// turning the prefetch into a lookup of its own.
+	pfChunks [tqPrefetchCacheSize]tqChunkCacheEntry
+	pfStride int
+
+	// batch is the per-search view of the TurboQuant chunk table, opened once
+	// on first use. A tqComputer is built fresh for every search (see
+	// resolveHNSWComputer), so the view cannot outlive the search that opened
+	// it, and opening it per candidate block or per graph hop - which is what
+	// the pre-batch code did, implicitly, one slab-table load at a time -
+	// turned out to cost more than the lookups it saved.
+	batch    types.VectorChunkBatch[byte]
+	batchOK  bool
+	batchGen uint64
+}
+
+// chunkBatch returns the per-search TurboQuant chunk view, opening it on first
+// use and reopening it if the generation policy changed underneath the search.
+func (c *tqComputer) chunkBatch() types.VectorChunkBatch[byte] {
+	if !c.batchOK || c.batchGen != c.maxGen {
+		c.batch = c.data.BeginTQChunkBatch(c.maxGen)
+		c.batchOK = true
+		c.batchGen = c.maxGen
+		c.pfStride = c.batch.Width()
+	}
+	return c.batch
+}
+
+const tqPrefetchCacheSize = 16
+
+type tqChunkCacheEntry struct {
+	id   int
+	span int
+	data []byte
 }
 
 func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
@@ -167,7 +207,52 @@ func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 	return c.h.tqCompute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
 }
 
+// ComputeBatch evaluates a whole block of candidates against one batch-scoped
+// view of the TurboQuant chunk table.
+//
+// The previous implementation called ComputeSingle per candidate, so every
+// candidate paid a full GetVectorsTQChunkWithGen: an atomic slab-table load, a
+// division, a slab pointer chase and a generation comparison. Measured on a 250k
+// TurboQuant index that lookup cost about ten times the distance computation it
+// preceded, and it is paid once per candidate *and* once per prefetch. Resolving
+// the chunk once per block is what the float32 path already does.
 func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	if c.h.tqDecodeCache.Load() != nil {
+		// The decode cache bypasses the chunk table entirely, so batching buys
+		// nothing here and ComputeSingle already takes the cheap branch.
+		return c.computeBatchSingle(ids, dst)
+	}
+	if cap(dst) < len(ids) {
+		dst = make([]float32, len(ids))
+	} else {
+		dst = dst[:len(ids)]
+	}
+
+	batch := c.chunkBatch()
+	stride := c.pfStride
+	for i, id := range ids {
+		code := batch.Vector(int(id)/types.ChunkSize, int(id)%types.ChunkSize, stride)
+		if code == nil {
+			// Not resident in this batch (paged out, or hidden by generation
+			// isolation). Defer to the reference path, which knows about the
+			// DiskGraph fallback and the decode cache.
+			dist, err := c.ComputeSingle(id)
+			if err != nil {
+				return nil, err
+			}
+			dst[i] = dist
+			continue
+		}
+		dist, err := c.h.tqCompute.DistanceDirectCodes(c.rotatedQuery, code)
+		if err != nil {
+			return nil, err
+		}
+		dst[i] = dist
+	}
+	return dst, nil
+}
+
+func (c *tqComputer) computeBatchSingle(ids []uint32, dst []float32) ([]float32, error) {
 	dst = dst[:0]
 	for _, id := range ids {
 		dist, err := c.ComputeSingle(id)
@@ -179,15 +264,34 @@ func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error
 	return dst, nil
 }
 
+// Prefetch issues a read hint for the TurboQuant code bytes of one node.
+//
+// It is a no-op while the decode cache is live. That cache is installed for the
+// duration of a bulk insert, and while it is live every distance is computed
+// against the pre-decoded float32 vectors (see ComputeSingle), so the packed code
+// bytes are never read. Warming them anyway cost 35% of a 250k TurboQuant build:
+// the chunk resolution and the prefetch itself were 22% and 13% of CPU while the
+// distance they were warming accounted for 2%.
 func (c *tqComputer) Prefetch(id uint32) {
-	chunk := c.data.GetVectorsTQChunkFast(int(id) / types.ChunkSize)
-	if chunk != nil {
-		stride := c.data.PackedSize()
-		cOff := int(id) % types.ChunkSize
-		start := cOff * stride
-		if start < len(chunk) {
-			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
+	if c.h.tqDecodeCache.Load() != nil {
+		return
+	}
+	chunkID := int(id) / types.ChunkSize
+	slot := &c.pfChunks[uint(chunkID)%tqPrefetchCacheSize] // #nosec G115 -- id is a node index
+	if slot.id != chunkID || slot.data == nil {
+		chunk := c.data.GetVectorsTQChunkFast(chunkID)
+		if chunk == nil {
+			return
 		}
+		slot.id = chunkID
+		slot.data = chunk
+		if c.pfStride == 0 {
+			c.pfStride = c.data.PackedSize()
+		}
+	}
+	start := (int(id) % types.ChunkSize) * c.pfStride
+	if start < len(slot.data) {
+		simd.Prefetch(unsafe.Pointer(&slot.data[start])) // #nosec G103
 	}
 }
 

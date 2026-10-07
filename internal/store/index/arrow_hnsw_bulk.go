@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 
 	"time"
 
@@ -40,6 +41,33 @@ const ShardedLockCount = 131072
 // the insertion-order chain links (one to the predecessor, one from the
 // successor) it adds to every node at layer 0.
 const chainLinksPerNode = 2
+
+// bulkChainLinksEnabled reports whether the bulk linker adds the
+// insertion-order chain edges described above.
+//
+// The edge is a fix for bulk-inserted nodes ending up with in-degree zero: a
+// fresh node's only inbound links are reverse links it hands to its pre-batch
+// neighbours, and those are pruned away as soon as such a neighbour is already
+// at its connection limit. Linking to the insertion-order predecessor always
+// works on collinear or otherwise sorted input, where node i and node i-1 really
+// are nearest neighbours, which is the case the regression test
+// (TestBulkInsert_CollinearGraphStaysConnected) exercises.
+//
+// On unsorted input the same edge is a long-range shortcut between arbitrary
+// nodes, so every node gets an arbitrary edge in its layer-0 neighbourhood.
+// Set LONGBOW_HNSW_BULK_CHAIN_LINKS=0 to turn it off, which trades the
+// stranding guarantee for a graph whose layer 0 is selected purely by distance.
+var bulkChainLinksEnabled = func() bool {
+	if v := os.Getenv("LONGBOW_HNSW_BULK_CHAIN_LINKS"); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "0", "false", "no", "off":
+			return false
+		case "1", "true", "yes", "on":
+			return true
+		}
+	}
+	return true
+}()
 
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
@@ -806,7 +834,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					// covers the whole dataset. The insertion-order predecessor is
 					// always linked and adjacent in distance for sorted-ish
 					// data, so this edge both exists and survives pruning.
-					if lc == 0 && node.id > 0 {
+					if lc == 0 && node.id > 0 && bulkChainLinksEnabled {
 						var chainDist [1]float32
 						h.computeDistances(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:])
 						_ = h.AddConnectionsBatch(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:], lc, int(h.mMax0.Load()))
@@ -840,7 +868,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 						// Reserve slots for the chain links added above, so a node
 						// cannot fill its own degree budget and have them pruned
 						// away again.
-						if m > maxConn-chainLinksPerNode {
+						if bulkChainLinksEnabled && m > maxConn-chainLinksPerNode {
 							m = maxConn - chainLinksPerNode
 						}
 					} else if m > maxConn {

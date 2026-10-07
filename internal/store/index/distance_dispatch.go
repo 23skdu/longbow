@@ -576,6 +576,33 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			prefetchLimit = 16
 		}
 
+		// Resolve the packed TurboQuant geometry once for the whole search. The
+		// loop below touches one candidate per iteration, and each touch used to
+		// resolve its chunk from scratch: an atomic slab-table load, a division, a
+		// slab pointer chase and a generation comparison. At 250k that lookup cost
+		// several times the distance computation it was warming, and it was done
+		// twice per candidate because the DistanceComputer prefetch pass that
+		// follows repeats the same walk.
+		//
+		// The view is owned by the computer, which is built per search, so it is
+		// opened once rather than once per candidate block or graph hop.
+		//
+		// While the TurboQuant decode cache is live - which is exactly the span of
+		// a bulk insert - distances are computed against pre-decoded float32 and the
+		// packed codes are never read, so the whole pass is skipped rather than
+		// warming a buffer nothing will touch.
+		var tqBatch types.VectorChunkBatch[byte]
+		tqStride := 0
+		if h.tqDecodeCache.Load() == nil {
+			if tqc, ok := computer.(*tqComputer); ok {
+				tqBatch = tqc.chunkBatch()
+				tqStride = tqBatch.Width()
+			} else if len(data.VectorsTQ) > 0 {
+				tqStride = data.PackedSize()
+				tqBatch = data.BeginTQChunkBatch(maxGen)
+			}
+		}
+
 		for i := 0; i < len(neighbors) && i < int(prefetchLimit); i++ {
 			nID := neighbors[i]
 			if !ctx.AllowUncommitted && int64(nID) >= maxCommitted {
@@ -583,10 +610,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			}
 			cID := int(nID) / types.ChunkSize  // #nosec G115
 			cOff := int(nID) % types.ChunkSize // #nosec G115
-			chunk := data.GetVectorsChunkWithGen(cID, maxGen)
-			if chunk != nil {
-				// Prefetch is handled below via simd.Prefetch
-			}
 			if len(data.VectorsSQ8) > cID {
 				if sq8Chunk := data.GetVectorsSQ8ChunkWithGen(cID, maxGen); sq8Chunk != nil {
 					paddedDims := (data.Dims + 63) & ^63
@@ -598,14 +621,10 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					}
 				}
 			}
-			if len(data.VectorsTQ) > cID {
-				if tqChunk := data.GetVectorsTQChunkWithGen(cID, maxGen); tqChunk != nil {
-					stride := data.PackedSize()
-					start := cOff * stride
-					if start+stride <= len(tqChunk) {
-						if int64(nID) < maxCommitted {
-							_ = tqChunk[start]
-						}
+			if tqStride > 0 && len(data.VectorsTQ) > cID {
+				if code := tqBatch.Vector(cID, cOff, tqStride); code != nil {
+					if int64(nID) < maxCommitted {
+						_ = code[0]
 					}
 				}
 			}

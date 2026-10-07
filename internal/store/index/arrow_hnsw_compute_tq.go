@@ -3,6 +3,7 @@ package index
 import (
 	"fmt"
 	"math"
+	"unsafe" // #nosec G103 -- address-only prefetch hint
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
@@ -108,6 +109,36 @@ func (c *TurboQuantCompute) DistanceDirect(id uint32, rotatedQuery []float32, dg
 		return 0, fmt.Errorf("no TurboQuant distance function available")
 	}
 	return fn(rotatedQuery, tqCode, c.encoder.dims, c.encoder.pow2, c.encoder.params.BitsPerAngle)
+}
+
+// DistanceDirectCodes computes the same value as DistanceDirect for a code slice
+// the caller has already resolved out of a TurboQuant chunk.
+//
+// This is the inner loop of a graph search: resolving the code slice needs a
+// slab-table load, a slab pointer chase and a generation comparison, which
+// together cost several times more than the distance itself. A caller that
+// evaluates a whole block of candidates opens one batch with BeginTQChunkBatch
+// and then calls this per candidate, so that work is paid once per block.
+func (c *TurboQuantCompute) DistanceDirectCodes(rotatedQuery []float32, tqCode []byte) (float32, error) {
+	fn := simd.GetTurboQuantDistanceFunc()
+	if fn == nil {
+		return 0, fmt.Errorf("no TurboQuant distance function available")
+	}
+	return fn(rotatedQuery, tqCode, c.encoder.dims, c.encoder.pow2, c.encoder.params.BitsPerAngle)
+}
+
+// PrefetchChunk issues a read hint for the bytes a TurboQuant chunk starts at.
+// Callers that already hold a batch-scoped view should slice it themselves;
+// this exists for callers that only have an id.
+func (c *TurboQuantCompute) PrefetchChunk(chunk []byte, index int) {
+	if chunk == nil || index < 0 {
+		return
+	}
+	stride := c.h.data.Load().PackedSize()
+	start := index * stride
+	if start < len(chunk) {
+		simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
+	}
 }
 
 // PrecomputeRotatedQuery applies the random rotation to a query vector for faster subsequent searches.

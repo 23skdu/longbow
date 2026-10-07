@@ -762,7 +762,95 @@ that harness is trustworthy. `TestTQSearchRecallsFloat32` is therefore written a
 a *relative* comparison against a float32 index built from the same corpus, and
 the 5-point gate is expressed relative to that baseline rather than absolutely.
 
-### 9.4 Side finding: leftover debug output in the arena read path
+### 9.4 Attempted optimisation that does not work, and why
+
+R18 asks how much of the 8x is reducible while keeping the graph connected. The
+obvious lever is the distance kernel, so it was profiled and attacked. The result is
+a negative one, recorded here so the next attempt does not repeat it.
+
+**Where the time actually goes.** TurboQuant-only profile of a 250k build (`dim=128`,
+10,000-row batches, 4 workers, no float32 phase so the numbers are not blended):
+
+| Symbol | Flat | Share |
+|---|---|---|
+| `simd.l2SquaredAVX2Kernel` | 318.82s | **40.96%** |
+| `index.(*ArrowHNSW).searchLayer` | 83.34s | 10.71% (95.31% cum) |
+| `index.(*tqComputer).ComputeSingle` | 9.63s | 1.24% (45.73% cum) |
+
+The distance arithmetic is 41% of CPU, so the kernel is the right place to look.
+
+**The attempt.** While the decode cache is live, TurboQuant distances are ordinary
+float32 Euclidean distances against `decodeCache[id*dim : id*dim+dim]` - the packed
+codes are never read. So `tqComputer.ComputeBatch` was given a batched decode-cache
+path that gathers the block and calls `simd.EuclideanDistanceBatch`, exactly what
+`float32ToFloat32Computer` already does.
+
+In isolation the change looks like an obvious win, at every block size (dim=128, ns
+per block):
+
+| Block size | single | batched | Speedup |
+|---|---|---|---|
+| 4 | 648.6 | 331.4 | 1.96x |
+| 8 | 1305 | 566.3 | 2.31x |
+| 16 | 2606 | 1031 | 2.53x |
+| 64 | 10404 | 3879 | 2.68x |
+| 256 | 41580 | 16335 | 2.54x |
+
+**End to end it was 25% slower**, consistently:
+
+| Variant | Runs | Mean |
+|---|---|---|
+| baseline | 102.1s, 102.6s, 103.4s | **102.7s** |
+| batched decode cache | 115.6s, 128.4s, 130.7s, 130.2s, 130.8s | **127.1s** |
+
+Not allocation pressure - total allocated 19,438 MB against 19,516 MB, mallocs
+339.9M either way, GC cycles 83 against 82. Two measurable reasons:
+
+- **Blocks are far smaller than the microbenchmark assumes.** `searchLayer` hands
+  over one node's neighbour list per hop. Instrumenting the batch path gives 2.55e9
+  candidates across 3.55e8 calls, **mean 7.2, peaking at 5-6**, and only 337 calls
+  ever reach size 17. The 4-way kernel cannot amortise its setup at that size.
+- **The microbenchmark's working set is hot; the real one is not.** It cycles over
+  32 KB, which stays in L2. The decode cache is 128 MB read in node-id order, so it
+  is cache-miss bound. The gather pass adds a dependent load chain and cannot buy
+  the misses back.
+
+Graph quality was unaffected either way - mean layer-0 degree 15.71 and 98.2%
+reachable with batching against 15.71 and 98.2% without, at both 4 and 8 bit - which
+is the point of having that gate. The change was reverted; the reason is recorded in
+a comment on the branch in `tqComputer.ComputeBatch` so nobody re-attempts it blind.
+
+- **R24. The remaining lever is block size, not the kernel.** TurboQuant construction
+  cannot get 4-way SIMD because it is never asked for 4 vectors at once. Accumulating
+  candidates across graph hops before computing distances would fix that, but it
+  changes traversal order and therefore graph structure, so it needs a design and a
+  recall measurement, not a patch. Expect it to trade against search latency.
+
+### 9.5 The larger lead: neighbour-list lookups are 13% of CPU and dtype-independent
+
+Found in the same profile, and worth more than the TurboQuant-specific work because
+it applies to every data type:
+
+| Symbol | Flat | Share |
+|---|---|---|
+| `index.(*LockFreeNeighborCache).GetNeighbors` | 34.53s | 4.44% (23.29% cum) |
+| `index.(*syncMapShim).Load` | - | 13.23% cum |
+| `sync.(*Map).Load` -> `sync.HashTrieMap[any,any].Load` | 84.52s | **10.86%** |
+
+`LockFreeNeighborCache` backs its node-id -> neighbour-list map with
+`sync.Map[any]any`. Every lookup boxes a `uint32` key into an `interface{}`, so the
+hot path pays interface hashing (`runtime.nilinterhash` 3.19s) and interface equality
+(`runtime.memequal32` 8.46s) on every single neighbour access. Node ids are dense and
+small, which is the worst case for a hashed interface map and the best case for a
+flat array or a small sharded slice keyed by `uint32`.
+
+- **R25. Replace the `sync.Map` backing in `LockFreeNeighborCache` with a typed,
+  id-keyed structure.** This is a concurrency change to a structure used by every
+  dtype, so it wants its own branch, its own race-detector run and a benchmark on
+  float32 as well as TurboQuant. It is the highest-value single item found in this
+  investigation: ~13% of construction CPU, for all data types.
+
+### 9.6 Side finding: leftover debug output in the arena read path
 
 `SlabArena.GetWithGeneration` and `SlabArena.Get` in `internal/memory/arena.go`
 carry seven `fmt.Printf("ARENA_NIL_DEBUG: ...")` calls on their nil/bounds

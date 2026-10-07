@@ -218,8 +218,25 @@ func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 // the chunk once per block is what the float32 path already does.
 func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	if c.h.tqDecodeCache.Load() != nil {
-		// The decode cache bypasses the chunk table entirely, so batching buys
-		// nothing here and ComputeSingle already takes the cheap branch.
+		// Batched distance is measurably faster per vector for this workload
+		// - the 4-way kernel runs at 61 ns/vector against 163 ns for the
+		// single-vector path at dim=128 - but routing here through it made a
+		// 250k TurboQuant build about 25% SLOWER, consistently and with
+		// identical allocation counts. Do not "fix" this without redoing that
+		// measurement. Two reasons it loses here:
+		//
+		//   - Blocks are small. searchLayer hands over one node's neighbour
+		//     list per hop, and those peak at 5-6 candidates (2.55e9 candidates
+		//     over 3.55e8 calls, mean 7.2). The 4-way kernel cannot amortise
+		//     its own setup at that size.
+		//   - The working set is cold and random. The microbenchmark that shows
+		//     the 2.7x win runs over a 32 KB corpus that stays in L2, while the
+		//     decode cache is 128 MB touched in node-id order, so the gather
+		//     pass adds a dependent load chain without buying back misses.
+		//
+		// The decode cache also bypasses the chunk table entirely, which is why
+		// the batched chunk view below is not the lever here. See
+		// docs/roadmap.md section 9.5 for the full experiment.
 		return c.computeBatchSingle(ids, dst)
 	}
 	if cap(dst) < len(ids) {

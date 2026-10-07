@@ -474,11 +474,100 @@ The non-bulk path at HEAD is also 53% *faster* than the base revision's bulk pat
 
 That independently reproduces the server-level bisect through a completely different code path. Doubling the layer-0 degree budget at HEAD (`MMax0` 16 -> 32, min of 4 x 400) makes it **worse**, not better: 59,437 -> 64,205 ns/op. So the 2-slot reservation is not the cost. The entire regression is the navigation damage from an arbitrary long-range edge injected into every node.
 
+### 8.3.1 R5 was attempted, reverted, and cannot land before R26
+
+R5 - replace the unconditional chain link with a proximity-gated one - was
+implemented, measured, and **reverted**. Recording this because the revert is the
+finding, and because R5 as written is not implementable.
+
+**What was tried.** Add the predecessor edge only when the predecessor is within the
+node's own candidate median, and charge the two-slot `chainLinksPerNode` reservation
+only on nodes that actually received an edge:
+
+```go
+chainDist <= candidates[len(candidates)/2].Dist   // candidates sorted ascending
+```
+
+This is O(1), adds no locking, and does exactly what §8.3 asked: on shuffled input it
+stops injecting an arbitrary long-range edge into every layer-0 node. The collinear
+test still passed, because there the predecessor genuinely is the nearest neighbour
+and the gate admits it.
+
+**Why it was reverted.** It broke graph connectivity, badly, and the graph-quality
+gate added in §9.2 caught it:
+
+| Reachable at layer 0, n=20,000 | Unconditional | Proximity-gated |
+|---|---|---|
+| turboquant 4-bit | 98.2% | **81.8%** |
+| turboquant 8-bit | 97.9% | **86.8%** |
+
+That refutes the premise behind R5. The roadmap assumed the chain edge was "the one
+neighbour guaranteed to be linked", a fallback used only in the degenerate case. On
+unordered input the predecessor is usually far, so the gate rejects nearly every
+chain edge - and 18% of the TurboQuant corpus immediately became unreachable. The
+edge is not a rare fallback; on unordered input it is where most inbound edges come
+from, because a fresh node's only other inbound edges are reverse links that get
+pruned whenever the target is already at capacity.
+
+**Ordering consequence.** R5 cannot land before R26. The correct sequence is:
+
+1. **R26** - guarantee inbound edges properly: when every reverse link for a fresh
+   node was pruned, force an edge from the node's nearest pre-batch neighbour,
+   evicting that neighbour's farthest edge. Until this exists there is nothing safe
+   to replace the chain with.
+2. **R5** - *then* gate the chain edge on proximity, which by then is the redundant
+   safety net rather than the load-bearing structure.
+
+**The -60.9% dense QPS figure in §8.3 could not be reproduced.** Interleaved A/B of
+the gate against the unconditional edge, min of 3 x 300 iterations on
+`BenchmarkDenseSearch_Float32_50k`:
+
+| Round | Unconditional | Gated |
+|---|---|---|
+| 1 | 86,453 ns/op | 84,770 ns/op |
+| 2 | 79,426 ns/op | 91,280 ns/op |
+| 3 | 73,863 ns/op | 74,256 ns/op |
+
+No difference beyond run-to-run noise, and neither arm reproduces the 57,216 ns/op
+recorded for HEAD in Step 5. Recall was tried as the measurement over five corpus
+seeds:
+
+| Seed | 1 | 2 | 3 | 4 | 5 | mean |
+|---|---|---|---|---|---|---|
+| unconditional | 0.110 | 0.175 | 0.120 | 0.175 | 0.105 | 0.137 |
+| gated | 0.165 | 0.160 | 0.100 | 0.170 | 0.115 | 0.142 |
+
+The sign flips between seeds; a single-seed run read as a 50% improvement, which was
+an artifact. So while the *connectivity* regression above is unambiguous and large,
+a *query-throughput* benefit of gating is not demonstrated, and the harness cannot
+currently resolve one (§9.3). §8.3's QPS table should be treated as unverified.
+
+- **R5. NOT DONE - blocked on R26.** Implemented and reverted; the measured
+  connectivity regression is in the table above.
+- **R6. NOT DONE.** `chainLinksPerNode` is still charged unconditionally against
+  every layer-0 node. It was coupled to the gate, so it reverted with it. Note this
+  is the part that is genuinely safe to drop on its own, since §8.3 Step 5 showed the
+  reservation is not the regression - but it currently protects the edge that R26
+  still depends on, so dropping it alone is not obviously safe either.
+- **R7. DONE.** `arrow_hnsw_bulk_chainlink_test.go` covers unordered geometry -
+  `TestBulkInsert_UnorderedCorpusStaysReachable` on both shuffled and natural-order
+  corpora (99.9% reachable on both, asserted at a 99% floor) and
+  `TestBulkInsert_UnorderedCorpusRecallFloored`. The file documents the reverted gate
+  and its measured effect, so a future attempt fails here instead of in production.
+- **R26. Force an inbound edge when reverse links are all pruned.** The prerequisite
+  for R5, and the only real fix for the stranding the chain link currently hides.
+- **R27. Re-verify §8.3's server-level QPS table before acting on it.** The Step 2
+  bisection put the cliff at `a955a0c1` and three methods agreed, but the in-process
+  benchmark cannot reproduce the magnitude today. Either it was partly a property of
+  the machine state when measured, or the benchmark does not exercise the same ingest
+  shape as the server. That distinction matters: if it is the latter, then the fix's
+  benefit is invisible to the harness meant to gate it.
+
 ### Recommendations for the bulk-insert chain link
 
-- **R5. Replace the unconditional chain link with a proximity-gated one.** Only add the `i -> i-1` edge when the two nodes are actually near each other (for example when the chain distance is within the candidate pool's median distance), and otherwise guarantee reachability the way HNSW normally does: by relaxing pruning for reverse links, or by re-checking that the node has at least one inbound edge after selection and retrying with a relaxed heuristic. The invariant the test needs is "no node is stranded", not "every node has a predecessor edge".
-- **R6. Drop `chainLinksPerNode` once R5 lands.** The degree reservation is currently charged unconditionally, but it is *not* the regression (Step 5: doubling `MMax0` makes the regression slightly worse, not better), so it should not be treated as the fix. Remove it together with the unconditional edge rather than tuning it, and re-measure.
-- **R7. Make the connectivity regression test cover unsorted data.** `TestBulkInsert_CollinearGraphStaysConnected` only exercises the geometry where the chain edge is a good edge. Add a shuffled-corpus variant that asserts (a) zero unreachable nodes and (b) recall and node-visit count within a stated factor of the sequential-insert graph. Without (b) the test cannot catch this class of regression, because reachability alone is satisfied by the chain.
+- **R5. Replace the unconditional chain link with a proximity-gated one. [ATTEMPTED AND REVERTED - blocked on R26, see 8.3.1]** Only add the `i -> i-1` edge when the two nodes are actually near each other (for example when the chain distance is within the candidate pool's median distance), and otherwise guarantee reachability the way HNSW normally does: by relaxing pruning for reverse links, or by re-checking that the node has at least one inbound edge after selection and retrying with a relaxed heuristic. The invariant the test needs is "no node is stranded", not "every node has a predecessor edge".
+- **R6. Drop `chainLinksPerNode` once R5 lands. [NOT DONE - reverted with R5, see 8.3.1]** The degree reservation is currently charged unconditionally, but it is *not* the regression (Step 5: doubling `MMax0` makes the regression slightly worse, not better), so it should not be treated as the fix. Remove it together with the unconditional edge rather than tuning it, and re-measure.
+- **R7. Make the connectivity regression test cover unsorted data. [DONE, see 8.3.1]** `TestBulkInsert_CollinearGraphStaysConnected` only exercises the geometry where the chain edge is a good edge. Add a shuffled-corpus variant that asserts (a) zero unreachable nodes and (b) recall and node-visit count within a stated factor of the sequential-insert graph. Without (b) the test cannot catch this class of regression, because reachability alone is satisfied by the chain.
 - **R8. Guard `AddBatchBulk` behind a recall-and-visit-count budget** at dataset build time, the way `resolveDistanceKernel` already validates a SIMD kernel once at construction: build the bulk graph, compare recall and mean nodes-visited against the sequential path on a sample, and fall back if the bulk graph is materially worse. This makes the choice data-driven instead of a constant threshold.
 - **R9. Re-baseline TurboQuant's "recommended at scale" claim.** §4 item 2 of this document promotes TurboQuant as the default engine above 100k vectors on the strength of 100k/250k QPS. In this matrix TurboQuant has the worst dense-search numbers of any dtype at 50k on CPU — `turboquant4` at `dense` 278 / `hybrid` 258 / `recommend` 261 QPS and `turboquant8` at 502 / 488 / 499 QPS, against `float32` at 702 / 645 / 859 and `complex128` at 2,720 / 2,066 / 3,424 — because it is the most sensitive to the chain link — a 4-bit codebook discards the distance information that would otherwise make a wrong edge recoverable. Its ingest advantage is real; its query advantage at scale is not established and should be re-measured after R5.
 

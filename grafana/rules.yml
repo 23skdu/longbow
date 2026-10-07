@@ -601,6 +601,91 @@ groups:
           summary: "High off-heap arena usage"
           description: "Off-heap arena usage is {{ $value | humanizeBytes }}."
 
+  - name: longbow_bulk_insert_alerts
+    # Construction cost of HNSW bulk insert. These exist because bulk-insert
+    # latency was charted but never alerted: a 250k turboquant build could run
+    # for 45 minutes with nothing firing. See docs/roadmap.md section 9.2.
+    rules:
+      # Thresholded at 300s, which is above the healthy band and below the point
+      # where a build looks stuck. This only became expressible once the Go
+      # histogram buckets were widened past 30s in internal/metrics; with the old
+      # top bucket at 30 every slow build reported p95=+Inf and no threshold
+      # could separate a 107s healthy build from one that never finishes.
+      - alert: LongbowSlowBulkInsertByType
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (le, type) (rate(longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket[15m]))
+          ) > 300
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow HNSW bulk insert for type {{ $labels.type }}"
+          description: >-
+            P95 bulk insert latency for type {{ $labels.type }} is
+            {{ $value | humanizeDuration }}. Reference for a healthy 250k-vector
+            dim=128 build: float32 about 37s, turboquant 4-bit about 107s. This
+            alert is set at 300s, so it fires well past the healthy band rather
+            than merely noting that a quantised dtype costs more to build.
+            Check batch size and worker count first.
+
+      - alert: LongbowBulkInsertStalled
+        expr: >-
+          sum(rate(longbow_hnsw_bulk_insert_latency_by_type_seconds_count[15m])) == 0
+          and longbow_index_queue_depth > 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HNSW bulk insert stalled with a non-empty queue"
+          description: >-
+            No bulk insert has completed in 15 minutes while the indexing queue is
+            non-empty. The job is still consuming resources but is not progressing.
+
+      - alert: LongbowBulkInsertFasterThanFloat32
+        expr: >-
+          (
+            histogram_quantile(0.95,
+              sum by (le) (rate(longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant"}[30m]))
+            )
+            /
+            histogram_quantile(0.95,
+              sum by (le) (rate(longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32"}[30m]))
+            )
+          ) < 0.8
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TurboQuant bulk insert is implausibly faster than float32"
+          description: >-
+            TurboQuant construction is running at {{ $value | humanize }}x float32.
+            That is not an optimisation, it is the signature of the pre-a955a0c1
+            defect: neighbour selection read the float32 arena, which is empty for
+            every other element type, so every turboquant candidate was rejected and
+            the graph was left partly disconnected. At 40k vectors that produced mean
+            layer-0 degree 6.92 against an MMax0 of 16, with 27% of nodes unreachable.
+            Investigate graph connectivity, not throughput.
+
+      - alert: LongbowLowHNSWAverageDegree
+        expr: >-
+          min by (dataset) (longbow_hnsw_average_degree{level="0"}) < 8
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HNSW layer-0 average degree is implausibly low for dataset {{ $labels.dataset }}"
+          description: >-
+            Mean layer-0 degree is {{ $value | humanize }} for dataset
+            {{ $labels.dataset }}. A built HNSW graph sits close to its MMax0
+            budget: the measured healthy value is 15.7 against MMax0=16, and ~31
+            against the chart default MMax0=64. The threshold of 8 is set below
+            the lowest degree budget in use (LONGBOW_LOW_MEM uses MMax0=32), so it
+            should not fire on a healthy graph. The pre-a955a0c1 defect measured
+            6.92, with 27% of nodes unreachable at any ef, which is what this
+            catches. Check whether bulk insert completed, and whether
+            LONGBOW_HNSW_BULK_CHAIN_LINKS is off.
+
   - name: longbow_hnsw_contention_alerts
     rules:
       - alert: LongbowHNSWUpdateContentionHigh

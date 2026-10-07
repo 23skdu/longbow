@@ -179,6 +179,20 @@ spec:
               value: {{ .Values.env.LONGBOW_FLOAT64_EXCLUDE_EMLGO | default "1" | quote }}
             - name: LONGBOW_MATH_DISPATCH
               value: {{ .Values.env.LONGBOW_MATH_DISPATCH | default "" | quote }}
+            # Bulk-insert chain links: keeps bulk-inserted nodes reachable.
+            # See values.yaml for the recall tradeoff before disabling.
+            #
+            # Checked with hasKey rather than the `| default "1"` used above:
+            # sprig's default treats the integer 0 as empty, so `--set
+            # env.LONGBOW_HNSW_BULK_CHAIN_LINKS=0` would silently render "1" and
+            # leave the flag on. Since "0" is the whole point of this variable,
+            # that failure mode has to be closed off.
+            - name: LONGBOW_HNSW_BULK_CHAIN_LINKS
+              {{- if hasKey (default dict .Values.env) "LONGBOW_HNSW_BULK_CHAIN_LINKS" }}
+              value: {{ index .Values.env "LONGBOW_HNSW_BULK_CHAIN_LINKS" | toString | quote }}
+              {{- else }}
+              value: "1"
+              {{- end }}
             # GPU Configuration
             - name: LONGBOW_GPU_ENABLED
               value: {{ .Values.gpu.enabled | quote }}

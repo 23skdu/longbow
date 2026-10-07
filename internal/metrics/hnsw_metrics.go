@@ -5,6 +5,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// hnswBulkInsertBuckets are the buckets for the bulk-insert histograms.
+//
+// The upper end matters more than it looks. It previously stopped at 30s, which
+// made every bulk insert slower than 30 seconds report p95 and p99 as +Inf - a
+// 107s healthy 250k-vector turboquant build was indistinguishable from a build
+// that never finishes. That is unusable for alerting and for the per-type p99
+// panel on the ingestion-performance dashboard. The upper buckets encode the
+// reference band for 250k at dim=128: float32 ~37s, turboquant 4-bit ~107s.
+var hnswBulkInsertBuckets = []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 900}
+
 var (
 	// VectorPoolHits tracks the total number of vector pool hits.
 	VectorPoolHits = promauto.NewCounter(prometheus.CounterOpts{
@@ -97,7 +107,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_bulk_insert_duration_seconds",
 			Help:    "Duration of HNSW bulk vector insertion",
-			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
+			Buckets: hnswBulkInsertBuckets,
 		},
 	)
 
@@ -134,7 +144,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_bulk_insert_latency_by_type_seconds",
 			Help:    "Latency of HNSW bulk insert operations bucketed by vector type",
-			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
+			Buckets: hnswBulkInsertBuckets,
 		},
 		[]string{"type"},
 	)
@@ -144,7 +154,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_bulk_insert_latency_by_dim_seconds",
 			Help:    "Latency of HNSW bulk insert operations bucketed by dimension",
-			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5, 10, 30},
+			Buckets: hnswBulkInsertBuckets,
 		},
 		[]string{"dim"},
 	)

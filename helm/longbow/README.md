@@ -90,6 +90,38 @@ The following table lists the configurable parameters of the Longbow chart and t
 | `indexing.adaptive.threshold` | Threshold for adaptive migration | `1024` |
 | `ingestion.workerCount` | Number of ingestion workers (0=auto) | `0` |
 | `ingestion.adaptiveBatching` | Enable adaptive batching for puts | `true` |
+| `env.LONGBOW_HNSW_BULK_CHAIN_LINKS` | Link bulk-inserted nodes to their insertion-order predecessor so none is stranded | `"1"` |
+
+#### On `env.LONGBOW_HNSW_BULK_CHAIN_LINKS`
+
+Leave this on unless your vectors are already sorted or clustered by a
+distance-relevant key.
+
+Bulk-inserted nodes need at least one inbound link or part of the corpus is
+unreachable, and reverse links to pre-batch neighbours do not reliably survive
+pruning. The chain link to the insertion-order predecessor always does. On unsorted
+input that edge joins arbitrary nodes, and it measurably hurts recall on float32:
+**-60.9% dense, -81.0% filteredstring** against commit `2f4dc1c4`.
+
+It is not a performance knob. Disabling it does not make construction faster - at
+`a955a0c1` a 250,000-vector TurboQuant build took 236.1s without the chain links
+against 142.0s with them. If you have sorted input and want to confirm the tradeoff
+on your own data, set it to `"0"` and compare recall, not timing.
+
+> **Known chart quirk:** most `env.*` entries use `| default "<default>"` in
+> `deployment.yaml`, and sprig's `default` treats the *integer* `0` as empty. So
+> `--set env.LONGBOW_MAX_M0=0` silently renders the default `"32"` rather than `0`.
+> Use `--set-string` or quote the value when you mean zero. This affects any `env`
+> variable whose default is non-empty - `LONGBOW_MAX_M0`,
+> `LONGBOW_ADAPTIVE_M_MAX_FACTOR`, `LONGBOW_GRPC_MAX_RECV_MSG_SIZE`,
+> `LONGBOW_GRPC_MAX_SEND_MSG_SIZE` among them.
+>
+> `LONGBOW_HNSW_BULK_CHAIN_LINKS` is the exception: it uses an explicit `hasKey`
+> check, so `--set ...=0` works as expected.
+
+Note separately that TurboQuant construction is expected to be roughly **2.9x**
+float32, not faster. Before commit `a955a0c1` it was faster only because the layer-0
+graph was left partly disconnected; see `docs/roadmap.md` §9.2.
 
 ### ML & Inference
 

@@ -735,12 +735,20 @@ building a connected graph at that size with this code.
   `LONGBOW_HNSW_BULK_INSERT_THRESHOLD` above the dataset size makes 250k index in
   180 s, but it buys that by taking the broken-graph path. It is a way to measure
   the old behaviour on demand, not a fix.
-- **R22. Add a bulk-insert time budget with a diagnostic.** A bulk insert that
-  exceeds a configured wall-clock budget should log node count, elapsed time and
-  per-vector cost and mark the dataset degraded, instead of leaving an operator
-  watching `Indexing queue is filling up`. Independent of the above, and worth
-  having: the metric that answered this question the whole time
-  (`bulk_insert_duration_seconds`) had nothing consuming it.
+- **R22. Add a bulk-insert time budget with a diagnostic - PARTIALLY DONE.** The
+  alerting half is now in place: `LongbowSlowBulkInsertByType` and
+  `LongbowBulkInsertFasterThanFloat32` in `grafana/rules.yml`. The in-process half is
+  not. A bulk insert that exceeds a configured wall-clock budget should log node
+  count, elapsed time and per-vector cost and mark the dataset degraded, rather than
+  leaving an operator watching `Indexing queue is filling up`.
+
+  Note what was and was not missing. The metrics existed and were charted - the
+  `ingestion-performance` dashboard has a p99-by-type panel on
+  `longbow_hnsw_bulk_insert_latency_by_type_seconds` - so the gap was never
+  visibility of the metric. It was that `rules.yml` matched no bulk-insert
+  expression, so a 250k TurboQuant build could run for 45 minutes with nothing to
+  alert on. An earlier draft of this roadmap claimed the metric had "nothing
+  consuming it", which was wrong: the dashboard had been consuming it all along.
 
 ### 9.3 The in-process recall harness does not measure recall
 

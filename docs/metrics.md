@@ -285,6 +285,32 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_hnsw_bulk_insert_duration_seconds` | Duration of HNSW bulk vector insertion |
 | `longbow_hnsw_bulk_insert_latency_by_dim_seconds` | Latency of HNSW bulk insert operations bucketed by dimension |
 | `longbow_hnsw_bulk_insert_latency_by_type_seconds` | Latency of HNSW bulk insert operations bucketed by vector type |
+
+## Reading bulk-insert cost by type
+
+`longbow_hnsw_bulk_insert_latency_by_type_seconds` is the metric to watch when a
+large ingest seems slow. It carries a `type` label, and the ratio between types is
+the useful signal rather than any absolute value, because it normalises away machine
+speed.
+
+Compare the p99 of `type="float32"` against `type="turboquant"` on the same dataset.
+At 250,000 vectors, `dim=128`, bulk-inserting in 10,000-row batches, the measured
+construction cost is:
+
+| Vector type | Construction time | Relative to float32 |
+|---|---|---|
+| float32 | 36.8s | 1.00x |
+| turboquant 4-bit | 107.2s | **2.91x** |
+
+TurboQuant building slower than float32 is the expected, correct outcome. It was
+faster before `a955a0c1` only because the graph was left partly disconnected. A ratio
+below 1.0 is therefore a signal worth investigating as a possible *correctness*
+problem, not as good news: check that the layer-0 graph is fully connected. See
+`docs/roadmap.md` §9.2.
+
+Two alerts cover this: `LongbowSlowBulkInsertByType` fires on a per-type p99, and
+`LongbowBulkInsertFasterThanFloat32` fires when TurboQuant construction is
+implausibly cheaper than float32, which is the signature of the stranding bug.
 | `longbow_hnsw_bulk_vectors_processed_total` | Total number of vectors processed in bulk operations |
 | `longbow_hnsw_complex_ops_total` | Total number of complex number distance calculations |
 | `longbow_hnsw_context_check_cancelled_total` | Total number of times context check detected cancellation |

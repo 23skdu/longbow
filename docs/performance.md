@@ -3,6 +3,24 @@
 **Date:** 2026-09-26  
 **Baseline Release Candidate:** `v0.2.5-rc1`  
 
+> [!WARNING]
+> **Every TurboQuant row in this document predates `a955a0c1` and must be re-measured before it is cited.**
+>
+> That commit fixed neighbour selection reading the float32 arena, which is empty for
+> every element type other than float32. For TurboQuant, every candidate was rejected
+> and each node was left with a single link. Measured at 40,000 vectors, `dim=128`,
+> `MMax0=16`:
+>
+> | Revision | layer-0 edges | mean degree | reachable from entry point |
+> |---|---|---|---|
+> | `7f872022` (pre-fix) | 276,940 | 6.92 | **29,215 / 40,000 (73.0%)** |
+> | `a955a0c1` (post-fix) | 628,013 | 15.70 | **39,251 / 40,000 (98.1%)** |
+>
+> So a quarter of the corpus was unreachable at any `ef` when these numbers were taken.
+> The TurboQuant throughput and search figures below describe that index, not TurboQuant.
+> The float32 rows are unaffected. See `docs/roadmap.md` §9.2 for the bisection and R19
+> for the re-baselining plan.
+
 ## System Specifications
 
 | Component | Detail |
@@ -38,6 +56,10 @@ Streaming chunk upload support is now active and set as the default across all c
 ---
 
 ## 2. Ingestion Throughput & Memory Footprint
+
+Ingestion here is transport-side: streaming vectors into the dataset and packing them.
+It does not include HNSW graph construction, which for TurboQuant dominates wall clock at
+scale. See §4 and `docs/roadmap.md` §9.2.
 
 | Scale (Count) | Dim | Dtype | Engine | Ingestion (vec/s) | Ingestion (MB/s) | Peak RSS (MB) |
 |---|---|---|---|---|---|---|

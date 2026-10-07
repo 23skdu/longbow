@@ -136,6 +136,30 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | `LONGBOW_USE_DISK` | `false` | Force all vector reads through disk (including HNSW indexing). **Warning:** Makes HNSW graph construction 10-100x slower. Prefer `LONGBOW_AUTO_SPILL_DISK` for most use cases. |
 | `LONGBOW_AUTO_SPILL_DISK` | `true` | Auto-spill vectors to disk when memory exceeds threshold. HNSW indexing still runs in-memory; only spills after indexing completes. Recommended for large datasets. |
 | `LONGBOW_SPILL_THRESHOLD_RATIO` | `0.70` | Memory threshold (0.0-1.0) at which auto-spill triggers. Lower values spill earlier, using more disk but less RAM. |
+| `LONGBOW_HNSW_BULK_CHAIN_LINKS` | `1` (on) | Bulk-insert every node to its insertion-order predecessor at layer 0. Set to `0` to disable. See the tradeoff note below. |
+
+#### Bulk-insert chain links: `LONGBOW_HNSW_BULK_CHAIN_LINKS`
+
+Bulk insertion needs each new node to have at least one inbound link, otherwise part
+of the corpus is unreachable. Reverse links a fresh node hands to its pre-batch
+neighbours do not always survive: they are pruned as soon as such a neighbour is
+already at its connection limit. The chain link adds an edge to the
+insertion-order predecessor, which always survives.
+
+That fix has a cost on unsorted input, because the edge connects node *i* to node
+*i-1*, which are generally not near each other. Measured against `2f4dc1c4` on a
+250,000-vector float32 index:
+
+| Input | With chain links | Without | Change |
+|---|---|---|---|
+| dense | baseline | — | **-60.9%** recall |
+| filteredstring | baseline | — | **-81.0%** recall |
+
+**Keep it on (the default) unless your vectors are already sorted or clustered by a
+distance-relevant key.** It is the only thing preventing stranding, and
+`TestBulkInsert_CollinearGraphStaysConnected` covers that case. Disabling it does not
+speed up construction: at `a955a0c1` a 250k TurboQuant build took 236.1s without the
+chain links against 142.0s with them.
 
 `SQ8Enabled` and `TurboQuantEnabled` are not controlled by per-feature environment switches. They are `ArrowHNSWConfig` fields (`internal/store/types/index_types.go`) set programmatically: both default to `false`, SQ8 follows the configured `ArrowHNSWConfig` carried on the dataset, and TurboQuant is switched on when a dataset is created with the `turboquant` vector type (`internal/store/store_actions.go`, `internal/store/index/arrow_hnsw.go`). Use `LONGBOW_AUTO_QUANTIZE` (or `LONGBOW_LOW_MEM` for the memory budget) to influence the outcome from the environment.
 

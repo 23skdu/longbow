@@ -1,0 +1,209 @@
+rule_files:
+  - bulk_insert_rules.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_count{type="turboquant"}'
+        values: '0+1x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="5"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="10"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="30"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="60"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="120"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="300"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="900"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="+Inf"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_count{type="float32"}'
+        values: '0+1x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="5"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="10"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="30"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="60"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="120"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="300"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="900"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="+Inf"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_average_degree{dataset="ds1",level="0"}'
+        values: '15.7x60'
+      - series: 'longbow_index_queue_depth'
+        values: '5x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: LongbowSlowBulkInsertByType
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: LongbowBulkInsertFasterThanFloat32
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: LongbowLowHNSWAverageDegree
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: LongbowBulkInsertStalled
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_count{type="turboquant"}'
+        values: '0+1x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="5"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="10"}'
+        values: '0+9x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="30"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="60"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="120"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="300"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="900"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="+Inf"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_count{type="float32"}'
+        values: '0+1x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="5"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="10"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="30"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="60"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="120"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="300"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="900"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="float32",le="+Inf"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_average_degree{dataset="ds1",level="0"}'
+        values: '6.92x60'
+      - series: 'longbow_index_queue_depth'
+        values: '5x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: LongbowBulkInsertFasterThanFloat32
+        exp_alerts:
+          - exp_labels:
+              alertname: LongbowBulkInsertFasterThanFloat32
+              severity: critical
+            exp_annotations:
+              summary: "TurboQuant bulk insert is implausibly faster than float32"
+              description: >-
+                TurboQuant construction is running at Vx float32. That is not an
+                optimisation, it is the signature of the pre-a955a0c1 defect: neighbour
+                selection read the float32 arena, which is empty for every other element
+                type, so every turboquant candidate was rejected and the graph was left
+                partly disconnected. At 40k vectors that produced mean layer-0 degree
+                6.92 against an MMax0 of 16, with 27% of nodes unreachable. Investigate
+                graph connectivity, not throughput.
+      - eval_time: 50m
+        alertname: LongbowLowHNSWAverageDegree
+        exp_alerts:
+          - exp_labels:
+              alertname: LongbowLowHNSWAverageDegree
+              dataset: ds1
+              severity: critical
+            exp_annotations:
+              summary: "HNSW layer-0 average degree is implausibly low for dataset ds1"
+              description: >-
+                Mean layer-0 degree is V for dataset ds1. A built HNSW graph sits close to
+                its MMax0 budget: the measured healthy value is 15.7 against MMax0=16, and ~31
+                against the chart default MMax0=64. The threshold of 8 is set below
+                the lowest degree budget in use (LONGBOW_LOW_MEM uses MMax0=32), so it
+                should not fire on a healthy graph. The pre-a955a0c1 defect measured
+                6.92, with 27% of nodes unreachable at any ef, which is what this
+                catches. Check whether bulk insert completed, and whether
+                LONGBOW_HNSW_BULK_CHAIN_LINKS is off.
+      - eval_time: 50m
+        alertname: LongbowSlowBulkInsertByType
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_count{type="turboquant"}'
+        values: '0+1x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="5"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="10"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="30"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="60"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="120"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="300"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="900"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket{type="turboquant",le="+Inf"}'
+        values: '0+10x60'
+      - series: 'longbow_hnsw_average_degree{dataset="ds1",level="0"}'
+        values: '15.7x60'
+      - series: 'longbow_index_queue_depth'
+        values: '5x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: LongbowSlowBulkInsertByType
+        exp_alerts:
+          - exp_labels:
+              alertname: LongbowSlowBulkInsertByType
+              severity: warning
+              type: turboquant
+            exp_annotations:
+              summary: "Slow HNSW bulk insert for type turboquant"
+              description: >-
+                P95 bulk insert latency for type turboquant is V. Reference for a healthy
+                250k-vector dim=128 build: float32 about 37s, turboquant 4-bit about 107s.
+                This alert is set at 300s, so it fires well past the healthy band rather
+                than merely noting that a quantised dtype costs more to build. Check
+                batch size and worker count first.
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_bulk_insert_latency_by_type_seconds_count{type="turboquant"}'
+        values: '10x60'
+      - series: 'longbow_hnsw_average_degree{dataset="ds1",level="0"}'
+        values: '15.7x60'
+      - series: 'longbow_index_queue_depth'
+        values: '5x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: LongbowBulkInsertStalled
+        exp_alerts:
+          - exp_labels:
+              alertname: LongbowBulkInsertStalled
+              severity: critical
+            exp_annotations:
+              summary: "HNSW bulk insert stalled with a non-empty queue"
+              description: >-
+                No bulk insert has completed in 15 minutes while the indexing queue is
+                non-empty. The job is still consuming resources but is not progressing.

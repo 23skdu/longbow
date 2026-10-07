@@ -48,6 +48,12 @@ jobs:
       - name: Test
         run: go test -v -race -coverprofile=coverage.txt ./...
 
+      - name: Test benchmark validation helpers
+        # The benchmark report writer refuses to emit a report that violates
+        # qps * p50 <= workers * 1000, which makes that report unusable as a
+        # regression gate. That gate is only trustworthy if it is itself tested.
+        run: python3 scripts/tests/test_benchmark_validation.py
+
       - name: Verify 100% Package Test Coverage Gate
         run: |
           UNTESTED=$(go test -list '.*' ./... 2>&1 | grep '\[no test files\]' || true)

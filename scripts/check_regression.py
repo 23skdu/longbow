@@ -17,9 +17,13 @@ compared per build variant:
         --results data/perf_logs/perf_matrix_cpu_cpu_std_nodisk_*.json \\
         --variant cpu_std_nodisk
 
+Both inputs are first checked against qps * p50_ms <= workers * 1000. A report that
+violates it cannot gate a regression, because its QPS and latency are not true of
+its own recorded worker count. Use --skip-self-validation to override.
+
 Exit codes:
     0 = no regressions beyond threshold
-    1 = regressions detected
+    1 = regressions detected, or a report failed self-validation
     2 = missing files or parse errors
 """
 
@@ -32,6 +36,82 @@ from pathlib import Path
 def load_json(path: str) -> dict:
     with open(path) as f:
         return json.load(f)
+
+
+def _worker_count(doc: dict) -> int | None:
+    """Recover the worker count a report was produced with (roadmap R2).
+
+    Newer reports carry it in provenance; older ones only have it in the
+    validation block the writer now emits. Returns None when the report predates
+    provenance, which is itself worth reporting.
+    """
+    prov = doc.get("provenance") or {}
+    if prov.get("workers"):
+        return int(prov["workers"])
+    validation = doc.get("validation") or {}
+    if validation.get("workers"):
+        return int(validation["workers"])
+    return None
+
+
+def _self_validation_violations(doc: dict, label: str) -> tuple:
+    """Re-run QPS x P50 <= workers * 1000 over a report.
+
+    Returns (violations, unverifiable). A violation is a row that is impossible
+    given the worker count the report itself records, and it is a hard failure. A
+    report with no worker count at all is unverifiable rather than wrong: there is
+    nothing to be inconsistent with, and the fix is R2 (record provenance), not a
+    rejection of the run.
+
+    check_regression compares two reports and reports the difference. It cannot
+    tell you that either one is impossible on its own terms - a baseline whose
+    QPS and latency exceed its own worker cap makes every percentage it produces
+    meaningless - so the invariant is re-checked here as well, at the point where
+    someone is about to act on the comparison.
+    """
+    violations = []
+    unverifiable = []
+    for key in ("results", "configs"):
+        rows = doc.get(key)
+        if not isinstance(rows, list) or not rows:
+            continue
+        workers = _worker_count(doc)
+        if workers is None:
+            unverifiable.append(
+                f"{label}: no worker count recorded, so qps * p50_ms <= workers * 1000 "
+                f"cannot be checked. This report predates provenance recording."
+            )
+            continue
+        limit = float(workers) * 1000.0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            where = f"dim={row.get('dim')} count={row.get('count')} dtype={row.get('dtype')}"
+            search = row.get("search")
+            if isinstance(search, dict):
+                for mode, m in search.items():
+                    if not isinstance(m, dict):
+                        continue
+                    qps, p50 = m.get("qps"), m.get("p50")
+                    if not qps or not p50 or qps <= 0 or p50 <= 0:
+                        continue
+                    product = qps * p50
+                    if product > limit:
+                        violations.append(
+                            f"{label} {where} mode={mode}: QPS {qps:.1f} x P50 "
+                            f"{p50:.3f}ms = {product:.0f} > workers {workers} x 1000 = {limit:.0f}"
+                        )
+                continue
+            qps, p50 = row.get("qps"), row.get("p50")
+            if not qps or not p50 or qps <= 0 or p50 <= 0:
+                continue
+            product = qps * p50
+            if product > limit:
+                violations.append(
+                    f"{label} {where} mode={row.get('operation', '?')}: QPS {qps:.1f} x P50 "
+                    f"{p50:.3f}ms = {product:.0f} > workers {workers} x 1000 = {limit:.0f}"
+                )
+    return violations, unverifiable
 
 
 def match_config(baseline_cfg: dict, result_cfg: dict) -> bool:
@@ -117,6 +197,8 @@ def main():
     parser.add_argument("--variant", default=None,
                         help="Compare only this build variant of a consolidated baseline "
                              "(e.g. cpu_std_nodisk, gpu_emlgo_disk)")
+    parser.add_argument("--skip-self-validation", action="store_true",
+                        help="Compare even though a report violates qps * p50 <= workers * 1000")
     args = parser.parse_args()
 
     if not Path(args.baseline).exists():
@@ -134,7 +216,34 @@ def main():
         print(f"ERROR: failed to parse JSON: {e}")
         sys.exit(2)
 
+    # Roadmap R3: refuse to gate on a report that is impossible on its own terms.
+    b_viol, b_unver = _self_validation_violations(baseline, "baseline")
+    r_viol, r_unver = _self_validation_violations(results, "results")
+    self_validation = b_viol + r_viol
+    unverifiable = b_unver + r_unver
+
     regressions = check_regressions(baseline, results, args.threshold, args.variant)
+
+    if unverifiable:
+        print(f"WARNING: {len(unverifiable)} report(s) carry no worker count, so the")
+        print("qps * p50 <= workers * 1000 invariant was not checked for them:")
+        for v in unverifiable:
+            print(f"  - {v}")
+        print("Regenerate with --save-baseline to record provenance (roadmap R2).")
+        print()
+
+    if self_validation:
+        print(f"FAIL: self-validation failed ({len(self_validation)} violation(s)).")
+        print("A report whose QPS and latency exceed its own worker count cannot gate a")
+        print("regression: every percentage derived from it is meaningless.\n")
+        for v in self_validation[:25]:
+            print(f"  - {v}")
+        if len(self_validation) > 25:
+            print(f"  ... and {len(self_validation) - 25} more")
+        print()
+        if not args.skip_self_validation:
+            print("Pass --skip-self-validation to compare anyway. Not recommended.")
+            sys.exit(1)
 
     if regressions:
         print(f"FAIL: {len(regressions)} regression(s) detected (threshold: {args.threshold}%)\n")

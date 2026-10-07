@@ -53,6 +53,58 @@ python3 scripts/unified_benchmark.py --ci --runs 3 --save-baseline benchmarks/ba
 - Standalone regression checks: `python3 scripts/check_regression.py --baseline benchmarks/baseline_cpu.json --results <run.json> --threshold 10`
 - Zero-QPS entries in the baseline are skipped by design (`if b_qps <= 0: continue`) until real benchmark data is saved.
 
+### 3.1 Reports are now self-validating and carry provenance (R2, R3)
+
+**Provenance (R2).** Every report now carries a `provenance` block beside its numbers:
+git revision and whether the tree was dirty, the benchmark binary's path, size and
+mtime, `workers`, `queries`, `cpu_affinity`, `search_modes` as requested, `runs`,
+`duration`, `numa_bind`, `mode`, CPU count, and the values of the 15
+`LONGBOW_*` environment variables that change server behaviour. Anything in that
+list can move a QPS number without any code change, which is what made two runs
+previously indistinguishable from a regression.
+
+**Self-validation (R3).** The report writer now refuses to emit a report whose rows
+violate `QPS x P50_ms <= workers x 1000`. With W concurrent workers no more than W
+requests can be in flight, so a row claiming more concurrency than that allows is
+impossible, and every percentage derived from the file is meaningless. A violating
+run exits 2 and leaves the previous report untouched rather than overwriting it.
+
+`check_regression.py` re-runs the same invariant over both inputs before comparing
+them, because it can report the difference between two reports without noticing that
+either one is impossible on its own terms. The two cases are deliberately separated:
+
+- a row that violates the invariant given the worker count the report itself records
+  is a **hard failure** (exit 1);
+- a report with **no recorded worker count** is a warning, not a failure. There is
+  nothing for it to be inconsistent with, and the fix is to regenerate it with
+  provenance, not to reject a run.
+
+`scripts/tests/test_benchmark_validation.py` covers both helpers (13 tests), run in
+CI by the `Test benchmark validation helpers` step.
+
+**What the invariant says about the existing baseline.** `benchmarks/baseline_cpu.json`
+predates provenance and so is warned about, not rejected. Injecting a worker count
+shows its numbers are only self-consistent at **workers >= 8**:
+
+| dim | count | dtype | QPS | P50 ms | QPS x P50 | Consistent at |
+|---|---|---|---|---|---|---|
+| 128 | 10,000 | float32 | 2665.1 | 2.522 | 6721 | 8 workers |
+| 128 | 10,000 | int8 | 2825.6 | 2.740 | 7742 | 8 workers |
+| 128 | 50,000 | float32 | 2373.7 | 3.162 | 7506 | 8 workers |
+| 128 | 50,000 | int8 | 2121.7 | 3.641 | 7725 | 8 workers |
+
+The harness default is `--workers 8`, so the baseline is probably sound - but
+"probably" is not a provenance record, and it is exactly the gap R2 closes.
+
+- **R2. DONE.** Reports carry revision, build, affinity, workers, queries, modes,
+  runs, duration and the behaviour-affecting environment.
+- **R3. DONE.** The invariant is asserted at report generation, re-checked by
+  `check_regression.py`, and unit-tested.
+- **R29. Regenerate `benchmarks/baseline_cpu.json` with `--save-baseline`** so the
+  committed gate stops warning. Not done here because it is a full benchmark run,
+  and its numbers should be taken on an otherwise idle host - the same care that
+  section 9.4 showed is necessary for a trustworthy construction measurement.
+
 ---
 
 ## 4. Completed Work & Resolved Issues
@@ -393,7 +445,7 @@ The check is arithmetic. With `--workers W`, the reported QPS cannot exceed `W /
 
 ### Recommendations for the baseline
 
-- **R1. Stop diffing against `docs/performance.md`.** Treat it as an informational record only. The authoritative regression signal is a revision-to-revision A/B on identical hardware, cores, harness flags and client binary — the method used for everything in 8.3.
+- **R1. Stop diffing against `docs/performance.md`. [DONE - recorded as informational in section 3.1; not yet removed from docs/performance.md]** Treat it as an informational record only. The authoritative regression signal is a revision-to-revision A/B on identical hardware, cores, harness flags and client binary — the method used for everything in 8.3.
 - **R2. Regenerate the baseline as machine-readable, per-run artefacts** (`benchmarks/baseline_matrix.json` already has this shape) with the full parameter set recorded next to every number: binary revision, build tags, core affinity, worker count, query count, mode list, mode order, spill setting, and memory ceiling. One row per (revision, scale, dim, dtype, engine, mode).
 - **R3. Make the baseline self-validating.** Add the `QPS x P50 <= workers x 1000` invariant as an assertion in the report writer, and refuse to emit a report that violates it. A mis-recorded `--workers` then fails the report at generation time instead of being discovered by a later audit.
 - **R4. Reconcile `docs/testplan.md` §4 with the `docs/performance.md` header**, and state one worker count per tier. `docs/testplan.md` §3.2 also lists only 50k/100k/250k while §4, this document and the roadmap all target 500k; `docs/performance.md` has 1M rows and no 500k rows. Pick the tier list once.

@@ -182,6 +182,147 @@ def parse_bench_json(json_file):
     return metrics
 
 
+# Provenance and self-validation (roadmap R2/R3).
+#
+# A QPS number without the parameters it was measured under cannot gate a
+# regression, because a change in any of them moves the number as much as a
+# change in the code does. The harness previously recorded only dims, counts,
+# dtypes and duration, so two runs of the same binary on differently-affinitised
+# cores or with a different worker count were indistinguishable from a code
+# regression. collect_provenance records the rest.
+
+# Environment variables that change server behaviour and must therefore be
+# recorded with every number.
+PROVENANCE_ENV_VARS = (
+    "LONGBOW_CPU_AFFINITY",
+    "LONGBOW_MAX_MEMORY",
+    "LONGBOW_MAX_MEMORY_HARD",
+    "LONGBOW_AUTO_SPILL_DISK",
+    "LONGBOW_SPILL_THRESHOLD_RATIO",
+    "LONGBOW_USE_DISK",
+    "LONGBOW_HNSW_M",
+    "LONGBOW_HNSW_MMAX",
+    "LONGBOW_HNSW_MMAX0",
+    "LONGBOW_HNSW_EF_CONSTRUCTION",
+    "LONGBOW_HNSW_BULK_CHAIN_LINKS",
+    "LONGBOW_HNSW_ENSURE_INBOUND_EDGE",
+    "LONGBOW_MATH_DISPATCH",
+    "LONGBOW_GPU_ENABLED",
+    "GOMAXPROCS",
+)
+
+
+def git_revision(repo_dir=None):
+    """Return (revision, dirty) for the working tree, or (None, None)."""
+    try:
+        rev = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_dir, capture_output=True, text=True, timeout=15,
+        )
+        if rev.returncode != 0:
+            return None, None
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_dir, capture_output=True, text=True, timeout=15,
+        )
+        return rev.stdout.strip(), bool(status.stdout.strip())
+    except Exception:
+        return None, None
+
+
+def binary_provenance(path):
+    """Return size and mtime for a binary, so two builds are distinguishable."""
+    if not path:
+        return None
+    try:
+        st = os.stat(path)
+        return {"path": str(path), "size": st.st_size, "mtime": int(st.st_mtime)}
+    except OSError:
+        return {"path": str(path), "size": None, "mtime": None}
+
+
+def collect_provenance(args):
+    """Build the provenance block recorded next to every benchmark result.
+
+    Anything recorded here can change the numbers without any code change, so it
+    is what makes a later revision-to-revision A/B meaningful (roadmap R1).
+    """
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    rev, dirty = git_revision(repo)
+
+    affinity = getattr(args, "cpu_affinity", None) or os.environ.get("LONGBOW_CPU_AFFINITY")
+
+    prov = {
+        "revision": rev,
+        "revision_dirty": dirty,
+        "binary": binary_provenance(getattr(args, "bench_tool", None) or os.environ.get("LONGBOW_BENCH_TOOL")),
+        "workers": getattr(args, "workers", None),
+        "queries": getattr(args, "queries", None),
+        "cpu_affinity": affinity,
+        "search_modes_requested": getattr(args, "search_modes", None),
+        "runs": getattr(args, "runs", None),
+        "duration": getattr(args, "duration", None),
+        "numa_bind": getattr(args, "numa_bind", None),
+        "mode": getattr(args, "mode", None),
+        "python_version": platform.python_version(),
+        "cpu_count": os.cpu_count(),
+        "env": {k: os.environ[k] for k in PROVENANCE_ENV_VARS if k in os.environ},
+    }
+    return prov
+
+
+def validate_concurrency_invariant(results, workers):
+    """Check QPS x P50 <= workers x 1000 for every search result row.
+
+    QPS and latency are only meaningful together with the worker count that
+    produced them: with W concurrent workers no more than W requests can be in
+    flight, so QPS x P50_ms cannot exceed W x 1000. A row that violates it means
+    either the worker count was recorded wrong or the two numbers came from
+    different runs - both of which silently invalidate every regression decision
+    made against the file (roadmap R3).
+
+    Returns a list of human-readable violations; empty means the file is sound.
+    """
+    if not workers or workers <= 0:
+        return ["no worker count recorded, cannot validate the QPS x P50 <= workers x 1000 invariant"]
+
+    limit = float(workers) * 1000.0
+    violations = []
+    for row in results or []:
+        if not isinstance(row, dict):
+            continue
+        where = f"dim={row.get('dim')} count={row.get('count')} dtype={row.get('dtype')}"
+
+        # Rows shaped {"search": {mode: {...}}} - the vector matrix.
+        search = row.get("search")
+        if isinstance(search, dict):
+            for mode, m in search.items():
+                if not isinstance(m, dict):
+                    continue
+                qps, p50 = m.get("qps"), m.get("p50")
+                if not qps or not p50 or qps <= 0 or p50 <= 0:
+                    continue
+                product = qps * p50
+                if product > limit:
+                    violations.append(
+                        f"{where} mode={mode}: QPS {qps:.1f} x P50 {p50:.3f}ms "
+                        f"= {product:.0f} > workers {workers} x 1000 = {limit:.0f}"
+                    )
+            continue
+
+        # Rows with top-level qps/p50, e.g. exchange_search.
+        qps, p50 = row.get("qps"), row.get("p50")
+        if not qps or not p50 or qps <= 0 or p50 <= 0:
+            continue
+        product = qps * p50
+        if product > limit:
+            violations.append(
+                f"{where} mode={row.get('operation', '?')}: QPS {qps:.1f} x P50 "
+                f"{p50:.3f}ms = {product:.0f} > workers {workers} x 1000 = {limit:.0f}"
+            )
+    return violations
+
+
 class BenchmarkRunner:
     def __init__(self, args):
         self.args = args
@@ -3083,27 +3224,55 @@ class BenchmarkRunner:
 
         self.print_summary()
 
+        # Self-validate before writing (roadmap R3). A report that violates
+        # QPS x P50 <= workers x 1000 is refused rather than emitted, because a
+        # number that cannot be true of its own worker count cannot gate a
+        # regression: every later comparison against it is meaningless.
+        provenance = collect_provenance(self.args)
+        violations = validate_concurrency_invariant(self.results, provenance.get("workers"))
+
+        payload = {
+            "mode": self.args.mode,
+            "timestamp": self.timestamp,
+            "platform": f"{platform.system()} {platform.machine()}",
+            "config": {
+                "dims": dims,
+                "counts": counts,
+                "dtypes": dtypes,
+                "duration": self.args.duration,
+            },
+            "provenance": provenance,
+            "validation": {
+                "invariant": "qps * p50_ms <= workers * 1000",
+                "workers": provenance.get("workers"),
+                "ok": not violations,
+                "violations": violations,
+            },
+            "results": self.results,
+            "completed_configs": [list(c) for c in self.completed_configs],
+            "failed_configs": [list(c) for c in self.failed_configs],
+            "exhausted_configs": [list(c) for c in self.exhausted_configs],
+        }
+
+        if violations:
+            print("\n" + "=" * 80)
+            print("REFUSING TO WRITE REPORT: self-validation failed")
+            print("=" * 80)
+            print(f"Invoked with --workers {provenance.get('workers')}, which caps in-flight")
+            print("requests. These rows claim more concurrency than that allows:")
+            for v in violations[:25]:
+                print(f"  - {v}")
+            if len(violations) > 25:
+                print(f"  ... and {len(violations) - 25} more")
+            print()
+            print("Either the worker count was recorded wrongly, or QPS and latency came")
+            print("from different runs. Re-run with an accurate --workers. The previous")
+            print(f"report at {self.output_file} is left untouched.")
+            sys.exit(2)
+
         # Save results
         with open(self.output_file, "w") as f:
-            json.dump(
-                {
-                    "mode": self.args.mode,
-                    "timestamp": self.timestamp,
-                    "platform": f"{platform.system()} {platform.machine()}",
-                    "config": {
-                        "dims": dims,
-                        "counts": counts,
-                        "dtypes": dtypes,
-                        "duration": self.args.duration,
-                    },
-                    "results": self.results,
-                    "completed_configs": [list(c) for c in self.completed_configs],
-                    "failed_configs": [list(c) for c in self.failed_configs],
-                    "exhausted_configs": [list(c) for c in self.exhausted_configs],
-                },
-                f,
-                indent=2,
-            )
+            json.dump(payload, f, indent=2)
 
         # Print summary
         self.print_summary()

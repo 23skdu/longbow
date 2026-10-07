@@ -554,14 +554,67 @@ currently resolve one (§9.3). §8.3's QPS table should be treated as unverified
   corpora (99.9% reachable on both, asserted at a 99% floor) and
   `TestBulkInsert_UnorderedCorpusRecallFloored`. The file documents the reverted gate
   and its measured effect, so a future attempt fails here instead of in production.
-- **R26. Force an inbound edge when reverse links are all pruned.** The prerequisite
-  for R5, and the only real fix for the stranding the chain link currently hides.
+- **R26. Force an inbound edge when reverse links are all pruned - ATTEMPTED AND
+  REVERTED, see 8.3.2.**
 - **R27. Re-verify §8.3's server-level QPS table before acting on it.** The Step 2
   bisection put the cliff at `a955a0c1` and three methods agreed, but the in-process
   benchmark cannot reproduce the magnitude today. Either it was partly a property of
   the machine state when measured, or the benchmark does not exercise the same ingest
   shape as the server. That distinction matters: if it is the latter, then the fix's
   benefit is invisible to the harness meant to gate it.
+
+### 8.3.2 R26 was attempted, and it is not achievable the way it was specified
+
+R26 - "force an inbound edge from the node's nearest pre-batch neighbour when all
+its reverse links were pruned" - was implemented two ways and both were reverted. It
+is the prerequisite for R5, so this closes off the obvious approach and says what
+the actual fix has to look like.
+
+**Attempt 1 - inline, where the reverse links are written.** Instrumented: of
+19,488 checks, **18,652 found the edge already present**, only 11 appended and 825
+evicted - and the graph still finished **22% unreachable**. The edges are real when
+they are written and gone by the end.
+
+**Attempt 2 - a repair pass at the end of the bulk insert, where the graph is
+quiescent.** Correct in principle, and it does repair nodes: with the chain link
+disabled it forced 814 and 936 edges across sub-batches. Reachability with the chain
+off went from **78.1% to 78.7%** - no better, because:
+
+- the pass runs per `AddBatch`, and **the next `AddBatch` prunes the forced edges
+  away**. Only a few hundred nodes are stranded per pass, all of them get fixed, and
+  the fix does not survive to the end of ingest;
+- the pass costs an O(nodes x probe) list read on every `AddBatch` regardless.
+
+**Why the chain link survives and a forced edge does not.** This is the useful part.
+A forced edge is hosted on the node's *nearest* neighbour, which is a long-lived,
+heavily-connected node that receives many competing insertions and is pruned
+constantly. The chain edge is hosted between two nodes inside the *same sub-batch*,
+and a fresh node sees far less contention, so the edge it holds is not immediately
+displaced. Durability here is a function of how contested the host node is, not of
+whether the edge is distance-selected.
+
+**What this rules out.** Any fix that repairs reachability after the fact, during a
+continuing bulk insert, is not going to hold. A candidate that lands must be one of:
+
+- **A pruning rule that never drops a node's last inbound edge.** Requires tracking
+  in-degree globally, and a read of it inside the pruning path. This is the
+  principled fix and it is what R26 should have said.
+- **DiskANN's `keep_pruned_connections`.** Pruned edges are not discarded but demoted
+  to a secondary list, so no edge is ever actually lost and a later pass can
+  re-promote them. Larger change; adds a second traversal structure per node.
+- **Host repair edges on nodes inside the current sub-batch** rather than on popular
+  old neighbours. Cheapest, and closest to what the chain link already does, but it
+  reintroduces the arbitrary edge that R5 exists to remove, so it only helps if the
+  host is chosen by distance among the sub-batch.
+
+- **R26. REFORMULATED - "never drop a node's last inbound edge".** The attempts above
+  are evidence that the post-hoc framing does not work, not that the guarantee is
+  unwanted. Kept open with the three candidate mechanisms above.
+- **R28. Measure how much contention each candidate host sees.** The difference
+  between a repair that holds and one that does not was node age and sub-batch
+  membership, neither of which is visible in the code today. Before choosing a
+  mechanism, count insertions per host node over a bulk insert, because that number
+  predicts durability and would tell us whether R5 is achievable at all.
 
 ### Recommendations for the bulk-insert chain link
 

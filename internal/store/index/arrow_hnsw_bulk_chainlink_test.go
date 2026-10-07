@@ -237,8 +237,12 @@ func TestBulkInsert_UnorderedCorpusStaysReachable(t *testing.T) {
 	const n, dims, batch = 20_000, 128, 10_000
 
 	corpora := map[string]func(*testing.T) (arrow.RecordBatch, [][]float32){
-		"shuffled":     func(t *testing.T) (arrow.RecordBatch, [][]float32) { return shuffledCorpus(t, n, dims, seedFromEnv(99)) },
-		"naturalorder": func(t *testing.T) (arrow.RecordBatch, [][]float32) { return randomOrderedCorpus(t, n, dims, seedFromEnv(99)) },
+		"shuffled": func(t *testing.T) (arrow.RecordBatch, [][]float32) {
+			return shuffledCorpus(t, n, dims, seedFromEnv(99))
+		},
+		"naturalorder": func(t *testing.T) (arrow.RecordBatch, [][]float32) {
+			return randomOrderedCorpus(t, n, dims, seedFromEnv(99))
+		},
 	}
 
 	for name, build := range corpora {

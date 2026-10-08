@@ -957,20 +957,17 @@ A `slog.Warn` accompanies each. Alerts: `LongbowSIMDKernelMismatch` (critical, o
 `mismatch`) and `LongbowSIMDKernelScalarFallbackRatio` (info). A panel on
 `index-storage` charts fallbacks split by reason.
 
-**The two reasons must stay separate, and float32 is why.** On an AVX2 host **no float32
-kernel is registered in `simd.GetKernel` at any dimension or metric.** So float32 takes
-the `unavailable` fallback on every single index - and that fallback,
-`simd.EuclideanDistance`, is itself an auto-dispatching AVX2 kernel, which is why
-float32 is the fastest dtype in the matrix rather than the slowest. Consequences:
+**The two reasons must stay separate.** They mean different things and need different
+responses: `mismatch` is a defective kernel, `unavailable` is a missing one.
 
-- `longbow_hnsw_simd_kernel_fallbacks_total{element_type="float32"}` is permanently
-  non-zero and entirely benign. An alert on "any fallback" would fire forever; only
-  `reason="mismatch"` indicates a defect. This is why the reasons were split rather than
-  counted together.
-- **The validation gate never runs for float32**, because there is nothing to validate.
-  float32 correctness rests on `simd.EuclideanDistance` dispatching correctly, not on
-  the check. That is a real gap in the gate's coverage, and it is the opposite of what
-  the gate was assumed to provide.
+This section originally recorded that **no float32 kernel was registered** at any
+dimension or metric, so float32 took `unavailable` on every index, and that the fallback
+(`simd.EuclideanDistance`, itself an auto-dispatching AVX2 kernel) was why float32
+stayed the fastest dtype in the matrix. **That observation was right about the symptom
+and wrong about the cause**, and the wrong cause turned out to be the more valuable half.
+
+The kernels were registered all along - 21 of them for float32, more than any other type.
+They were simply unreachable. See R33.
 
 **The hypothesis is half right, and the half that was wrong found a real bug.**
 `int8`, `uint8`, `int16`, `uint16`, `int32`, `uint32` and `float64` are registered and
@@ -1026,10 +1023,56 @@ that an argument about which kernel might be slow does not.
   path. Both are answerable now that `resolveDistanceKernel` reports its outcome, because
   a dtype confirmed to be running SIMD and still slow points at the kernel rather than
   at dispatch.
-- **R33. Register a float32 kernel, or accept that the gate does not cover float32.**
-  Leaving it unregistered means the validation that protects the other 12 element types
-  does not protect the one the product uses most. The alternative is documenting that
-  float32 is validated only by its own tests.
+- **R33. DONE, and it was a real bug rather than a missing feature.** The premise - that
+  float32 had no registered kernel - was wrong. It had 21, and not one of them could be
+  returned by `simd.GetKernel`.
+
+  `GetKernel` resolves a registered kernel by type-asserting it to
+  `func([]T, []T) (float32, error)`. In Go a value of a *defined* type does not satisfy an
+  assertion to its underlying type; they are different types. The five kernel types in
+  `internal/simd/simd_types.go` - `distanceFunc` (float32), `distanceF16Func`,
+  `distanceFloat64Func`, `distanceComplex64Func`, `distanceComplex128Func` - were defined
+  types, so the assertion inside `case distanceFunc:` could never succeed. Every kernel
+  registered under one of them was dead code.
+
+  | Type | Registered | Resolved before | after |
+  |---|---|---|---|
+  | float32 | 21 | **0** | 21 |
+  | float16 | 21 | **0** | 21 |
+  | complex64 | 21 | **14** | 21 |
+  | complex128 | 21 | **14** | 21 |
+  | float64 | 28 | 28 | 28 |
+  | int8/uint8/int16/uint16/int32/uint32/int64/uint64 | 21-28 each | 21-28 | 21-28 |
+
+  287 keys walked, 287 now resolve. The fix is to make those five types *aliases*
+  (`type distanceFunc = func(...)`), which makes them identical to their underlying
+  signatures so the assertion succeeds.
+
+  **It also changes which function runs, and it is faster.** The registered kernels are
+  not the same function as the fallback they replace (different code pointers), and they
+  are dimension-specialised. On the kernel microbenchmark, same host, 300ms x 3:
+
+  | dims | old fallback | registered kernel | |
+  |---|---|---|---|
+  | 128 | 17.0 ns | **9.3 ns** | 1.8x |
+  | 384 | 45.1 ns | **29.5 ns** | 1.55x |
+  | 768 | 92.4 ns | **71.6 ns** | 1.25x |
+  | 1024 | 124.8 ns | **92.1 ns** | 1.37x |
+  | 1536 | 207.4 ns | 195.8 ns | 1.06x |
+
+  **That is a kernel-level figure and must not be read as end-to-end QPS.** The distance
+  kernel is one component of a search, so the search-level gain is smaller and is not
+  measured here. Re-baselining float32 numbers is an open follow-up, not a claim.
+
+  What this does settle is coverage: the validation gate now protects float32, the dtype
+  the product uses most, in addition to the twelve types it already protected. The
+  existing `TestFloat32HasNoRegisteredKernel` was written to fire when this changed, and
+  it did; it is replaced by `TestFloat32KernelsResolveAndPassValidation`. A new
+  `internal/simd/kernel_resolution_test.go` walks the registry and asserts no registered
+  key is unresolvable, so this cannot regress silently again.
+
+  `LongbowSIMDKernelScalarFallbackRatio` no longer tells operators to ignore float32 -
+  that advice was correct when written and is now actively misleading.
 - **R34. Fix the pre-existing panel overlaps in `index-storage.json`.** 192 overlapping
   grid cells exist at HEAD, predating this work. Not touched here.
 

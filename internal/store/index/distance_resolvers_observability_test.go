@@ -54,64 +54,92 @@ func TestMatchingKernelIsAccepted(t *testing.T) {
 func TestResolutionOutcomesAreCounted(t *testing.T) {
 	fb := distanceFallbacks[float32]{euclidean: simd.EuclideanDistance}
 
-	// Dims 7 has no registered kernel, so this must resolve to the scalar path
-	// and be counted as `unavailable`.
-	got := resolveDistanceKernel(simd.MetricEuclidean, 7, fb, "resolvertest_unavailable")
+	// No float32 kernel is registered for MetricL2Squared at any dimension, so
+	// this must resolve to the scalar path and be counted as `unavailable`.
+	//
+	// Metric and dims together, not dims alone: the registry falls back from an
+	// exact dimension to the generic dims=0 entry, so an unusual width is still
+	// resolvable whenever the type has a generic kernel. Before R33 that made
+	// dims=7 a usable stand-in for "unregistered", because float32 resolved
+	// nothing at all; now it resolves, and only an unregistered metric is a
+	// reliable way to reach the `unavailable` branch.
+	if k := simd.GetKernel[float32](simd.MetricL2Squared, 7); k != nil {
+		t.Fatal("expected no float32 L2Squared kernel; the unavailable branch cannot be exercised")
+	}
+	got := resolveDistanceKernel(simd.MetricL2Squared, 7, fb, "resolvertest_unavailable")
 	if got == nil {
 		t.Fatal("resolver returned nil for a type with a scalar fallback")
 	}
 
 	if n := testutil.ToFloat64(metrics.HNSWSIMDKernelFallbacksTotal.
-		WithLabelValues("resolvertest_unavailable", "euclidean", "unavailable")); n < 1 {
-		t.Errorf("no `unavailable` fallback counted for an unregistered dimension: %v", n)
+		WithLabelValues("resolvertest_unavailable", "l2_squared", "unavailable")); n < 1 {
+		t.Errorf("no `unavailable` fallback counted for an unregistered metric: %v", n)
 	}
 	if n := testutil.ToFloat64(metrics.HNSWSIMDKernelFallbacksTotal.
-		WithLabelValues("resolvertest_unavailable", "euclidean", "mismatch")); n != 0 {
+		WithLabelValues("resolvertest_unavailable", "l2_squared", "mismatch")); n != 0 {
 		t.Errorf("a missing kernel was misreported as a mismatch: %v", n)
 	}
 
 	// An element type that *is* registered resolves to SIMD and is counted so.
-	// float32 is not, which is the finding below; int8 is.
+	// int8 and float32 both are.
 	resolveDistanceKernel(simd.MetricEuclidean, 128,
 		distanceFallbacks[int8]{euclidean: simd.EuclideanDistanceInt8}, "resolvertest_int8")
 	if n := testutil.ToFloat64(metrics.HNSWSIMDKernelResolvedTotal.
 		WithLabelValues("resolvertest_int8", "euclidean", "simd")); n < 1 {
 		t.Errorf("a registered element type was not counted as SIMD: %v", n)
 	}
+	resolveDistanceKernel(simd.MetricEuclidean, 128,
+		distanceFallbacks[float32]{euclidean: simd.EuclideanDistance}, "resolvertest_float32")
+	if n := testutil.ToFloat64(metrics.HNSWSIMDKernelResolvedTotal.
+		WithLabelValues("resolvertest_float32", "euclidean", "simd")); n < 1 {
+		t.Errorf("float32 did not resolve to SIMD and is not counted as such: %v", n)
+	}
 }
 
-// TestFloat32HasNoRegisteredKernel is the finding that shapes how these metrics
-// should be read.
+// TestFloat32KernelsResolveAndPassValidation records what used to be the single
+// largest gap in this file.
 //
-// No float32 kernel is registered in simd.GetKernel on an AVX2 host, for any
-// dimension or metric. So resolveDistanceKernel takes the `unavailable` fallback for
-// float32 on *every* index - and that fallback, simd.EuclideanDistance, is itself
-// an auto-dispatching AVX2 kernel, which is why float32 is the fastest dtype in the
-// matrix rather than the slowest.
+// Until R33, GetKernel[float32] returned nil for every metric and dimension even
+// though 21 float32 kernels were registered, so resolveDistanceKernel took the
+// `unavailable` fallback for float32 on *every* index. That was not "float32 has
+// no kernel"; it was "float32's kernels cannot be reached". The five named kernel
+// types in internal/simd/simd_types.go were defined types rather than aliases, and
+// a value of a defined type does not satisfy a type assertion to its underlying
+// signature, so every kernel registered under one of them was dead. The same held
+// for float16, complex64 and complex128, in part.
 //
-// Two consequences, both of which this test exists to prevent someone "fixing":
+// Two things follow, and both matter:
 //
-//   - `longbow_hnsw_simd_kernel_fallbacks_total{element_type="float32"}` is
-//     permanently non-zero and entirely benign. An alert that fires on "any
-//     fallback" would fire forever; only `reason="mismatch"` indicates a defect.
-//   - The validation gate never runs for float32, because there is nothing to
-//     validate. float32 correctness rests on simd.EuclideanDistance dispatching
-//     correctly, not on this check.
+//   - The validation gate now covers float32, which is the dtype the product uses
+//     most. Previously the gate protected twelve element types and not that one.
+//   - float32 search now reaches the registered dimension-specific kernels instead
+//     of the auto-dispatching fallback, which is measurably faster - about 1.8x at
+//     dims=128 and 1.25-1.55x at 384-1024 on the kernel microbenchmark. That is a
+//     kernel-level figure, not end-to-end QPS; the distance kernel is only part of
+//     a search, so the search-level gain is smaller.
 //
-// Integer types and float64 are registered, so for those the gate is live - and it
-// passes, which disproves the hypothesis in roadmap section 8.7 that a silent
-// mismatch explains the int16/uint16 deficit.
-func TestFloat32HasNoRegisteredKernel(t *testing.T) {
+// float32 correctness no longer rests solely on simd.EuclideanDistance dispatching
+// correctly - a float32 kernel that disagrees with its scalar reference is now
+// rejected here, with reason="mismatch", exactly like every other type.
+func TestFloat32KernelsResolveAndPassValidation(t *testing.T) {
+	ref := simd.EuclideanDistance
 	for _, dims := range []int{128, 256, 384, 512, 768, 1024} {
 		for _, m := range []simd.MetricType{simd.MetricEuclidean, simd.MetricCosine, simd.MetricDotProduct} {
-			if simd.GetKernel[float32](m, dims) != nil {
-				t.Errorf("dims=%d %s: a float32 kernel is now registered; "+
-					"the findings in this file about float32 taking the fallback need revisiting",
-					dims, m)
+			k := simd.GetKernel[float32](m, dims)
+			if k == nil {
+				t.Errorf("dims=%d %s: no float32 kernel resolves; float32 would silently "+
+					"fall back to scalar for every query", dims, m)
 			}
 		}
+		if !kernelMatchesReference(simd.GetKernel[float32](simd.MetricEuclidean, dims),
+			simd.MetricEuclidean, distanceFallbacks[float32]{euclidean: ref}, dims) {
+			t.Errorf("dims=%d: the float32 euclidean kernel disagrees with its scalar "+
+				"reference and would be rejected as a mismatch", dims)
+		}
 	}
-	// The integer types are registered, so the gate applies to them.
+	// The integer types and the other float/complex types are registered too, so
+	// the gate applies to them, and it passes - which disproves the hypothesis in
+	// roadmap section 8.7 that a silent mismatch explains the int16/uint16 deficit.
 	for name, registered := range map[string]bool{
 		"int8":   simd.GetKernel[int8](simd.MetricEuclidean, 128) != nil,
 		"int16":  simd.GetKernel[int16](simd.MetricEuclidean, 128) != nil,

@@ -642,9 +642,15 @@ groups:
     # An invisible kernel fallback was the failure mode the validation exists to
     # prevent. Only `reason="mismatch"` indicates a defect: a resolved SIMD kernel
     # disagreed with its scalar reference and was rejected in favour of the slower
-    # path. `reason="unavailable"` is routine - float32 alone takes it on every
-    # index on an AVX2 host, because no float32 kernel is registered and its
-    # fallback is itself an AVX2 dispatching kernel.
+    # path. `reason="unavailable"` is routine - it means no kernel is registered for
+    # that type/metric/dims, which is expected outside the common widths.
+    #
+    # float32 used to take `unavailable` on every index, and this group said so.
+    # It no longer does: float32's kernels were registered all along but unreachable,
+    # because the five named kernel types in internal/simd/simd_types.go were defined
+    # types rather than aliases and so failed the type assertion GetKernel uses. They
+    # are aliases now, so float32 resolves and is validated like every other type.
+    # A non-zero float32 fallback count from here on is therefore a real signal.
     rules:
       - alert: LongbowSIMDKernelMismatch
         expr: >-
@@ -680,8 +686,9 @@ groups:
             More than 99% of distance resolutions for element type
             {{ $labels.element_type }} fell back to the scalar path over the last hour.
             If a SIMD kernel is expected for this type, this is a throughput problem
-            with no other symptom. Ignore it for float32, which has no registered
-            kernel on an AVX2 host and whose fallback is already SIMD.
+            with no other symptom. Do not dismiss this for float32: its kernels resolve
+            and this alert firing on float32 means they stopped resolving, which is the
+            exact failure that was silent for months.
 
   - name: longbow_bulk_insert_alerts
     # Construction cost of HNSW bulk insert. These exist because bulk-insert

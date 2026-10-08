@@ -629,7 +629,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Fallback reason counts. Only reason=\"mismatch\" indicates a defect: a resolved SIMD kernel disagreed with its scalar reference and was rejected, leaving the index on the slower scalar path. reason=\"unavailable\" is routine and float32 takes it on every index on an AVX2 host, because no float32 kernel is registered and its fallback is itself an AVX2 dispatching kernel. Chart the two reasons separately - a combined total looks like a permanent failure when it is not.",
+      "description": "Fallback reason counts. Only reason=\"mismatch\" indicates a defect: a resolved SIMD kernel disagreed with its scalar reference and was rejected, leaving the index on the slower scalar path. reason=\"unavailable\" is routine and means no kernel is registered for that type/metric/dims. float32 used to take it on every index; that was a defect, not a design, and float32 kernels now resolve and are validated like every other type. Chart the two reasons separately - a combined total looks like a permanent failure when it is not.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",

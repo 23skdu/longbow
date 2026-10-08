@@ -16,19 +16,31 @@ var (
 )
 
 // Function pointer types for dispatch
+//
+// The five kernel types below are *aliases*, not defined types, and that is
+// load-bearing rather than a style choice. GetKernel resolves a registered
+// kernel by type-asserting it to `func([]T, []T) (float32, error)`. A value of
+// a defined type whose underlying type is that signature does NOT satisfy the
+// assertion - the named type and its underlying type are different types - so
+// if these were defined types, every kernel registered under them would be
+// present in the registry and still unresolvable. float32 hit exactly that: 17
+// registered kernels, all of them dead, and the product's primary dtype
+// reporting scalar/unavailable for every metric and dimension.
+//
+// As aliases they are identical to their underlying signatures, so the
+// assertion succeeds and the registered kernels are actually reachable.
 type (
-	distanceFunc          func(a, b []float32) (float32, error)
+	distanceFunc           = func(a, b []float32) (float32, error)
+	distanceF16Func        = func(a, b []float16.Num) (float32, error)
+	distanceComplex64Func  = func(a, b []complex64) (float32, error)
+	distanceComplex128Func = func(a, b []complex128) (float32, error)
+	distanceFloat64Func    = func(a, b []float64) (float32, error)
+
 	distanceBatchFunc     func(query []float32, vectors [][]float32, results []float32) error
 	distanceBatchFlatFunc func(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error
 	distanceSQ8BatchFunc  func(query []byte, vectors [][]byte, results []float32) error
 	distanceF16BatchFunc  func(query []float16.Num, vectors [][]float16.Num, results []float32) error
 	adcDistanceBatchFunc  func(table []float32, flatCodes []byte, m int, results []float32) error
-
-	distanceF16Func func(a, b []float16.Num) (float32, error)
-
-	distanceComplex64Func  func(a, b []complex64) (float32, error)
-	distanceComplex128Func func(a, b []complex128) (float32, error)
-	distanceFloat64Func    func(a, b []float64) (float32, error)
 
 	// DistanceKernel is a generic distance function type for cached kernels.
 	DistanceKernel[T any] func(a, b []T) (float32, error)

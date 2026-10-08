@@ -169,11 +169,32 @@ def summarize(ratios, threshold_pct):
         )
     else:
         agree = max(down, up) / n
+        consistent = agree >= 0.9
+        big_enough = abs(median_pct) >= threshold_pct
         summary["verdict"] = "inconclusive"
-        summary["reason"] = (
-            f"median {median_pct:+.1f}% but only {agree:.0%} of pairs agree; "
-            f"direction is not consistent, so this is noise not a change"
-        )
+        # Four distinct cases, and the distinction matters: a consistent but
+        # sub-threshold effect is a real effect that is simply not worth gating
+        # on, whereas an inconsistent one is noise. Collapsing them into one
+        # message reported "100% of pairs agree; direction is not consistent",
+        # which is self-contradictory and appeared on the first real hardware run.
+        if big_enough and not consistent:
+            summary["reason"] = (
+                f"median {median_pct:+.1f}% is beyond +/-{threshold_pct}%, but only "
+                f"{agree:.0%} of pairs agree; direction is not consistent, so this "
+                f"is noise not a change"
+            )
+        elif consistent and not big_enough:
+            summary["reason"] = (
+                f"{agree:.0%} of pairs agree, but median {median_pct:+.1f}% is "
+                f"inside +/-{threshold_pct}%; a consistent but sub-threshold effect "
+                f"is not a regression"
+            )
+        else:
+            summary["reason"] = (
+                f"median {median_pct:+.1f}% is inside +/-{threshold_pct}% and only "
+                f"{agree:.0%} of pairs agree; neither magnitude nor direction "
+                f"supports a verdict"
+            )
     return summary
 
 
@@ -234,29 +255,26 @@ _QPS_RE = re.compile(r"^(?P<mode>[a-z0-9_]+)_qps$")
 
 
 def load_qps(result_path):
-    """Extract {(dtype, count, mode): qps} from a harness result JSON."""
-    sys.path.insert(0, _HERE)
-    try:
-        import importlib.util
+    """Extract {(dtype, count, mode): qps} from harness result JSON.
 
-        spec = importlib.util.spec_from_file_location("unified_benchmark_ab", _RUNNER)
-        if spec is None or spec.loader is None:
-            return {}
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["unified_benchmark_ab"] = module
-        spec.loader.exec_module(module)
-    except Exception:
-        return {}
+    `result_path` may be a single path or a list of them. Accepting a bare string
+    is deliberate: the obvious call is `load_qps(files[-1])`, and iterating a
+    string yields characters rather than paths, which silently produced an empty
+    mapping and therefore an empty - and passing - report.
+
+    Unparseable files raise rather than being skipped. A file that exists but
+    cannot be read is a broken run, and swallowing it would turn a measurement
+    failure into a clean bill of health.
+    """
+    if isinstance(result_path, str):
+        result_path = [result_path]
 
     out = {}
     for path in result_path:
         if not os.path.exists(path):
             continue
-        try:
-            with open(path) as f:
-                doc = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            continue
+        with open(path) as f:
+            doc = json.load(f)
         for row in doc.get("results", []) or []:
             if not isinstance(row, dict):
                 continue
@@ -299,7 +317,10 @@ def main():
     p.add_argument("--threshold", type=float, default=5.0,
                    help="Percentage at which a consistent change is a verdict")
     p.add_argument("--cpu-affinity", default=None,
-                   help="Pin both arms to these cores, e.g. 12-15")
+                   help="Pin both arms to these cores, e.g. 12-15. Note this pins "
+                        "the server AND the client to the same cores, so leave "
+                        "headroom for --workers or the client contends with the "
+                        "server it is measuring.")
     p.add_argument("--memory", default=None, help="Server memory ceiling, e.g. 14GB")
     p.add_argument("--seed", type=int, default=None,
                    help="Client seed. Set it explicitly so both arms see the "
@@ -340,7 +361,15 @@ def main():
         if rc != 0 or not results:
             print(f"    arm failed (rc={rc}); see {log_path}")
             continue
-        qps = load_qps(results[-1])
+        # The glob matches every run ever made under this label, including the
+        # `_latest.json` alias and files from earlier invocations, so pick the
+        # most recently written one rather than relying on name sort order.
+        newest = max(results, key=os.path.getmtime)
+        qps = load_qps(newest)
+        if not qps:
+            print(f"    arm produced no QPS measurements in {newest}; "
+                  f"treating as a failed arm")
+            continue
         samples[(variant, rep)] = qps
 
     # Pair adjacent reps: the runner guarantees baseline/candidate alternate, so
@@ -364,6 +393,15 @@ def main():
                         "baseline_qps": [x for x in base if x],
                         "candidate_qps": [x for x in cand if x]})
         rows.append(summary)
+
+    if not rows:
+        # An empty report is indistinguishable from a clean run at a glance, and
+        # exiting 0 would make it look like one. This is how the string-vs-list
+        # bug in load_qps shipped a passing verdict with no measurements at all.
+        print("\nERROR: no measurements were extracted from any arm.")
+        print("       Every arm either failed or yielded an empty result set, so")
+        print("       there is nothing to compare. Refusing to report a verdict.")
+        return 2
 
     # Report.
     print("\n" + "=" * 96)

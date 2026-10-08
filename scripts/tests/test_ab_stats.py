@@ -12,8 +12,10 @@ gate declaring a verdict on noise, and that is a property of the rule.
 """
 
 import importlib.util
+import json
 import os
 import sys
+import tempfile
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -90,17 +92,50 @@ class TestSummarizeVerdicts(unittest.TestCase):
         self.assertEqual(s["verdict"], "improvement")
 
     def test_same_median_without_consistency_is_inconclusive(self):
-        # The crux of the whole harness. Six pairs with a median of -11% but the
-        # direction split 3/3 is noise, and must not be reported as a regression.
+        # The crux of the whole harness. Six pairs straddling zero in both
+        # directions are noise, and must not be reported as a regression even
+        # though half the pairs moved a long way.
         s = ab.summarize(ratios(-30, -20, -10, 10, 20, 30), 5.0)
         self.assertEqual(s["verdict"], "inconclusive")
-        self.assertIn("not consistent", s["reason"])
+        self.assertEqual(s["median_pct"], 0.0)
+        self.assertIn("inside", s["reason"])
 
     def test_consistent_but_below_threshold_is_inconclusive(self):
         # -2% every pair is a real, consistent effect, but under a 5% threshold
         # it is not a regression worth gating on.
         s = ab.summarize(ratios(-2, -2, -2, -2), 5.0)
         self.assertEqual(s["verdict"], "inconclusive")
+
+    def test_sub_threshold_reason_does_not_claim_inconsistency(self):
+        """Caught on the first real hardware run, not in the synthetic suite.
+
+        A null A/B pinned to four cores returned 100% of pairs agreeing at a
+        -3.4% median. The verdict was right (inconclusive) but the reason read
+        "only 100% of pairs agree; direction is not consistent", which contradicts
+        itself. The synthetic tests asserted the verdict and never the message.
+        """
+        s = ab.summarize(ratios(-3.4, -2.0, -1.0, -5.0), 5.0)
+        self.assertEqual(s["verdict"], "inconclusive")
+        self.assertIn("sub-threshold", s["reason"])
+        self.assertNotIn("not consistent", s["reason"])
+
+    def test_message_never_contradicts_the_measured_agreement(self):
+        """No branch may say "not consistent" when every pair agrees."""
+        cases = [
+            (ratios(-3, -3, -3), 5.0),
+            (ratios(-30, -30, -30), 5.0),
+            (ratios(30, 30, 30), 5.0),
+            (ratios(-0.5, -0.5, -0.5, -0.5), 5.0),
+            (ratios(50, -50, 50, -50), 5.0),
+        ]
+        for r, t in cases:
+            s = ab.summarize(r, t)
+            agree = max(s["pairs_down"], s["pairs_up"]) / s["pairs"]
+            if agree == 1.0:
+                self.assertNotIn(
+                    "not consistent", s["reason"],
+                    f"reason contradicts 100% agreement: {s['reason']}",
+                )
 
     def test_consistent_at_exactly_threshold_is_a_regression(self):
         s = ab.summarize(ratios(-5, -5, -5, -5), 5.0)
@@ -178,6 +213,92 @@ class TestBuildOrder(unittest.TestCase):
         order = ab.build_order(2)
         self.assertNotEqual(order, ["baseline", "candidate",
                                     "baseline", "candidate"])
+
+
+class TestLoadQps(unittest.TestCase):
+    """Regression tests for a bug that made the gate report a clean pass.
+
+    `load_qps` iterates its argument, and `main()` passed a single path string.
+    Iterating a string yields characters, `os.path.exists('d')` is false for every
+    one, and the function returned an empty mapping. The report table was then
+    empty and the process exited 0 - a passing verdict carrying no measurements.
+    """
+
+    def _write(self, tmp, name, qps=4563.5):
+        path = os.path.join(tmp, name)
+        with open(path, "w") as f:
+            json.dump(
+                {"results": [{"dtype": "float32", "count": 20000,
+                              "search": {"dense": {"qps": qps}}}]},
+                f,
+            )
+        return path
+
+    def test_bare_string_path_is_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "r.json")
+            self.assertEqual(
+                ab.load_qps(path),
+                {("float32", 20000, "dense"): 4563.5},
+            )
+
+    def test_list_of_paths_is_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "r.json")
+            self.assertEqual(ab.load_qps([path]), {("float32", 20000, "dense"): 4563.5})
+
+    def test_missing_file_is_skipped_not_fatal(self):
+        self.assertEqual(ab.load_qps("/nonexistent/nope.json"), {})
+
+    def test_malformed_file_raises_instead_of_being_swallowed(self):
+        # Previously this was caught and turned into an empty mapping, so a
+        # corrupt result file looked identical to a successful empty run.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "bad.json")
+            with open(path, "w") as f:
+                f.write("{not json")
+            with self.assertRaises(json.JSONDecodeError):
+                ab.load_qps(path)
+
+    def test_zero_qps_is_dropped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "r.json", qps=0)
+            self.assertEqual(ab.load_qps(path), {})
+
+
+class TestEmptyReportIsNotAPass(unittest.TestCase):
+    def test_no_rows_returns_setup_error_not_success(self):
+        """An empty report must never exit 0.
+
+        This is the property whose absence let the load_qps bug report a pass.
+        It is enforced by invoking the harness with a mocked runner that produces
+        no usable measurements.
+        """
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            base = os.path.join(tmp, "base")
+            cand = os.path.join(tmp, "cand")
+            for p in (base, cand):
+                with open(p, "w") as f:
+                    f.write("")
+                os.chmod(p, 0o755)
+            proc = subprocess.run(
+                [sys.executable, _SCRIPT,
+                 "--baseline-binary", base, "--candidate-binary", cand,
+                 "--counts", "1000", "--dtypes", "float32",
+                 "--reps", "3", "--duration", "1", "--timeout", "5",
+                 "--port", "6391",
+                 "--log-dir", tmp, "--label", "empty_probe",
+                 "--out", os.path.join(tmp, "v.json")],
+                capture_output=True, text=True,
+            )
+            # The arms fail to start (they are empty files), so either path must
+            # be a non-zero exit. 0 would mean "no regression" on no data.
+            self.assertNotEqual(
+                proc.returncode, 0,
+                "harness reported success despite producing no measurements",
+            )
+            self.assertIn("arm failed", proc.stdout + proc.stderr)
 
 
 class TestSourceInvariants(unittest.TestCase):

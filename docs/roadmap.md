@@ -1121,11 +1121,53 @@ remaining rows are addressed, rather than that it does today.
       --seed 42 --out data/perf_logs/ab_verdict.json
   ```
 
-- **R38. Run the matrix through `ab_benchmark.py` before publishing any of §8.1.**
-  The harness is written and tested but has not been run across the full matrix, so
-  every §8.1 number is still a single un-interleaved measurement. Until that run
-  happens, §8.1 should not be quoted as a baseline, and `--threshold 10` in §3 should be
-  read as "not a gate".
+- **R38. Measured noise floor: the harness works, and this host is noisy.**
+
+  The first thing to run was **not** a comparison of two revisions. Comparing two
+  different binaries would confound "the harness works" with "the change matters", so
+  the first run was a **null A/B**: the same binary on both arms, whose true ratio is
+  exactly 1.0. Any verdict from it is by definition a false positive, which makes it a
+  direct measurement of the gate's behaviour on real hardware rather than in
+  simulation. `float32`, 20,000 vectors, `dense`, 300 queries, 4 workers, 12s.
+
+  **Unpinned.** Median +4.1%, spread -12%..+9%, verdict `inconclusive`. Raw QPS on the
+  *same binary* ranged 3,594-4,717 - a **31% spread with nothing changed at all**.
+
+  **Pinned to cores 12-15.** Baseline tightened to 3,363-3,594, a 6% spread, but one
+  arm spiked down to 2,202 and dragged a pair to -35%. Median -3.4%, 4/4 pairs agreeing,
+  verdict `inconclusive`.
+
+  Both correct. Neither is a false regression. But the honest reading is uncomfortable:
+
+  - The real per-pair spread on this host is **-35%..+9%**, far wider than the
+    synthetic model R37 used (which assumed sigma 0.2-0.4 lognormal).
+  - A **5% threshold is marginal**, not comfortable. It happened to hold here only
+    because the paired median suppresses single outliers.
+  - **Four pairs is too few** for the median to be robust: one spike moved it by 3
+    points. Anything quoting a threshold tighter than ~8% should use `--reps 8` or
+    more, not the default 6, and should not trust a single pair.
+
+  **`--cpu-affinity` pins the server *and* the client to the same cores**
+  (`unified_benchmark.py:1080` and `:1408`). With `--workers 4` on a 4-core pin, the
+  client contends with the server it is measuring. This is still a fair comparison -
+  both arms suffer identically - and it is why pinning produced *lower* absolute QPS
+  with tighter spread. Leave more cores than `workers + 1`.
+
+  Two bugs surfaced by actually running it, both fixed in the same change:
+
+  - `load_qps` iterates its argument and `main()` passed a bare path string.
+    Iterating a string yields characters, `os.path.exists('d')` is false for each, and
+    the function returned an empty mapping. The report table was then empty and the
+    process **exited 0** - a clean pass carrying no measurements. It now accepts either
+    a path or a list, picks the newest result file by mtime rather than name order, and
+    a run that extracts nothing is a hard error rather than a silent pass.
+  - With 4/4 pairs agreeing at -3.4%, the reason string read *"only 100% of pairs
+    agree; direction is not consistent"* - self-contradictory, because the `else`
+    branch conflated "magnitude too small" with "direction inconsistent". The four
+    cases are now distinguished. The synthetic tests had asserted the *verdict* for
+    that case and never the *message*, which is why it survived.
+
+  Still outstanding: this was one config on one host. §8.1 remains un-rebaselined.
 - **R39. Decide what CI does.** The honest options are (a) run an interleaved A/B in CI
   against a stored candidate binary, which costs `reps x 2` full matrix runs, or (b) drop
   the benchmark-regression job and say the measurement is manual. Option (b) is cheaper

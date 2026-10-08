@@ -186,5 +186,61 @@ class TestGoClientStillPasses(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
+
+
+class TestMultiRunMerge(unittest.TestCase):
+    """R30/R36: multiple files merge by minimum, and that is not a noise fix."""
+
+    def _run(self, qps_by_mode, dim=128, dtype="float32", count=10000):
+        return {
+            "results": [{
+                "dim": dim, "dtype": dtype, "count": count,
+                "ingest": {"vec_per_sec": 1000.0},
+                "search": {m: {"qps": q} for m, q in qps_by_mode.items()},
+            }],
+        }
+
+    def test_minimum_is_taken_per_mode(self):
+        merged = cr.merge_runs_minimum(None, [
+            self._run({"dense": 100.0}),
+            self._run({"dense": 500.0}),
+            self._run({"dense": 300.0}),
+        ])
+        self.assertEqual(merged["results"][0]["search"]["dense"]["qps"], 100.0)
+
+    def test_modes_are_merged_independently(self):
+        merged = cr.merge_runs_minimum(None, [
+            self._run({"dense": 100.0, "sparse": 900.0}),
+            self._run({"dense": 800.0, "sparse": 200.0}),
+        ])
+        search = merged["results"][0]["search"]
+        self.assertEqual(search["dense"]["qps"], 100.0)
+        self.assertEqual(search["sparse"]["qps"], 200.0)
+
+    def test_config_key_includes_bit_depth(self):
+        merged = cr.merge_runs_minimum(None, [
+            {"results": [{"dim": 128, "dtype": "turboquant", "count": 1000,
+                          "tq_bits": 4, "search": {"dense": {"qps": 10.0}}}]},
+            {"results": [{"dim": 128, "dtype": "turboquant", "count": 1000,
+                          "tq_bits": 8, "search": {"dense": {"qps": 20.0}}}]},
+        ])
+        # Two distinct configurations, not one merged row.
+        self.assertEqual(len(merged["results"]), 2)
+
+    def test_merge_is_not_order_dependent(self):
+        runs = [self._run({"dense": 100.0}), self._run({"dense": 500.0})]
+        a = cr.merge_runs_minimum(None, runs)
+        b = cr.merge_runs_minimum(None, list(reversed(runs)))
+        self.assertEqual(a["results"][0]["search"]["dense"]["qps"],
+                         b["results"][0]["search"]["dense"]["qps"])
+
+    def test_help_text_does_not_claim_min_is_a_noise_fix(self):
+        # R36 measured that combining runs makes the gate worse. Anyone reading
+        # --help must not be told otherwise.
+        src = open(_REGRESSION).read()
+        self.assertIn("does NOT make the gate reliable", src)
+        self.assertIn("Interleaving", src)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1017,13 +1017,83 @@ remaining rows are addressed, rather than that it does today.
   recommendation. Option 2 is a single-character change and is better than a gate
   that cries wolf.
 
-- **R35. Re-measure at the scale the gate actually runs at.** The 52.9% figure is for
-  an in-process 50k search. Server-level end-to-end runs mix in ingest, indexing and
-  gRPC, and the roadmap's own matrix recorded 40%+ per-mode swings. The real
-  false-positive rate of `check_regression.py` is probably worse than 60%, and it
-  has not been measured. Measuring it means running the identical binary twice
-  through the full harness and reporting how often the gate fires. Until then the
-  gate's own reliability is unknown.
+- **R35. DONE, retrospectively, and it is much worse than the in-process figure.**
+  78 usable run files already in `data/perf_logs/` were grouped by identical config
+  block and session, which approximates "same harness settings, same binary". Two
+  sessions had enough repetition to measure:
+
+  | Session | Runs | Config | Series (>=3 runs) | Pairs | Median worst-dir spread | 10% gate | 20% | 50% |
+  |---|---|---|---|---|---|---|---|---|
+  | 2026-09-26 | 8 | 10k, dim 128, float32 | 13 | 208 | 21.7% | **76.9%** | 53.4% | 18.3% |
+  | 2026-10-04 | 47 | 50k, dim 128, float32 | 13 | 2173 | 83.3% | **89.4%** | 81.8% | 64.8% |
+
+  **A 10% gate fires falsely 77-89% of the time comparing a run to another run of the
+  same configuration.** At 50k it is still 64.8% at a 50% threshold. Pooled across all
+  143 series with >=3 runs, the false-positive rate is 86.1% at 10%, 76.2% at 20%,
+  68.9% at 30%, 57.3% at 50%.
+
+  This also explains the roadmap's own incoherence: §8.1's rows disagree with each other
+  by amounts that look like regressions and are not, because each row is a single
+  un-interleaved run.
+
+  **Honest caveat, and it does not weaken the conclusion.** These files predate the
+  provenance recording in §3.1, so it cannot be *proved* that all 47 runs in the
+  2026-10-04 session were the same binary. Some of that spread may be real code change.
+  But 2026-10-04 was a single session with one config block, and a median worst-direction
+  spread of 83.3% is not a plausible signature of deliberate code changes - those land in
+  a handful of configs, not across 13 modes uniformly. Treat 89.4% as an upper bound on
+  the noise and as a demonstration that the gate is unfit, either way.
+
+- **R36. DONE, and min-of-N - the fix I expected - makes things WORSE.** Measured
+  directly on the sessions in R35, splitting runs into disjoint baseline and candidate
+  groups and counting how often the 10% gate fires against itself:
+
+  | Session | runs | min-of-1 | min-of-2 | min-of-3 | min-of-5 | min-of-8 |
+  |---|---|---|---|---|---|---|
+  | 20261004_2 | 53 | 55.0% | 68.3% | 91.7% | 78.3% | 98.3% |
+  | 20260926_1 | 13 | 53.3% | 73.3% | 75.0% | 90.0% | - |
+  | 20261005_0 | 8 | 6.7% | 23.3% | 46.7% | - | - |
+
+  Median and max were tested too, and behave the same way:
+
+  | Session | min-of-1 | median-of-1 | max-of-1 | min-of-3 | median-of-3 | max-of-3 |
+  |---|---|---|---|---|---|---|
+  | 20261004_2 | 41.7% | 45.0% | 38.3% | 63.3% | 63.3% | 63.3% |
+  | 20260926_1 | 41.7% | 48.3% | 26.7% | 86.7% | 81.7% | 73.3% |
+
+  **No aggregator helps, and every one degrades as N grows.** The intuition that the
+  minimum would be stable because interference only ever makes a run slower is wrong
+  in the way the estimate is built: taking a min over N runs does not estimate the
+  fastest achievable time, it selects the single most favourable fluctuation out of N.
+  That estimate gets more extreme as N grows - a winner's curse - so a larger baseline
+  group is more likely to hold an unrepresentatively fast number, and the gate fires
+  more. The same mechanism explains why median and max, which should be immune, also
+  degrade: the problem is not the aggregator, it is that **the variation between
+  separate harness invocations is systematic, not zero-mean.**
+
+  Separate invocations differ in ways the reports do not record: which cores were
+  free, what the memory ceiling resolved to, what else was on the host, and - for
+  these files - which binary was under test. That is not a sampling distribution to be
+  averaged away.
+
+  `check_regression.py` still accepts multiple `--results` and `--baseline` files and
+  merges them by minimum; that is a convenience for combining runs, and the help text
+  and docstring now say plainly that it does **not** make a percentage threshold on
+  un-interleaved runs usable.
+
+- **R30. The only remedy that works is interleaving the two binaries inside one
+  invocation**, and that is what every reliable number in this document actually did -
+  §8.3's server A/B and bisection, §8.3 step 5, and §9.4. It is not currently
+  automated. `scripts/` has no harness that alternates a baseline binary and a
+  candidate binary within a single run, which is why the gate has had to be run
+  un-interleaved this whole time.
+
+- **R37. Build the interleaved A/B harness, or stop calling the result a gate.**
+  `unified_benchmark.py` takes a binary from `bin/`; an interleaved harness would
+  build both revisions, then alternate them within one invocation at the same config,
+  reporting paired per-mode differences. Until that exists, `--threshold 10` should be
+  read as "not a gate" rather than as a 10% tolerance. Given the measurements above,
+  the honest default is to stop publishing a single-run regression count at all.
 
 ### 8.7 Recommended order of work
 

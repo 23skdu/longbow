@@ -150,6 +150,64 @@ def _tq_bits(cfg):
     return 0
 
 
+def merge_runs_minimum(baseline, runs):
+    """Combine several run files by taking the minimum QPS per (config, mode).
+
+    Also applies to ingest throughput, and carries provenance and validation from
+    the first run that has them. Anything not comparable across runs - the
+    completed/failed/exhausted config lists, which are per-invocation - is taken
+    from the first run rather than merged, since a union would misreport which run
+    actually completed what.
+
+    IMPORTANT: this is a convenience, not a noise remedy. Roadmap R36 measured it
+    and it makes the gate worse, not better - min, median and max over more runs
+    all raise the false-positive rate, because variation between separate harness
+    invocations is systematic rather than zero-mean. Interleaving the two binaries
+    within one invocation is the only approach that worked.
+    """
+    # baseline is optional here: merge_runs_minimum is used both for combining
+    # candidate runs and for reducing a multi-run baseline, and only the latter
+    # needs the first run preserved as the metadata donor.
+    def key_of(cfg):
+        return (cfg.get("dim"), cfg.get("dtype"), cfg.get("count"), _tq_bits(cfg))
+
+    best = {}
+    order = []
+    for run in runs:
+        for cfg in run.get("configs", run.get("results", [])):
+            k = key_of(cfg)
+            if k not in best:
+                order.append(k)
+                best[k] = json.loads(json.dumps(cfg))  # deep copy
+                continue
+            cur = best[k]
+            b_ing = (cur.get("ingest") or {}).get("vec_per_sec") or 0
+            r_ing = (cfg.get("ingest") or {}).get("vec_per_sec") or 0
+            if r_ing > b_ing:
+                cur.setdefault("ingest", {})["vec_per_sec"] = r_ing
+            for mode, m in (cfg.get("search") or {}).items():
+                rm = m.get("qps") or 0
+                if rm <= 0:
+                    continue
+                cm = cur.setdefault("search", {}).setdefault(mode, {})
+                if (cm.get("qps") or 0) <= 0 or rm < cm["qps"]:
+                    # Strictly less: ties keep the earlier run's value, which keeps
+                    # the result independent of file ordering.
+                    cur["search"][mode] = dict(m)
+    if not best:
+        return {}
+    out = dict(runs[0]) if runs[0] is not None else {}
+    out["results"] = [best[k] for k in order]
+    out["configs"] = [best[k] for k in order]
+    for field in ("provenance", "validation", "mode"):
+        for run in runs:
+            if field in run:
+                out[field] = run[field]
+                break
+    out["merged_from"] = len(runs)
+    return out
+
+
 def check_regressions(baseline: dict, results: dict, threshold: float, variant: str | None = None) -> list:
     regressions = []
     baseline_configs = baseline.get("configs", baseline.get("results", []))
@@ -213,8 +271,35 @@ def check_regressions(baseline: dict, results: dict, threshold: float, variant: 
 
 def main():
     parser = argparse.ArgumentParser(description="Check benchmark regressions")
-    parser.add_argument("--baseline", required=True, help="Path to baseline JSON")
-    parser.add_argument("--results", required=True, help="Path to results JSON")
+    parser.add_argument(
+        "--baseline",
+        required=True,
+        nargs="+",
+        help=(
+            "One or more baseline JSON files, combined by minimum QPS per "
+            "configuration, symmetrically with --results. See the note on "
+            "--results: combining runs is convenient but does not make a "
+            "percentage threshold on un-interleaved runs usable (R36)."
+        ),
+    )
+    parser.add_argument(
+        "--results",
+        required=True,
+        nargs="+",
+        help=(
+            "One or more results JSON files. With several, the MINIMUM QPS per "
+            "configuration is combined across them. "
+            "NOTE: this does NOT make the gate reliable. Measured over the runs "
+            "already in data/perf_logs (docs/roadmap.md R35/R36), a single-run "
+            "gate at a 10%% threshold fires falsely 38-55%% of the time against "
+            "another run of the same configuration, and combining runs makes it "
+            "WORSE, monotonically: min-of-3 reaches 63-92%% and min-of-5 78-98%%. "
+            "Min, median and max all behave the same way, because the variation "
+            "between separate harness invocations is systematic rather than "
+            "zero-mean noise. The only remedy that works is interleaving the "
+            "baseline binary and the candidate binary inside one invocation."
+        ),
+    )
     parser.add_argument("--threshold", type=float, default=10.0,
                         help="Regression threshold percentage (default: 10)")
     parser.add_argument("--variant", default=None,
@@ -224,20 +309,39 @@ def main():
                         help="Compare even though a report violates qps * p50 <= workers * 1000")
     args = parser.parse_args()
 
-    if not Path(args.baseline).exists():
-        print(f"ERROR: baseline file not found: {args.baseline}")
-        sys.exit(2)
+    for path in args.baseline:
+        if not Path(path).exists():
+            print(f"ERROR: baseline file not found: {path}")
+            sys.exit(2)
 
-    if not Path(args.results).exists():
-        print(f"ERROR: results file not found: {args.results}")
-        sys.exit(2)
+    for path in args.results:
+        if not Path(path).exists():
+            print(f"ERROR: results file not found: {path}")
+            sys.exit(2)
 
     try:
-        baseline = load_json(args.baseline)
-        results = load_json(args.results)
+        if len(args.baseline) > 1:
+            baseline = merge_runs_minimum(
+                None, [load_json(p) for p in args.baseline]
+            )
+            print(f"Merging {len(args.baseline)} baseline runs by minimum QPS.")
+        else:
+            baseline = load_json(args.baseline[0])
+        runs = []
+        for path in args.results:
+            if not Path(path).exists():
+                print(f"ERROR: results file not found: {path}")
+                sys.exit(2)
+            runs.append(load_json(path))
     except json.JSONDecodeError as e:
         print(f"ERROR: failed to parse JSON: {e}")
         sys.exit(2)
+
+    if len(runs) > 1:
+        results = merge_runs_minimum(baseline, runs)
+        print(f"Merging {len(runs)} runs by minimum QPS per configuration.")
+    else:
+        results = runs[0]
 
     # Roadmap R3: refuse to gate on a report that is impossible on its own terms.
     b_viol, b_unver = _self_validation_violations(baseline, "baseline")

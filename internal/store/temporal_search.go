@@ -1268,6 +1268,18 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 			dim = int(vIdx.GetDimension())
 		}
 		if dim > 0 {
+			// R11b: this vector is deliberately left zeroed, and it reads like a
+			// missing assignment. It is not. TemporalSearchRequest carries no query
+			// vector - only a dataset, search type, k and a timestamp - so there is
+			// nothing to populate. As-of search is an enumeration ("k records that
+			// existed as of T"), not a similarity search.
+			//
+			// Routing an enumeration through the vector index therefore ranks the
+			// visible records by distance to the origin, i.e. by norm, and the
+			// distances returned are distances to the zero vector rather than any
+			// measure of relevance. That is the pinned behaviour in
+			// temporal_asof_semantics_test.go, and it is why temporal results must
+			// not be compared against modes that take a real query vector.
 			queryVec := make([]float32, dim)
 			options := lbtypes.SearchOptions{}
 

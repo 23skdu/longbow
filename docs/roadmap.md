@@ -778,17 +778,48 @@ temporal's numbers yet, and it is worth being explicit about why.
   line up, so it passed interactively and failed under a redirect. Verified stable
   over five consecutive redirected runs.
 
-- **R11b. STILL OPEN, and now located precisely.** `SearchAsOf` allocates the query
-  vector and never fills it:
+- **R11b. RESOLVED: the zero query vector is not a bug, and it cannot be fixed the
+  way the item assumed.**
+
+  `SearchAsOf` allocates `queryVec := make([]float32, dim)` and never fills it, which
+  looks exactly like a missing assignment. It is not, and the way to tell is to read
+  the request type rather than the search:
 
   ```go
-  // internal/store/temporal_search.go, in SearchAsOf
-  queryVec := make([]float32, dim)   // allocated, then passed to the search as-is
+  type TemporalSearchRequest struct {
+      Dataset, SearchType string
+      K int
+      Timestamp, StartTime, EndTime int64
+      WindowSize int
+      Duration time.Duration
+      Filters []Filter
+  }
   ```
 
-  Every temporal as-of query therefore searches for the zero vector. Until this is
-  decided, temporal measures a different operation from every other mode in the
-  matrix and its numbers should not be compared against them.
+  **There is no query vector field to populate.** The API is an enumeration - "give me
+  k records that existed as of timestamp T" - and was never a similarity search. So
+  "if it is not intended, populate the query vector" is not available as a fix; there
+  is nothing to populate it *from*.
+
+  What that means in practice, now pinned by tests in
+  `internal/store/temporal_asof_semantics_test.go`:
+
+  - Ranking is by **distance to the origin**, i.e. by norm, because the zero vector is
+    the query. The k smallest-norm visible records come back, not the k most recent.
+  - Returned distances are distances to the zero vector and carry **no semantic
+    meaning**. They should not be interpreted as relevance.
+  - The timestamp filter itself is correct: records added after the as-of timestamp
+    are excluded, and the result set is monotonic in k.
+
+  **The caveat stands, and is now precise rather than vague.** Temporal measures a
+  different operation from every other mode in the matrix - enumeration by norm
+  rather than retrieval by relevance - so its numbers must not be compared against
+  them. The existing benchmark matrix does not separate them, which is a second reason
+  §8.1 needs rebaselining through R38.
+
+  A reflection-based test asserts `TemporalSearchRequest` has no vector-like field, so
+  if one is ever added the tests that pin the current behaviour fail loudly rather than
+  quietly changing meaning.
 - **R11b. Decide and document whether zero-vector as-of search is intended**, and if
   it is not, populate the query vector. Until then temporal measures a different
   operation from every other mode in the matrix and its numbers should not be

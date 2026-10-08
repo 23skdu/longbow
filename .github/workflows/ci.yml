@@ -48,11 +48,15 @@ jobs:
       - name: Test
         run: go test -v -race -coverprofile=coverage.txt ./...
 
-      - name: Test benchmark validation helpers
+      - name: Test benchmark harness helpers
         # The benchmark report writer refuses to emit a report that violates
         # qps * p50 <= workers * 1000, which makes that report unusable as a
-        # regression gate. That gate is only trustworthy if it is itself tested.
-        run: python3 scripts/tests/test_benchmark_validation.py
+        # regression gate. That gate is only trustworthy if it is itself tested,
+        # as is the memory-ceiling parser and the guarantee that the harness
+        # never reaps processes it did not start.
+        run: |
+          python3 scripts/tests/test_benchmark_validation.py
+          python3 scripts/tests/test_benchmark_memory.py
 
       - name: Verify 100% Package Test Coverage Gate
         run: |

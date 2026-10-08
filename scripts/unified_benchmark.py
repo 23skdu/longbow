@@ -182,6 +182,132 @@ def parse_bench_json(json_file):
     return metrics
 
 
+# Memory ceiling resolution (roadmap R14, H2/H3/H4, R14a).
+#
+# Three things were wrong with the ceiling before this. --memory was documented as
+# "10GB" but typed as int bytes, so it could only be passed as 10737418240.
+# LONGBOW_MAX_MEMORY is documented everywhere else as a size string, and
+# int("18GB") raised ValueError, so --estimate-memory crashed whenever the
+# variable was set. And start_server ignored both, reading a hardcoded 18 GiB, so
+# the documented knob did nothing at all: on a 22 GiB host the default sat above
+# the safe ceiling and the client was OOM-killed mid-indexing with no diagnostic.
+#
+# One parser, one resolution order, used everywhere.
+
+_SIZE_UNITS = {
+    "": 1,
+    "B": 1,
+    "K": 1024, "KB": 1024, "KIB": 1024,
+    "M": 1024 ** 2, "MB": 1024 ** 2, "MIB": 1024 ** 2,
+    "G": 1024 ** 3, "GB": 1024 ** 3, "GIB": 1024 ** 3,
+    "T": 1024 ** 4, "TB": 1024 ** 4, "TIB": 1024 ** 4,
+}
+
+# Fraction of physical RAM used when neither --memory nor LONGBOW_MAX_MEMORY is
+# given. The previous 18 GiB literal was an absolute constant that happened to be
+# too high on a 22 GiB host and absurdly too low on a 512 GiB one.
+DEFAULT_MEMORY_FRACTION = 0.60
+
+
+def parse_size_bytes(value, default=None):
+    """Parse a byte count or a size string into bytes.
+
+    Accepts "10737418240", "10GB", "10GiB", " 10 gb ", "512M". Returns `default`
+    when value is None, empty or unparseable, so a typo in an environment variable
+    degrades to the default rather than aborting a multi-hour benchmark run.
+    """
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return int(value)
+
+    text = str(value).strip()
+    if not text:
+        return default
+
+    # Split the numeric prefix from the unit suffix.
+    i = 0
+    while i < len(text) and (text[i].isdigit() or text[i] in ".+-"):
+        i += 1
+    number, unit = text[:i].strip(), text[i:].strip().upper()
+
+    if not number:
+        return default
+    try:
+        magnitude = float(number)
+    except ValueError:
+        return default
+
+    multiplier = _SIZE_UNITS.get(unit)
+    if multiplier is None:
+        return default
+    return int(magnitude * multiplier)
+
+
+def format_size_gb(num_bytes) -> str:
+    """Render a byte count as a human-readable GiB figure for logs."""
+    if num_bytes is None:
+        return "unset"
+    return f"{num_bytes / (1024 ** 3):.1f} GB"
+
+
+def host_total_memory_bytes():
+    """Physical RAM, or None if it cannot be determined."""
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError, AttributeError):
+        pass
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) * 1024
+    except OSError:
+        pass
+    return None
+
+
+def host_available_memory_bytes():
+    """Memory available right now, or None.
+
+    A ceiling above what is actually free is what produced the silent SIGKILLs, so
+    the tier is checked against free memory as well as the configured ceiling.
+    """
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except OSError:
+        pass
+    return None
+
+
+def resolve_memory_limit_bytes(args):
+    """Resolve the server memory ceiling in bytes.
+
+    Precedence: --memory, then LONGBOW_MAX_MEMORY, then a fraction of host RAM.
+    --memory is authoritative (R14) so that an explicit flag is never silently
+    overridden by an inherited environment variable.
+    """
+    explicit = getattr(args, "memory", None)
+    if explicit is not None and str(explicit).strip() != "":
+        parsed = parse_size_bytes(explicit, default=None)
+        if parsed is not None:
+            return parsed
+
+    from_env = parse_size_bytes(os.environ.get("LONGBOW_MAX_MEMORY"), default=None)
+    if from_env is not None:
+        return from_env
+
+    total = host_total_memory_bytes()
+    if total is None:
+        # Nothing to go on; keep the previous default rather than inventing one.
+        return 18 * 1024 ** 3
+    fraction = getattr(args, "memory_default_fraction", None) or DEFAULT_MEMORY_FRACTION
+    return int(total * fraction)
+
+
 # Provenance and self-validation (roadmap R2/R3).
 #
 # A QPS number without the parameters it was measured under cannot gate a
@@ -340,6 +466,14 @@ class BenchmarkRunner:
         self.bin_dir = os.environ.get("LONGBOW_BIN_PATH", os.path.join(os.getcwd(), "bin"))
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         label_suffix = f"_{args.label}" if args.label else ""
+        # R14b (H10): the timestamped name meant --resume only ever found a
+        # checkpoint from the same invocation, so an interrupted multi-hour tier
+        # could not be resumed by a fresh one. The stable path is now the
+        # resume target and the timestamped file is written alongside it, so
+        # per-run artefacts are still available.
+        self.stable_output_file = os.path.join(
+            self.log_dir, f"perf_matrix_{args.mode}{label_suffix}_latest.json"
+        )
         self.output_file = os.path.join(
             self.log_dir, f"perf_matrix_{args.mode}{label_suffix}_{self.timestamp}.json"
         )
@@ -409,8 +543,8 @@ class BenchmarkRunner:
         """
         if not getattr(self.args, 'estimate_memory', False):
             return True
-        limit_gb = os.environ.get("LONGBOW_MAX_MEMORY", str(self.args.memory))
-        limit_gb = int(limit_gb) / (1024 ** 3)  # Convert from bytes to GB
+        limit_bytes = resolve_memory_limit_bytes(self.args)
+        limit_gb = limit_bytes / (1024 ** 3)
         estimated_mb = self._estimate_memory_usage(dtype, dim, count)
         estimated_gb = estimated_mb / 1024.0
         if estimated_gb > limit_gb:
@@ -420,8 +554,15 @@ class BenchmarkRunner:
         return True
 
     def _save_checkpoint(self):
-        """Save partial results checkpoint to disk."""
-        if hasattr(self, 'results') and self.results and hasattr(self, 'output_file'):
+        """Save the partial results checkpoint.
+
+        R14b (H9): this used to be a no-op when self.results was empty, so a run
+        in which every config was ResourceExhausted produced a 9,194-line log and
+        zero result files - the exhaustion was never recorded anywhere. An empty
+        result set is a result: it is written, along with the exhausted/failed
+        config lists, so the run is legible without re-running it.
+        """
+        if hasattr(self, "results") and hasattr(self, "output_file"):
             try:
                 dims = [int(d) for d in self.args.dims.split(",")]
                 counts = [int(c) for c in self.args.counts.split(",")]
@@ -437,12 +578,21 @@ class BenchmarkRunner:
                             "dtypes": dtypes,
                             "duration": self.args.duration,
                         },
+                        "provenance": collect_provenance(self.args),
                         "results": self.results,
                         "completed_configs": [list(c) for c in getattr(self, 'completed_configs', set())],
                         "failed_configs": [list(c) for c in getattr(self, 'failed_configs', set())],
                         "exhausted_configs": [list(c) for c in getattr(self, 'exhausted_configs', set())],
                     }, f, indent=2)
-                print(f"\n  [checkpoint] Partial results saved to {self.output_file}")
+                # Mirror to the stable path so a later --resume in a fresh
+                # invocation finds it.
+                try:
+                    with open(self.stable_output_file, "w") as f:
+                        json.dump(json.load(open(self.output_file)), f, indent=2)
+                except Exception as e:
+                    print(f"\n  [checkpoint] Could not mirror to {self.stable_output_file}: {e}")
+                suffix = " (no results)" if not self.results else ""
+                print(f"\n  [checkpoint] Partial results saved to {self.output_file}{suffix}")
             except Exception as e:
                 print(f"\n  [checkpoint] Failed to save partial results: {e}")
 
@@ -483,6 +633,102 @@ class BenchmarkRunner:
         self._force_cleanup()
         print("  [cleanup] Done. Partial results may be available.")
         sys.exit(1)
+
+    def _own_ports(self):
+        """Ports this run may legitimately reclaim."""
+        ports = set()
+        try:
+            base = int(self.server_addr.split(":")[-1])
+        except (ValueError, IndexError, AttributeError):
+            base = getattr(self.args, "port", 3000)
+        for offset in (0, 1, 80, 6000, 7000):
+            ports.add(base + offset)
+        return ports
+
+    def _reap_only_own_ports(self):
+        """Free this run's ports, and nothing else.
+
+        Deliberately narrow (R13, H1). The previous implementation ran
+        `pkill -9 -x bench-tool` and friends on every start_server, which matches
+        by process name across the whole host and so killed the clients of any
+        concurrent benchmark run. The victim was recorded as FAILED with an empty
+        error, which is how 10/15 configs at 250k CPU, 4/15 at 50k GPU and 12/15
+        at 500k GPU disappeared without a diagnostic.
+
+        Scoping to this run's own ports cannot do that: a concurrent run is using
+        different ports by construction, and if two runs do collide on a port then
+        one of them genuinely is holding a port the other needs.
+        """
+        import socket
+
+        killed = []
+        for port in sorted(self._own_ports()):
+            # lsof/ss are not guaranteed present; fall back to a connect probe,
+            # which detects a listener without needing to resolve a pid.
+            for pid in self._pids_listening_on(port):
+                if pid and pid != os.getpid():
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        killed.append((pid, port))
+                    except (ProcessLookupError, PermissionError, OSError):
+                        continue
+        if killed:
+            time.sleep(0.5)
+            for pid, _port in killed:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    continue
+            print(f"  [cleanup] Reaped {len(killed)} process(es) on this run's ports: "
+                  + ", ".join(f"pid {p}:{pt}" for p, pt in killed))
+        return killed
+
+    def _pids_listening_on(self, port):
+        """PIDs listening on `port`, via /proc, without external tools."""
+        inodes = set()
+        try:
+            with open("/proc/net/tcp") as f:
+                next(f, None)  # header
+                for line in f:
+                    parts = line.split()
+                    if len(parts) < 10:
+                        continue
+                    local = parts[1]
+                    if int(local.rsplit(":", 1)[1], 16) != port:
+                        continue
+                    if parts[3] != "0A":  # TCP_LISTEN
+                        continue
+                    inodes.add(parts[9])
+        except OSError:
+            return []
+
+        if not inodes:
+            return []
+
+        pids = []
+        proc = "/proc"
+        try:
+            entries = os.listdir(proc)
+        except OSError:
+            return []
+
+        for entry in entries:
+            if not entry.isdigit():
+                continue
+            fd_dir = os.path.join(proc, entry, "fd")
+            try:
+                fds = os.listdir(fd_dir)
+            except OSError:
+                continue
+            for fd in fds:
+                try:
+                    link = os.readlink(os.path.join(fd_dir, fd))
+                except OSError:
+                    continue
+                if link.startswith("socket:[") and link[8:-1] in inodes:
+                    pids.append(int(entry))
+                    break
+        return pids
 
     def _force_cleanup(self):
         """Kill the tracked server PID and any stray processes on our ports.
@@ -640,10 +886,18 @@ class BenchmarkRunner:
                 print(f"  Port {p} still in use after {max_port_attempts} attempts!")
                 return False
         
-        # Also kill any lingering longbow processes by name to be sure
-        for name in ["longbow", "longbow-metal", "longbow-cuda", "bench-tool", "benchmark-tool", "longbow-cli"]:
-            subprocess.run(f"pkill -9 -x {name} 2>/dev/null || true", shell=True)
-        
+        # R13 (H1): never reap by bare process name. `pkill -x bench-tool` matches
+        # every bench-tool on the host, including one belonging to a concurrent
+        # benchmark run; the in-flight client is then SIGKILLed mid-search and
+        # recorded as FAILED with an empty error. That is what silently destroyed
+        # 10/15 configs at 250k CPU, 4/15 at 50k GPU and 12/15 at 500k GPU.
+        #
+        # This run only terminates processes it started itself, tracked by PID,
+        # plus anything still holding this run's own ports. A leaked process from
+        # an earlier run leaked it under a different port, and killing that would
+        # be the same defect pointed the other way.
+        self._reap_only_own_ports()
+
         time.sleep(1) 
         
         server_bin = self.get_server_binary()
@@ -658,8 +912,22 @@ class BenchmarkRunner:
         env = os.environ.copy()
 
         # ── Core resource limits ──────────────────────────────────────────
-        limit_gb = os.environ.get("LONGBOW_MAX_MEMORY", 18 * 1024 * 1024 * 1024)
-        env["LONGBOW_MAX_MEMORY"] = str(limit_gb)
+        # R14: --memory is authoritative, then LONGBOW_MAX_MEMORY, then a
+        # fraction of host RAM. Previously this read an 18 GiB literal and ignored
+        # both, so the documented knob did nothing.
+        limit_bytes = resolve_memory_limit_bytes(self.args)
+        env["LONGBOW_MAX_MEMORY"] = str(limit_bytes)
+        available = host_available_memory_bytes()
+        if available is not None and limit_bytes > available:
+            print(
+                f"  [MEMORY] Ceiling {format_size_gb(limit_bytes)} exceeds currently "
+                f"available {format_size_gb(available)}. The server will be admitted "
+                f"more memory than the host can give it and the client is likely to "
+                f"be OOM-killed mid-indexing with no diagnostic."
+            )
+        else:
+            print(f"  [MEMORY] Ceiling {format_size_gb(limit_bytes)}"
+                  + (f" (available {format_size_gb(available)})" if available else ""))
         env["LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT"] = "true"
         env["ARROW_DISABLE_LOCKING"] = "1"
         env["LONGBOW_GOGC"] = "200"
@@ -2482,7 +2750,13 @@ class BenchmarkRunner:
                             try:
                                 subprocess.run(f"kill -9 {node['pid']}", shell=True, stderr=subprocess.DEVNULL)
                             except: pass
-                        subprocess.run("pkill -9 longbow || true", shell=True, stderr=subprocess.DEVNULL)
+                        # R13 (H1): no global `pkill -9 longbow` here either.
+                        # The loop above already SIGKILLs every node this run
+                        # started, by PID; matching by name additionally killed
+                        # any longbow on the host, including one belonging to a
+                        # concurrent benchmark run, whose client was then
+                        # recorded as FAILED with an empty error. Cluster teardown
+                        # is scoped to the PIDs this run owns.
                         time.sleep(2)
 
         with open(self.output_file, "w") as f:
@@ -3580,7 +3854,9 @@ class BenchmarkRunner:
             f.write(f"# Performance Validation Matrix — {device_name} {mode_title}\n\n")
             f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}\n")
             f.write(f"**Platform**: {platform.system()} ({platform.machine()})\n")
-            f.write(f"**Memory**: {self.args.memory // (1024**3)}GB allocated\n")
+            f.write(
+                f"**Memory**: {format_size_gb(resolve_memory_limit_bytes(self.args))} allocated\n"
+            )
             f.write(f"**Test Tool**: Longbow Unified Benchmark Script\n")
             f.write(f"**Queries**: {self.args.queries} per test\n\n")
 
@@ -3668,9 +3944,24 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--memory",
-        type=int,
-        default=10 * 1024 * 1024 * 1024,
-        help="LONGBOW_MAX_MEMORY (default 10GB)",
+        type=str,
+        default=None,
+        help=(
+            "Server memory ceiling, as a size string or a byte count. Accepts "
+            "10GB, 10GiB, 512M, or 10737418240. This is authoritative: it takes "
+            "precedence over LONGBOW_MAX_MEMORY. When neither is given the ceiling "
+            f"defaults to {int(DEFAULT_MEMORY_FRACTION * 100)}%% of detected host RAM "
+            "rather than a fixed constant."
+        ),
+    )
+    parser.add_argument(
+        "--memory-default-fraction",
+        type=float,
+        default=DEFAULT_MEMORY_FRACTION,
+        help=(
+            "Fraction of host RAM to use as the memory ceiling when neither "
+            f"--memory nor LONGBOW_MAX_MEMORY is set (default: {DEFAULT_MEMORY_FRACTION})"
+        ),
     )
     parser.add_argument(
         "--timeout",

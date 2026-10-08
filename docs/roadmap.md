@@ -717,12 +717,63 @@ The bulk path charges one chain-link distance computation plus two `AddConnectio
 | H7 | `GenerateRecord` seeds from `time.Now().UnixNano()` per chunk | `cmd/bench-tool/main.go` | No two runs see the same corpus, so ingestion and index shape are not comparable across runs. Combined with H6, this is why per-mode variance reaches 40%+. |
 | H8 | Silent `FAILED` with no diagnostic on client death | harness failure path | A SIGKILLed client is indistinguishable from a timeout in the results. Record the child's exit signal. |
 
+### 8.6.1 What changed, and what it does not fix
+
+R13, R14, R14a and R14b are implemented and unit-tested in
+`scripts/tests/test_benchmark_memory.py` (17 tests, run in CI by
+`Test benchmark harness helpers`).
+
+- **`--memory` now works.** Before this, `--memory 10GB` could not be passed at all
+  (`type=int`, documented as `10GB`), `LONGBOW_MAX_MEMORY=18GB` crashed
+  `--estimate-memory` with `ValueError`, and `start_server` wrote an 18 GiB literal
+  while ignoring both. On a 22 GiB host the effective ceiling was therefore 18 GiB
+  no matter what was asked for - above the 14 GiB that the 500k CPU probe found
+  necessary, which is where the unexplained SIGKILLs came from.
+- **Concurrent runs no longer destroy each other.** This was the single largest
+  source of missing matrix data: 10/15 configs at 250k CPU, 4/15 at 50k GPU, 12/15
+  at 500k GPU in the first pass. Those are recoverable, but only by re-running, and
+  they were being reported as `FAILED` with an empty error rather than as "another
+  run killed my client".
+- **Not fixed: the measured data.** Every number in section 8.1 was collected under
+  these defects and is therefore suspect in two specific ways: configs that were
+  killed are missing rather than slow, and the memory ceiling applied was not the
+  one the invocation asked for. Re-running the matrix is a prerequisite for
+  publishing any of it, and R16 below is a prerequisite for that being worth doing.
+- **Not fixed: R14a's free-memory check is advisory.** It prints a warning when the
+  ceiling exceeds `MemAvailable` but does not refuse the tier. Refusing needs the
+  per-config estimate to be trustworthy, which is the same dependency as
+  `--estimate-memory` and which H3 previously made crash-prone.
+
 ### Recommendations for the harness defects
 
-- **R13. Scope the process cleanup to the run.** Pass `--server-pid`/an explicit process handle, or match on the server binary path rather than the bare process name, so a run only reaps what it started.
-- **R14. Make `--memory` authoritative.** Parse the size string once, use it in `start_server`, and derive the spill threshold from it. Fix H3 and H4 in the same change; all three are the same missing parser.
-- **R14a. Derive the default ceiling from the host, not from a literal.** `start_server` should default to a fraction of detected physical RAM (the auto-spill threshold then has something to work against) instead of the 18 GiB constant, and it should refuse to start a tier whose estimate cannot fit alongside the measured free memory rather than discovering it via an OOM kill.
-- **R14b. Write the checkpoint even when there are no results** (H9), and name the output file from the label rather than the timestamp so a tier can be resumed across invocations (H10).
+- **R13. DONE.** Process cleanup is scoped to the run. `_reap_only_own_ports` frees
+  only this run's ports, resolving the listening PID from `/proc/net/tcp` and
+  `/proc/*/fd` so no external tool is needed, and never matches on a process name.
+  Two global reapers were removed, not one: `pkill -9 -x bench-tool` and friends on
+  every `start_server`, **and** a second live `pkill -9 longbow || true` in the
+  cluster teardown path (H1 affected both). The cluster path already SIGKILLs every
+  node it started by PID, so the name match bought nothing and cost another run's
+  data. A test asserts via AST that no executable call to `run`/`Popen`/`system`
+  anywhere in the harness carries a `pkill` command string.
+- **R14. DONE.** One parser, `parse_size_bytes`, accepts `10737418240`, `10GB`,
+  `10GiB`, `512M`, `1.5GB`, with whitespace and case tolerance, and degrades to a
+  default on unparseable input rather than raising - a typo in an environment
+  variable must not abort a multi-hour run. `--memory` is now `type=str` and accepts
+  what its own help text always claimed. `resolve_memory_limit_bytes` applies one
+  precedence everywhere: `--memory`, then `LONGBOW_MAX_MEMORY`, then a host-derived
+  default. The flag is authoritative so an inherited variable cannot silently
+  override an explicit choice. All four call sites now use it, which closes H2, H3
+  and H4 - they were one missing parser.
+- **R14a. DONE.** The default is now 60% of detected physical RAM rather than an
+  18 GiB literal that was too high on a 22 GiB host and far too low on a large one.
+  `start_server` also compares the resolved ceiling against `MemAvailable` and says
+  so explicitly when the ceiling exceeds what the host can currently give, which is
+  the condition that produced silent mid-indexing OOM kills with no diagnostic.
+- **R14b. DONE.** `_save_checkpoint` no longer short-circuits on an empty result
+  set, so an all-`ResourceExhausted` run leaves an artefact recording the
+  exhaustion instead of a 9,194-line log and nothing else. The output is also
+  mirrored to `perf_matrix_<mode>[_<label>]_latest.json` alongside the timestamped
+  per-run file, so `--resume` in a fresh invocation finds the checkpoint.
 - **R15. Record `tq_bits` in the result config** so `turboquant4` and `turboquant8` are separate rows, and key the comparison on it.
 - **R16. Make `ByID` and the corpus generator deterministic** — a seed flag, drawn from a fixed seed for the corpus and derived from the query index for `ByID`. Repeatability is a precondition for a 10% regression gate; today it is not met.
 - **R17. Surface the child exit signal** in the failure record so a killed client is distinguishable from a timeout or a server crash.

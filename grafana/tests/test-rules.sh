@@ -24,20 +24,41 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 sed 's/humanizeBytes/humanize/g' "$grafana_dir/rules.yml" > "$work/rules.yml"
-cp "$here/bulk_insert_alerts_test.yml" "$work/bulk_insert_alerts_test.yml"
+cp "$here"/*_alerts_test.yml "$work/"
 
-# The unit test exercises only the bulk-insert group, so isolate it and rewrite
-# the two alert-name templates the assertions match on.
-awk '/^  - name: longbow_bulk_insert_alerts$/{f=1} f' "$work/rules.yml" \
-  | awk '/^  - name: longbow_hnsw_contention_alerts$/{exit} {print}' \
-  | sed 's/{{ \$value | humanizeDuration }}/V/; s/{{ \$value | humanizePercentage }}/V/; s/{{ \$value | humanize }}/V/' \
-  > "$work/group.yml"
+# Extract one alert group in isolation. promtool needs the top-level "groups:" key
+# that the extraction drops, so it is re-added. Grafana template functions are
+# rewritten to their Prometheus equivalents because promtool only knows the latter.
+#
+# This uses a single awk rather than `awk | awk` with an early exit in the second
+# stage. When the second stage exits early the first receives SIGPIPE, and under
+# `set -o pipefail` that aborts the script - but only when the timings happen to
+# line up, so it passes interactively and fails in a redirect.
+extract_group() {
+  local start="$1" stop="$2" out="$3"
+  awk -v s="  - name: $start" -v e="  - name: $stop" '
+    $0 == s { f = 1 }
+    f && $0 == e { exit }
+    f { print }
+  ' "$work/rules.yml" \
+    | sed 's/{{ \$value | humanizeDuration }}/V/; s/{{ \$value | humanizePercentage }}/V/; s/{{ \$value | humanize }}/V/' \
+    > "$work/group.yml"
+  { echo "groups:"; cat "$work/group.yml"; } > "$work/$out"
+}
 
-# The extraction drops the top-level "groups:" key, which promtool requires.
-{ echo "groups:"; cat "$work/group.yml"; } > "$work/bulk_insert_rules.yml"
+extract_group longbow_bulk_insert_alerts longbow_hnsw_contention_alerts bulk_insert_rules.yml
+extract_group longbow_temporal_alerts longbow_layer_eviction_alerts temporal_rules.yml
 
 echo "==> checking all rules parse"
 "$PROMTOOL" check rules "$work/rules.yml"
 
-echo "==> running bulk-insert alert unit tests"
-( cd "$work" && "$PROMTOOL" test rules bulk_insert_alerts_test.yml )
+# Each group's unit test lives in a file named after the group. The assertions
+# exercise that an alert fires when it should and stays silent when it should not,
+# so a broken expression that merely never fires is still a failure.
+status=0
+for testfile in "$work"/*_alerts_test.yml; do
+  name="$(basename "$testfile" .yml)"
+  echo "==> running $name"
+  ( cd "$work" && "$PROMTOOL" test rules "$name.yml" ) || status=1
+done
+exit $status

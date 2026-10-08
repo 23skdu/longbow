@@ -338,11 +338,24 @@
       "gridPos": {"h": 6, "w": 8, "x": 8, "y": 47},
       "id": 39,
       "targets": [
-        {"expr": "longbow_temporal_tree_cache_hit_ratio", "legendFormat": "Cache Hit Ratio", "refId": "A"}
+        {"expr": "sum(rate(longbow_temporal_cache_hits_total[5m])) / (sum(rate(longbow_temporal_cache_hits_total[5m])) + sum(rate(longbow_temporal_cache_misses_total[5m])))", "legendFormat": "Hit Ratio", "refId": "A"}
       ],
-      "title": "Temporal Tree Cache Hit Ratio",
+      "title": "Temporal Result Cache Hit Ratio",
       "type": "timeseries",
       "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}}
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 47},
+      "id": 40,
+      "targets": [
+        {"expr": "sum by (dataset) (rate(longbow_temporal_cache_expiries_total[5m]))", "legendFormat": "TTL expired ({{dataset}})", "refId": "A"},
+        {"expr": "sum by (dataset) (rate(longbow_temporal_cache_evictions_total[5m]))", "legendFormat": "LRU full ({{dataset}})", "refId": "B"}
+      ],
+      "title": "Temporal Cache Drop Causes",
+      "description": "Two ways an entry stops being usable, needing opposite remedies. Expiries mean the TTL is shorter than the reuse interval; LRU evictions mean the cache is too small. Roadmap R11a.",
+      "type": "timeseries",
+      "fieldConfig": {"defaults": {"unit": "ops"}}
     },
     {
       "collapsed": false,

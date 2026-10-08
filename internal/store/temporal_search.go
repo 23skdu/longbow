@@ -177,14 +177,32 @@ func (ti *TemporalIndex) GetVectorIndex() VectorIndex {
 }
 
 // TemporalResultCache provides LRU caching for temporal search results.
+//
+// Expiries and capacity evictions are counted separately. They both surface as
+// "not in cache" to the caller, but they mean opposite things: an expiry says the
+// TTL is shorter than the reuse interval, and a capacity eviction says the cache
+// is too small. Collapsing them into one counter makes "the cache is thrashing"
+// no easier to diagnose than having no counter at all, which is what R11a was
+// about.
 type TemporalResultCache struct {
 	mu        sync.Mutex
 	items     map[string]*list.Element
 	evict     *list.List
 	max       int
+	label     atomic.Value // string, for the Prometheus dataset label
 	hits      atomic.Int64
 	misses    atomic.Int64
-	evictions atomic.Int64
+	expiries  atomic.Int64 // dropped because their TTL had passed
+	evictions atomic.Int64 // dropped because the LRU was full
+}
+
+// TemporalCacheStats is a point-in-time snapshot of cache counters.
+type TemporalCacheStats struct {
+	Hits      int64
+	Misses    int64
+	Expiries  int64
+	Evictions int64
+	Entries   int
 }
 
 type temporalCacheEntry struct {
@@ -205,11 +223,13 @@ func NewTemporalResultCache(size int) *TemporalResultCache {
 // Get retrieves search results from the cache if they exist and are not expired.
 func (c *TemporalResultCache) Get(key string) ([]lbtypes.SearchResult, bool) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	element, ok := c.items[key]
 	if !ok {
 		c.misses.Add(1)
+		entries := len(c.items)
+		c.mu.Unlock()
+		c.emit("misses", entries)
 		return nil, false
 	}
 
@@ -217,26 +237,34 @@ func (c *TemporalResultCache) Get(key string) ([]lbtypes.SearchResult, bool) {
 	if time.Now().After(entry.expiry) {
 		c.evict.Remove(element)
 		delete(c.items, key)
-		c.evictions.Add(1)
+		c.expiries.Add(1)
 		c.misses.Add(1)
+		entries := len(c.items)
+		c.mu.Unlock()
+		c.emit("misses", entries)
+		c.emit("expiries", entries)
 		return nil, false
 	}
 
 	c.evict.MoveToFront(element)
 	c.hits.Add(1)
-	return entry.results, true
+	results := entry.results
+	entries := len(c.items)
+	c.mu.Unlock()
+	c.emit("hits", entries)
+	return results, true
 }
 
 // Set adds search results to the cache with the specified TTL.
 func (c *TemporalResultCache) Set(key string, results []lbtypes.SearchResult, ttl time.Duration) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	if element, ok := c.items[key]; ok {
 		c.evict.MoveToFront(element)
 		entry := element.Value.(*temporalCacheEntry)
 		entry.results = results
 		entry.expiry = time.Now().Add(ttl)
+		c.mu.Unlock()
 		return
 	}
 
@@ -254,7 +282,63 @@ func (c *TemporalResultCache) Set(key string, results []lbtypes.SearchResult, tt
 			c.evict.Remove(oldest)
 			delete(c.items, oldest.Value.(*temporalCacheEntry).key)
 			c.evictions.Add(1)
+			entries := len(c.items)
+			c.mu.Unlock()
+			c.emit("evictions", entries)
+			return
 		}
+	}
+	c.mu.Unlock()
+}
+
+// SetDatasetLabel names the dataset these counters belong to, so the exported
+// metrics carry the same label as the rest of the store's series. It is called
+// once when the dataset takes ownership of the index; counters observed before
+// that report under "unknown" rather than being dropped.
+func (c *TemporalResultCache) SetDatasetLabel(name string) {
+	if name == "" {
+		name = "unknown"
+	}
+	c.label.Store(name)
+}
+
+func (c *TemporalResultCache) datasetLabel() string {
+	if v, ok := c.label.Load().(string); ok && v != "" {
+		return v
+	}
+	return "unknown"
+}
+
+// Stats returns a snapshot of the counters. It is the only reader of them, which
+// is the point of R11a: these were maintained and never observed.
+func (c *TemporalResultCache) Stats() TemporalCacheStats {
+	c.mu.Lock()
+	entries := len(c.items)
+	c.mu.Unlock()
+	return TemporalCacheStats{
+		Hits:      c.hits.Load(),
+		Misses:    c.misses.Load(),
+		Expiries:  c.expiries.Load(),
+		Evictions: c.evictions.Load(),
+		Entries:   entries,
+	}
+}
+
+// emit increments the Prometheus counter for one outcome and refreshes the
+// resident-size gauge. Called outside the lock so a scrape cannot stall the
+// search path; `entries` is captured by the caller while it still holds the lock.
+func (c *TemporalResultCache) emit(kind string, entries int) {
+	label := c.datasetLabel()
+	metrics.TemporalCacheEntries.WithLabelValues(label).Set(float64(entries))
+	switch kind {
+	case "hits":
+		metrics.TemporalCacheHitsTotal.WithLabelValues(label).Inc()
+	case "misses":
+		metrics.TemporalCacheMissesTotal.WithLabelValues(label).Inc()
+	case "expiries":
+		metrics.TemporalCacheExpiriesTotal.WithLabelValues(label).Inc()
+	case "evictions":
+		metrics.TemporalCacheEvictionsTotal.WithLabelValues(label).Inc()
 	}
 }
 

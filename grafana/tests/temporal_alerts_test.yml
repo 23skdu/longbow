@@ -1,0 +1,97 @@
+rule_files:
+  - temporal_rules.yml
+evaluation_interval: 1m
+tests:
+  # A cache missing 90% of lookups must alert. This is the case R11a exists for:
+  # before the counters were exported, this workload was only visible as latency.
+  - interval: 1m
+    name: thrashing cache alerts
+    input_series:
+      - series: 'longbow_temporal_cache_hits_total{dataset="ds"}'
+        values: '0+1x60'
+      - series: 'longbow_temporal_cache_misses_total{dataset="ds"}'
+        values: '0+9x60'
+      - series: 'longbow_temporal_cache_expiries_total{dataset="ds"}'
+        values: '0+0x60'
+      - series: 'longbow_temporal_cache_evictions_total{dataset="ds"}'
+        values: '0+0x60'
+    alert_rule_test:
+      # for: 15m, so the alert is only expected once the condition has held long enough.
+      - eval_time: 10m
+        alertname: LongbowTemporalCacheLowHitRatio
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: LongbowTemporalCacheLowHitRatio
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Temporal as-of cache is missing most lookups"
+              description: "Hit ratio is V. Check which drop cause dominates: expiries mean the TTL is shorter than the reuse interval and should be raised; LRU evictions mean the cache is too small and should be grown."
+      - eval_time: 30m
+        alertname: LongbowTemporalCacheCapacityEvicting
+        exp_alerts: []
+
+  # A healthy cache must not alert on either rule. Without this the first test
+  # would pass for an alert expression that is simply always true.
+  - interval: 1m
+    name: healthy cache stays quiet
+    input_series:
+      - series: 'longbow_temporal_cache_hits_total{dataset="ds"}'
+        values: '0+9x60'
+      - series: 'longbow_temporal_cache_misses_total{dataset="ds"}'
+        values: '0+1x60'
+      - series: 'longbow_temporal_cache_expiries_total{dataset="ds"}'
+        values: '0+0x60'
+      - series: 'longbow_temporal_cache_evictions_total{dataset="ds"}'
+        values: '0+0x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: LongbowTemporalCacheLowHitRatio
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: LongbowTemporalCacheCapacityEvicting
+        exp_alerts: []
+
+  # Capacity eviction is the alert whose annotation names a specific remedy -
+  # grow the cache. It must fire on its own, independently of the hit ratio,
+  # because a cache can hold a healthy ratio and still be thrashing.
+  - interval: 1m
+    name: capacity eviction alerts
+    input_series:
+      - series: 'longbow_temporal_cache_hits_total{dataset="ds"}'
+        values: '0+50x60'
+      - series: 'longbow_temporal_cache_misses_total{dataset="ds"}'
+        values: '0+10x60'
+      - series: 'longbow_temporal_cache_expiries_total{dataset="ds"}'
+        values: '0+0x60'
+      - series: 'longbow_temporal_cache_evictions_total{dataset="ds"}'
+        values: '0+120x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: LongbowTemporalCacheCapacityEvicting
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: LongbowTemporalCacheCapacityEvicting
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Temporal as-of cache is being resized away, not expiring"
+              description: "V capacity evictions/sec. Entries are being dropped because the LRU is full rather than because their TTL passed, so raising the TTL will not help; the cache size needs to increase."
+
+  # With no temporal traffic at all, neither alert fires. An expression that
+  # evaluates against an empty series set must stay silent rather than alert
+  # on absence.
+  - interval: 1m
+    name: no traffic stays quiet
+    input_series:
+      - series: 'longbow_namespace_creation_total{dataset="ds"}'
+        values: '0+0x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: LongbowTemporalCacheLowHitRatio
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: LongbowTemporalCacheCapacityEvicting
+        exp_alerts: []

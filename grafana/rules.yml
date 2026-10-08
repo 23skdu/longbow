@@ -514,6 +514,43 @@ groups:
           summary: "Temporal indexing activity detected"
           description: "New temporal records or namespaces created."
 
+      # R11a. Before these counters existed, temporal cache behaviour could only be
+      # inferred from latency. Each alert names its own remedy rather than just
+      # reporting a number, because the two drop causes need opposite fixes.
+      - alert: LongbowTemporalCacheLowHitRatio
+        expr: |
+          (
+            sum(rate(longbow_temporal_cache_hits_total[5m]))
+            /
+            clamp_min(
+              sum(rate(longbow_temporal_cache_hits_total[5m]))
+              + sum(rate(longbow_temporal_cache_misses_total[5m])),
+              1e-9
+            )
+          ) < 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Temporal as-of cache is missing most lookups"
+          description: >-
+            Hit ratio is {{ $value | humanizePercentage }}. Check which drop cause
+            dominates: expiries mean the TTL is shorter than the reuse interval and
+            should be raised; LRU evictions mean the cache is too small and should be
+            grown.
+
+      - alert: LongbowTemporalCacheCapacityEvicting
+        expr: sum(rate(longbow_temporal_cache_evictions_total[5m])) > 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Temporal as-of cache is being resized away, not expiring"
+          description: >-
+            {{ $value | humanize }} capacity evictions/sec. Entries are being dropped
+            because the LRU is full rather than because their TTL passed, so raising
+            the TTL will not help; the cache size needs to increase.
+
   - name: longbow_layer_eviction_alerts
     rules:
       - alert: LongbowLayerEvictionHighErrorRate

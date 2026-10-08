@@ -604,11 +604,52 @@ var (
 	)
 
 	// Temporal Tree Metrics
-	TemporalTreeCacheHitRatio = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "longbow_temporal_tree_cache_hit_ratio",
-			Help: "Current cache hit ratio for temporal queries",
+	//
+	// longbow_temporal_tree_cache_hit_ratio used to be declared here. It was
+	// registered, graphed on the memory-performance dashboard, and never set by
+	// anything, so that panel reported a flat 0 and read as "the cache never
+	// hits". It is gone rather than wired: the real result cache is covered by the
+	// counters below, and a precomputed ratio gauge duplicates what PromQL derives
+	// from two counters while going stale the moment either is missed.
+
+	// TemporalResultCache counters (roadmap R11a). These were maintained on the
+	// cache and read by nothing, so "the temporal cache is thrashing" had to be
+	// inferred from latency. Expiries and capacity evictions are separate series
+	// because they need opposite remedies: a shorter TTL versus a larger cache.
+	TemporalCacheHitsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_temporal_cache_hits_total",
+			Help: "Temporal as-of search results served from cache",
 		},
+		[]string{"dataset"},
+	)
+	TemporalCacheMissesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_temporal_cache_misses_total",
+			Help: "Temporal as-of search results not served from cache, by cause",
+		},
+		[]string{"dataset"},
+	)
+	TemporalCacheExpiriesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_temporal_cache_expiries_total",
+			Help: "Temporal cache entries dropped because their TTL had passed. A high rate means the TTL is shorter than the reuse interval.",
+		},
+		[]string{"dataset"},
+	)
+	TemporalCacheEvictionsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_temporal_cache_evictions_total",
+			Help: "Temporal cache entries dropped because the LRU was full. A high rate means the cache is too small.",
+		},
+		[]string{"dataset"},
+	)
+	TemporalCacheEntries = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_temporal_cache_entries",
+			Help: "Temporal cache entries currently resident",
+		},
+		[]string{"dataset"},
 	)
 
 	TemporalQueryScannedNodesTotal = promauto.NewCounter(

@@ -414,6 +414,9 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 	}
 	ds.LastIngestionCompletion.Store(time.Now().Unix())
 	ds.TemporalIndex.ds = ds
+	// Name the temporal cache's metrics after this dataset, so cache behaviour is
+	// attributable rather than a single unlabeled global (roadmap R11a).
+	ds.TemporalIndex.cache.SetDatasetLabel(name)
 
 	// Initialize Schema Manager
 	ds.SchemaManager = NewSchemaEvolutionManager(schema, name)

@@ -736,10 +736,59 @@ temporal's numbers yet, and it is worth being explicit about why.
 - **Still true:** a 9-mode baseline cannot be compared against a 13-mode run, and
   every temporal figure in section 8.1 predates all of the above.
 
-- **R11a. Expose the temporal cache counters.** `TemporalResultCache` has hits,
-  misses and evictions and nothing reads them. Publishing them as Prometheus metrics
-  would make cache behaviour visible to a benchmark run and turn "the cache is
-  thrashing" from an inference into an observation.
+- **R11a. DONE: the temporal cache is now observable.**
+
+  `TemporalResultCache` maintained hits, misses and evictions and read none of them.
+  They are now exported, and `Stats()` is the only reader:
+
+  | Metric | Meaning |
+  |---|---|
+  | `longbow_temporal_cache_hits_total{dataset}` | served from cache |
+  | `longbow_temporal_cache_misses_total{dataset}` | not served from cache |
+  | `longbow_temporal_cache_expiries_total{dataset}` | TTL had passed |
+  | `longbow_temporal_cache_evictions_total{dataset}` | LRU was full |
+  | `longbow_temporal_cache_entries{dataset}` | currently resident |
+
+  **Expiries and capacity evictions are separate series on purpose.** Both surface as
+  "not in cache", but they need opposite remedies: an expiry says the TTL is shorter
+  than the reuse interval and should be raised, a capacity eviction says the cache is
+  too small and should be grown. Collapsing them would have made the counter
+  observable and still useless, which is only a slightly better version of the bug.
+  This is the same split the bulk-insert latency buckets got right, and for the same
+  reason: a number nobody can act on is not observability.
+
+  Two alerts, each naming its own remedy rather than just reporting a number:
+  `LongbowTemporalCacheLowHitRatio` (below 20% for 15m) and
+  `LongbowTemporalCacheCapacityEvicting` (evictions above 1/sec). Both have promtool
+  unit tests asserting they fire when they should *and stay silent when they should
+  not* - an alert that never fires is indistinguishable from one that is broken.
+
+  **Also removed `longbow_temporal_tree_cache_hit_ratio`.** It was registered, graphed
+  on the memory-performance dashboard, and never set by anything, so that panel had
+  been reporting a flat 0 and reading as "the cache never hits". It is gone rather than
+  wired: the real result cache is covered by the counters above, and a precomputed
+  ratio gauge duplicates what PromQL derives from two counters while going stale the
+  moment either is missed. The panel now computes the ratio correctly, and a sibling
+  panel shows the two drop causes.
+
+  `grafana/tests/test-rules.sh` now runs every `*_alerts_test.yml` rather than only the
+  bulk-insert group, and its group extraction was rewritten as a single awk. The
+  previous `awk | awk` with an early `exit` in the second stage could SIGPIPE the
+  first; under `set -o pipefail` that aborts the script, but only when the timings
+  line up, so it passed interactively and failed under a redirect. Verified stable
+  over five consecutive redirected runs.
+
+- **R11b. STILL OPEN, and now located precisely.** `SearchAsOf` allocates the query
+  vector and never fills it:
+
+  ```go
+  // internal/store/temporal_search.go, in SearchAsOf
+  queryVec := make([]float32, dim)   // allocated, then passed to the search as-is
+  ```
+
+  Every temporal as-of query therefore searches for the zero vector. Until this is
+  decided, temporal measures a different operation from every other mode in the
+  matrix and its numbers should not be compared against them.
 - **R11b. Decide and document whether zero-vector as-of search is intended**, and if
   it is not, populate the query vector. Until then temporal measures a different
   operation from every other mode in the matrix and its numbers should not be

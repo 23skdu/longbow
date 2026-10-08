@@ -322,6 +322,36 @@ Accepted indirect dependencies with no available upstream patch, tracked as acce
 
 These IDs are duplicated in `.trivyignore` and the `ALLOWLIST` array in `scripts/check_govuln.sh`; both now reference this section.
 
+**Why the three avro advisories are not reachable with untrusted input.** The trace
+govulncheck reports is misleading and worth stating plainly, because the table's
+`temporal avro.Freeze` attribution invites the wrong conclusion:
+
+- avro is a **transitive-only** dependency. Nothing in this repository imports
+  `hamba/avro` or `iskorotkov/avro`; it arrives solely through
+  `pulsar-client-go` (`go mod why` shows `store -> pulsar-client-go/pulsar -> hamba/avro`).
+- The Pulsar integration is **produce-only**. The entire surface used is
+  `pulsar.NewClient`, `ClientOptions`, `ProducerOptions`, `Producer` and
+  `ProducerMessage` (`internal/store/mq_exporter.go`). There is no consumer, no
+  `Subscribe`, no receiver and no schema-registry or Avro decoder anywhere in the
+  codebase - the `Subscribe` calls in the store are Longbow's own CDC
+  (`cdc.Subscribe`), not Pulsar.
+- **All three advisories are decoder defects** - unbounded map allocation, an integer
+  overflow, and CPU exhaustion, all on the decode path. A producer never decodes an
+  Avro payload, so the vulnerable code is not on any path this service executes with
+  external input.
+- The reported `SearchRange` trace is a static-analysis over-approximation: it routes
+  through generic `sync.Pool` machinery (the pool there is Longbow's own
+  `temporalVersionMapPool`, not avro's) and reaches `avro.Freeze` only because the
+  analysers cannot distinguish pool instances.
+
+The honest caveat: this rests on the Pulsar surface staying produce-only. A future
+consumer subscription or schema-registry use would make all three reachable with
+broker-supplied input, and they have no upstream fix - v2.31.0 is the latest release.
+Revisit this entry if the messaging integration ever gains a read path.
+
+`GO-2026-5932` is weaker still: `x/crypto/openpgp` is required by the module graph and
+never called by our code at all.
+
 ---
 
 ## 7. Next Ten Steps (Performance & Features)

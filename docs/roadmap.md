@@ -1081,19 +1081,56 @@ remaining rows are addressed, rather than that it does today.
   and docstring now say plainly that it does **not** make a percentage threshold on
   un-interleaved runs usable.
 
-- **R30. The only remedy that works is interleaving the two binaries inside one
-  invocation**, and that is what every reliable number in this document actually did -
-  §8.3's server A/B and bisection, §8.3 step 5, and §9.4. It is not currently
-  automated. `scripts/` has no harness that alternates a baseline binary and a
-  candidate binary within a single run, which is why the gate has had to be run
-  un-interleaved this whole time.
+- **R37. DONE: `scripts/ab_benchmark.py`.** The interleaved A/B harness now exists.
 
-- **R37. Build the interleaved A/B harness, or stop calling the result a gate.**
-  `unified_benchmark.py` takes a binary from `bin/`; an interleaved harness would
-  build both revisions, then alternate them within one invocation at the same config,
-  reporting paired per-mode differences. Until that exists, `--threshold 10` should be
-  read as "not a gate" rather than as a 10% tolerance. Given the measurements above,
-  the honest default is to stop publishing a single-run regression count at all.
+  It takes two server binaries and a matrix, then alternates them **within one
+  invocation** in balanced order - ABBA across reps rather than ABAB, so within-rep
+  drift hits both arms equally - collecting QPS per (dtype, count, mode) per rep. The
+  comparison is then made **per adjacent pair and in ratio**, which cancels the
+  systematic component entirely rather than trying to average it away. This is the
+  thing R36 showed cannot be done after the fact.
+
+  A verdict needs **both** a magnitude and a consistency: median ratio at or beyond
+  the threshold, *and* at least 90% of pairs agreeing in that direction (one-sided sign
+  test, p < 0.05). Fewer than 3 usable pairs never produces a verdict. "Inconclusive"
+  is a first-class answer, not a silent pass - a gate that cannot tell a regression
+  from noise should say so instead of implying the change was safe.
+
+  **Measured soundness.** On synthetic null cases - the same binary on both arms, true
+  ratio exactly 1.0, with log-normal multiplicative noise injected at the magnitude
+  R35 measured - the false-regression rate is:
+
+  | Noise sigma | reps=6 | reps=10 |
+  |---|---|---|
+  | 0.20 | 1.40% | 0.90% |
+  | 0.30 | 1.15% | 1.20% |
+  | 0.40 | 1.75% | 1.25% |
+
+  **About 1.2%, against 77-89% for the single-run gate.** That is the whole argument
+  for pairing, measured rather than asserted. One of these soundness checks is a test
+  in `scripts/tests/test_ab_stats.py`, so the property cannot regress silently.
+
+  Usage, which is what §8.3 and §9.4 did by hand:
+
+  ```bash
+  python3 scripts/ab_benchmark.py \
+      --baseline-binary bin/longbow_main \
+      --candidate-binary /tmp/candidate/bin/longbow_main \
+      --counts 50000 --dtypes float32 --search-modes dense \
+      --queries 500 --reps 6 --threshold 5 --cpu-affinity 12-15 \
+      --seed 42 --out data/perf_logs/ab_verdict.json
+  ```
+
+- **R38. Run the matrix through `ab_benchmark.py` before publishing any of §8.1.**
+  The harness is written and tested but has not been run across the full matrix, so
+  every §8.1 number is still a single un-interleaved measurement. Until that run
+  happens, §8.1 should not be quoted as a baseline, and `--threshold 10` in §3 should be
+  read as "not a gate".
+- **R39. Decide what CI does.** The honest options are (a) run an interleaved A/B in CI
+  against a stored candidate binary, which costs `reps x 2` full matrix runs, or (b) drop
+  the benchmark-regression job and say the measurement is manual. Option (b) is cheaper
+  and more honest than (a) with a threshold too low to mean anything. This is a
+  resource decision, not a technical one.
 
 ### 8.7 Recommended order of work
 

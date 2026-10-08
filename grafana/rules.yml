@@ -601,6 +601,51 @@ groups:
           summary: "High off-heap arena usage"
           description: "Off-heap arena usage is {{ $value | humanizeBytes }}."
 
+  - name: longbow_simd_kernel_alerts
+    # An invisible kernel fallback was the failure mode the validation exists to
+    # prevent. Only `reason="mismatch"` indicates a defect: a resolved SIMD kernel
+    # disagreed with its scalar reference and was rejected in favour of the slower
+    # path. `reason="unavailable"` is routine - float32 alone takes it on every
+    # index on an AVX2 host, because no float32 kernel is registered and its
+    # fallback is itself an AVX2 dispatching kernel.
+    rules:
+      - alert: LongbowSIMDKernelMismatch
+        expr: >-
+          increase(longbow_hnsw_simd_kernel_fallbacks_total{reason="mismatch"}[30m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SIMD distance kernel for {{ $labels.element_type }} rejected as wrong"
+          description: >-
+            The {{ $labels.metric }} kernel for element type {{ $labels.element_type }}
+            disagreed with its scalar reference and was rejected at index construction.
+            The index is using the slower scalar path for this dtype, and the kernel
+            itself is defective - it would otherwise feed wrong distances into
+            neighbour selection and corrupt the graph quietly. The characteristic
+            symptom before this metric existed was one dtype sitting far below its
+            siblings at identical element count.
+
+      - alert: LongbowSIMDKernelScalarFallbackRatio
+        expr: >-
+          sum by (element_type) (rate(longbow_hnsw_simd_kernel_resolved_total{outcome="scalar"}[1h]))
+          /
+          clamp_min(sum by (element_type) (rate(longbow_hnsw_simd_kernel_resolved_total[1h])), 0.001)
+          > 0.99
+          and on(element_type)
+          sum by (element_type) (rate(longbow_hnsw_simd_kernel_resolved_total[1h])) > 0.001
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.element_type }} is running entirely on scalar distance math"
+          description: >-
+            More than 99% of distance resolutions for element type
+            {{ $labels.element_type }} fell back to the scalar path over the last hour.
+            If a SIMD kernel is expected for this type, this is a throughput problem
+            with no other symptom. Ignore it for float32, which has no registered
+            kernel on an AVX2 host and whose fallback is already SIMD.
+
   - name: longbow_bulk_insert_alerts
     # Construction cost of HNSW bulk insert. These exist because bulk-insert
     # latency was charted but never alerted: a 250k turboquant build could run

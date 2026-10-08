@@ -858,6 +858,62 @@ R13, R14, R14a and R14b are implemented and unit-tested in
   success, so "exited 0 but wrote no parsable metrics" is its own reason rather than
   a crash.
 
+### 8.7.1 The SIMD kernel fallback is now visible, and the hypothesis about it is disproven
+
+§8.7 item 7 proposed that the integer-type spread at 500k might be explained by
+`resolveDistanceKernel` silently rejecting a wrong kernel, and asked for the fallback to
+be made observable first. Both halves are now answered, and the answer to the second is
+no.
+
+**Made observable.** `resolveDistanceKernel` takes an element-type label and records two
+outcomes:
+
+| Metric | Meaning |
+|---|---|
+| `longbow_hnsw_simd_kernel_fallbacks_total{element_type,metric,reason}` | A kernel was not used. `reason="mismatch"` means it disagreed with the scalar reference and was rejected - a real kernel defect. `reason="unavailable"` means none existed. |
+| `longbow_hnsw_simd_kernel_resolved_total{element_type,metric,outcome}` | `simd` or `scalar`, so the fallback rate is a ratio of two counters rather than an absence. |
+
+A `slog.Warn` accompanies each. Alerts: `LongbowSIMDKernelMismatch` (critical, on any
+`mismatch`) and `LongbowSIMDKernelScalarFallbackRatio` (info). A panel on
+`index-storage` charts fallbacks split by reason.
+
+**The two reasons must stay separate, and float32 is why.** On an AVX2 host **no float32
+kernel is registered in `simd.GetKernel` at any dimension or metric.** So float32 takes
+the `unavailable` fallback on every single index - and that fallback,
+`simd.EuclideanDistance`, is itself an auto-dispatching AVX2 kernel, which is why
+float32 is the fastest dtype in the matrix rather than the slowest. Consequences:
+
+- `longbow_hnsw_simd_kernel_fallbacks_total{element_type="float32"}` is permanently
+  non-zero and entirely benign. An alert on "any fallback" would fire forever; only
+  `reason="mismatch"` indicates a defect. This is why the reasons were split rather than
+  counted together.
+- **The validation gate never runs for float32**, because there is nothing to validate.
+  float32 correctness rests on `simd.EuclideanDistance` dispatching correctly, not on
+  the check. That is a real gap in the gate's coverage, and it is the opposite of what
+  the gate was assumed to provide.
+
+**The hypothesis is disproven.** `int8`, `uint8`, `int16`, `uint16`, `int32`, `uint32`,
+`int64`, `uint64` and `float64` *are* registered at dims=128, so the gate is live for
+them. Measured directly: the `int16` kernel returns `22.627417` and its scalar reference
+returns `22.627417`; `int8` likewise agrees. No mismatch occurs, so the `mismatch`
+counter stays at zero for the integer types, and **the 6x deficit of `int16`/`uint16`
+against `int8`/`uint8`, and the 11x surplus of `uint64`, are not caused by a silent
+fallback.** Whatever causes the spread is still open; what is now excluded is the most
+plausible candidate, and it is excluded by measurement rather than by argument.
+
+- **R32. Explain the integer-type spread by other means.** Fallback is ruled out. The
+  remaining candidates are per-type kernel quality (the wide-integer kernels may be
+  genuinely slower rather than rejected), and conversion or widening cost in the search
+  path. Both are answerable now that `resolveDistanceKernel` reports its outcome, because
+  a dtype confirmed to be running SIMD and still slow points at the kernel rather than
+  at dispatch.
+- **R33. Register a float32 kernel, or accept that the gate does not cover float32.**
+  Leaving it unregistered means the validation that protects the other 12 element types
+  does not protect the one the product uses most. The alternative is documenting that
+  float32 is validated only by its own tests.
+- **R34. Fix the pre-existing panel overlaps in `index-storage.json`.** 192 overlapping
+  grid cells exist at HEAD, predating this work. Not touched here.
+
 ### 8.6.2 Repeatability: what is fixed and what is still not a 10% gate
 
 R16 makes two runs of the same binary *equivalent inputs*. That is a precondition

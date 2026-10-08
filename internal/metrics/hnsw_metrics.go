@@ -103,6 +103,32 @@ var (
 		},
 	)
 
+	// HNSWSIMDKernelFallbacksTotal counts distance kernels that were NOT used,
+	// split by why. `mismatch` is the one that matters: it means a resolved SIMD
+	// kernel disagreed with the scalar reference and was rejected in favour of the
+	// slower scalar path. That is the correct behaviour - a wrong kernel would
+	// silently corrupt neighbour selection - but it used to happen invisibly,
+	// which is precisely the failure mode the validation exists to detect. The
+	// characteristic signature is a dtype sitting far below its siblings at
+	// identical element count, so this counter is how that gets attributed.
+	HNSWSIMDKernelFallbacksTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_simd_kernel_fallbacks_total",
+			Help: "Distance kernels rejected during resolution, by element type, metric and reason",
+		},
+		[]string{"element_type", "metric", "reason"},
+	)
+
+	// HNSWSIMDKernelResolvedTotal counts the outcome of resolution, so the
+	// fallback rate is a ratio of two counters rather than an absence.
+	HNSWSIMDKernelResolvedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_simd_kernel_resolved_total",
+			Help: "Distance kernel resolution outcomes, by element type, metric and outcome",
+		},
+		[]string{"element_type", "metric", "outcome"},
+	)
+
 	HNSWBulkInsertDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_bulk_insert_duration_seconds",

@@ -623,6 +623,45 @@
           "legendFormat": "Tombstones"
         }
       ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Fallback reason counts. Only reason=\"mismatch\" indicates a defect: a resolved SIMD kernel disagreed with its scalar reference and was rejected, leaving the index on the slower scalar path. reason=\"unavailable\" is routine and float32 takes it on every index on an AVX2 host, because no float32 kernel is registered and its fallback is itself an AVX2 dispatching kernel. Chart the two reasons separately - a combined total looks like a permanent failure when it is not.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 66
+      },
+      "id": 2006,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (element_type, reason) (rate(longbow_hnsw_simd_kernel_fallbacks_total[$__rate_interval]))",
+          "legendFormat": "{{element_type}} / {{reason}}",
+          "refId": "A"
+        }
+      ],
+      "title": "SIMD Distance Kernel Fallbacks (by reason)",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

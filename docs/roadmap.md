@@ -833,9 +833,60 @@ R13, R14, R14a and R14b are implemented and unit-tested in
   exhaustion instead of a 9,194-line log and nothing else. The output is also
   mirrored to `perf_matrix_<mode>[_<label>]_latest.json` alongside the timestamped
   per-run file, so `--resume` in a fresh invocation finds the checkpoint.
-- **R15. Record `tq_bits` in the result config** so `turboquant4` and `turboquant8` are separate rows, and key the comparison on it.
-- **R16. Make `ByID` and the corpus generator deterministic** — a seed flag, drawn from a fixed seed for the corpus and derived from the query index for `ByID`. Repeatability is a precondition for a 10% regression gate; today it is not met.
-- **R17. Surface the child exit signal** in the failure record so a killed client is distinguishable from a timeout or a server crash.
+- **R15. DONE.** The bit-pack branch no longer reassigns `dtype`; it sets
+  `wire_dtype`, which is what the client is told, and keeps `requested_dtype` for the
+  record. Result rows now carry `requested_dtype`, `wire_dtype` and `tq_bits`, so
+  `turboquant4` and `turboquant8` are distinguishable by name *and* by an explicit
+  field. `check_regression.match_config` now keys on `tq_bits`, so a 4-bit baseline
+  cannot be paired with an 8-bit result and the difference called a regression;
+  `_tq_bits` also recovers the depth from the dtype string for reports written
+  before this change.
+- **R16. DONE.** New `-seed` flag, default 42 and fixed.
+  - Corpus: worker seeds are `*seed + w*10007`, derived from the run seed rather
+    than `time.Now().UnixNano()`.
+  - Queries: `BuildSearchTicket` takes a `queryIdx` and derives a per-query stream
+    from it. The previous code used the global `math/rand`, which Go seeds per
+    process, so two runs of the same binary issued different queries.
+  - `ByID`: the id is derived from the query index and wrapped into the corpus
+    instead of being hardcoded to `"0"`. That was measuring one permanently hot
+    node, which is where the 7x run-to-run swing came from.
+  - The seed is recorded on every result row.
+- **R17. DONE.** A failed run now reports *why*. Exit `-9` and `137` both resolve to
+  `SIGKILL`, `124` is a timeout, and a non-zero exit is named; the reason is stored
+  per config in `failure_reasons` and written into both the checkpoint and the
+  final report. One case is deliberately distinct: bench-tool can exit non-zero on
+  success, so "exited 0 but wrote no parsable metrics" is its own reason rather than
+  a crash.
+
+### 8.6.2 Repeatability: what is fixed and what is still not a 10% gate
+
+R16 makes two runs of the same binary *equivalent inputs*. That is a precondition
+for a percentage comparison, not the whole of it, and the remaining sources of
+variance are not all in the client:
+
+| Source | State |
+|---|---|
+| Corpus | Fixed by R16 |
+| Query vectors | Fixed by R16 |
+| `ByID` ids | Fixed by R16 |
+| Temporal as-of and cache key | Fixed by R11 |
+| Mode order | Recorded by R12, coupling not removed (R12a) |
+| Server-side cache state from prior modes | Not addressed (R12a) |
+| Machine state, page cache, CPU frequency | Not addressed; needs interleaved A/B, as in 9.4 |
+| Which revision is being measured | Recorded by R2 (provenance) |
+
+A 10% threshold on a single non-interleaved run is therefore still not defensible,
+and the honest statement is that the harness now *can* support such a gate once the
+remaining rows are addressed, rather than that it does today.
+
+- **R30. Interleave runs in the regression gate.** Every A/B in this document that
+  reached a conclusion used interleaved runs with a min-of-N, because single runs on
+  this host varied by 40%+ at times. `check_regression.py` compares one run to one
+  baseline; it should compare N interleaved runs, or refuse to gate on N=1.
+- **R31. Measure the residual variance now that the inputs are fixed.** Run the same
+  binary five times with R16 in place and report the spread. Until that number
+  exists, "10% threshold" is a guess, and it is the number that should be quoted
+  rather than assumed.
 
 ### 8.7 Recommended order of work
 

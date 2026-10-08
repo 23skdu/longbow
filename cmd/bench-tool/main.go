@@ -56,6 +56,8 @@ type BenchmarkResult struct {
 	// R12: a baseline collected from a different mode list, or with a mode in a
 	// different position, is not comparable - the modes before this one decide
 	// its cache and GC state.
+	Seed int64 `json:"seed,omitempty"`
+
 	ModeIndex  int      `json:"mode_index,omitempty"`
 	ModeCount  int      `json:"mode_count,omitempty"`
 	ModeOrders []string `json:"mode_order,omitempty"`
@@ -80,6 +82,8 @@ func main() {
 	queries := flag.Int("queries", 1000, "Number of search queries")
 	outputJson := flag.String("json", "", "Save stats as JSON file")
 	tqBits := flag.Int("tq-bits", 4, "TurboQuant bit depth (2, 4, 8)")
+	seed := flag.Int64("seed", defaultSeed,
+		"Seed for corpus generation, query vectors and ByID ids. Repeatability is a precondition for a percentage regression gate: with the corpus and the queries both drawn from the clock, two runs of the same binary differ by more than most regressions anyone would gate on. Recorded in the output JSON.")
 	workers := flag.Int("workers", 1, "Number of concurrent search workers")
 	drop := flag.Bool("drop", false, "Drop dataset after benchmark")
 	fbin := flag.String("fbin", "", "Read vectors from Arrow IPC binary file or true .fbin instead of generating them")
@@ -316,7 +320,10 @@ func main() {
 		close(jobs)
 
 		for w := 0; w < numWorkers; w++ {
-			workerSeed := time.Now().UnixNano() + int64(w*10007)
+			// Derived from the fixed seed and the worker index, not the clock
+			// (R16, H7). Each worker still gets a distinct stream so the chunks
+			// are not identical to one another.
+			workerSeed := *seed + int64(w)*10007
 			go func(seed int64) {
 				rng := rand.New(rand.NewSource(seed)) // #nosec G404 -- non-cryptographic PRNG for benchmark
 				for job := range jobs {
@@ -558,6 +565,7 @@ func main() {
 	}
 	// R11: one fixed as-of timestamp for the whole run.
 	TemporalAsOfNanos = *temporalAsOf
+	RunSeed = *seed
 
 	// R10: a per-mode budget. The previous single 5-minute context covered all
 	// modes, so each mode inherited what the ones before it left behind and the
@@ -593,6 +601,11 @@ func main() {
 				}
 
 				for i := 0; i < numToRun; i++ {
+					// Stable global index: derived from the worker's slice
+					// offset, not from a counter, so the query a given index
+					// denotes does not depend on goroutine scheduling.
+					globalIdx := workerID*queriesPerWorker + i
+					corpusN := *scale
 					// Stop issuing once this mode's own budget is spent;
 					// every later query would fail instantly and be
 					// reported as a fast miss.
@@ -603,7 +616,7 @@ func main() {
 						continue
 					}
 					qStart := time.Now()
-					if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state); err != nil {
+					if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state, globalIdx, corpusN); err != nil {
 						mu.Lock()
 						if errors.Is(searchCtx.Err(), context.DeadlineExceeded) {
 							truncated++
@@ -657,6 +670,7 @@ func main() {
 			QueriesRequested:        requested,
 			QueriesFailed:           failed,
 			QueriesTruncated:        truncated,
+			Seed:                    *seed,
 			ModeIndex:               modeIdx,
 			ModeCount:               len(modes),
 			ModeOrders:              modeOrders,
@@ -780,7 +794,13 @@ func NewReusableSearchState(maxDim int) *ReusableSearchState {
 	}
 }
 
-func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype string, mode string, k int) []byte {
+// BuildSearchTicket builds a search ticket for one query.
+//
+// queryIdx makes the query vector a deterministic function of (mode, query
+// index) rather than of the global math/rand, which Go seeds randomly per
+// process (R16, H7). Two runs of the same binary therefore issue byte-identical
+// queries, which is the precondition for comparing two runs at all.
+func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype string, mode string, k int, queryIdx int) []byte {
 	s.buf = s.buf[:0]
 	s.buf = append(s.buf, `{"search":{"dataset":"`...)
 	s.buf = append(s.buf, dataset...)
@@ -793,8 +813,11 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 	}
 
 	// Randomize vector in-place
+	// One stream per (mode, query index): reproducible, and independent enough
+	// that neighbouring queries are not near-duplicates.
+	qRng := rand.New(rand.NewSource(RunSeed + int64(queryIdx)*2654435761 + int64(len(mode))*97)) // #nosec G404 -- benchmark data
 	for i := 0; i < queryLen; i++ {
-		s.vector[i] = rand.Float32() // #nosec G404 -- non-cryptographic use for benchmark data
+		s.vector[i] = qRng.Float32()
 	}
 
 	switch mode {
@@ -865,6 +888,19 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 // value is both deterministic and non-empty regardless of when the corpus was
 // generated. Fixed-value determinism matters more here than semantic realism: the
 // mode exists to be compared against a baseline, not to model a point in time.
+// defaultSeed is the fixed seed for corpus, queries and ByID ids (R16, H7).
+// Any value works as long as it does not change between runs; 42 is arbitrary and
+// fixed. The previous behaviour seeded from time.Now().UnixNano() per chunk, so
+// no two runs saw the same corpus and neither index shape nor ingest throughput
+// was comparable across runs - which is where the 40%+ per-mode variance came
+// from.
+const defaultSeed int64 = 42
+
+// RunSeed is the seed for this run, set once from -seed. Package-level so the
+// few helpers that build tickets or single records do not each need it threaded
+// through; it is written once during flag parsing and read-only afterwards.
+var RunSeed = defaultSeed
+
 const defaultTemporalAsOf int64 = 4102444800000000000
 
 // TemporalAsOfNanos is the as-of timestamp used by every Temporal ticket in this
@@ -872,7 +908,7 @@ const defaultTemporalAsOf int64 = 4102444800000000000
 // per query.
 var TemporalAsOfNanos = defaultTemporalAsOf
 
-func (s *ReusableSearchState) BuildSpecialTicket(dataset string, mode string) []byte {
+func (s *ReusableSearchState) BuildSpecialTicket(dataset string, mode string, queryIdx int, corpusSize int) []byte {
 	s.buf = s.buf[:0]
 	switch mode {
 	case "Recommend":
@@ -894,20 +930,31 @@ func (s *ReusableSearchState) BuildSpecialTicket(dataset string, mode string) []
 		s.buf = append(s.buf, fmt.Sprintf("%d", TemporalAsOfNanos)...)
 		s.buf = append(s.buf, `}}`...)
 	case "ByID":
+		// R16, H6: this was hardcoded to id "0", so every query hit one
+		// permanently hot node and measured the mode's cache hit rather than
+		// its search - a 7x swing between runs. Derived from the query index
+		// and wrapped into the corpus, so consecutive queries touch different
+		// ids and the mode is reproducible.
+		byID := queryIdx
+		if corpusSize > 0 {
+			byID = queryIdx % corpusSize
+		}
 		s.buf = append(s.buf, `{"search_by_id":{"dataset":"`...)
 		s.buf = append(s.buf, dataset...)
-		s.buf = append(s.buf, `","k":10,"id":"0"}}`...)
+		s.buf = append(s.buf, `","k":10,"id":"`...)
+		s.buf = append(s.buf, fmt.Sprintf("%d", byID)...)
+		s.buf = append(s.buf, `"}}`...)
 	}
 	return s.buf
 }
 
 // executeSearch performs search by setting JSON ticket in DoGet
-func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, dim int, dtype string, mode string, state *ReusableSearchState) error {
+func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, dim int, dtype string, mode string, state *ReusableSearchState, queryIdx, corpusSize int) error {
 	var ticketBytes []byte
 	if mode == "Recommend" || mode == "Geo" || mode == "Temporal" || mode == "ByID" {
-		ticketBytes = state.BuildSpecialTicket(dataset, mode)
+		ticketBytes = state.BuildSpecialTicket(dataset, mode, queryIdx, corpusSize)
 	} else {
-		ticketBytes = state.BuildSearchTicket(dataset, dim, dtype, mode, 10)
+		ticketBytes = state.BuildSearchTicket(dataset, dim, dtype, mode, 10, queryIdx)
 	}
 
 	if mode == "GlobalGraphRAG" {
@@ -1009,7 +1056,8 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 
 // generateRecord is a multi-type arrow table builder (backward compatible wrapper)
 func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record, *arrow.Schema, error) {
-	rng := rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404
+	// R16: deterministic, unlike the time.Now() seed it replaces.
+	rng := rand.New(rand.NewSource(RunSeed)) // #nosec G404 -- benchmark data, not crypto
 	return generateRecordBatch(rng, 0, count, dim, dtype, tqBits)
 }
 

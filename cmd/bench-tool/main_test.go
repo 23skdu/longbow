@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"math/rand"
 	"strings"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
 func TestGenerateRecordFloat32(t *testing.T) {
@@ -221,7 +224,7 @@ func TestNewReusableSearchState(t *testing.T) {
 
 func TestBuildSearchTicketDense(t *testing.T) {
 	s := NewReusableSearchState(128)
-	ticket := s.BuildSearchTicket("test_ds", 128, "float32", "Dense", 10)
+	ticket := s.BuildSearchTicket("test_ds", 128, "float32", "Dense", 10, 0)
 
 	if len(ticket) == 0 {
 		t.Fatal("empty ticket")
@@ -250,7 +253,7 @@ func TestBuildSearchTicketDense(t *testing.T) {
 
 func TestBuildSearchTicketHybrid(t *testing.T) {
 	s := NewReusableSearchState(64)
-	ticket := s.BuildSearchTicket("ds", 64, "float32", "Hybrid", 5)
+	ticket := s.BuildSearchTicket("ds", 64, "float32", "Hybrid", 5, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -268,7 +271,7 @@ func TestBuildSearchTicketHybrid(t *testing.T) {
 
 func TestBuildSearchTicketSparse(t *testing.T) {
 	s := NewReusableSearchState(64)
-	ticket := s.BuildSearchTicket("ds", 64, "float32", "Sparse", 10)
+	ticket := s.BuildSearchTicket("ds", 64, "float32", "Sparse", 10, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -283,7 +286,7 @@ func TestBuildSearchTicketSparse(t *testing.T) {
 
 func TestBuildSearchTicketFiltered(t *testing.T) {
 	s := NewReusableSearchState(64)
-	ticket := s.BuildSearchTicket("ds", 64, "float32", "Filtered", 10)
+	ticket := s.BuildSearchTicket("ds", 64, "float32", "Filtered", 10, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -303,7 +306,7 @@ func TestBuildSearchTicketFiltered(t *testing.T) {
 
 func TestBuildSearchTicketFilteredBool(t *testing.T) {
 	s := NewReusableSearchState(64)
-	ticket := s.BuildSearchTicket("ds", 64, "float32", "FilteredBool", 10)
+	ticket := s.BuildSearchTicket("ds", 64, "float32", "FilteredBool", 10, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -320,7 +323,7 @@ func TestBuildSearchTicketFilteredBool(t *testing.T) {
 
 func TestBuildSearchTicketFilteredString(t *testing.T) {
 	s := NewReusableSearchState(64)
-	ticket := s.BuildSearchTicket("ds", 64, "float32", "FilteredString", 10)
+	ticket := s.BuildSearchTicket("ds", 64, "float32", "FilteredString", 10, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -337,7 +340,7 @@ func TestBuildSearchTicketFilteredString(t *testing.T) {
 
 func TestBuildSearchTicketGraphRAG(t *testing.T) {
 	s := NewReusableSearchState(64)
-	ticket := s.BuildSearchTicket("ds", 64, "float32", "GraphRAG", 10)
+	ticket := s.BuildSearchTicket("ds", 64, "float32", "GraphRAG", 10, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -352,7 +355,7 @@ func TestBuildSearchTicketGraphRAG(t *testing.T) {
 
 func TestBuildSearchTicketLearnedIndex(t *testing.T) {
 	s := NewReusableSearchState(64)
-	ticket := s.BuildSearchTicket("ds", 64, "float32", "LearnedIndex", 10)
+	ticket := s.BuildSearchTicket("ds", 64, "float32", "LearnedIndex", 10, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -367,7 +370,7 @@ func TestBuildSearchTicketLearnedIndex(t *testing.T) {
 
 func TestBuildSearchTicketComplex(t *testing.T) {
 	s := NewReusableSearchState(32)
-	ticket := s.BuildSearchTicket("ds", 32, "complex64", "Dense", 10)
+	ticket := s.BuildSearchTicket("ds", 32, "complex64", "Dense", 10, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -383,7 +386,7 @@ func TestBuildSearchTicketComplex(t *testing.T) {
 
 func TestBuildSearchTicketComplex128(t *testing.T) {
 	s := NewReusableSearchState(32)
-	ticket := s.BuildSearchTicket("ds", 32, "complex128", "Dense", 10)
+	ticket := s.BuildSearchTicket("ds", 32, "complex128", "Dense", 10, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -399,7 +402,7 @@ func TestBuildSearchTicketComplex128(t *testing.T) {
 
 func TestBuildSpecialTicketRecommend(t *testing.T) {
 	s := NewReusableSearchState(128)
-	ticket := s.BuildSpecialTicket("test_ds", "Recommend")
+	ticket := s.BuildSpecialTicket("test_ds", "Recommend", 0, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -420,7 +423,7 @@ func TestBuildSpecialTicketRecommend(t *testing.T) {
 
 func TestBuildSpecialTicketGeo(t *testing.T) {
 	s := NewReusableSearchState(128)
-	ticket := s.BuildSpecialTicket("test_ds", "Geo")
+	ticket := s.BuildSpecialTicket("test_ds", "Geo", 0, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -445,7 +448,7 @@ func TestBuildSpecialTicketGeo(t *testing.T) {
 
 func TestBuildSpecialTicketTemporal(t *testing.T) {
 	s := NewReusableSearchState(128)
-	ticket := s.BuildSpecialTicket("test_ds", "Temporal")
+	ticket := s.BuildSpecialTicket("test_ds", "Temporal", 0, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -466,7 +469,7 @@ func TestBuildSpecialTicketTemporal(t *testing.T) {
 
 func TestBuildSpecialTicketByID(t *testing.T) {
 	s := NewReusableSearchState(128)
-	ticket := s.BuildSpecialTicket("test_ds", "ByID")
+	ticket := s.BuildSpecialTicket("test_ds", "ByID", 0, 0)
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(ticket, &parsed); err != nil {
@@ -484,8 +487,8 @@ func TestBuildSpecialTicketByID(t *testing.T) {
 
 func TestBuildSearchTicketBufferReuse(t *testing.T) {
 	s := NewReusableSearchState(128)
-	t1 := s.BuildSearchTicket("ds1", 128, "float32", "Dense", 10)
-	t2 := s.BuildSearchTicket("ds2", 128, "float32", "Dense", 10)
+	t1 := s.BuildSearchTicket("ds1", 128, "float32", "Dense", 10, 0)
+	t2 := s.BuildSearchTicket("ds2", 128, "float32", "Dense", 10, 0)
 
 	// Second call should have overwritten the first
 	var parsed map[string]interface{}
@@ -512,6 +515,119 @@ func BenchmarkGenerateRecord(b *testing.B) {
 func BenchmarkBuildSearchTicket(b *testing.B) {
 	s := NewReusableSearchState(128)
 	for b.Loop() {
-		s.BuildSearchTicket("bench", 128, "float32", "Dense", 10)
+		s.BuildSearchTicket("bench", 128, "float32", "Dense", 10, 0)
+	}
+}
+
+// TestTicketDeterminismAcrossCalls pins R16: the query a given (mode, index)
+// denotes must not depend on the clock or on call order. Before this, query
+// vectors came from the global math/rand, which Go seeds per process, so two
+// runs of the same binary issued different queries and a percentage comparison
+// between them measured noise.
+func TestTicketDeterminismAcrossCalls(t *testing.T) {
+	first := map[string]string{}
+	for _, tc := range []struct {
+		mode  string
+		dim   int
+		dtype string
+	}{
+		{"Dense", 128, "float32"},
+		{"Hybrid", 128, "float32"},
+		{"Filtered", 128, "float32"},
+		{"GraphRAG", 128, "float32"},
+		{"LearnedIndex", 128, "float32"},
+	} {
+		s := NewReusableSearchState(128)
+		ticket := s.BuildSearchTicket("ds", tc.dim, tc.dtype, tc.mode, 10, 7)
+		first[tc.mode] = string(ticket)
+
+		// A fresh state, and a fresh process would have a different global
+		// seed, must still produce the same bytes.
+		s2 := NewReusableSearchState(128)
+		if got := string(s2.BuildSearchTicket("ds", tc.dim, tc.dtype, tc.mode, 10, 7)); got != first[tc.mode] {
+			t.Errorf("mode %s: fresh state produced different ticket for the same index", tc.mode)
+		}
+
+		// A different index must produce a different query, or the mode is
+		// measuring one hot vector.
+		s3 := NewReusableSearchState(128)
+		if got := string(s3.BuildSearchTicket("ds", tc.dim, tc.dtype, tc.mode, 10, 8)); got == first[tc.mode] {
+			t.Errorf("mode %s: query index 8 produced the same vector as index 7", tc.mode)
+		}
+	}
+}
+
+// TestByIDUsesQueryIndex covers H6. ByID was hardcoded to id "0", so every query
+// hit one permanently hot node: the mode measured a cache hit rather than a
+// search, and swung 7x between runs.
+func TestByIDUsesQueryIndex(t *testing.T) {
+	const corpus = 1000
+	seen := map[string]bool{}
+	for i := 0; i < 10; i++ {
+		s := NewReusableSearchState(8)
+		ticket := string(s.BuildSpecialTicket("ds", "ByID", i, corpus))
+		if !strings.Contains(ticket, fmt.Sprintf(`"id":"%d"`, i)) {
+			t.Fatalf("ByID query %d did not request id %d: %s", i, i, ticket)
+		}
+		if seen[ticket] {
+			t.Fatalf("ByID queries %d produced a duplicate ticket", i)
+		}
+		seen[ticket] = true
+	}
+
+	// Wraps into the corpus rather than running off the end.
+	s := NewReusableSearchState(8)
+	ticket := string(s.BuildSpecialTicket("ds", "ByID", corpus+5, corpus))
+	if !strings.Contains(ticket, `"id":"5"`) {
+		t.Errorf("ByID index %d did not wrap into corpus size %d: %s", corpus+5, corpus, ticket)
+	}
+}
+
+// TestCorpusGenerationIsDeterministic covers the other half of R16/H7: the
+// corpus was seeded from time.Now().UnixNano() per chunk.
+func TestCorpusGenerationIsDeterministic(t *testing.T) {
+	RunSeed = defaultSeed
+	defer func() { RunSeed = defaultSeed }()
+
+	gen := func() []float64 {
+		rng := rand.New(rand.NewSource(RunSeed))
+		_, _, err := generateRecordBatch(rng, 0, 32, 8, "float32", 4)
+		if err != nil {
+			t.Fatalf("generateRecordBatch: %v", err)
+		}
+		rec, _, err := generateRecordBatch(rng, 0, 32, 8, "float32", 4)
+		if err != nil {
+			t.Fatalf("generateRecordBatch: %v", err)
+		}
+		vals := rec.Column(1).(*array.FixedSizeList).ListValues().(*array.Float32).Float32Values()
+		out := make([]float64, len(vals))
+		for i, v := range vals {
+			out[i] = float64(v)
+		}
+		rec.Release()
+		return out
+	}
+
+	a, b := gen(), gen()
+	if len(a) != len(b) {
+		t.Fatalf("corpus lengths differ: %d vs %d", len(a), len(b))
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			t.Fatalf("corpus differs at element %d: %v vs %v", i, a[i], b[i])
+		}
+	}
+}
+
+// TestTemporalAsOfIsFixed covers R11's determinism half from the client side.
+func TestTemporalAsOfIsFixed(t *testing.T) {
+	s := NewReusableSearchState(8)
+	a := string(s.BuildSpecialTicket("ds", "Temporal", 0, 0))
+	b := string(s.BuildSpecialTicket("ds", "Temporal", 999, 0))
+	if a != b {
+		t.Errorf("temporal ticket varied with query index:\n  %s\n  %s", a, b)
+	}
+	if !strings.Contains(a, fmt.Sprintf("%d", defaultTemporalAsOf)) {
+		t.Errorf("temporal ticket does not carry the fixed timestamp: %s", a)
 	}
 }

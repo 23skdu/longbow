@@ -511,6 +511,10 @@ class BenchmarkRunner:
         self.exhausted_configs = set()
         self.completed_configs = set()
         self.failed_configs = set()
+        # R17: failure reason per config key, so a report distinguishes a
+        # SIGKILLed client from a timeout from a server crash.
+        self.failure_reasons = {}
+        self.last_failure_reason = None
         self.server_pid = None
         self.test_counter = 0
 
@@ -613,6 +617,7 @@ class BenchmarkRunner:
                         "completed_configs": [list(c) for c in getattr(self, 'completed_configs', set())],
                         "failed_configs": [list(c) for c in getattr(self, 'failed_configs', set())],
                         "exhausted_configs": [list(c) for c in getattr(self, 'exhausted_configs', set())],
+                        "failure_reasons": {str(k): v for k, v in getattr(self, 'failure_reasons', {}).items()},
                     }, f, indent=2)
                 # Mirror to the stable path so a later --resume in a fresh
                 # invocation finds it.
@@ -1346,15 +1351,24 @@ class BenchmarkRunner:
         duration = self.args.duration
         json_file = os.path.join(self.log_dir, f"result_{label}.json")
 
-        # Handle TurboQuant bit-packs
+        # Handle TurboQuant bit-packs (R15, H5).
+        #
+        # This used to reassign `dtype`, so `turboquant4` and `turboquant8` were
+        # both recorded as "turboquant" and every "turboquant" row in the results
+        # was two configurations. Only tq_bits told them apart, and the comparison
+        # key did not include it - so half the TurboQuant matrix could not be
+        # attributed. The requested dtype string is now preserved and the wire
+        # form is a separate variable.
         is_turboquant = False
         tq_bits = 0
+        requested_dtype = dtype
+        wire_dtype = dtype
         if dtype == "turboquant4":
-            dtype = "turboquant"
+            wire_dtype = "turboquant"
             tq_bits = 4
             is_turboquant = True
         elif dtype == "turboquant8":
-            dtype = "turboquant"
+            wire_dtype = "turboquant"
             tq_bits = 8
             is_turboquant = True
 
@@ -1388,7 +1402,8 @@ class BenchmarkRunner:
         # later comparison can tell whether two runs used the same modes in the
         # same order. bench-tool normalises and reorders the list it is given.
         self.args.resolved_search_modes = [m for m in str(search_modes).split(",") if m]
-        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype}{tq_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
+        seed_arg = f" -seed {self.args.seed}" if getattr(self.args, "seed", None) is not None else ""
+        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {wire_dtype}{tq_arg}{seed_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
         cpu_affinity = getattr(self.args, "cpu_affinity", None) or os.environ.get("LONGBOW_CPU_AFFINITY")
         if cpu_affinity and platform.system() == "Linux":
             cmd = f"taskset -c {cpu_affinity} {cmd}"
@@ -1453,9 +1468,43 @@ class BenchmarkRunner:
         print(f"DEBUG: json_file={json_file}")
         metrics = parse_bench_json(json_file)
         if not metrics:
-            print(" FAILED")
+            # R17 (H8): a SIGKILLed client, a timeout and a crash all used to be
+            # reported identically - "FAILED" with an empty error - which is how
+            # H1's collateral damage was indistinguishable from a genuine
+            # failure. The exit code and signal are what separate them.
+            rc = getattr(result, "returncode", None) if result else None
+            signal_name = None
+            if rc is not None and rc < 0:
+                try:
+                    import signal as _signal
+
+                    signal_name = _signal.Signals(-rc).name
+                except (ValueError, AttributeError):
+                    signal_name = f"SIG{-rc}"
+            elif rc is not None and rc > 128:
+                # Shell convention: 128+n means terminated by signal n.
+                try:
+                    import signal as _signal
+
+                    signal_name = _signal.Signals(rc - 128).name
+                except (ValueError, AttributeError):
+                    signal_name = f"SIG{rc - 128}"
+
+            if signal_name:
+                reason = f"client terminated by {signal_name}"
+            elif rc == 124:
+                reason = "client timed out"
+            elif rc is not None and rc != 0:
+                reason = f"client exited {rc}"
+            elif rc is None:
+                reason = "client produced no output and no result file"
+            else:
+                reason = "client exited 0 but wrote no parsable metrics"
+
+            print(f" FAILED ({reason})")
             if result and result.stderr:
                 print(f"    Error: {result.stderr.strip()}")
+            self.last_failure_reason = reason
             return False
 
         # Extract all search types
@@ -1514,7 +1563,14 @@ class BenchmarkRunner:
             "search": search_metrics,
             "disk_usage_mb": disk_mb,
             "peak_memory_mb": round(peak_mb, 2),
+            # R15: both fields are needed. requested_dtype keeps turboquant4 and
+            # turboquant8 distinguishable by name; tq_bits makes the comparison
+            # key explicit rather than depending on parsing the dtype string.
+            "dtype": requested_dtype,
+            "requested_dtype": requested_dtype,
+            "wire_dtype": wire_dtype,
             "tq_bits": tq_bits,
+            "seed": self.args.seed if getattr(self.args, "seed", None) is not None else None,
             "timestamp": datetime.now().isoformat(),
         }
         self.results.append(result_entry)
@@ -3506,6 +3562,14 @@ class BenchmarkRunner:
                                 # Track failed configs for retry-failed
                                 if not success and not exhausted and not server_crashed:
                                     self.failed_configs.add(config_key)
+                                    # R17 (H8): keep why it failed. A
+                                    # SIGKILLed client, a timeout and a crash
+                                    # were all "FAILED" with an empty error,
+                                    # which is how collateral damage from H1
+                                    # looked identical to a real failure.
+                                    reason = getattr(self, "last_failure_reason", None)
+                                    if reason:
+                                        self.failure_reasons[config_key] = reason
 
                             finally:
                                 # Save results BEFORE pprof snapshot — don't let pprof
@@ -3560,6 +3624,7 @@ class BenchmarkRunner:
             "completed_configs": [list(c) for c in self.completed_configs],
             "failed_configs": [list(c) for c in self.failed_configs],
             "exhausted_configs": [list(c) for c in self.exhausted_configs],
+            "failure_reasons": {str(k): v for k, v in self.failure_reasons.items()},
         }
 
         if violations:
@@ -3986,6 +4051,18 @@ if __name__ == "__main__":
             "precedence over LONGBOW_MAX_MEMORY. When neither is given the ceiling "
             f"defaults to {int(DEFAULT_MEMORY_FRACTION * 100)}%% of detected host RAM "
             "rather than a fixed constant."
+        ),
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for the benchmark client's corpus, queries and ByID ids. "
+            "Repeatability is a precondition for a percentage regression gate "
+            "(roadmap R16). Left unset the client uses its own fixed default, "
+            "which is deterministic; set explicitly to compare against a "
+            "baseline taken with a known seed."
         ),
     )
     parser.add_argument(

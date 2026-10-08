@@ -121,11 +121,33 @@ def match_config(baseline_cfg: dict, result_cfg: dict) -> bool:
     r_variant = result_cfg.get("variant")
     if b_variant is not None and r_variant is not None and b_variant != r_variant:
         return False
+    # R15 (H5): the bit depth is part of the identity of a TurboQuant config.
+    # turboquant4 and turboquant8 differ only in this field once the dtype
+    # string is normalised, so a comparison that ignores it can pair a 4-bit
+    # baseline against an 8-bit result and call the difference a regression.
     return (
         baseline_cfg.get("dim") == result_cfg.get("dim")
         and baseline_cfg.get("dtype") == result_cfg.get("dtype")
         and baseline_cfg.get("count") == result_cfg.get("count")
+        and _tq_bits(baseline_cfg) == _tq_bits(result_cfg)
     )
+
+
+def _tq_bits(cfg):
+    """Bit depth of a config, defaulting to 0 for non-TurboQuant dtypes.
+
+    Read from tq_bits when present, otherwise recovered from the dtype string, so
+    reports written before R15 are still distinguishable from each other.
+    """
+    explicit = cfg.get("tq_bits")
+    if explicit is not None:
+        return int(explicit)
+    dtype = str(cfg.get("dtype") or "")
+    if dtype.endswith("4"):
+        return 4
+    if dtype.endswith("8"):
+        return 8
+    return 0
 
 
 def check_regressions(baseline: dict, results: dict, threshold: float, variant: str | None = None) -> list:
@@ -162,6 +184,7 @@ def check_regressions(baseline: dict, results: dict, threshold: float, variant: 
                     regressions.append({
                         "dim": b_cfg.get("dim"),
                         "dtype": b_cfg.get("dtype"),
+                        "tq_bits": _tq_bits(b_cfg),
                         "count": b_cfg.get("count"),
                         "mode": mode,
                         "baseline_qps": b_qps,

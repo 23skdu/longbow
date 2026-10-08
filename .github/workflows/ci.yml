@@ -52,12 +52,14 @@ jobs:
         # The benchmark report writer refuses to emit a report that violates
         # qps * p50 <= workers * 1000, which makes that report unusable as a
         # regression gate. That gate is only trustworthy if it is itself tested,
-        # as is the memory-ceiling parser and the guarantee that the harness
-        # never reaps processes it did not start.
+        # as is the memory-ceiling parser, the guarantee that the harness never
+        # reaps processes it did not start, and the attribution of TurboQuant
+        # bit depths and child exit signals in a report.
         run: |
           python3 scripts/tests/test_benchmark_validation.py
           python3 scripts/tests/test_benchmark_memory.py
           python3 scripts/tests/test_benchmark_temporal.py
+          python3 scripts/tests/test_benchmark_attribution.py
 
       - name: Verify 100% Package Test Coverage Gate
         run: |

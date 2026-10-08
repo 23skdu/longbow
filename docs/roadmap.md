@@ -686,9 +686,68 @@ continuing bulk insert, is not going to hold. A candidate that lands must be one
 
 ### Recommendations for the temporal harness
 
-- **R10. Give each search mode its own context budget** in `bench-tool`, derived per mode, instead of one 5-minute budget for all 13. Record a per-mode `context_deadline_exceeded` flag in the JSON so a truncated mode can never be reported as a low QPS.
-- **R11. Make the temporal ticket deterministic.** Use a fixed timestamp (or a small set drawn from the corpus) instead of `time.Now().UnixNano()`, and add an explicit cache-hit/miss count to the temporal result JSON. Without that, the mode measures the cache-miss path even when the cache exists to be hit.
-- **R12. Freeze the mode list and its order in the baseline**, and record it per row. A baseline collected from 9 modes cannot be compared against a 13-mode run: the modes before the one under test change its cache state.
+- **R10. DONE.** Each mode now gets its own `-search-timeout` budget (default 5m)
+  created inside the mode loop, rather than one context shared by all 13. The
+  deadline is read *before* `cancel()` so a mode that ran out of budget is labelled
+  rather than merely slow, and workers stop issuing once the budget is spent -
+  otherwise every remaining query fails instantly and is counted as a fast miss.
+  New JSON fields: `context_deadline_exceeded`, `queries_requested`,
+  `queries_failed`, `queries_truncated`. **The harness acts on the flag**: a
+  truncated mode is skipped when building metrics and listed under
+  `_truncated_modes` instead, so its throughput can never be recorded as a QPS and
+  read as a regression. A truncated mode also logs `[TRUNCATED: ... QPS is a floor
+  not a measurement]`.
+- **R11. DONE for the determinism half.** The as-of timestamp is a fixed constant
+  (`defaultTemporalAsOf`, 2100-01-01 in nanoseconds, overridable with
+  `-temporal-asof-nanos`), set once per run into `TemporalAsOfNanos`. Far-future is
+  deliberate: as-of search is inclusive, so a fixed value is both deterministic and
+  never returns zero rows whatever clock the corpus was generated on.
+  **Not done: the cache-hit/miss count.** `TemporalResultCache` already maintains
+  `hits`, `misses` and `evictions` as atomic counters, but nothing exposes them, so
+  the cache behaviour cannot be observed from a benchmark run. Wiring them to
+  Prometheus is R11a below.
+- **R12. DONE.** The resolved, ordered mode list is recorded per row as
+  `mode_order`, alongside `mode_index` and `mode_count`, so each result knows its
+  own position. The harness records the ordered list it hands the client in
+  provenance as `search_modes_resolved`, and surfaces the client's own
+  `mode_order` as `_mode_order`.
+
+### 8.4.1 What the temporal fixes do and do not tell us
+
+The determinism fix is necessary but it is **not** enough to conclude anything about
+temporal's numbers yet, and it is worth being explicit about why.
+
+- **Before, the mode measured the cache-miss path by construction.** A per-query
+  clock reading made every query a distinct key against a `(timestamp, k)` cache, so
+  500 searches meant 500 misses and 500 LRU inserts behind one mutex. The -71% to
+  -92% figures are consistent with that, but so is the mode-order explanation, and
+  this harness cannot separate them without a re-run.
+- **The mode-order effect is still unaddressed.** `Temporal` runs 12th, immediately
+  after `Geo`, the slowest mode in the set, so it inherits `Geo`'s cache and GC
+  state. The per-mode context budget removes the *shared-timeout* version of this
+  problem but not the inheritance itself. Fixing that means either randomising mode
+  order across runs or reporting each mode from a cold process, which is R12a.
+- **`SearchAsOf` queries with a zero vector.** The query vector is built as
+  `make([]float32, dim)` and never populated, so every temporal query is a
+  zero-vector search. That is independent of the cache and independent of ordering,
+  and it means the mode has never measured a real nearest-neighbour search. Whether
+  that is intentional - "as of T, what exists" rather than "as of T, what is nearest
+  to Q" - is not documented anywhere I could find. R11b.
+- **Still true:** a 9-mode baseline cannot be compared against a 13-mode run, and
+  every temporal figure in section 8.1 predates all of the above.
+
+- **R11a. Expose the temporal cache counters.** `TemporalResultCache` has hits,
+  misses and evictions and nothing reads them. Publishing them as Prometheus metrics
+  would make cache behaviour visible to a benchmark run and turn "the cache is
+  thrashing" from an inference into an observation.
+- **R11b. Decide and document whether zero-vector as-of search is intended**, and if
+  it is not, populate the query vector. Until then temporal measures a different
+  operation from every other mode in the matrix and its numbers should not be
+  compared against them.
+- **R12a. Break the mode-order coupling.** Randomise mode order per run and record
+  the seed, or run each mode in a fresh process, so a mode's numbers do not depend on
+  which modes ran before it. This is the remaining half of R12 and the only way the
+  per-mode numbers become independent.
 
 ### 8.5 [OBSERVATION] TurboQuant at 250k/500k is not viable on this engine
 

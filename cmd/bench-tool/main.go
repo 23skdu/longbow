@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -43,6 +44,21 @@ type BenchmarkResult struct {
 	P99LatencyMs     float64   `json:"p99_latency_ms,omitempty"`
 	IndexingDuration float64   `json:"indexing_duration_seconds,omitempty"`
 	TqBits           int       `json:"tq_bits,omitempty"`
+
+	// R10: a mode whose context deadline expired was truncated, so its QPS is a
+	// floor, not a measurement. Recorded explicitly so it cannot be read as a
+	// low number and treated as a regression.
+	ContextDeadlineExceeded bool  `json:"context_deadline_exceeded,omitempty"`
+	QueriesRequested        int64 `json:"queries_requested,omitempty"`
+	QueriesFailed           int64 `json:"queries_failed,omitempty"`
+	QueriesTruncated        int64 `json:"queries_truncated,omitempty"`
+
+	// R12: a baseline collected from a different mode list, or with a mode in a
+	// different position, is not comparable - the modes before this one decide
+	// its cache and GC state.
+	ModeIndex  int      `json:"mode_index,omitempty"`
+	ModeCount  int      `json:"mode_count,omitempty"`
+	ModeOrders []string `json:"mode_order,omitempty"`
 }
 
 func main() {
@@ -71,6 +87,10 @@ func main() {
 	outputFbin := flag.String("output-fbin", "", "Save generated vectors to .fbin file and exit")
 	mode := flag.String("mode", "vec", "Benchmark mode (vec, kv, cluster)")
 	searchModes := flag.String("search-modes", "all", "Comma-separated search modes to run (dense, hybrid, sparse, filtered, byid, graphrag, geo, temporal, learned_index)")
+	searchTimeout := flag.Duration("search-timeout", 5*time.Minute,
+		"Budget for each search mode. This is per mode, not shared across them: a single budget covering all modes meant the last mode inherited whatever was left and started silently truncating, which reads as a low QPS rather than as a truncated run.")
+	temporalAsOf := flag.Int64("temporal-asof-nanos", defaultTemporalAsOf,
+		"Fixed as-of timestamp for Temporal searches, in Unix nanoseconds. It must be fixed: the server keys its temporal result cache on (timestamp, k), so a per-query clock reading guarantees 100% miss rate, an LRU insert per query, and a mode that measures the cache-miss path while appearing to measure search.")
 	reset := flag.Bool("reset", false, "Reset dataset in-place before running the benchmark")
 	flag.Parse()
 
@@ -536,14 +556,21 @@ func main() {
 	if len(modes) == 0 && *searchModes != "" {
 		log.Printf("Warning: No valid search modes found for %s, skipping search phase\n", *searchModes)
 	}
-	searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer searchCancel()
-	for _, mode := range modes {
+	// R11: one fixed as-of timestamp for the whole run.
+	TemporalAsOfNanos = *temporalAsOf
+
+	// R10: a per-mode budget. The previous single 5-minute context covered all
+	// modes, so each mode inherited what the ones before it left behind and the
+	// last modes silently truncated.
+	modeOrders := append([]string(nil), modes...)
+	for modeIdx, mode := range modes {
+		searchCtx, searchCancel := context.WithTimeout(context.Background(), *searchTimeout)
 
 		log.Printf("[SEARCH][%s] Running %d queries with %d workers...\n", mode, *queries, *workers)
 		start = time.Now()
 
 		var latencies []float64
+		var failed, truncated int64
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 
@@ -566,8 +593,24 @@ func main() {
 				}
 
 				for i := 0; i < numToRun; i++ {
+					// Stop issuing once this mode's own budget is spent;
+					// every later query would fail instantly and be
+					// reported as a fast miss.
+					if searchCtx.Err() != nil {
+						mu.Lock()
+						truncated++
+						mu.Unlock()
+						continue
+					}
 					qStart := time.Now()
 					if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state); err != nil {
+						mu.Lock()
+						if errors.Is(searchCtx.Err(), context.DeadlineExceeded) {
+							truncated++
+						} else {
+							failed++
+						}
+						mu.Unlock()
 						logDetailedError(fmt.Sprintf("[%s][Worker %d] Query %d", mode, workerID, i), err, sc)
 						continue
 					}
@@ -581,7 +624,14 @@ func main() {
 		}
 		wg.Wait()
 
+		// Read the deadline before cancelling, so a mode that ran out of budget
+		// is labelled as truncated rather than merely slow.
+		deadlineExceeded := errors.Is(searchCtx.Err(), context.DeadlineExceeded)
+		searchCancel()
+
 		duration = time.Since(start).Seconds()
+		requested := int64(*queries)
+		completed := int64(len(latencies))
 
 		p50, p95, p99 := 0.0, 0.0, 0.0
 		if len(latencies) > 0 {
@@ -602,8 +652,24 @@ func main() {
 			P95LatencyMs:    p95,
 			P99LatencyMs:    p99,
 			TqBits:          *tqBits,
+
+			ContextDeadlineExceeded: deadlineExceeded,
+			QueriesRequested:        requested,
+			QueriesFailed:           failed,
+			QueriesTruncated:        truncated,
+			ModeIndex:               modeIdx,
+			ModeCount:               len(modes),
+			ModeOrders:              modeOrders,
 		})
-		log.Printf("[SEARCH][%s] Completed %d queries in %.4fs (%.2f QPS, P50: %.2fms, P95: %.2fms, P99: %.2fms)\n", mode, len(latencies), duration, float64(len(latencies))/duration, p50, p95, p99)
+		note := ""
+		if deadlineExceeded {
+			note = fmt.Sprintf(" [TRUNCATED: budget %s exhausted, %d/%d queries ran; QPS is a floor not a measurement]",
+				*searchTimeout, completed, requested)
+		} else if truncated > 0 {
+			note = fmt.Sprintf(" [%d queries truncated]", truncated)
+		}
+		log.Printf("[SEARCH][%s] Completed %d/%d queries in %.4fs (%.2f QPS, P50: %.2fms, P95: %.2fms, P99: %.2fms)%s\n",
+			mode, completed, requested, duration, float64(completed)/duration, p50, p95, p99, note)
 	}
 
 	// 4. Print Summary
@@ -794,6 +860,18 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 	return s.buf
 }
 
+// defaultTemporalAsOf is 2100-01-01T00:00:00Z in Unix nanoseconds. as-of search
+// is inclusive of everything at or before the timestamp, so a fixed far-future
+// value is both deterministic and non-empty regardless of when the corpus was
+// generated. Fixed-value determinism matters more here than semantic realism: the
+// mode exists to be compared against a baseline, not to model a point in time.
+const defaultTemporalAsOf int64 = 4102444800000000000
+
+// TemporalAsOfNanos is the as-of timestamp used by every Temporal ticket in this
+// run. Set once from -temporal-asof-nanos; deliberately not read from the clock
+// per query.
+var TemporalAsOfNanos = defaultTemporalAsOf
+
 func (s *ReusableSearchState) BuildSpecialTicket(dataset string, mode string) []byte {
 	s.buf = s.buf[:0]
 	switch mode {
@@ -810,7 +888,10 @@ func (s *ReusableSearchState) BuildSpecialTicket(dataset string, mode string) []
 		s.buf = append(s.buf, `{"temporal_search":{"dataset":"`...)
 		s.buf = append(s.buf, dataset...)
 		s.buf = append(s.buf, `","k":10,"search_type":"as_of","timestamp":`...)
-		s.buf = append(s.buf, fmt.Sprintf("%d", time.Now().UnixNano())...)
+		// Fixed, not time.Now(): the server keys its temporal result cache on
+		// (timestamp, k), so a per-query clock reading guarantees a miss and an
+		// LRU insert for every single query. See -temporal-asof-nanos.
+		s.buf = append(s.buf, fmt.Sprintf("%d", TemporalAsOfNanos)...)
 		s.buf = append(s.buf, `}}`...)
 	case "ByID":
 		s.buf = append(s.buf, `{"search_by_id":{"dataset":"`...)

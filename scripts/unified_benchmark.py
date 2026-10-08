@@ -163,21 +163,47 @@ def parse_bench_json(json_file):
         return {}
 
     metrics = {}
+    truncated_modes = []
+    mode_orders = []
     if isinstance(data, list):
         for entry in data:
             name = entry.get("name", "")
+            if entry.get("mode_order"):
+                mode_orders = entry["mode_order"]
             if name == "DoPut":
                 metrics["ingest_vec_per_sec"] = entry.get("throughput", 0)
             elif name == "DoGet":
                 metrics["get_vec_per_sec"] = entry.get("throughput", 0)
             elif name.startswith("Search_"):
                 prefix = name.replace("Search_", "").lower()
+
+                # R10: a mode whose own context budget expired was truncated.
+                # Its throughput is a floor, not a measurement, and recording it
+                # as a QPS number is how a truncated run becomes an apparent
+                # regression. Skip it and report it separately.
+                if entry.get("context_deadline_exceeded"):
+                    truncated_modes.append({
+                        "mode": name.replace("Search_", ""),
+                        "requested": entry.get("queries_requested", 0),
+                        "completed": entry.get("rows", 0),
+                        "truncated": entry.get("queries_truncated", 0),
+                    })
+                    continue
+
                 metrics[f"{prefix}_qps"] = entry.get("throughput", 0)
                 metrics[f"{prefix}_p50_ms"] = entry.get("p50_latency_ms", 0)
                 metrics[f"{prefix}_p95_ms"] = entry.get("p95_latency_ms", 0)
                 metrics[f"{prefix}_p99_ms"] = entry.get("p99_latency_ms", 0)
     elif isinstance(data, dict):
         metrics = data
+
+    # R12: record the mode order that produced these numbers. A baseline taken
+    # from 9 modes cannot be compared against a 13-mode run, because the modes
+    # before the one under test decide its cache and GC state.
+    if mode_orders:
+        metrics["_mode_order"] = mode_orders
+    if truncated_modes:
+        metrics["_truncated_modes"] = truncated_modes
 
     return metrics
 
@@ -386,6 +412,10 @@ def collect_provenance(args):
         "queries": getattr(args, "queries", None),
         "cpu_affinity": affinity,
         "search_modes_requested": getattr(args, "search_modes", None),
+        # R12: the resolved order matters as much as the set, because the modes
+        # before the one under test decide its cache and GC state. A 9-mode
+        # baseline and a 13-mode run are not comparable.
+        "search_modes_resolved": getattr(args, "resolved_search_modes", None),
         "runs": getattr(args, "runs", None),
         "duration": getattr(args, "duration", None),
         "numa_bind": getattr(args, "numa_bind", None),
@@ -1354,6 +1384,10 @@ class BenchmarkRunner:
         if os.path.exists(json_file):
             os.remove(json_file)
 
+        # R12: record the exact, ordered mode list handed to the client, so a
+        # later comparison can tell whether two runs used the same modes in the
+        # same order. bench-tool normalises and reorders the list it is given.
+        self.args.resolved_search_modes = [m for m in str(search_modes).split(",") if m]
         cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype}{tq_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
         cpu_affinity = getattr(self.args, "cpu_affinity", None) or os.environ.get("LONGBOW_CPU_AFFINITY")
         if cpu_affinity and platform.system() == "Linux":

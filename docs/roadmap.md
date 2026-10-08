@@ -892,16 +892,55 @@ float32 is the fastest dtype in the matrix rather than the slowest. Consequences
   the check. That is a real gap in the gate's coverage, and it is the opposite of what
   the gate was assumed to provide.
 
-**The hypothesis is disproven.** `int8`, `uint8`, `int16`, `uint16`, `int32`, `uint32`,
-`int64`, `uint64` and `float64` *are* registered at dims=128, so the gate is live for
-them. Measured directly: the `int16` kernel returns `22.627417` and its scalar reference
-returns `22.627417`; `int8` likewise agrees. No mismatch occurs, so the `mismatch`
-counter stays at zero for the integer types, and **the 6x deficit of `int16`/`uint16`
-against `int8`/`uint8`, and the 11x surplus of `uint64`, are not caused by a silent
-fallback.** Whatever causes the spread is still open; what is now excluded is the most
-plausible candidate, and it is excluded by measurement rather than by argument.
+**The hypothesis is half right, and the half that was wrong found a real bug.**
+`int8`, `uint8`, `int16`, `uint16`, `int32`, `uint32` and `float64` are registered and
+agree with their references numerically - the `int16` kernel returns `22.627417` and its
+reference returns `22.627417` - so **the 6x deficit of `int16`/`uint16` is not caused by a
+fallback.** That remains open as R32.
 
-- **R32. Explain the integer-type spread by other means.** Fallback is ruled out. The
+For `uint64` the hypothesis was correct, and following it up found a genuine correctness
+bug rather than merely an explanation. See R32a below: `euclideanUint64Unrolled4x`
+subtracted in uint64 arithmetic and returned ~2.1e20 where the answer was ~22, and
+because it is the *reference* the gate validates against, it made uint64 both wrong and
+slow at the larger dimensions - exactly the 11x surplus §8.1 recorded.
+
+The lesson is about method rather than about uint64: the metric was added first, and the
+first benchmark run it was live on reported a defect. An alertable counter finds things
+that an argument about which kernel might be slow does not.
+
+- **R32a. DONE, and it found a real bug: `euclideanUint64Unrolled4x` wrapped on
+  subtraction.** Once the metric was live it fired on the first benchmark run:
+  `element_type=uint64 reason=mismatch`. Chasing it found that the function
+  computed `float64(a[i]-b[i])` - the subtraction happening in **uint64**. For a
+  probe pair of (1..n, 3..n+2) every difference is -2, which in uint64 wraps to
+  2^64-2, so the sum of squares came to ~4.4e40 and the function returned **~2.1e20
+  where the answer is sqrt(4n)**. Its own tail loop widened first and was always
+  right, so the unrolled body and the tail disagreed.
+
+  This was not merely a wrong fallback. That function *is* the scalar reference
+  `resolveDistanceKernel` validates registered uint64 SIMD kernels against, so:
+
+  | dims | uint64 kernel | reference (before) | gate outcome |
+  |---|---|---|---|
+  | 128 | ~2.1e20 (wrong) | ~2.1e20 (wrong) | **accepted** - wrong in the same way |
+  | 384 | 39.191837 (correct) | ~3.6e20 (wrong) | **rejected** |
+  | 768 | 55.425625 (correct) | ~5.1e20 (wrong) | **rejected** |
+
+  So uint64 vectors were returning nonsense distances *and* falling back to the slow
+  path at the larger dimensions. That is exactly the shape of the §8.1 observation
+  that uint64 sits 11x above int64, and the roadmap's hypothesis was right after all
+  - for uint64, and only for uint64.
+
+  Fixed by widening to float64 before subtracting. After the fix the kernel and the
+  reference agree at 128, 384 and 768, and uint64 resolves to SIMD at all three.
+  `internal/simd/unsigned_distance_test.go` covers it across the 8x unroll boundary,
+  at large magnitudes, and asserts int64 was already correct (an earlier attempt at
+  this fix patched the wrong function, since int64 and uint64 share a body shape).
+  uint8 and uint16 are pinned correct too, so the same change elsewhere fails.
+
+- **R32. Explain the int16/uint16 6x deficit by other means.** Fallback is ruled out
+  for these: their kernels are registered and agree with their references
+  numerically. The
   remaining candidates are per-type kernel quality (the wide-integer kernels may be
   genuinely slower rather than rejected), and conversion or widening cost in the search
   path. Both are answerable now that `resolveDistanceKernel` reports its outcome, because
@@ -939,10 +978,52 @@ remaining rows are addressed, rather than that it does today.
   reached a conclusion used interleaved runs with a min-of-N, because single runs on
   this host varied by 40%+ at times. `check_regression.py` compares one run to one
   baseline; it should compare N interleaved runs, or refuse to gate on N=1.
-- **R31. Measure the residual variance now that the inputs are fixed.** Run the same
-  binary five times with R16 in place and report the spread. Until that number
-  exists, "10% threshold" is a guess, and it is the number that should be quoted
-  rather than assumed.
+- **R31. DONE, and the answer is worse than assumed.** Ten runs of
+  `BenchmarkDenseSearch_Float32_50k`, same binary, fully deterministic corpus (R16 in
+  place), min-of-400 x 400 per run:
+
+  | | ns/op |
+  |---|---|
+  | min | 74,574 |
+  | p50 | 94,421 |
+  | max | 114,045 |
+
+  **min-to-max spread 52.9%, stdev 12.6% of the median.** That is with identical
+  inputs, so it is entirely machine state: page cache, CPU frequency, other
+  tenants. Comparing every pair of runs in the worst direction:
+
+  | Threshold | Pairs exceeding it | False-positive rate |
+  |---|---|---|
+  | 10% | 27/45 | **60%** |
+  | 20% | 15/45 | 33% |
+  | 30% | 5/45 | 11% |
+  | 50% | 1/45 | 2% |
+
+  **A 10% gate fires falsely 60% of the time comparing the same binary to itself.**
+  The `--threshold 10` in §3 is not a conservative default; it is close to useless,
+  and every regression count derived from single-run comparisons in this document
+  should be read with that in mind. It is also why this session's conclusions all
+  used interleaved runs with a min-of-N.
+
+- **R30. The gate must interleave, or its threshold must exceed the measured noise.**
+  Two workable options, and they are not equivalent:
+  1. Interleave N runs of baseline and candidate and compare **minimums**. The min
+     is far more stable than the mean here - the spread is one-sided, from
+     interference, not from the code under test.
+  2. Raise the threshold to at least 50%, accepting that the gate then only catches
+     large regressions.
+
+  Option 1 is what produced every reliable number in this document and is the
+  recommendation. Option 2 is a single-character change and is better than a gate
+  that cries wolf.
+
+- **R35. Re-measure at the scale the gate actually runs at.** The 52.9% figure is for
+  an in-process 50k search. Server-level end-to-end runs mix in ingest, indexing and
+  gRPC, and the roadmap's own matrix recorded 40%+ per-mode swings. The real
+  false-positive rate of `check_regression.py` is probably worse than 60%, and it
+  has not been measured. Measuring it means running the identical binary twice
+  through the full harness and reporting how often the gate fires. Until then the
+  gate's own reliability is unknown.
 
 ### 8.7 Recommended order of work
 

@@ -347,15 +347,35 @@ func euclideanUint64Unrolled4x(a, b []uint64) (float32, error) {
 	var sum0, sum1, sum2, sum3, sum4, sum5, sum6, sum7 float64
 	n := len(a)
 	i := 0
+	// Subtract after widening to float64, never in uint64 arithmetic.
+	// `a[i]-b[i]` wraps when a[i] < b[i]: for a probe pair of (1..n, 3..n+2)
+	// every difference is -2, which in uint64 is 2^64-2, and squaring that
+	// summed to ~4.4e40, returning ~2.1e20 instead of sqrt(4n).
+	//
+	// This mattered more than a wrong scalar fallback. This function is the
+	// reference that resolveDistanceKernel validates registered uint64 SIMD
+	// kernels against, so a wrapped reference rejected a *correct* kernel at
+	// dims 384 and 768, while accepting a wrapped kernel at 128 because the two
+	// were wrong in the same way. uint64 vectors were therefore both slower and
+	// wrong, which is the shape of the 500k anomaly in roadmap section 8.1 where
+	// uint64 sits 11x above int64.
 	for ; i <= n-8; i += 8 {
-		sum0 += float64(a[i]-b[i]) * float64(a[i]-b[i])
-		sum1 += float64(a[i+1]-b[i+1]) * float64(a[i+1]-b[i+1])
-		sum2 += float64(a[i+2]-b[i+2]) * float64(a[i+2]-b[i+2])
-		sum3 += float64(a[i+3]-b[i+3]) * float64(a[i+3]-b[i+3])
-		sum4 += float64(a[i+4]-b[i+4]) * float64(a[i+4]-b[i+4])
-		sum5 += float64(a[i+5]-b[i+5]) * float64(a[i+5]-b[i+5])
-		sum6 += float64(a[i+6]-b[i+6]) * float64(a[i+6]-b[i+6])
-		sum7 += float64(a[i+7]-b[i+7]) * float64(a[i+7]-b[i+7])
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		d4 := float64(a[i+4]) - float64(b[i+4])
+		d5 := float64(a[i+5]) - float64(b[i+5])
+		d6 := float64(a[i+6]) - float64(b[i+6])
+		d7 := float64(a[i+7]) - float64(b[i+7])
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+		sum4 += d4 * d4
+		sum5 += d5 * d5
+		sum6 += d6 * d6
+		sum7 += d7 * d7
 	}
 	for ; i < n; i++ {
 		d := float64(a[i]) - float64(b[i])

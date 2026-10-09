@@ -348,6 +348,25 @@ Two items follow:
 - **Success Criteria**: Baseline file populated with full provenance, eliminating warnings in `check_regression.py`.
 
 #### Item 14: Re-baseline TurboQuant at Scale Post-`a955a0c1` (R9, R19, R27)
+
+**Status: 100k done, other scales outstanding.** `docs/performance.md` §1 and §3
+now carry 100k CPU and CUDA rows for `turboquant`, `turboquant4` and
+`turboquant8` across all 13 search modes, taken with EMLGo disabled.
+`TestTurboQuantRecallNotBelowFloat32` gates recall parity against float32 and
+`TestBulkInsert_GraphTopologyVsSequential` reports mean degree and reachability
+for the bulk and sequential paths.
+
+TurboQuant dense at 100k measures **300 QPS** where the pre-`a955a0c1` row claimed
+**1,248**. The sign is what the fix predicts - a 27% larger reachable set costs
+hops - but not the magnitude, and two things stop it being a clean regression:
+the old rows carry no provenance, so the math-dispatch path behind them is
+unknown, and they predate the current 13-mode methodology. Mean layer-0 degree
+(15.8) and descent depth (3.5 hops) match every other dtype, so this is not a
+topology problem and the cause is still open.
+
+Outstanding: 50k, 250k and 500k TurboQuant rows still predate `a955a0c1` and must
+be re-measured before they are cited.
+
 - **Target Files**: [docs/performance.md](file:///home/rsd/REPOS/longbow/docs/performance.md), [benchmarks/](file:///home/rsd/REPOS/longbow/benchmarks/)
 - **Problem**: Historical TurboQuant throughput figures in `docs/performance.md` and early benchmarks were measured on graphs where up to 27% of nodes were unreachable due to type-blind neighbor selection.
 - **Action Plan**:

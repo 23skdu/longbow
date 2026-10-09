@@ -289,6 +289,21 @@ change, verified by running the new tests against the unmodified file.
 - **Success Criteria**: Accurate, panic-free batch disk retrieval across all 16 supported data types.
 
 #### Item 5: LookupNeighbors Typed Distance Computation & External ID Translation (§7 Item 8)
+
+**Status: code was already correct; the item's claim of missing coverage was
+right.** `arrowHNSWLookupNeighbors` already called `ComputeDistanceAny` and
+`LookupExternalID` in the working tree, and `ComputeDistanceAny` dispatches per
+element type with an error for unknown or mismatched types rather than a zero.
+
+What was genuinely missing was verification. The tests checked only that
+returned IDs were in range and that `k` was respected - never a distance, never
+a non-float32 index. `get_neighbors_typed_test.go` now asserts on float32, int8
+and int32 that every returned distance equals an independently computed typed
+distance, and that every returned ID falls in the external range, which is
+offset from the node index range so a mix-up cannot coincide. Reintroducing the
+float32-only branch this item describes fails the int8 case on every neighbour.
+
+This is characterisation coverage for already-working code, not a fix.
 - **Target Files**: [get_neighbors.go](file:///home/rsd/REPOS/longbow/internal/store/index/get_neighbors.go)
 - **Problem**: In `arrowHNSWLookupNeighbors` (lines 96–115), neighbor distances are computed only when stored vectors are `[]float32` (line 101); for all other vector types, distance is returned as `0.0`. Line 110 populates `NeighborResult.ID` with the internal uint32 graph node index (`nbrID`) rather than translating it back to the external client `uint64` ID.
 - **Action Plan**:

@@ -1142,7 +1142,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		}
 		return results, nil
 
-	default:
+	case types.VectorTypeFloat32:
 		results := make([][]float32, len(filtered))
 		for i, idx := range filtered {
 			bIdx := blockOf[i]
@@ -1150,24 +1150,78 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 			block := blockCopies[bIdx]
 			localIdx := idx - block.StartIdx
 
-			vec := make([]float32, dim)
-			if block.CompType == 3 && tqEnc != nil {
-				stride := tqEnc.PackedSize()
-				offset := localIdx * stride
-				encoded := raw[offset : offset+stride]
-				recon, err := tqEnc.Decode(encoded)
-				if err == nil {
-					copy(vec, recon)
+			// A TurboQuant block stores PackedSize() bytes per row, not
+			// dim*4, so it has to be decoded rather than reinterpreted. A
+			// dataset can switch to TurboQuant after float32 rows exist,
+			// which is why both are checked here.
+			if block.CompType == 3 {
+				vec, err := decodeTQRow(raw, localIdx, dim, tqEnc)
+				if err != nil {
+					return nil, err
 				}
-			} else {
-				offset := localIdx * dim * elemSize
-				rawF32 := unsafe.Slice((*float32)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-				copy(vec, rawF32)
+				results[i] = vec
+				continue
+			}
+
+			offset := localIdx * dim * elemSize
+			if offset+dim*elemSize > len(raw) {
+				return nil, fmt.Errorf("vector %d: row offset %d exceeds block payload of %d bytes",
+					idx, offset, len(raw))
+			}
+			vec := make([]float32, dim)
+			rawF32 := unsafe.Slice((*float32)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawF32)
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeTQ:
+		results := make([][]float32, len(filtered))
+		for i, idx := range filtered {
+			bIdx := blockOf[i]
+			raw := blockData[bIdx]
+			block := blockCopies[bIdx]
+			localIdx := idx - block.StartIdx
+			vec, err := decodeTQRow(raw, localIdx, dim, tqEnc)
+			if err != nil {
+				return nil, err
 			}
 			results[i] = vec
 		}
 		return results, nil
+
+	default:
+		// Never guess. The previous fallback decoded anything it did not
+		// recognise as float32 at stride dim*4, which for an unhandled width
+		// reads the wrong offset entirely and returns corrupted vectors with
+		// no error. An unknown type is a bug at the call site; say so.
+		return nil, fmt.Errorf("GetBatchAny: unsupported vector data type %v", dataType)
 	}
+}
+
+// decodeTQRow reconstructs one TurboQuant row from a decompressed block.
+//
+// Errors rather than returning zeros. On a Decode failure the previous code
+// left the result vector zeroed and returned it, which is indistinguishable
+// from a genuinely all-zero vector and silently corrupts a search result.
+func decodeTQRow(raw []byte, localIdx, dim int, tqEnc *index.TurboQuantEncoder) ([]float32, error) {
+	if tqEnc == nil {
+		return nil, fmt.Errorf("turboquant block but no encoder available")
+	}
+	stride := tqEnc.PackedSize()
+	offset := localIdx * stride
+	if offset < 0 || offset+stride > len(raw) {
+		return nil, fmt.Errorf("turboquant row %d exceeds block payload of %d bytes", localIdx, len(raw))
+	}
+	recon, err := tqEnc.Decode(raw[offset : offset+stride])
+	if err != nil {
+		return nil, fmt.Errorf("turboquant decode of row %d: %w", localIdx, err)
+	}
+	if len(recon) < dim {
+		return nil, fmt.Errorf("turboquant decode of row %d returned %d components, need %d",
+			localIdx, len(recon), dim)
+	}
+	return recon, nil
 }
 
 // readBufPool reuses the 13+CompSize header+payload buffer used for local

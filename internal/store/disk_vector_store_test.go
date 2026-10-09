@@ -498,3 +498,96 @@ func TestDiskVectorStore_BatchAppendAny_AllTypes(t *testing.T) {
 		require.Equal(t, data, gotSlice)
 	})
 }
+
+// TestDiskVectorStore_BatchAppendAny_Float32AndTurboQuant covers the two paths
+// that GetBatchAny dispatches separately rather than through the generic typed
+// list: float32, which also has to notice that a block holding TurboQuant rows
+// is not dim*4 bytes wide, and TurboQuant itself.
+//
+// The existing AllTypes test covers the nine widths that map straight onto a
+// typed case and so exercised neither of these.
+//
+// These are characterisation tests, not regression tests for a demonstrated
+// defect: float32 and TurboQuant both round-tripped correctly before this
+// change. They pin the two paths GetBatchAny dispatches separately so that a
+// future change to them fails here rather than in production.
+func TestDiskVectorStore_BatchAppendAny_Float32AndTurboQuant(t *testing.T) {
+	dim := 8
+
+	t.Run("Float32", func(t *testing.T) {
+		dvs, err := NewDiskVectorStore(filepath.Join(t.TempDir(), "f32.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		// Distinct magnitudes so a wrong stride or a stale row cannot pass.
+		data := [][]float32{
+			{0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5},
+			{10.25, 20.5, 30.75, 40.125, 50.25, 60.5, 70.75, 80.125},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]float32)
+		require.True(t, ok, "float32 must come back as [][]float32, got %T", got)
+		require.Equal(t, data, gotSlice)
+
+		// Out-of-order and partial request: blockOf must not assume the
+		// requested order matches storage order.
+		got2, err := dvs.GetBatchAny([]int{1})
+		require.NoError(t, err)
+		require.Equal(t, [][]float32{data[1]}, got2)
+	})
+
+	t.Run("TurboQuantRowWidth", func(t *testing.T) {
+		dvs, err := NewDiskVectorStore(filepath.Join(t.TempDir(), "tq.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		// TurboQuant rows are PackedSize() bytes, not dim*4, so this block
+		// must be decoded by stride rather than read as float32. Note the
+		// encoder is created by SetTurboQuant, which sets tqBits at the same
+		// time, so a TurboQuant block without an encoder is not reachable
+		// through the append path - decodeTQRow still errors on it rather
+		// than guessing a stride.
+		dvs.SetTurboQuant(4)
+		data := [][]float32{
+			{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8},
+			{0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]float32)
+		require.True(t, ok, "turboquant decodes to [][]float32, got %T", got)
+		require.Len(t, gotSlice, 2)
+		for i := range gotSlice {
+			require.Len(t, gotSlice[i], dim, "row %d has wrong width", i)
+		}
+	})
+}
+
+// TestDiskVectorStore_GetBatchAny_OutOfRange pins that an index past the end of
+// the data is an error naming the index, not an alias onto the last block.
+func TestDiskVectorStore_GetBatchAny_OutOfRange(t *testing.T) {
+	dim := 4
+	dvs, err := NewDiskVectorStore(filepath.Join(t.TempDir(), "oob.bin"), dim)
+	require.NoError(t, err)
+	defer dvs.Close()
+
+	n, err := dvs.BatchAppendAny([][]float32{{1, 2, 3, 4}, {5, 6, 7, 8}})
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+
+	for _, idx := range []int{2, 3, 1 << 20, -1} {
+		got, err := dvs.GetBatchAny([]int{idx})
+		require.Error(t, err, "index %d is past the end and must not succeed", idx)
+		require.Nil(t, got)
+		require.Contains(t, err.Error(), "out of bounds")
+	}
+}

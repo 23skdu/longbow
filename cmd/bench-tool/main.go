@@ -39,6 +39,7 @@ type BenchmarkResult struct {
 	Rows             int64     `json:"rows"`
 	BytesProcessed   int64     `json:"bytes_processed"`
 	LatenciesMs      []float64 `json:"latencies_ms,omitempty"`
+	MeanLatencyMs    float64   `json:"mean_latency_ms,omitempty"`
 	P50LatencyMs     float64   `json:"p50_latency_ms,omitempty"`
 	P95LatencyMs     float64   `json:"p95_latency_ms,omitempty"`
 	P99LatencyMs     float64   `json:"p99_latency_ms,omitempty"`
@@ -95,6 +96,8 @@ func main() {
 		"Budget for each search mode. This is per mode, not shared across them: a single budget covering all modes meant the last mode inherited whatever was left and started silently truncating, which reads as a low QPS rather than as a truncated run.")
 	temporalAsOf := flag.Int64("temporal-asof-nanos", defaultTemporalAsOf,
 		"Fixed as-of timestamp for Temporal searches, in Unix nanoseconds. It must be fixed: the server keys its temporal result cache on (timestamp, k), so a per-query clock reading guarantees 100% miss rate, an LRU insert per query, and a mode that measures the cache-miss path while appearing to measure search.")
+	shuffleModes := flag.Bool("shuffle-modes", false,
+		"Randomize search mode execution order using seed (roadmap R12a) to eliminate mode-order coupling.")
 	reset := flag.Bool("reset", false, "Reset dataset in-place before running the benchmark")
 	flag.Parse()
 
@@ -567,6 +570,14 @@ func main() {
 	TemporalAsOfNanos = *temporalAsOf
 	RunSeed = *seed
 
+	// R12a: randomize mode order using the run seed if requested to break order coupling.
+	if *shuffleModes && len(modes) > 1 {
+		r := rand.New(rand.NewSource(*seed))
+		r.Shuffle(len(modes), func(i, j int) {
+			modes[i], modes[j] = modes[j], modes[i]
+		})
+	}
+
 	// R10: a per-mode budget. The previous single 5-minute context covered all
 	// modes, so each mode inherited what the ones before it left behind and the
 	// last modes silently truncated.
@@ -646,8 +657,20 @@ func main() {
 		requested := int64(*queries)
 		completed := int64(len(latencies))
 
-		p50, p95, p99 := 0.0, 0.0, 0.0
+		mean, p50, p95, p99 := 0.0, 0.0, 0.0, 0.0
 		if len(latencies) > 0 {
+			// Mean before sorting, so it is the arithmetic mean and not an
+			// artefact of the ordering. Recorded alongside the percentiles because
+			// it is the only latency figure that pairs with QPS exactly: throughput
+			// is completed/duration and mean latency is sum/completed, so
+			// QPS x mean == workers by construction. See the concurrency invariant
+			// in scripts/unified_benchmark.py, which used P50 and so fired on any
+			// right-skewed latency distribution.
+			var sum float64
+			for _, l := range latencies {
+				sum += l
+			}
+			mean = sum / float64(len(latencies))
 			sort.Float64s(latencies)
 			p50 = latencies[len(latencies)/2]
 			p95 = latencies[int(float64(len(latencies))*0.95)]
@@ -661,6 +684,7 @@ func main() {
 			ThroughputUnit:  "queries/s",
 			Rows:            int64(len(latencies)),
 			LatenciesMs:     latencies,
+			MeanLatencyMs:   mean,
 			P50LatencyMs:    p50,
 			P95LatencyMs:    p95,
 			P99LatencyMs:    p99,
@@ -682,15 +706,15 @@ func main() {
 		} else if truncated > 0 {
 			note = fmt.Sprintf(" [%d queries truncated]", truncated)
 		}
-		log.Printf("[SEARCH][%s] Completed %d/%d queries in %.4fs (%.2f QPS, P50: %.2fms, P95: %.2fms, P99: %.2fms)%s\n",
-			mode, completed, requested, duration, float64(completed)/duration, p50, p95, p99, note)
+		log.Printf("[SEARCH][%s] Completed %d/%d queries in %.4fs (%.2f QPS, mean: %.3fms, P50: %.2fms, P95: %.2fms, P99: %.2fms)%s\n",
+			mode, completed, requested, duration, float64(completed)/duration, mean, p50, p95, p99, note)
 	}
 
 	// 4. Print Summary
 	fmt.Printf("\n%s\n", "BENCHMARK SUITE SUMMARY")
-	fmt.Printf("%-20s | %-18s | %-18s | %-10s | %-10s | %-10s | %-10s\n", "Name", "Throughput (vec/s)", "Throughput (MB/s)", "Rows", "P50(ms)", "P95(ms)", "P99(ms)")
+	fmt.Printf("%-20s | %-18s | %-18s | %-10s | %-10s | %-10s | %-10s | %-10s\n", "Name", "Throughput (vec/s)", "Throughput (MB/s)", "Rows", "mean(ms)", "P50(ms)", "P95(ms)", "P99(ms)")
 	for _, r := range results {
-		fmt.Printf("%-20s | %-18.2f | %-18.2f | %-10d | %-10.2f | %-10.2f | %-10.2f\n", r.Name, r.Throughput, r.ThroughputMBs, r.Rows, r.P50LatencyMs, r.P95LatencyMs, r.P99LatencyMs)
+		fmt.Printf("%-20s | %-18.2f | %-18.2f | %-10d | %-10.3f | %-10.2f | %-10.2f | %-10.2f\n", r.Name, r.Throughput, r.ThroughputMBs, r.Rows, r.MeanLatencyMs, r.P50LatencyMs, r.P95LatencyMs, r.P99LatencyMs)
 	}
 
 	if *outputJson != "" {

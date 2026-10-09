@@ -193,6 +193,43 @@ spec:
               {{- else }}
               value: "1"
               {{- end }}
+            # Bulk-insert graph quality (R8). Each variable below defaults to a
+            # value whose disabling value is "0" or a fraction, so they use the
+            # same hasKey form as the chain-link flag rather than `| default`,
+            # which would render "0" back as the default for the integer-typed
+            # spellings a user is likely to pass on --set.
+            - name: LONGBOW_HNSW_BULK_QUALITY_GUARD
+              {{- if hasKey (default dict .Values.env) "LONGBOW_HNSW_BULK_QUALITY_GUARD" }}
+              value: {{ index .Values.env "LONGBOW_HNSW_BULK_QUALITY_GUARD" | toString | quote }}
+              {{- else }}
+              value: "1"
+              {{- end }}
+            - name: LONGBOW_HNSW_BULK_REACHABILITY_FLOOR
+              {{- if hasKey (default dict .Values.env) "LONGBOW_HNSW_BULK_REACHABILITY_FLOOR" }}
+              value: {{ index .Values.env "LONGBOW_HNSW_BULK_REACHABILITY_FLOOR" | toString | quote }}
+              {{- else }}
+              value: "0.80"
+              {{- end }}
+            - name: LONGBOW_HNSW_BULK_MIN_DEGREE_RATIO
+              {{- if hasKey (default dict .Values.env) "LONGBOW_HNSW_BULK_MIN_DEGREE_RATIO" }}
+              value: {{ index .Values.env "LONGBOW_HNSW_BULK_MIN_DEGREE_RATIO" | toString | quote }}
+              {{- else }}
+              value: "0"
+              {{- end }}
+            - name: LONGBOW_HNSW_BULK_MAX_HOP_DEPTH
+              {{- if hasKey (default dict .Values.env) "LONGBOW_HNSW_BULK_MAX_HOP_DEPTH" }}
+              value: {{ index .Values.env "LONGBOW_HNSW_BULK_MAX_HOP_DEPTH" | toString | quote }}
+              {{- else }}
+              value: "1.5"
+              {{- end }}
+            # R26: never drop a node's last layer-0 inbound edge during pruning.
+            # See values.yaml for why it ships off.
+            - name: LONGBOW_HNSW_INBOUND_GUARD
+              {{- if hasKey (default dict .Values.env) "LONGBOW_HNSW_INBOUND_GUARD" }}
+              value: {{ index .Values.env "LONGBOW_HNSW_INBOUND_GUARD" | toString | quote }}
+              {{- else }}
+              value: "0"
+              {{- end }}
             # GPU Configuration
             - name: LONGBOW_GPU_ENABLED
               value: {{ .Values.gpu.enabled | quote }}

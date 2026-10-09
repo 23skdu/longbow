@@ -91,6 +91,35 @@ The following table lists the configurable parameters of the Longbow chart and t
 | `ingestion.workerCount` | Number of ingestion workers (0=auto) | `0` |
 | `ingestion.adaptiveBatching` | Enable adaptive batching for puts | `true` |
 | `env.LONGBOW_HNSW_BULK_CHAIN_LINKS` | Link bulk-inserted nodes to their insertion-order predecessor so none is stranded | `"1"` |
+| `env.LONGBOW_HNSW_BULK_QUALITY_GUARD` | Enforce the bulk-insert graph-quality floors; `"0"` reports them without enforcing | `"1"` |
+| `env.LONGBOW_HNSW_BULK_REACHABILITY_FLOOR` | Sampled layer-0 reachability a bulk batch must show before it is rejected | `"0.80"` |
+| `env.LONGBOW_HNSW_BULK_MIN_DEGREE_RATIO` | Floor as a fraction of `MMAX0` for bulk batch mean layer-0 degree; `"0"` disables | `"0"` |
+| `env.LONGBOW_HNSW_BULK_MAX_HOP_DEPTH` | Multiple of the ideal `log(N)/log(MMax0)` descent depth; `"0"` disables | `"1.5"` |
+| `env.LONGBOW_HNSW_INBOUND_GUARD` | Never drop a node's last layer-0 inbound edge while pruning (R26) | `"0"` |
+
+#### On `env.LONGBOW_HNSW_BULK_QUALITY_GUARD`
+
+Leave this on for query-driven workloads. Every bulk-inserted batch is measured
+and logged either way:
+
+```
+[HNSW] bulk batch nodes=100000 reachable=99794/100000 sampled=100.0% mean_degree=5.46 hops=3.1/6.2 addbatch_inflight=1 fallback=false
+```
+
+A rejected batch is rebuilt sequentially, which costs about 6x the bulk build it
+replaced. On a 100k float32 corpus that is the difference between indexing in
+23.5s and serving 742 dense QPS, and indexing in 215s and serving ~3400. Set
+this to `"0"` only when you are measuring ingest.
+
+`LONGBOW_HNSW_BULK_MIN_DEGREE_RATIO` and `LONGBOW_HNSW_INBOUND_GUARD` ship
+disabled; see [docs/deploy.md](../../docs/deploy.md) for the measurements behind
+each.
+
+#### On `env.LONGBOW_HNSW_INBOUND_GUARD`
+
+Off by default: enforcing the last-inbound-edge invariant changes what a
+predicate-filtered search can reach, and `TestPredicateTraversal_ReachesMatchBehindRejectedNodes`
+fails for `float32`, `float64` and `float16_dispatch` when it is on.
 
 #### On `env.LONGBOW_HNSW_BULK_CHAIN_LINKS`
 
@@ -117,7 +146,10 @@ on your own data, set it to `"0"` and compare recall, not timing.
 > `LONGBOW_GRPC_MAX_SEND_MSG_SIZE` among them.
 >
 > `LONGBOW_HNSW_BULK_CHAIN_LINKS` is the exception: it uses an explicit `hasKey`
-> check, so `--set ...=0` works as expected.
+> check, so `--set ...=0` works as expected. The five bulk-graph-quality
+> variables added with R8 use `hasKey` for the same reason - `"0"` is the
+> disabling value for four of them, so `| default` would silently re-enable what
+> the operator just turned off.
 
 Note separately that TurboQuant construction is expected to be roughly **2.9x**
 float32, not faster. Before commit `a955a0c1` it was faster only because the layer-0

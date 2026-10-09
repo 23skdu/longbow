@@ -62,7 +62,14 @@ func TestArrowHNSW_ConcurrentAddBatch_Int8_50k_Stress(t *testing.T) {
 	config.Dims = dims
 	idx := NewArrowHNSW(ds, &config, nil)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	// The deadline is not a throughput assertion - the test below only logs
+	// vec/s - it bounds how long a hang can look like progress. 90s was measured
+	// against bulk insertion alone; the R8 graph-quality gate can reject a batch
+	// and rebuild it sequentially, which costs about 6x the bulk build it
+	// replaces and took this past 90s once the gate was enabled. 300s keeps the
+	// hang bound without the budget deciding whether the gate is allowed to do
+	// its job.
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
 	var wg sync.WaitGroup

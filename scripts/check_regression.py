@@ -17,7 +17,7 @@ compared per build variant:
         --results data/perf_logs/perf_matrix_cpu_cpu_std_nodisk_*.json \\
         --variant cpu_std_nodisk
 
-Both inputs are first checked against qps * p50_ms <= workers * 1000. A report that
+Both inputs are first checked against qps * mean_latency_ms ~= workers. A report that
 violates it cannot gate a regression, because its QPS and latency are not true of
 its own recorded worker count. Use --skip-self-validation to override.
 
@@ -55,7 +55,7 @@ def _worker_count(doc: dict) -> int | None:
 
 
 def _self_validation_violations(doc: dict, label: str) -> tuple:
-    """Re-run QPS x P50 <= workers * 1000 over a report.
+    """Re-run the QPS x mean_latency ~= workers identity over a report.
 
     Returns (violations, unverifiable). A violation is a row that is impossible
     given the worker count the report itself records, and it is a hard failure. A
@@ -64,10 +64,26 @@ def _self_validation_violations(doc: dict, label: str) -> tuple:
     rejection of the run.
 
     check_regression compares two reports and reports the difference. It cannot
-    tell you that either one is impossible on its own terms - a baseline whose
-    QPS and latency exceed its own worker cap makes every percentage it produces
-    meaningless - so the invariant is re-checked here as well, at the point where
-    someone is about to act on the comparison.
+    tell you that either one is impossible on its own terms - a baseline whose QPS
+    and latency were produced under a different worker count than it records makes
+    every percentage it produces meaningless - so the invariant is re-checked here
+    as well, at the point where someone is about to act on the comparison.
+
+    Throughput is completed/duration and mean latency is sum/completed, so
+    QPS x mean = sum(latencies)/wall_duration, which equals the worker count only
+    if the workers were busy for the whole window. They are never quite 100% busy -
+    start-up and the final in-flight query both cost a little - so this is a band:
+    implied cannot exceed the worker count, and must be at least 75% of it. Across
+    all 13 search modes at 20k on 4 workers the implied count ran 3.66-3.96 against
+    a recorded 4. This checks the mean, not P50: a percentile carries no such bound,
+    and using P50 made this fire on any right-skewed latency distribution and reject
+    valid reports. Kept in step with validate_concurrency_invariant in
+    unified_benchmark.py, which owns the canonical version; it is duplicated rather
+    than imported because that module pulls in optional dependencies this tool must
+    not require.
+
+    Rows with no recorded mean fall back to P50 and are reported as unverifiable
+    rather than judged on a bound they cannot support.
     """
     violations = []
     unverifiable = []
@@ -78,11 +94,11 @@ def _self_validation_violations(doc: dict, label: str) -> tuple:
         workers = _worker_count(doc)
         if workers is None:
             unverifiable.append(
-                f"{label}: no worker count recorded, so qps * p50_ms <= workers * 1000 "
+                f"{label}: no worker count recorded, so qps * mean_latency ~= workers "
                 f"cannot be checked. This report predates provenance recording."
             )
             continue
-        limit = float(workers) * 1000.0
+        busy_floor = 0.75
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -92,24 +108,50 @@ def _self_validation_violations(doc: dict, label: str) -> tuple:
                 for mode, m in search.items():
                     if not isinstance(m, dict):
                         continue
-                    qps, p50 = m.get("qps"), m.get("p50")
-                    if not qps or not p50 or qps <= 0 or p50 <= 0:
+                    qps, mean, p50 = m.get("qps"), m.get("mean"), m.get("p50")
+                    if not qps or qps <= 0:
                         continue
-                    product = qps * p50
-                    if product > limit:
+                    latency, source = (mean, "mean") if mean and mean > 0 else (None, None)
+                    if latency is None:
+                        unverifiable.append(
+                            f"{label} {where} mode={mode}: no mean latency recorded; "
+                            f"cannot check the worker identity (predates mean)"
+                        )
+                        continue
+                    implied = qps * latency / 1000.0
+                    if implied > float(workers) * 1.02:
                         violations.append(
-                            f"{label} {where} mode={mode}: QPS {qps:.1f} x P50 "
-                            f"{p50:.3f}ms = {product:.0f} > workers {workers} x 1000 = {limit:.0f}"
+                            f"{label} {where} mode={mode}: QPS {qps:.1f} x {source} "
+                            f"{latency:.3f}ms = {implied:.2f} workers, which exceeds the "
+                            f"recorded {workers}"
+                        )
+                    elif implied < float(workers) * busy_floor:
+                        violations.append(
+                            f"{label} {where} mode={mode}: QPS {qps:.1f} x {source} "
+                            f"{latency:.3f}ms = {implied:.2f} workers, only "
+                            f"{implied / float(workers) * 100:.0f}% of the recorded {workers}"
                         )
                 continue
-            qps, p50 = row.get("qps"), row.get("p50")
-            if not qps or not p50 or qps <= 0 or p50 <= 0:
+            qps, mean = row.get("qps"), row.get("mean")
+            if not qps or qps <= 0:
                 continue
-            product = qps * p50
-            if product > limit:
+            if not mean or mean <= 0:
+                unverifiable.append(
+                    f"{label} {where} mode={row.get('operation', '?')}: no mean latency "
+                    f"recorded; cannot check the worker identity"
+                )
+                continue
+            implied = qps * mean / 1000.0
+            if implied > float(workers) * 1.02:
                 violations.append(
-                    f"{label} {where} mode={row.get('operation', '?')}: QPS {qps:.1f} x P50 "
-                    f"{p50:.3f}ms = {product:.0f} > workers {workers} x 1000 = {limit:.0f}"
+                    f"{label} {where} mode={row.get('operation', '?')}: QPS {qps:.1f} x mean "
+                    f"{mean:.3f}ms = {implied:.2f} workers, which exceeds the recorded {workers}"
+                )
+            elif implied < float(workers) * busy_floor:
+                violations.append(
+                    f"{label} {where} mode={row.get('operation', '?')}: QPS {qps:.1f} x mean "
+                    f"{mean:.3f}ms = {implied:.2f} workers, only "
+                    f"{implied / float(workers) * 100:.0f}% of the recorded {workers}"
                 )
     return violations, unverifiable
 
@@ -306,7 +348,7 @@ def main():
                         help="Compare only this build variant of a consolidated baseline "
                              "(e.g. cpu_std_nodisk, gpu_emlgo_disk)")
     parser.add_argument("--skip-self-validation", action="store_true",
-                        help="Compare even though a report violates qps * p50 <= workers * 1000")
+                        help="Compare even though a report violates qps * mean ~= workers")
     args = parser.parse_args()
 
     for path in args.baseline:
@@ -353,7 +395,7 @@ def main():
 
     if unverifiable:
         print(f"WARNING: {len(unverifiable)} report(s) carry no worker count, so the")
-        print("qps * p50 <= workers * 1000 invariant was not checked for them:")
+        print("qps * mean ~= workers invariant was not checked for them:")
         for v in unverifiable:
             print(f"  - {v}")
         print("Regenerate with --save-baseline to record provenance (roadmap R2).")

@@ -9,7 +9,7 @@ The primary goals are:
 1. Measure and record ingestion throughput (vectors/sec) and search throughput (queries/sec / QPS) with P50, P95, and P99 latency percentiles.
 2. Characterize the performance delta between standard Go and EMLGo SIMD kernels on CPU and GPU.
 3. Quantify the performance and memory impact of auto-spill disk persistence (`use_disk=yes` vs `use_disk=no`).
-4. Catch performance regressions (>10% drop against baseline) and stability anomalies across scaling tiers (50k, 100k, 250k vectors) and dimensionalities (128 up to 3072 for OpenAI large).
+4. Catch performance regressions (>10% drop against baseline) and stability anomalies across scaling tiers (50k, 100k, 250k, 500k vectors) and dimensionalities (128 up to 3072 for OpenAI large).
 
 ---
 
@@ -41,11 +41,12 @@ The primary goals are:
 
 ### 3.2 Vector Scaling Tiers
 
-Tests are evaluated at three representative dataset scale points:
+Tests are evaluated at four representative dataset scale points:
 
 - **50,000 vectors (50k)**: Low-footprint baseline, in-cache behavior.
 - **100,000 vectors (100k)**: Mid-tier working set, SIMD dispatch crossover.
 - **250,000 vectors (250k)**: Large-scale index stress, disk spillover threshold testing.
+- **500,000 vectors (500k)**: High-density scaling boundary, multi-GB working set, cache eviction stress.
 
 ### 3.3 Dimensionalities to Test (OpenAI Large & Transformer Tiers)
 
@@ -109,8 +110,8 @@ For each test configuration:
 1. Ensure no rogue processes occupy the target port (kill lingering instances on port 3000/random fallback).
 2. Clean temporary benchmark data in `data/bench/` to prevent cross-run state pollution.
 3. Start the Longbow server instance with appropriate environment variables and memory limits:
-   - Memory ceiling: 16 GB (`17179869184` bytes).
-   - Ingest workers: 8 concurrency workers.
+   - Memory ceiling: 14 GiB (`15032385536` bytes, within the safe physical envelope on a 22-23 GiB host).
+   - Concurrency workers: 4 workers (`--workers 4`, pinned to 4 unthrottled cores via `--cpu-affinity 12-15` matching `docs/performance.md`).
    - Search queries: 500 representative randomized queries per mode.
 4. Execute `scripts/unified_benchmark.py`:
    - Warm up the server connection via Arrow Flight DoAction health check.

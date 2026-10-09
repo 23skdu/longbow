@@ -2,6 +2,7 @@ package index
 
 import (
 	"github.com/23skdu/longbow/internal/store/types"
+	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
 )
 
 // types.Location mapping operations extracted from arrow_hnsw_index.go
@@ -44,7 +45,14 @@ func (h *ArrowHNSW) SetLocation(id types.VectorID, loc types.Location) {
 // to an internal uint32 node ID. Called during insert to enable O(1) reverse lookups.
 func (h *ArrowHNSW) IndexExternalID(externalID uint64, internalID uint32) {
 	h.externalIDIndexMu.Lock()
+	if h.externalIDIndex == nil {
+		h.externalIDIndex = make(map[uint64]uint32)
+	}
+	if h.internalToExternalID == nil {
+		h.internalToExternalID = make(map[uint32]uint64)
+	}
 	h.externalIDIndex[externalID] = internalID
+	h.internalToExternalID[internalID] = externalID
 	h.externalIDIndexMu.Unlock()
 }
 
@@ -57,9 +65,59 @@ func (h *ArrowHNSW) LookupInternalID(externalID uint64) (uint32, bool) {
 	return id, ok
 }
 
-// RemoveExternalID removes the external ID mapping for a given internal ID.
+// LookupExternalID returns the external client ID for a given internal node ID.
+// Returns (0, false) if no mapping can be resolved.
+func (h *ArrowHNSW) LookupExternalID(internalID uint32) (uint64, bool) {
+	h.externalIDIndexMu.RLock()
+	if extID, ok := h.internalToExternalID[internalID]; ok {
+		h.externalIDIndexMu.RUnlock()
+		return extID, true
+	}
+	h.externalIDIndexMu.RUnlock()
+
+	// Fallback: consult batch location store to read column 0 of original record batch.
+	locAny, ok := h.GetLocation(internalID)
+	if !ok {
+		return 0, false
+	}
+	loc, ok := locAny.(types.Location)
+	if !ok {
+		return 0, false
+	}
+	if h.dataset != nil {
+		records := h.dataset.GetRecords()
+		if loc.BatchIdx < len(records) {
+			rec := records[loc.BatchIdx]
+			if rec.NumCols() > 0 && loc.RowIdx < int(rec.NumRows()) {
+				switch col := rec.Column(0).(type) {
+				case *arrowarray.Int64:
+					if loc.RowIdx < col.Len() {
+						val := col.Value(loc.RowIdx)
+						if val >= 0 {
+							ext := uint64(val)
+							h.IndexExternalID(ext, internalID)
+							return ext, true
+						}
+					}
+				case *arrowarray.Uint64:
+					if loc.RowIdx < col.Len() {
+						val := col.Value(loc.RowIdx)
+						h.IndexExternalID(val, internalID)
+						return val, true
+					}
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+// RemoveExternalID removes the external ID mapping for a given external ID.
 func (h *ArrowHNSW) RemoveExternalID(externalID uint64) {
 	h.externalIDIndexMu.Lock()
+	if internalID, ok := h.externalIDIndex[externalID]; ok {
+		delete(h.internalToExternalID, internalID)
+	}
 	delete(h.externalIDIndex, externalID)
 	h.externalIDIndexMu.Unlock()
 }

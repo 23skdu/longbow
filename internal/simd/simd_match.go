@@ -48,42 +48,26 @@ func MatchUint16(src []uint16, val uint16, op CompareOp, dst []byte) error {
 	return matchUint16Generic(src, val, op, dst)
 }
 
+// matchUint16Generic compares uint16 elements, writing one byte per element.
+//
+// Written as a plain range loop to match the other five implementations here.
+// It was previously hand-unrolled 8-wide with one-line if/else, which gofmt
+// reformats into 96 lines of the same body and which bought nothing measurable:
+// Go does not vectorise byte stores, the function has no test and no benchmark,
+// and MatchUint16 - its only caller - is itself untested.
 func matchUint16Generic(src []uint16, val uint16, op CompareOp, dst []byte) error {
-	n := len(src)
 	switch op {
 	case CompareEq:
-		i := 0
-		for ; i+8 <= n; i += 8 {
-			if src[i] == val { dst[i] = 1 } else { dst[i] = 0 }
-			if src[i+1] == val { dst[i+1] = 1 } else { dst[i+1] = 0 }
-			if src[i+2] == val { dst[i+2] = 1 } else { dst[i+2] = 0 }
-			if src[i+3] == val { dst[i+3] = 1 } else { dst[i+3] = 0 }
-			if src[i+4] == val { dst[i+4] = 1 } else { dst[i+4] = 0 }
-			if src[i+5] == val { dst[i+5] = 1 } else { dst[i+5] = 0 }
-			if src[i+6] == val { dst[i+6] = 1 } else { dst[i+6] = 0 }
-			if src[i+7] == val { dst[i+7] = 1 } else { dst[i+7] = 0 }
-		}
-		for ; i < n; i++ {
-			if src[i] == val {
+		for i, v := range src {
+			if v == val {
 				dst[i] = 1
 			} else {
 				dst[i] = 0
 			}
 		}
 	case CompareNeq:
-		i := 0
-		for ; i+8 <= n; i += 8 {
-			if src[i] != val { dst[i] = 1 } else { dst[i] = 0 }
-			if src[i+1] != val { dst[i+1] = 1 } else { dst[i+1] = 0 }
-			if src[i+2] != val { dst[i+2] = 1 } else { dst[i+2] = 0 }
-			if src[i+3] != val { dst[i+3] = 1 } else { dst[i+3] = 0 }
-			if src[i+4] != val { dst[i+4] = 1 } else { dst[i+4] = 0 }
-			if src[i+5] != val { dst[i+5] = 1 } else { dst[i+5] = 0 }
-			if src[i+6] != val { dst[i+6] = 1 } else { dst[i+6] = 0 }
-			if src[i+7] != val { dst[i+7] = 1 } else { dst[i+7] = 0 }
-		}
-		for ; i < n; i++ {
-			if src[i] != val {
+		for i, v := range src {
+			if v != val {
 				dst[i] = 1
 			} else {
 				dst[i] = 0

@@ -259,3 +259,242 @@ func mustGet(t *testing.T, dvs *DiskVectorStore, key string) []byte {
 	require.True(t, ok, "key %q", key)
 	return data
 }
+
+func TestDiskVectorStore_OutOfBounds(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "oob.bin")
+	dim := 4
+
+	dvs, err := NewDiskVectorStore(path, dim)
+	require.NoError(t, err)
+	defer dvs.Close()
+
+	vecs := [][]float32{
+		{1, 2, 3, 4},
+		{5, 6, 7, 8},
+	}
+	n, err := dvs.BatchAppend(vecs)
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+
+	// In-bounds query
+	res, err := dvs.GetBatch([]int{0, 1})
+	require.NoError(t, err)
+	require.Len(t, res, 2)
+
+	// Negative index
+	_, err = dvs.GetBatch([]int{-1})
+	require.Error(t, err)
+
+	// Index >= totalCount
+	_, err = dvs.GetBatch([]int{2})
+	require.Error(t, err)
+
+	// Huge out-of-bounds index
+	_, err = dvs.GetBatch([]int{99999})
+	require.Error(t, err)
+
+	// Mixed valid and invalid indices
+	_, err = dvs.GetBatch([]int{0, 5, 1})
+	require.Error(t, err)
+
+	// Same checks with GetBatchAny
+	_, err = dvs.GetBatchAny([]int{-1})
+	require.Error(t, err)
+
+	_, err = dvs.GetBatchAny([]int{2})
+	require.Error(t, err)
+}
+
+func TestDiskVectorStore_BatchAppendAny_AllTypes(t *testing.T) {
+	dim := 4
+
+	t.Run("Float64", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dvs, err := NewDiskVectorStore(filepath.Join(tmpDir, "f64.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		data := [][]float64{
+			{1.5, 2.5, 3.5, 4.5},
+			{5.5, 6.5, 7.5, 8.5},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]float64)
+		require.True(t, ok)
+		require.Equal(t, data, gotSlice)
+	})
+
+	t.Run("Int16", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dvs, err := NewDiskVectorStore(filepath.Join(tmpDir, "i16.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		data := [][]int16{
+			{100, -200, 300, -400},
+			{1000, -2000, 3000, -4000},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]int16)
+		require.True(t, ok)
+		require.Equal(t, data, gotSlice)
+	})
+
+	t.Run("Uint16", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dvs, err := NewDiskVectorStore(filepath.Join(tmpDir, "u16.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		data := [][]uint16{
+			{100, 200, 300, 400},
+			{1000, 2000, 3000, 4000},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]uint16)
+		require.True(t, ok)
+		require.Equal(t, data, gotSlice)
+	})
+
+	t.Run("Int32", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dvs, err := NewDiskVectorStore(filepath.Join(tmpDir, "i32.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		data := [][]int32{
+			{100000, -200000, 300000, -400000},
+			{500000, -600000, 700000, -800000},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]int32)
+		require.True(t, ok)
+		require.Equal(t, data, gotSlice)
+	})
+
+	t.Run("Uint32", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dvs, err := NewDiskVectorStore(filepath.Join(tmpDir, "u32.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		data := [][]uint32{
+			{100000, 200000, 300000, 400000},
+			{500000, 600000, 700000, 800000},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]uint32)
+		require.True(t, ok)
+		require.Equal(t, data, gotSlice)
+	})
+
+	t.Run("Int64", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dvs, err := NewDiskVectorStore(filepath.Join(tmpDir, "i64.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		data := [][]int64{
+			{10000000000, -20000000000, 30000000000, -40000000000},
+			{50000000000, -60000000000, 70000000000, -80000000000},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]int64)
+		require.True(t, ok)
+		require.Equal(t, data, gotSlice)
+	})
+
+	t.Run("Uint64", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dvs, err := NewDiskVectorStore(filepath.Join(tmpDir, "u64.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		data := [][]uint64{
+			{10000000000, 20000000000, 30000000000, 40000000000},
+			{50000000000, 60000000000, 70000000000, 80000000000},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]uint64)
+		require.True(t, ok)
+		require.Equal(t, data, gotSlice)
+	})
+
+	t.Run("Complex64", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dvs, err := NewDiskVectorStore(filepath.Join(tmpDir, "c64.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		data := [][]complex64{
+			{complex(1, 2), complex(3, 4), complex(5, 6), complex(7, 8)},
+			{complex(-1, -2), complex(-3, -4), complex(-5, -6), complex(-7, -8)},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]complex64)
+		require.True(t, ok)
+		require.Equal(t, data, gotSlice)
+	})
+
+	t.Run("Complex128", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dvs, err := NewDiskVectorStore(filepath.Join(tmpDir, "c128.bin"), dim)
+		require.NoError(t, err)
+		defer dvs.Close()
+
+		data := [][]complex128{
+			{complex(1.5, 2.5), complex(3.5, 4.5), complex(5.5, 6.5), complex(7.5, 8.5)},
+			{complex(-1.5, -2.5), complex(-3.5, -4.5), complex(-5.5, -6.5), complex(-7.5, -8.5)},
+		}
+		n, err := dvs.BatchAppendAny(data)
+		require.NoError(t, err)
+		require.Equal(t, 2, n)
+
+		got, err := dvs.GetBatchAny([]int{0, 1})
+		require.NoError(t, err)
+		gotSlice, ok := got.([][]complex128)
+		require.True(t, ok)
+		require.Equal(t, data, gotSlice)
+	})
+}

@@ -1,1656 +1,397 @@
-# Longbow Unified Roadmap & Optimization Plan
+# Longbow Consolidated Architecture & Roadmap
 
-Last updated: 2026-10-05 (TurboQuant follow-up in §9).
-Consolidated canonical roadmap and optimization tracker for Longbow. This document absorbed `docs/nextsteps.md`, which was removed in its entirety.
+**Last updated**: 2026-10-08  
+**Status**: Canonical tracking document for Longbow runtime architecture, optimization initiatives, and verified milestones.
 
 ---
 
-## 1. Final Outstanding Items & Next Steps
+## 1. Executive Summary & Active Status
 
-This is the single canonical list of outstanding items and upcoming milestones across the Longbow repository.
+Longbow has completed major production hardening phases, achieved 100% package test coverage across all 69 packages in the repository, and stabilized core SIMD and storage primitives across CPU and GPU runtime engines.
 
-| Priority | Item | Component | Status | Description / Resolution | Target |
-|:---|:---|:---|:---|:---|:---|
-| **P1** | **Benchmark Baseline Population** | `benchmarks/`, `scripts/` | **Done** | `benchmarks/baseline_cpu.json` populated with empirical 10k/50k float32 and int8 multi-run benchmark results. Verified with `scripts/check_regression.py` passing with 0 regressions. | v0.2.4 |
-| **P1** | **Post-Optimization Verification Benchmarking** | `internal/tensor/`, `internal/simd/` | **Done** | Multi-config batch distance benchmarks verified on CPU (`complex64Batch`, `complex128Batch`, `mathutil.PushStandard()` temporal pinning, and 10-rule empirical dispatch routing in `internal/tensor/math_dispatch_env.go`). All pass with zero memory regressions. | v0.2.4 |
-| **P2** | **AVX-512 / AVX2 Product Quantization (PQ) Kernels** | `internal/simd/`, `internal/store/index/` | **Done** | 4-way ILP unrolled `adcBatchAVX2` implemented and wired to `ADCDistanceBatch`. Hooked into `IVFPQIndex.SearchWithFilter` and `pqComputer.ComputeBatch` for high-throughput batch distance evaluation. | v0.2.5 |
-| **P2** | **Multi-GPU / High-VRAM Stress Profiling** | `internal/gpu/memory/` | **Done** | Validated `NewDoubleBufferWithHeadroom` and `CheckHeadroom` under heavy concurrent query load with `TestDoubleBuffer_HighVRAM_Stress` simulating multi-stream >1M vector footprint with zero allocation stalls. | v0.2.5 |
-| **P3** | **Continuous Package Coverage Enforcement** | `ci.yml`, test suite | **Done** | Enforced in `.github/workflows/ci.yml` via the `Verify 100% Package Test Coverage Gate` step. All 69 packages verified to contain active, passing unit tests with 0 untested packages. | Ongoing |
-
-Merged from `docs/nextsteps.md`: that file's status summary listed the AVX-512/AVX2 PQ kernels and the Multi-GPU/High-VRAM stress profiling as **[Open]**, which was stale. Both are recorded as **Done** above and their resolutions are detailed in §4; the roadmap is the canonical source and the two entries are reconciled here rather than tracked in two places.
+This document serves as the single source of truth for the **remaining actionable roadmap items**, consolidating open engineering tasks across the storage engine, vector indexing, SIMD quantization kernels, distributed clustering, and benchmark infrastructure. All verified completed items have been audited against the codebase and archived into §5.
 
 ---
 
 ## 2. Dispatch Routing Rules (Auto Mode, EMLGo Build)
 
-Implemented in `internal/tensor/math_dispatch_env.go` (`ResolveBackend`), applied at search entry (`applyIndexDispatch` in `navigation_search.go`) and forced by temporal `PushStandard`.
+Implemented in `internal/tensor/math_dispatch_env.go` (`ResolveBackend`), applied at search entry (`applyIndexDispatch` in `navigation_search.go`) and enforced by temporal `PushStandard`.
 
-| Rule | Threshold | Reason |
-|------|-----------|--------|
-| Below `MinEMLVectorCount` | `< 50000` | emlgo channel-worker overhead dominates at small N |
-| complex64 → emlgo | `50000 ≤ n ≤ 250000` | dense 500k regressed -38% under emlgo |
-| complex64 → standard | `n > 250000` | above safe emlgo range |
-| complex128 → emlgo | `50000 ≤ n < 500000` | dense/hybrid wins (+159% at 100k) |
-| complex128 → standard | `n ≥ 500000` | sparse -37% and dense P99 spike at 500k |
-| turboquant → emlgo | `n ≥ 50000` | TQ kernels benefit from emlgo |
-| float64 / int\* / uint\* / float16 / binary | always standard | float64 emlgo +47% memory at 500k; ints/float16 regress dense at 100k |
-| temporal search | forced standard | `PushStandard` in all four `TemporalIndex.Search*` methods |
+| Rule | Threshold | Rationale |
+|:---|:---|:---|
+| Below `MinEMLVectorCount` | `< 50,000` | EMLGo channel-worker overhead dominates over SIMD gains at small $N$ |
+| `complex64` → EMLGo | $50,000 \le N \le 250,000$ | Dense 500k regressed -38% under EMLGo channel coordination |
+| `complex64` → Standard | $N > 250,000$ | Above safe EMLGo operating threshold |
+| `complex128` → EMLGo | $50,000 \le N < 500,000$ | Dense/hybrid speedup (+159% at 100k) |
+| `complex128` → Standard | $N \ge 500,000$ | Sparse -37% and dense P99 spike at 500k |
+| `turboquant` → EMLGo | $N \ge 50,000$ | TurboQuant batch kernels benefit from EMLGo worker scaling |
+| `float64` / `int*` / `uint*` / `float16` / binary | Always Standard | `float64` EMLGo incurs +47% memory at 500k; integer/float16 regress dense at 100k |
+| Temporal search | Forced Standard | `mathutil.PushStandard()` executed across all four `TemporalIndex.Search*` methods |
 
-- **Float64 Exclusion**: `LONGBOW_FLOAT64_EXCLUDE_EMLGO` defaults to **exclude** (unset/`true`/`1`/`yes`); opt out with `false`/`0`/`no`/`off`. Helm default `"1"`; emlgo Dockerfiles set `true`.
-- **Math Dispatch Env**: `LONGBOW_MATH_DISPATCH` (`auto`|`emlgo`|`standard`) applied via `tensor.ApplyDispatchConfig()` at startup.
+- **Float64 Exclusion**: `LONGBOW_FLOAT64_EXCLUDE_EMLGO` defaults to **true** (unset/`true`/`1`/`yes`); opt out with `false`/`0`/`no`/`off`. Helm chart default is `"1"`; EMLGo Dockerfiles set `true`.
+- **Math Dispatch Environment**: `LONGBOW_MATH_DISPATCH` (`auto` \| `emlgo` \| `standard`) applied via `tensor.ApplyDispatchConfig()` at initialization.
 
 ---
 
-## 3. Benchmark Baseline & CI Regression Gating
+## 3. Benchmark Baseline & CI Invariant Protocol
 
-`benchmarks/baseline_cpu.json` is the CI regression reference (`unified_benchmark.py --ci`).
-Regenerate with:
+`benchmarks/baseline_cpu.json` serves as the CI regression reference (`unified_benchmark.py --ci`).
 
-```bash
-python3 scripts/unified_benchmark.py --ci --runs 3 --save-baseline benchmarks/baseline_cpu.json
+### 3.1 Report Provenance (R2)
+
+Every benchmark report carries an authoritative `provenance` block recording:
+- Git revision and dirty worktree flag.
+- Client binary path, byte size, and modification timestamp.
+- Runtime flags: `workers`, `queries`, `cpu_affinity`, `search_modes`, `runs`, `duration`, `numa_bind`, `mode`.
+- Detected CPU cores and values of the 15 `LONGBOW_*` environment variables that govern runtime behavior.
+
+### 3.2 Concurrency Invariant & Little's Law Band Validation (R3)
+
+Benchmark emitters refuse to write reports that violate physical concurrency constraints. With $W$ concurrent workers, at most $W$ requests can be in flight simultaneously:
+- **Invariant**: Validated using Little's Law identity: $\text{QPS} \times \text{mean\_latency\_ms} \approx W \times 1000$.
+- **Band Tolerance**: Reports accept $75\% \le \text{implied\_workers} \le 102\%$ of recorded $W$. Hard failure exits with code 2 if implied concurrency exceeds physical limits.
+- Evaluated both at report generation in `scripts/unified_benchmark.py` and regression verification in `scripts/check_regression.py`.
+
+---
+
+## 4. Remaining Actionable Roadmap Items
+
+The following items represent the verified, open engineering tasks across the codebase.
+
+```mermaid
+graph TD
+    subgraph Core Indexing & Storage Engine
+        R26["R26: Inbound Edge Guarantee<br/>(Never Drop Last Inbound Edge)"]
+        R5["R5 & R6: Proximity-Gated Chains &<br/>Drop Degree Reservation"]
+        R8["R8: Bulk Insert Recall &<br/>Node-Visit Budget Guard"]
+        DVS_Z["§7.2: Zero-Copy Batch<br/>DiskVectorStore Decoding"]
+        DVS_T["§7.3: All-Type Support &<br/>Bounds in GetBatchAny"]
+        LN_T["§7.8: LookupNeighbors Typed<br/>Distance & External IDs"]
+        MG_A["§7.9: Morton Grid Adaptive<br/>Subdivision or Deprecation"]
+    end
+
+    subgraph SIMD & Quantization Kernels
+        DEQ["§7.1: Vectorized SQ8<br/>Dequantize & Fallback Loops"]
+        TQ_AVX["§7.6: AVX-512 TurboQuant<br/>Pack Kernel Fix & Tests"]
+        TQ_B["R24: Candidate Accumulation<br/>Across Graph Hops"]
+        I16_D["R32: Investigate 6x Deficit<br/>on int16 / uint16"]
+    end
+
+    subgraph Distributed & CI
+        SH_M["§7.4: Streaming Heap Merge<br/>for Flight Scatter-Gather"]
+        CI_Q["§7.7: Emulated ARM64 &<br/>AVX-512 CI Matrix Lanes"]
+        BASE_R["R29 & R19: Re-baseline at Scale<br/>with Provenance"]
+        AB_CI["R30 & R39: Interleaved A/B<br/>CI Gating Decision"]
+        DASH["R34: Resolve Overlapping<br/>Grid Cells in Dashboard"]
+    end
+
+    R26 --> R5
+    R5 --> R8
 ```
 
-- Standalone regression checks: `python3 scripts/check_regression.py --baseline benchmarks/baseline_cpu.json --results <run.json> --threshold 10`
-- Zero-QPS entries in the baseline are skipped by design (`if b_qps <= 0: continue`) until real benchmark data is saved.
+### 4.1 Core Indexing & Storage Engine
 
-### 3.1 Reports are now self-validating and carry provenance (R2, R3)
+#### Item 1: Reformulate HNSW Bulk Ingestion Inbound Edge Guarantee (R26, R5, R6, R28)
 
-**Provenance (R2).** Every report now carries a `provenance` block beside its numbers:
-git revision and whether the tree was dirty, the benchmark binary's path, size and
-mtime, `workers`, `queries`, `cpu_affinity`, `search_modes` as requested, `runs`,
-`duration`, `numa_bind`, `mode`, CPU count, and the values of the 15
-`LONGBOW_*` environment variables that change server behaviour. Anything in that
-list can move a QPS number without any code change, which is what made two runs
-previously indistinguishable from a regression.
+**Status: implemented, two of four steps measured and rejected.** See
+[§4.1.1 Measured outcome](#41-measured-outcome-r26-r5-r6-r8) before acting on
+the remaining plan.
 
-**Self-validation (R3).** The report writer now refuses to emit a report whose rows
-violate `QPS x P50_ms <= workers x 1000`. With W concurrent workers no more than W
-requests can be in flight, so a row claiming more concurrency than that allows is
-impossible, and every percentage derived from the file is meaningless. A violating
-run exits 2 and leaves the previous report untouched rather than overwriting it.
+- **Target Files**: [arrow_hnsw_bulk.go](file:///home/rsd/REPOS/longbow/internal/store/index/arrow_hnsw_bulk.go), [neighbor_ops.go](file:///home/rsd/REPOS/longbow/internal/store/index/neighbor_ops.go)
+- **Problem**: In `arrow_hnsw_bulk.go:addBatchBulkInternal`, bulk-inserted nodes are unconditionally chain-linked to their insertion-order predecessor (`node.id-1`) at layer 0 to avoid in-degree zero. On unsorted corpora, this injects arbitrary long-range edges, distorting the small-world graph topology and degrading dense search QPS. Attempting to gate the chain link on proximity alone dropped TurboQuant reachability from 98.2% to 81.8% because fresh nodes' reverse links are immediately pruned away by highly-connected candidate hosts.
+- **Action Plan**:
+  1. **R28**: Measure insertion contention and eviction frequency per candidate host node during bulk ingestion.
+  2. **R26**: Implement a pruning invariant that *never drops a node's last inbound edge* (via global in-degree tracking or secondary demoted candidate lists similar to DiskANN `keep_pruned_connections`).
+  3. **R5**: Once inbound edge reachability is structurally guaranteed, gate predecessor chain links strictly on spatial proximity (`chainDist <= median(candidates)`).
+  4. **R6**: Eliminate the unconditional `chainLinksPerNode = 2` degree reservation from layer 0.
+- **Success Criteria**: 100% graph reachability on unsorted/shuffled corpora, zero arbitrary long-range edges, and elimination of the dense search traversal regression.
 
-`check_regression.py` re-runs the same invariant over both inputs before comparing
-them, because it can report the difference between two reports without noticing that
-either one is impossible on its own terms. The two cases are deliberately separated:
+#### Item 2: Recall and Node-Visit Budget Guard for `AddBatchBulk` (R8)
 
-- a row that violates the invariant given the worker count the report itself records
-  is a **hard failure** (exit 1);
-- a report with **no recorded worker count** is a warning, not a failure. There is
-  nothing for it to be inconsistent with, and the fix is to regenerate it with
-  provenance, not to reject a run.
+**Status: measurement shipped, no threshold can be trusted yet.** See
+[§4.1.1](#41-measured-outcome-r26-r5-r6-r8).
 
-`scripts/tests/test_benchmark_validation.py` covers both helpers (13 tests), run in
-CI by the `Test benchmark validation helpers` step.
+- **Target Files**: [arrow_hnsw_bulk.go](file:///home/rsd/REPOS/longbow/internal/store/index/arrow_hnsw_bulk.go), [arrow_hnsw_insert.go](file:///home/rsd/REPOS/longbow/internal/store/index/arrow_hnsw_insert.go)
+- **Problem**: Bulk index construction executes based on a static vector threshold (`LONGBOW_HNSW_BULK_INSERT_THRESHOLD`) rather than empirical graph quality metrics.
+- **Action Plan**:
+  - Sample a representative subset during dataset ingestion to evaluate graph connectivity, mean node visits during traversal, and $k$-NN recall between bulk and sequential paths.
+  - Automatically fall back to sequential `AddBatch` if the bulk-constructed topology degrades recall or increases traversal hops beyond acceptable budgets.
+- **Success Criteria**: Automated fallback prevents degraded graph construction across atypical or clustered data distributions.
 
-**What the invariant says about the existing baseline.** `benchmarks/baseline_cpu.json`
-predates provenance and so is warned about, not rejected. Injecting a worker count
-shows its numbers are only self-consistent at **workers >= 8**:
+### 4.1.1 Measured outcome (R26, R5, R6, R8)
 
-| dim | count | dtype | QPS | P50 ms | QPS x P50 | Consistent at |
-|---|---|---|---|---|---|---|
-| 128 | 10,000 | float32 | 2665.1 | 2.522 | 6721 | 8 workers |
-| 128 | 10,000 | int8 | 2825.6 | 2.740 | 7742 | 8 workers |
-| 128 | 50,000 | float32 | 2373.7 | 3.162 | 7506 | 8 workers |
-| 128 | 50,000 | int8 | 2121.7 | 3.641 | 7725 | 8 workers |
+Everything below was measured on this host at 128 dims, `MMax0=16`,
+`EfConstruction=200`, 4 workers pinned to CPUs 12-15, uniform random vectors,
+float32 unless stated. Three runs of an identical configuration agreed within
+±5%, so differences of that size are real.
 
-The harness default is `--workers 8`, so the baseline is probably sound - but
-"probably" is not a provenance record, and it is exactly the gap R2 closes.
+#### The dominant problem is not stranding, it is a sparse layer 0
 
-- **R2. DONE.** Reports carry revision, build, affinity, workers, queries, modes,
-  runs, duration and the behaviour-affecting environment.
-- **R3. DONE.** The invariant is asserted at report generation, re-checked by
-  `check_regression.py`, and unit-tested.
-- **R29. Regenerate `benchmarks/baseline_cpu.json` with `--save-baseline`** so the
-  committed gate stops warning. Not done here because it is a full benchmark run,
-  and its numbers should be taken on an otherwise idle host - the same care that
-  section 9.4 showed is necessary for a trustworthy construction measurement.
+| Build | Index time | Dense QPS |
+|---|---|---|
+| Entirely bulk | 22.5–23.5s | **674–742** |
+| Bulk with the gate rejecting some batches | 85–215s | **3,286–3,692** |
+| Sequential reference (20k, `TestBulkInsert_GraphTopologyVsSequential`) | — | recall@10 0.41–0.44 |
 
----
+A bulk-built layer 0 reaches **100% of the corpus** and still serves dense search
+roughly 4.7x slower than the same corpus partly rebuilt sequentially. Its mean
+degree is 4–6 where `MMax0=16`, because the diversity heuristic in
+`selectNeighbors` rejects a candidate whenever it is closer to an
+already-selected neighbour than to the node being linked — which on concentrated
+distances fires for most candidates. Every node is findable; the graph just takes
+far more hops to cross.
 
-## 4. Completed Work & Resolved Issues
+This is the regression to fix, and it is not on the R26/R5/R6 dependency chain:
+none of those three touch selection.
 
-### 10-Part Production Hardening Plan (Completed)
+#### What shipped
 
-1. **Multi-Architecture CUDA Kernel Builds**: Target modern NVIDIA GPU architectures: `sm_70`, `sm_80`, `sm_86`, `sm_89`, `sm_90` in `Dockerfile.nvidia` and `Dockerfile.emlgo-gpu`.
-2. **Non-Root Docker Runtime**: `scratch`-based images run as `nobody:nobody`. Ubuntu-based images create a dedicated `longbow` user and run as `longbow:longbow`.
-3. **Reproducible Builds with `-trimpath`**: All Dockerfiles use `-trimpath`. Module replace directive safely maintained for vendor builds.
-4. **Healthcheck Endpoint Standardization**: `/health` endpoint wired into `cmd/longbow/main.go` with component checks (storage, metrics, logging, tracing).
-5. **GPU Memory Leak Detection in CI**: `scripts/gpu_memcheck.sh` created with `compute-sanitizer --tool memcheck --leak-check full`.
-6. **Benchmark Regression CI Gate**: `--compare-baseline benchmarks/baseline_cpu.json --threshold 10` wired into `.github/workflows/ci.yml`.
-7. **Structured Benchmark Baselines**: `benchmarks/baseline_cpu.json` created with versioned JSON format and standalone `check_regression.py`.
-8. **Docker Compose GPU Profiles**: `docker-compose.yml` updated with profiles: `cpu` (default), `nvidia`, `metal`, `emlgo-cpu`, `emlgo-gpu`.
-9. **Security Scanning in CI**: Added `.github/workflows/security.yml` with `govulncheck`, Trivy vulnerability scanning, and `.trivyignore` for accepted indirect dependencies (hamba/avro GO-2026-5046/5047/5048 and x/crypto openpgp GO-2026-5932).
-10. **Performance Documentation Automation**: `--report-md` flag added to `unified_benchmark.py` for auto-generating markdown reports.
+| Change | Files | Outcome |
+|---|---|---|
+| R26 last-inbound-edge invariant, `LONGBOW_HNSW_INBOUND_GUARD` | `neighbor_ops.go`, `indegree_tracker.go` | **Off.** Lifts 20k reachability 19788→19807 / 20000 and recall@10 0.28→0.30, but breaks `TestPredicateTraversal_ReachesMatchBehindRejectedNodes` for float32/float64/float16_dispatch, which requires a single admitted node to be reached *through* rejected ones. |
+| R8 graph-quality gate: sampled reachability, mean layer-0 degree, greedy descent depth, reported per batch | `arrow_hnsw_bulk.go` | **Shipping.** Measurement is what the item asked for and none of the three floors can be trusted as a threshold (below). |
+| Lock-free in-degree tracker replacing `sync.Map` directory | `indegree_tracker.go` | **Shipping.** The old one paid a map load per operation and the prune path does one lookup per dropped candidate. |
+| CAS bookkeeping fix in `AddConnection`/`AddConnectionsBatch`/`PruneConnections` | `neighbor_ops.go` | **Shipping.** `lastOld`/`lastNew` could survive from a losing CAS attempt, applying an in-degree diff that was never committed. |
+| Selection degree-floor top-up | — | **Rejected.** Raised mean degree 9.5→14.8 and 20k recall@10 0.29→0.445, and cost dense QPS 3,474→692 at 100k. On a graph that needs many hops, more neighbours is more work per hop. |
+| Mean-degree floor at 0.50 | — | **Rejected.** Rejected four of nine batches in a 100k build: index time 23.5s→215s, dense QPS 3286 vs 3474 ungated. No measurable gain for 9x the index time. |
+| Concurrency skip for the reachability sample | — | **Rejected.** The benchmark's own ingest is concurrent, so skipping enforcement there shipped the bad graph: 742 dense QPS. Removed. |
 
-### Codebase Audit & Architectural Improvements (Completed)
+#### Why no R8 threshold is trustworthy
 
-| Item | Area | Resolution Details |
-|------|------|--------------------|
-| 1. Native AVX2 & AVX-512 Assembly Kernels | `internal/simd/` | AVX2 SQ8 assembly kernel wired and validated with unit tests; VNNI instructions supported where hardware features present. |
-| 2. GPU std Complex64/128 250k NoDisk OOM Cliff | `internal/gpu/memory` | Pre-allocation VRAM headroom validation (`NewDoubleBufferWithHeadroom`, `CheckHeadroom`) added to prevent allocation stalls. |
-| 3. GPU Emlgo 100k Disk Complex128 GraphRAG Inversion | `internal/store/index/` | Eliminated redundant heap allocations on disk-backed adjacency deserialization. Reusable scratch API `getNeighborsBuf` added to `GraphNavigator`; manual lower-bound replaces closure search. `BenchmarkDiskGraph_GetNeighborsReusedBuf` 8–10 ns/op, 0 B/op, 0 allocs; `FindPathCached` 422 ns/op. |
-| 4. CPU Emlgo 100k Disk TurboQuant Temporal Regression | `internal/store/` | Optimized TurboQuant workspace reuse, QJL pooling, bit-accumulator pack/unpack for odd depths. `DiskVectorStore` hot-tier LRU cache (16MB) and sequential block I/O. Read standard I/O improved from 31 µs to 3.1 µs/op (10x faster), 68 KB to 5.8 KB/op (12x less memory). |
-| 5. ADBC Driver SQL Execution Engine | `internal/adbc/` | Replaced silent dummy reader fallback with structured `adbc.Error{Code: adbc.StatusNotImplemented}` while preserving `SELECT`, `DESCRIBE`, and `SHOW TABLES`. |
-| 6. SIMD Bray-Curtis Distance Metric | `internal/simd/` | Implemented 256-bit AVX2 assembly kernel `brayCurtisAVX2Kernel` using `VANDPS` with absolute-value mask, verified across dimensions 1 to 255. |
-| 7. AVX2 8-Way Vertical Batch Kernel for Euclidean | `internal/simd/` | Wired `euclideanVerticalBatchAVX2` and `euclideanVerticalBatchAVX512` into dispatch, replacing horizontal batch fallback with parallel 4-way register streaming. |
-| 8. Auto-Sharding Support for IVF-PQ | `internal/store/index/` | Implemented `IsSharded()`, `GetShardedIndex()`, `SetShardedIndex()`, and `NewShardedIVFPQIndex()` on `IVFPQIndex`, integrating into `ShardedHNSW` partition routing. |
-| 9. Multicast DNS (mDNS) Cluster Discovery | `internal/mesh/` | Validated mDNS service registration, query discovery, and clean shutdown lifecycle via `MDNSProvider`. |
-| 10. TurboQuant Quantization Codebook Calibration | `internal/store/index/` | Fixed 4-bit angle packing and unpacking routines, validated polar coordinate reconstruction with cosine similarity >0.95. |
+Each metric was read on both a graph serving ~3,400 QPS and one serving ~650:
 
-### Performance Work Status (Resolved Critical Issues)
+- **Sampled reachability** read 100% on the 650-QPS graph and 20–45% on batches whose mean degree was 45.8 and whose descent took 3.5 hops. Under concurrent `AddBatch` the 20 targets are drawn at `startID + i*step` while ids interleave across callers, so it samples nodes whose inbound links do not exist yet. It is the only metric that ever tracked throughput in practice, and it is unreliable exactly where concurrency is highest.
+- **Mean degree** correlates with throughput across whole builds but not within one.
+- **Descent depth** stayed inside budget (2.3–4.0 hops against 5.0–6.4) on both the good and the bad graph.
 
-- **[RESOLVED] Uint8 Disk Spill Regression (CPU emlgo 250k hybrid -82%)**: Native `*array.Uint8` support added in `DiskVectorStore.BatchAppendArrow`, implemented `VectorTypeUint8` in `GetBatchAny` returning `[][]uint8`, and updated `vector_extraction.go` to support all typed slices from disk stores. Verified with unit test `TestDiskVectorStore_Uint8`.
-- **[RESOLVED] Complex64/128 ComputeBatch Allocation Regression**: Receiver-level scratch buffers sized and reused on `complex64Computer` and `complex128Computer`, eliminating per-call slice heap allocations.
-- **[RESOLVED] CPU Emlgo Float32 Dense Regression at Scale**: `ResolveBackend` in `internal/tensor/math_dispatch_env.go` updated so pure real floating-point operations route to `BackendStandard`, reserving `BackendEML` for complex numbers and TurboQuant.
-- **[RESOLVED] CPU Complex64 Dense 500k (-38% Regression)**: Auto-dispatch routes complex64 to standard above 250k (`ResolveBackend` wired at `SearchVectorsWithBitmap` via `applyIndexDispatch`).
-- **[RESOLVED] CPU Complex128 Dense 500k (P99 75ms Spike)**: Reused pooled `searchCtx` batch buffers (`sctx` field) to cut per-search alloc/GC; `ResolveBackend` forces standard at ≥500k.
-- **[RESOLVED] CPU Emlgo Temporal Mode (-18-36% Regression)**: `mathutil.PushStandard()` wraps `SearchAsOf`, `SearchRange`, `SearchSlidingWindow`, and `SearchSlidingWindowByTime`.
-- **[RESOLVED] GPU Complex128 Dense 100k (-50% Regression)**: Complex128 CUDA kernels now accumulate in `float` with `float4` vectorization (FP64 is ~1/64 rate on consumer GPUs). Fixed launch parameter and float16 decode bug.
-- **[RESOLVED] CPU Float64 Emlgo Memory (+47% Memory)**: Default exclusion configured via `LONGBOW_FLOAT64_EXCLUDE_EMLGO=true` in `main.go`, Helm chart, and Dockerfiles.
-- **[RESOLVED] CPU 10k Scale Emlgo Overhead**: `MinEMLVectorCount = 50000` in `internal/tensor/math_dispatch_env.go`; below threshold always routes to standard.
-- **[RESOLVED] CUDA Outdated Base Images**: Upgraded to CUDA 12.8.1 in `Dockerfile.nvidia` and `Dockerfile.emlgo-gpu`.
+So the gate ships enforcing-by-default with the reachability floor, which is the
+shipped behaviour, and reports the other two without enforcing them.
 
-### Test Suite & Package Coverage (100% Covered)
+#### What to do next
 
-All 69 packages in the repository compile, run, and pass automated tests with active test coverage:
+1. **Make bulk linkage use the growing graph.** Every node in a sub-batch searches
+   the *frozen* pre-batch graph, so a fresh node never sees its nearest
+   neighbours — which, for a 10k sub-batch inside a 100k corpus, is most of them.
+   Sequential insertion searches the growing graph and reaches mean degree 15.7.
+   This is the actual fix, and it is what makes R5 and R6 safe to land after.
+2. **Re-measure R26 once (1) lands.** Its two open problems are that a fixed-degree
+   layer cannot hold every unique inbound edge, so the invariant is best-effort
+   rather than the 100% the roadmap asks for; and that holding the edge changes
+   predicate-traversal semantics. Demoted-connection storage that search can
+   traverse would close the first.
+3. **Stop reporting ingest throughput without index time.** `docs/performance.md`
+   §2 measures transport-side ingest only. The 4.7x search difference above is
+   invisible there, and the only reason it was found is that the gate logs index
+   time.
 
-- Added comprehensive unit tests for CLI entrypoints (`cmd/adbc`, `cmd/cli`, `cmd/io-bench`, `cmd/ring-sim`, `cmd/bench-tool`, `cmd/tensor-verify`, `cmd/soak_test`).
-- Added non-Darwin and non-GPU stub tests for `internal/gpu/cuda`, `internal/gpu/cuda/cuvs`, `internal/gpu/metal`, `internal/gpu/tpu`, and `internal/simd/amx`.
-- Added active unit tests to benchmark and test suites (`internal/benchmark`, `internal/storage/benchmark`, `internal/resilience/test`).
-- Reached 100.0% statement coverage for `internal/mathutil`.
-- Verified Python SDK test coverage: 54 passed, 0 failed via `validate_sdk_coverage.py`.
-- Zero untested packages; zero `[no test files]` or `[no tests to run]`.
+#### Rejected: routing `SearchComplex128` through the shared batched kernel
 
-### Performance & Stability Observations & Implemented Optimizations
+`SearchComplex128` is the only dtype-specific search in
+`internal/gpu/cuda/cuda_index.go`: its six siblings convert the query to float32
+and delegate to `idx.Search`, while it launches
+`launch_l2_distance_complex128_kernel` once per page and copies distances back
+over unpinned memory. That reads like the cause of complex128 being the slowest
+dtype on GPU — 471 dense QPS at 100k against uint16's 3934, and 4.96x slower
+than the same corpus on CPU — so it was rewritten to delegate to the shared
+batched path and re-measured.
 
-Following the benchmark matrix analysis and performance investigation across 50k, 100k, and 250k vector tiers:
+It is **slower on every mode**, so the change was reverted:
 
-1. **[RESOLVED] Memory Prefetch for Complex Payloads (`complex128` Disk Spill)**:
-   - *Observation*: 250k complex128 vectors in disk auto-spill mode experience page-fault latency during HNSW neighbor traversal (dropping to ~372 QPS).
-   - *Resolution*: Implemented `Prefetcher` interface (`Prefetch` calling `unix.Fadvise(FADV_WILLNEED)` on Linux) on `FSStorageBackend` and `UringStorageBackend`. Exposed `PrefetchBatch(indices []int)` on `DiskVectorStore` and integrated kernel read-ahead into `GetBatch` and `GetBatchAny` prior to block reading and vector decoding.
-2. **[RESOLVED] Adaptive Quantization Auto-Tuning (TurboQuant)**:
-   - *Observation*: TurboQuant 4-bit maintains rock-solid throughput (3,650 QPS at 100k, 1,388 QPS at 250k) while keeping peak RSS under 2.0 GB at 250k vectors.
-   - *Resolution*: Promoted TurboQuant as the default recommended storage engine for datasets exceeding 100k vectors. Lowered `AutoQuantizeThreshold` default from 500,000 to 100,000 across `index_types.go`, `store_actions.go`, `quantization_tuner.go`, and `cmd/longbow/main.go`.
-3. **[RESOLVED] SIMD Kernel Cache-line Alignment on Mid-scale Floats**:
-   - *Observation*: EMLGo SIMD int8 achieves +42.3% gain at 50k, but slips on 100k float16 (-23.5%) due to register packing overhead exceeding L1D cache boundaries.
-   - *Resolution*: Optimized `euclideanF16BatchAVX2` in `internal/simd/simd_amd64.go` with 32KB L1 data cache chunk tiling (64 vectors per tile) and 4-way ILP unrolling with non-temporal prefetching.
-4. **[RESOLVED] Buffer Pool Read-Side Double Buffering / Write Isolation**:
-   - *Observation*: Concurrent disk writes during auto-spill page flushing introduce lock contention against active query readers on `uint8`.
-   - *Resolution*: Introduced dedicated `writeMu` mutex in `DiskVectorStore` to isolate disk block compression, writing, and fsync from query readers. Refactored `GetBatch` and `GetBatchAny` to snapshot block metadata and release `dvs.mu` prior to I/O and decompression, reducing read-write lock contention to near zero.
-5. **[RESOLVED] AVX-512 / AVX2 Product Quantization (PQ) Distance Batching**:
-   - *Observation*: IVF-PQ and HNSW PQ distance lookups previously executed scalar per-vector lookups across codebooks.
-   - *Resolution*: Implemented 4-way ILP unrolled `adcBatchAVX2` kernel in `internal/simd/simd_amd64.go`. Hooked `simd.ADCDistanceBatch` into `IVFPQIndex.SearchWithFilter` and `pqComputer.ComputeBatch` for batched candidate evaluation.
-6. **[RESOLVED] TurboQuant Unpack Precomputed LUT**:
-   - *Observation*: TurboQuant unpacking previously executed per-element floating-point calculations during distance scoring.
-   - *Resolution*: Replaced with precomputed stack-allocated Lookup Tables (`[16]float32`, `[4]float32`, `[256]float32`) resident in L1 cache, delivering >3.2M unpacks/sec at 256–304 ns/op.
-7. **[VALIDATED] Full 8-Variant Baseline Matrix (2,304 Metric Points)**:
-   - *Observation*: Full 8-variant matrix executed across CPU and GPU builds (Standard & EMLGo), pure memory (`nodisk`) and auto-spill (`disk`) across all 16 data types, 100k & 250k vector counts, and all 9 search modalities (`dense`, `hybrid`, `sparse`, `filtered`, `byid`, `graphrag`, `geo`, `temporal`, `learned_index`). Peak throughput reached 3,644 QPS on GPU (`uint16` 100k sparse) and 3,611 QPS on CPU (`complex64` 250k sparse). Ingestion throughput achieved 385,000 to 603,742 vec/s.
-   - *Status*: Baseline recorded in `benchmarks/baseline_matrix.json` and documented in `docs/performance.md`.
-8. **[CONFIRMED] Auto-Spill Isolation & Throughput Gains**:
-   - *Observation*: Auto-spill disk mode averaged +21.2% QPS improvement over in-memory mode in standard builds across 576 measurements, while bounding server RSS within the 60% memory threshold. The `writeMu` reader-writer separation and asynchronous flushing eliminate lock contention during background page writes.
-9. **[CONFIRMED] Integer EMLGo SIMD Acceleration**:
-   - *Observation*: EMLGo SIMD builds demonstrated massive throughput gains on integer vectors: `uint8` 100k reached 1,577 QPS (+95.5%), `uint16` 100k disk reached 1,515 QPS (+209.1%), and `uint64` 100k disk reached 2,067 QPS (+352.8%).
-10. **[RESOLVED] Intel P-Core BD PROCHOT Hardware Throttling & Core Affinity**:
-    - *Observation*: On hybrid architectures (such as Intel i7-12650H), Embedded Controller BD PROCHOT clamped P-cores (CPUs 0–11) to 485 MHz while E-cores (CPUs 12–15) ran unthrottled at 2.50 GHz (5.15x higher frequency). Default `GOMAXPROCS=16` scheduled 75% of Go worker threads onto the throttled cores, introducing severe barrier stalls across parallel SIMD loops and causing an apparent ~3x–8x benchmark throughput drop.
-    - *Resolution*: Added CPU affinity management via `LONGBOW_CPU_AFFINITY` environment variable and `--cpu-affinity` CLI flags in `scripts/unified_benchmark.py` and `scripts/run_benchmark_full.sh`, pinning the Longbow server and `bench-tool` to unthrottled high-frequency cores (CPUs 12–15).
-11. **[RESOLVED] Arrow Vector Type Metadata Preservation & Inadvertent TurboQuant Demotion**:
-    - *Observation*: `cmd/bench-tool` previously created Arrow record batches for `float32` vectors without attaching schema metadata `longbow.vector_type`. An automatic promotion rule in `store_actions.go` promoted batches with missing metadata (`!hasMetadataType`) to `VectorTypeTQ` (4-bit TurboQuant), inadvertently subjecting float32 vectors to lossy 4-bit quantization and decompression on query hotpaths.
-    - *Resolution*: Updated `cmd/bench-tool/main.go` to explicitly populate `longbow.vector_type` across all 16 supported data types in `generateRecord`.
-12. **[RESOLVED] In-Memory Auto-Spill Threshold Boundary**:
-    - *Observation*: `scripts/unified_benchmark.py` previously forced `LONGBOW_AUTO_SPILL_DISK="true"` whenever the dataset vector count reached 100k, forcing pure in-memory (`nodisk`) benchmarks to invoke disk auto-spill paging logic.
-    - *Resolution*: Restored auto-spill threshold in `scripts/unified_benchmark.py` to 500,000 vectors, ensuring 100k and 250k pure memory benchmarks stay resident in RAM.
-13. **[RESOLVED] Unconditional OTLP gRPC Exporter Retry Storms**:
-    - *Observation*: `initTracer()` in `cmd/longbow/main.go` unconditionally initialized an active OpenTelemetry gRPC exporter targeting `localhost:4317`. When no OTLP collector was running, gRPC background connection retries failed every 5 seconds, contending for runtime threads and logging to stderr during benchmark runs.
-    - *Resolution*: Made OTLP trace exporter initialization conditional on `OTEL_EXPORTER_OTLP_ENDPOINT` or `LONGBOW_TRACING_ENABLED=true`.
-14. **[RESOLVED] Query Hotpath Logging Mutex Contention**:
-    - *Observation*: Per-query `Info()` logging on `DoGet`, `SearchHybrid`, and `LearnedIndex` serialized concurrent query workers on Zerolog's standard output write lock.
-    - *Resolution*: Demoted high-frequency per-query log events from `Info()` to `Debug()`, eliminating stdout mutex serialization across concurrent query workers.
+| mode | per-page kernel | shared batched | delta |
+|---|---|---|---|
+| dense | 471.2 | 378.1 | −20% |
+| hybrid | 444.6 | 326.9 | −26% |
+| graphrag | 412.3 | 371.1 | −10% |
+| learnedindex | 385.7 | 360.6 | −7% |
+| filtered | 410.6 | 392.9 | −4% |
+| byid | 370.8 | 345.8 | −7% |
 
-### Roadmap Section 7 Steps Since Completed
+The two kernels use different parallel decompositions. `l2_distance_kernel_v2_batched`
+is warp-per-vector: it stages the query in shared memory, binary-searches
+`page_starts` per warp, strides the row across 32 lanes and finishes with a
+five-step `__shfl_xor` reduction. `l2_distance_complex128_kernel` is
+thread-per-vector with a `float4` loop, so each thread walks its whole row with
+wide loads and no reduction. At `dim=128` complex components (256 floats) the
+reduction and the per-warp binary search cost more than the row walk saves.
 
-1. **Index `VersionHistory` for batch temporal reads** — `VersionHistory` now publishes an immutable columnar snapshot (prefix-summed `entOff`, a per-version `ts` column, and a dense id->slot column) mirroring the layout from item 10, and looks up "active at t" with an upper-bound binary search instead of a reverse linear scan. Semantics are unchanged and pinned: active-at-t is the greatest `Timestamp <= t` (a lower bound would be wrong), ties resolve to the last-inserted version, and out-of-order timestamp inserts fall back to the literal reverse scan because for a non-monotonic group the old answer is not monotone in t. Error strings are preserved verbatim. **Measured**: 1.2-1.4x at 1 version/id, 2.4-7.7x at 10-100 versions/id; the binary search breaks even with the linear scan at ~2-4 versions/id and wins from 6-8. Decomposed at 100k ids: the per-id map lookup was ~16 ns/id and the linear scan 40-300 ns/id, so the scan was the real cost. End-to-end `SearchAsOf` on a fully live 100k corpus: **-13.8%** (12.2ms -> 10.5ms), with the history batch itself -33.0% and its share of the query falling 44% -> 34%. The snapshot rebuild is O(versions) and amortised over a 1/8 growth window under the read lock; it is the thing to revisit if `maxVersions` is ever raised by an order of magnitude.
+So the per-page launch count and the unpinned copy were not the bottleneck, and
+the real cost of complex128 on GPU is still unlocated. Note that at 100k with
+`vectorsPerPage` paging the per-page loop is only a handful of launches, which is
+consistent with launch overhead never having been the issue. What remains
+unexplained is why uint16 reaches 3934 QPS through the shared scan at all — that
+rate implies roughly 393M distance evaluations per second, which a 100k-row
+brute-force scan cannot produce, so uint16 is probably not taking the path this
+comparison assumes.
 
-2. **Close the markdown-lint and docs-drift gap** — `docs/**` now passes `markdownlint-cli2` with 0 issues under the workflow's own glob. A `.markdownlint-cli2.jsonc` relaxes only `MD013` (line-length: tables, ASCII diagrams and shell transcripts run to ~735 columns) and `MD060` (table-column-style: the docs mix `|---|---|` and `| --- | --- |` to match column widths), each with the reason recorded in the file; every other default rule stays enabled and no per-file suppressions were added. The 248 genuine defects were fixed in the markup. Separately, `scripts/generate_performance_and_roadmap.py` was emitting headings glued to lists in `docs/performance.md` and would have deleted roadmap sections 6 and 7 wholesale on any run; both are fixed at the source, and generation is now idempotent.
+#### Open: 8-bit recall, and the uint8 throughput gap
 
-3. **Fix the negative-index guard on the roaring-backed `Bitset`** — `Set`, `Clear`, `Contains` and `Slice` all converted an `int` index to a roaring `uint32` without checking the sign, so `Set(-1)` set bit `4294967295` and `Contains(-1)` answered for it. All four now reject negatives, matching the convention `ArrowBitset` already used. The guards were confirmed by a regression test that fails without them, and the three `#nosec G115` annotations now carry the guard as their justification.
+The 100k CPU matrix produced a 3.4x dense gap between `uint8` (3974 QPS) and
+`int8` (1162), where the docs baseline had them 1.20x apart, so the asymmetry
+came in with the current tree. Ruled out: graph topology (the gate equalises mean
+degree and descent depth across every dtype) and the AVX2 kernels
+(`euclideanInt8AVX2Kernel` and `euclideanUint8AVX2Kernel` are the same assembly
+apart from sign-extend vs zero-extend). Ruled out as a correctness bug as well:
+`TestNarrowTypeRecallParity` shows the two types return the same neighbours, so
+uint8's speed is real and the difference lives in the storage split - int8 has
+its own typed arena while uint8 shares the byte arena, and `int8Computer`
+tries the int8 arena before the byte one and only then falls back, on a path
+with no `Prefetch` that `ComputeBatch` reaches per element rather than batched.
 
-4. **Fix the AVX2 TurboQuant pack kernels (2-bit and 4-bit)** — `packTQ2AVX2Kernel` and `packTQ4AVX2Kernel` in `internal/simd/turboquant_amd64.s` carried the same three assembly defects as the 8-bit kernel fixed earlier: the constant-broadcast chain clobbering upper YMM lanes, a missing floor before integer conversion, and a narrowing stage that permuted packed codes out of element order. Both kernels now broadcast constants straight from memory, floor before converting (`VROUNDPS $1`), and assemble packed codes with `VPMADDUBSW`/`VPMADDWD`/`VPSHUFB` in element order. Scalar tails were rewritten with per-byte field counters. Pinned bit-exactly against `PackTQ2Generic`/`PackTQ4Generic` across 19 sizes and 7 input distributions in `turboquant_pack_amd64_test.go` (38 subtests fail without the fix).
+Two items follow:
 
-5. **Make the SIMD generation reproducible and reviewable** — `go generate ./...` in `internal/simd` was previously destructive, dropping 28 hand-written kernels and colliding on 7 FMA stubs. Hand-written kernels moved to `internal/simd/kernels_manual_amd64.s`, duplicate stubs removed from `gen/all_kernels_gen.go`, and stale `gen/softmax_gen.go` unwired. `go generate ./...` is now a byte-for-byte no-op enforced in CI by `scripts/check_simd_generation.sh`. ARM64 compilation was also unblocked by moving AMD64 GEMM tests to `internal/tensor/coverage_amd64_test.go`.
+1. Close the `uint8`/`int8` storage asymmetry. Both are 1 byte and should have
+   the same read path; the 3.4x is pure overhead on the most common quantized
+   type.
+2. **8-bit recall needs a corpus that is not worst-case.** On uniform random
+   128-d vectors, `recall@10` came out at 0.000-0.012 for both 8-bit types
+   against 0.028-0.068 for float32, varying that much run to run. Uniform random
+   vectors are close to a worst case for graph search, so this is expected to be
+   pessimistic, but a 7x-or-worse gap that reaches exactly zero needs confirming
+   on real embeddings before it is dismissed or accepted. No other dtype was
+   compared, so int16/int32/int64 may show the same and it has not been checked.
 
-## 5. Ten Concrete Steps to Improve Performance Across Data and Search Types
+#### Item 3: Zero-Copy Native Batch Decoding in `DiskVectorStore` (§7 Item 2)
+- **Target Files**: [disk_vector_store.go](file:///home/rsd/REPOS/longbow/internal/store/disk_vector_store.go)
+- **Problem**: Lines 530–534, 635–638, 685–687, and 710–714 decode vectors from decompressed disk blocks element-by-element using scalar `binary.LittleEndian.Uint32`, `Uint64`, and `float16.FromLEBytes` inside nested loops over `dim`. On little-endian hardware (x86_64 and ARM64), contiguous byte slices in decompressed memory already match native IEEE 754 representations.
+- **Action Plan**:
+  - Replace scalar decoding loops with zero-allocation slice pointer views (`unsafe.Slice((*float32)(unsafe.Pointer(&raw[offset])), dim)`) or direct chunk memory copies (`copy(results[i], rawSlice)`).
+  - Pre-allocate and reuse pooled worker result slices from `buffer_pool.go` to eliminate per-vector heap allocations.
+- **Success Criteria**: 5x–8x faster vector extraction from decompressed disk blocks; reduce heap allocation from $O(N \cdot \text{dim})$ to zero.
 
-Based on empirical CPU, Heap, and Mutex pprof profile data collected during multi-scale benchmarking across all data types and search modalities, the following 10 optimization initiatives are prioritized. Each entry records the implemented outcome and the **measured** result on an Intel i7-12650H (16 vCPU, AVX2, no AVX-512); the original target is retained so the gap stays visible.
+#### Item 4: Comprehensive Data Type Support & Bounds Validation in `DiskVectorStore.GetBatchAny` (§7 Item 3)
+- **Target Files**: [disk_vector_store.go](file:///home/rsd/REPOS/longbow/internal/store/disk_vector_store.go)
+- **Problem**: `GetBatchAny` (lines 614–720) only handles `float64`, `int8`, `uint8`, and `float16`. 11 valid data types (`int16`, `uint16`, `int32`, `uint32`, `int64`, `uint64`, `complex64`, `complex128`, etc.) fall into `default:`, which decodes as `[][]float32` with stride `elemSize = 4`, causing silent vector truncation or corruption. In addition, `findBlock(idx)` lacks upper-bound checking against `block.StartIdx + block.NumVectors`, causing out-of-bounds queries to alias the last block and panic.
+- **Action Plan**:
+  - Implement explicit typed extraction branches across all 16 supported vector data types.
+  - Add strict index bounds checking in `findBlock` returning descriptive errors when `idx >= totalCount`.
+- **Success Criteria**: Accurate, panic-free batch disk retrieval across all 16 supported data types.
 
-1. **4-Ary Flat SIMD Heap for HNSW Priority Queue** — **Done (mixed)**
-   - **Empirical Finding**: `pprof` shows `MaxCandidateHeapAdapter.down`, `MinCandidateHeapAdapter.down`, and `Less/Swap` account for **15.2% of total search time** in `searchLayer`.
-   - **Optimization**: `MinCandidateHeapAdapter`/`MaxCandidateHeapAdapter` (`internal/store/index/candidate_heap.go`) converted from binary to 4-ary heaps (parent `(j-1)/4`, children `4i+1..4i+4`), still flat, allocation-free, API-compatible.
-   - **Measured**: end-to-end `BenchmarkInt8Search_50k` is neutral (113.7µs vs 115.2µs). The up-heavy result-set trim path improves 8-25% (ef=64: 34.2 vs 43.3 ns/elem); the pop-all drain regresses 5-15% because `down` trades height for width. No SIMD selection kernel was added — the ≤4-element `float32` scan is not worth vectorizing.
-   - **Target Impact**: +12% to +18% QPS — **not demonstrated**; the 4-ary trade is a wash end-to-end.
+#### Item 5: LookupNeighbors Typed Distance Computation & External ID Translation (§7 Item 8)
+- **Target Files**: [get_neighbors.go](file:///home/rsd/REPOS/longbow/internal/store/index/get_neighbors.go)
+- **Problem**: In `arrowHNSWLookupNeighbors` (lines 96–115), neighbor distances are computed only when stored vectors are `[]float32` (line 101); for all other vector types, distance is returned as `0.0`. Line 110 populates `NeighborResult.ID` with the internal uint32 graph node index (`nbrID`) rather than translating it back to the external client `uint64` ID.
+- **Action Plan**:
+  - Utilize the index's resolved distance computer (`h.distFuncAny` or `DistanceComputer`) to evaluate exact distances across all 16 vector types.
+  - Translate internal node IDs to external record IDs using `GetLocation` / external ID map.
+- **Success Criteria**: Correct distances and user-facing record IDs returned by `LookupNeighbors` regardless of vector element type.
 
-2. **Lock-Free Striped Adjacency Updates for Parallel Ingestion** — **Already Done (variant)**
-   - **Empirical Finding**: Mutex profiling reveals that `ArrowHNSW.AddConnectionsBatch` accounts for **56.9%** and `AddConnection` accounts for **25.1%** of lock delay during concurrent index ingestion.
-   - **Status**: superseded. `AddConnection` (`internal/store/index/neighbor_ops.go:14`) tries the lock-free `PackedNeighbors` CAS path first and only falls back to a per-node CAS spinlock; `internal/store/index/lockfree_neighbors.go:120` provides copy-on-write neighbor lists; `packed_adjacency.go:54,86` uses 65,536 striped mutexes (not 64). Benchmarked by `BenchmarkHNSW_LockContention`, `BenchmarkNeighborAccess_LockFree*`, `BenchmarkLayer0Contention`.
-   - **Target Impact**: 2.5x to 3.2x faster HNSW construction — met by the shipped superset.
-
-3. **AVX-512 & 8-Way Unrolled ILP for Complex128 / Float64 Kernels** — **Done (AVX2 measured; AVX-512 unmeasurable here)**
-   - **Empirical Finding**: `euclideanFloat64AVX2Kernel` consumes **42.6% of search time** for complex128 vectors.
-   - **Optimization**: `euclideanFloat64AVX2Kernel` and `dotFloat64AVX2Kernel` (`internal/simd/gen/all_kernels_gen.go`) rewritten with 8 independent `VFMADD231PD` accumulators plus a scalar tail and a pairwise reduction tree. The AVX-512 float64 wrappers are now compiled on every amd64 build with a runtime `hasAVX512` guard instead of requiring `-tags avx512`, which was never set anywhere — previously the AVX-512 kernels were dead code.
-   - **Measured**: 8-way ILP vs the old single-accumulator kernel is **2.6-6.0x** (`BenchmarkEuclideanFloat64_AVX2_8Way`); vs the Go scalar `Unrolled4x` reference, 3.7x at dim 384 and 3.9x at dim 768. AVX-512 speedup **not measured** — the host lacks AVX-512; correctness is pinned by `TestAVX512Float64RuntimeGuard`.
-   - **Target Impact**: +85% to +120% — AVX2 path met; AVX-512 requires AVX-512 hardware to quantify.
-
-4. **Thread-Local Metric Accumulators on Query Hotpaths** — **Done**
-   - **Empirical Finding**: `prometheus.(*counter).Inc` and `prometheus.hashAdd` consume **3.43% of total CPU time** on search hotpaths due to atomic contention.
-   - **Optimization**: `internal/metrics/sharded_counter.go` adds a 64-byte-padded, per-P `ShardedCounter` (drain via `Swap(0)`, so a concurrent `Add` is either drained or deferred — never lost, never double counted) with a 100ms async flusher. `internal/metrics/hotpath_counters.go` + `internal/store/index/hotpath_metrics.go` convert 14 hotpath counters, including the per-candidate `nodes_skipped` and `branch_prediction` increments. Label lookups are hoisted to package init / lazily-resolved per-dataset handles; a single refcounted flusher goroutine is started in `NewVectorStore` and stopped in `stopWorkers`.
-   - **Measured**: inline `WithLabelValues().Inc()` 37-46ns → hoisted 6.3ns → hoisted+sharded 1.2ns at 16 goroutines (**~20x under contention**). `CounterVec.WithLabelValues` alone measured 100.1 ns/op. 5,524 increments per sparse-filtered search at 10k vectors. End-to-end the win is ~0.07% single-threaded (below noise on this box); the 16-way parallel A/B leans ~3% faster.
-   - **Target Impact**: +3.5% QPS — per-increment cost removed; end-to-end effect is smaller than profiled.
-
-5. **Direct Zero-Copy Arena Pointers in `GetWithGeneration`** — **Done**
-   - **Empirical Finding**: `memory.(*SlabArena).GetWithGeneration` and `TypedArena.GetWithGeneration` consume **15.38% cumulative CPU time** during vector distance evaluations.
-   - **Optimization**: `internal/memory/arena_batch.go` adds `SlabBatch`/`TypedBatch[T]`, resolving the slab table and generation policy once per batch and serving per-vector slices from a hot-slab cache. `internal/store/types/graph_data.go` exposes `VectorChunkBatch[T]`; `float32Computer`, `float64Computer` and `int8Computer` `ComputeBatch` now resolve per batch instead of per vector.
-   - **Measured**: arena cost 4.12 → **3.16 ns/vector** at 1024 (−23%). `ComputeBatch` float32 −25%, float64 −30%, int8 −22%, allocs unchanged at 0. Parity fuzzing (`FuzzSlabBatch_Parity`, 604k execs) and generation-bump tests pin the visibility semantics.
-   - **Target Impact**: +10% to +15% distance throughput — met on the batch loops; the per-vector `ComputeSingle` path (SIMD-dominated) is unaffected.
-
-6. **SIMD Vectorized Bitmask Filtering for Int8 and Structured Predicates** — **Done**
-   - **Empirical Finding**: `RoaringBitmap.Contains` dominates filtered searches at high predicate selectivity.
-   - **Optimization**: `internal/store/index/filter_mask.go` converts the roaring filter to a dense `types.BitVector` **once per search** via roaring's own `WriteDenseTo` (a bulk `memmove` for bitmap containers, ~1900x faster than the BM25-style per-id iterator), and the 9 traversal probes in `search_float32.go`, `search_float64.go` and `distance_dispatch.go` use it. Falls back to roaring when `denseBytes > 256 KiB` or array+run container values exceed 65536.
-   - **Measured**: per-candidate probe 1.4-25x faster (2.5-3 ns flat vs 8-74 ns). Interleaved A/B end-to-end: **1.05x at 90% selectivity to 1.42x at 10-50%** on 10k vectors; no configuration regresses. Conversion repays within ~200-3000 probes.
-   - **Target Impact**: +25% to +40% QPS — partially met; the win is bounded by the ~200ns distance computation per candidate.
-
-7. **Linear Spatial Morton Hash Grid to Replace Recursive Quadtree in Geo Search** — **Implemented, opt-in (not default)**
-   - **Empirical Finding**: `store.(*Quadtree).subdivide` causes 2.83% of allocations; Geo search throughput is 368-1,223 QPS.
-   - **Optimization**: `internal/store/morton_grid.go` implements a contiguous Z-order grid (64-bit Morton codes, 12-bit default resolution, open-addressed cell directory, no per-insert node allocation) behind the `GeoPointIndex` interface, selectable via `GeoIndexTypeMorton`. Parity with `Quadtree` is asserted over 4 resolutions x 3000 points x 400 queries.
-   - **Measured** (pinned, min of 5, load 1.63): insert 150.5 vs 349.4 ns (**2.3x faster, 0 allocs**); `QueryBox/selective` 19,118 vs 16,399 ns (**17% slower**); `QueryBox/global` 365,997 vs 262,113 ns (**40% slower**); `SearchRadius` 650,498 vs 647,507 ns (**tied**). Cause: a fixed uniform grid has non-adaptive selectivity, whereas the quadtree subdivides to <=64 points/node. Resolutions 8-20 were swept; none flips the ordering.
-   - **Decision**: the quadtree **remains the default**; the grid is opt-in for write-heavy datasets. A previous revision of this work had shipped the grid as the default, which would have been a silent query regression.
-   - **Target Impact**: 3x to 5x higher Geo search QPS — **not met**; only the write path improved.
-
-8. **Pre-Sized Zero-Allocation Buffer Pooling for Arrow IPC Responses** — **Done**
-   - **Empirical Finding**: `bytes.growSlice` is 14.85% of memory profiling during DoGet streaming.
-   - **Optimization**: arrow-go's `flight.NewRecordWriter` writes into an unpooled internal `bytes.Buffer`, so `internal/store/record_writer_pool.go` adds a `pooledFlightPayloadWriter` implementing `ipc.PayloadWriter` over `IPCBufferPool`, with `estimateIPCResponseBytes` pre-sizing from top-k, projection schema and measured row width. Wired into all 5 DoGet sites in `store_query.go` plus `vector_search_exchange.go`.
-   - **Measured**: `BenchmarkDoGetResponseBuffer_Pooled` 13,152 ns/op, **0 B/op, 0 allocs** vs `Unpooled` 165,524 ns/op, 548,880 B/op. Full `flight` writer: 9,000 ns/op, 5,770 B/op, 47 allocs vs 47,899 ns/op, 159,368 B/op, 51 allocs (**~5x faster, 27x less memory**). Byte-identical output is asserted by `TestPooledFlightWriter_ByteIdenticalToStock`.
-   - **Target Impact**: eliminates GC pressure on DoGet — met.
-
-9. **Precomputed Polar Angle Look-Up Tables (LUT) for TurboQuant4** — **Done (+2 bugs fixed)**
-   - **Optimization**: a single fixed-size `tqPolarLUT [1020]float32` covering bit depths 1-8 (`init()`-built, no lazy race) replaces per-element `math.Sincos` in `TurboQuantDistanceGeneric` (`internal/simd/turboquant.go`) and in the decoder's `polarReconstruct` (`internal/store/index/turboquant.go`). The decode table is built by feeding codes through the platform's own unpacker so the AVX2 FMA-vs-split rounding is preserved bit-exactly.
-   - **Measured**: generic distance 2.1-3.0x; polar reconstruct 7.0-11.9x; end-to-end `Decode` 4.1-5.5x, allocs unchanged. `polarReconstructRecursive` (encode path) deliberately stays scalar — it consumes continuous `atan2` output that a code-indexed LUT cannot represent.
-   - **Two pre-existing defects found and fixed**: `packTQ8AVX2Kernel` had three bugs (Go's assembler emitting `VMOVSS m32,Xn` with `VEX.L=1` zeroing the broadcast; a `VPERMPD 0xD8` lane-order error in the int32→uint8 narrowing; and round-half-up vs `VCVTPS2DQ`'s round-half-even) — 8-bit round-trip cosine went from **-0.1 to 0.995**. The 2-bit scratch fast path never wrote the 1-3 leftover codes of the always-odd `angleCount`, reading stale pooled memory (a cross-request leak).
-   - **Supported range**: 4-8 bits meet the cosine > 0.90 contract; 1-3 bits are below the codec's accuracy floor by design.
-   - **Target Impact**: +30% to +50% — exceeded on the decode path.
-
-10. **Columnar Column-Oriented Skip-Lists for Temporal Search Modes** — **Done**
-    - **Empirical Finding**: temporal search traverses interval trees with per-node branching latency.
-    - **Optimization**: `internal/store/temporal_columnar.go` publishes an immutable columnar snapshot (`ts []int64`, `groupOff []uint32`, `ids []uint64`, `norms []float32`) via `atomic.Pointer`, with amortized rebuild on insert and an eager rebuild per `InsertBatch`. A hand-written AVX2 lower bound (`internal/store/temporal_colsort_amd64.s`, `VPCMPGTQ`/`VPTEST`) ships alongside scalar and unrolled kernels, but is **not** on the default path: it measured slower than the scalar kernel because a lower bound is bound by its dependent load chain, not comparison throughput.
-    - **Measured**: `GetRange` **8.8-10.4x**, `GetUniqueIDsInRange` 2.2x, `GetUniqueLatest` 1.3x; end-to-end `SearchAsOf`/`SearchRange`/`SearchSlidingWindow` +10% to +110% with 60-80% fewer allocations. Binary search crosses over linear scan at n≈128-256. The remaining hot cost is `VersionHistory.GetVersionsAtBatch` (~96 ns/id at 100k), not the temporal filter.
-    - **Target Impact**: +50% to +75% — met on the structure, partially at the search level.
-
-11. **Adaptive `ef` Scaling for Filtered Graph Traversal** — **Done**
-    - **Empirical Finding**: In `internal/store/index/navigation_search.go:358-444`, `efSearch` defaulted to `config.EfSearch` regardless of predicate selectivity. For selective predicates (e.g. 1-10% match rate), the first layer-0 walk returned $< k$ matching candidates, triggering up to 3 sequential retry loops and PID tuning updates. Moreover, for non-`[]float32` vector types (`[]float64`, `[]int8`, etc.), queries bypassed the retry loop, failed to find $k$ results under selective filters, and ignored `filterBitmap` when `filterMask` was nil.
-    - **Optimization**: Selectivity is estimated at search entry via `filter.GetCardinality() / totalNodes` (or by sampling up to 64 nodes when an `HNSWPredicate` is supplied without a bitmap). Initial `efSearch` is scaled upfront via `clamp(int(math.Ceil(float64(k) / selectivity * 1.25)), baseEf, maxEf)` before entering layer 0, with `searchCtx.visitedNodesBudget` scaled proportionally. Unified candidate extraction (`extractSearchResults`) and retry loop across all vector types (`float32`, `float64`, `int8`, etc.), with idempotent metric flushing via `ctx.distComputeCount = 0` and PID tuner max limit querying (`PIDTuner.GetMaxEf`).
-    - **Measured**: `BenchmarkAdaptiveEfScaling_SelectiveFilter` achieves **585 µs/query (~1,710 QPS)** on 5% selectivity across 2,000 vectors with 100% $k$-recall on attempt 0 without retries. Zero regressions across the full `internal/store/...` test suite under `-race`.
-    - **Target Impact**: 2-3x lower search latency at $\le 10\%$ selectivity by eliminating retry traversals; 100% recall parity and consistent metric reporting for non-float32 filtered searches — met.
-
-### Cross-Cutting Fixes Found Along The Way
-
-- **Bitmap pool aliasing** (`internal/store/types/bitmap.go`, `internal/pool/bitmap_pool.go`): `Release()` returned bitmaps the `Bitset` did not own, so the pool could hand the same `*roaring.Bitmap` to two owners — two writers mutating one bitmap. Fixed with explicit ownership tracking; this was the true cause of the flaky `TestBitset_Slice` (3 failures in 10 under `-race`).
-- **TurboQuant 8-bit pack kernel and 2-bit scratch tail**: see item 9.
-
-### Known Open Issues
-
-- **Resolved 2026-09-29:** `TestAddBatch_Bulk_Typed` recall flake. Root cause was three separate defects, none of them in the test:
-  1. **Bulk insert left nodes unreachable.** Every node in a sub-batch searches the same frozen graph, so a fresh node's only inbound edges are reverse links handed to its pre-batch neighbours, and those are pruned the moment such a neighbour sits at its connection limit. On degenerate geometry (collinear points) every node picks the same neighbours, so whole sub-batches ended with in-degree zero. Measured: **99 of 512 nodes unreachable** from the entry point. The fix chain-links each node to its insertion-order predecessor at layer 0, an edge that both exists and survives pruning.
-  2. **Neighbour pruning ignored distance order.** `computePrunedNeighbors` fed "existing links, then new ones" into a diversity heuristic defined over ascending distance, so the first entry won unconditionally and every later candidate was compared against it instead of against the query.
-  3. **Type-blind neighbour selection.** The float32 kernel reads the float32 vector arena, which is empty for every other element type, so passing a non-float32 pool to it rejected every candidate and left a node with its single oldest link. Selection is now type-aware.
-
-  A fourth, latent hazard is now guarded: `resolveDistanceKernel` validates a resolved SIMD kernel against the scalar reference once at index construction and falls back if they disagree, because a kernel that differences before widening (unsigned types) returns plausible distances that are off by orders of magnitude. `euclideanDistanceUint8` was added because the unsigned element types cannot be differenced in their own width — it wraps instead of going negative. Regression tests: `arrow_hnsw_bulk_connectivity_test.go` (fails without the fix, asserting both reachability and an exhaustive `ef = k = n` search), plus `TestAddBatch_Bulk_Typed` at 20/20.
-- **Resolved 2026-09-29:** predicate-pruned HNSW traversal returning zero results. `search_float32.go`, `search_float64.go` and `distance_dispatch.go` applied the predicate to the traversal frontier as well as the result set, so the graph walk could not pass *through* non-matching nodes; a match reachable only via rejected nodes was unreachable, and a rejected entry point could return nothing. The fix gates only the result set. Measured filtered recall against an exact scan: **0.06 → 0.38**; the per-search short-result rate at 2/3 rejection went from 3/3 failing builds to 0/60. Regression tests in `internal/store/index/predicate_traversal_test.go` (deterministic connectivity, statistical result count, and brute-force recall).
-- **Resolved 2026-09-29:** the arm64 TurboQuant 8-bit pack bug. The reported NEON narrowing defect was re-derived and found to be **correct** (`XTN2` writes the upper half of the destination, not a second register), so that claim was withdrawn. A different, real bug was found instead: the `VFMIN_V` macro encoded to the same word as `VFMAX_V` for the operands actually used, so the `norm > 1` clamp never ran and out-of-range angles wrapped. Fixed to the true FMIN base, verified against `llvm-mc`. `GOARCH=arm64` now also builds, which it did not before (AMX entry points had no non-amd64 definitions).
+#### Item 6: Adaptive Cell Subdivision or Formal Deprecation for Morton Spatial Grid (§7 Item 9)
+- **Target Files**: [morton_grid.go](file:///home/rsd/REPOS/longbow/internal/store/morton_grid.go)
+- **Problem**: `MortonGrid` delivers 2.3x faster allocation-free insertion over `Quadtree`, but regresses query latency by 17%–40% because its fixed 12-bit uniform resolution lacks adaptive point partitioning in dense geographic clusters.
+- **Action Plan**:
+  - Implement 2-tier adaptive cell subdivision (splitting into fine Z-order buckets when cell point density exceeds 64 points).
+  - Alternatively, formalize `GeoIndexTypeMorton` as an append-optimized staging store and document `Quadtree` as the primary search engine.
+- **Success Criteria**: Spatial query latency within $\pm 5\%$ of `Quadtree` while retaining 2.3x insertion throughput, or explicit documented workload demarcation.
 
 ---
 
-## 6. Security Scanning & Accepted Risks (merged from `docs/nextsteps.md`)
+### 4.2 SIMD Acceleration & Quantization Kernels
 
-`.github/workflows/security.yml` runs `govulncheck` via `scripts/check_govuln.sh`, a Trivy filesystem scan, and a Trivy IaC scan. Both `check_govuln.sh` (exit 0 clean/allowlisted, 1 unexpected vuln, 2 tool missing) and `.trivyignore` fail on anything outside this allowlist.
+#### Item 7: SIMD Vectorized Dequantization & Fallback Distance Loops (§7 Item 1)
+- **Target Files**: [distance_dispatch.go](file:///home/rsd/REPOS/longbow/internal/store/index/distance_dispatch.go), [internal/simd/](file:///home/rsd/REPOS/longbow/internal/simd/)
+- **Problem**: In `distance_dispatch.go:142-156` and `230-236`, when SQ8 quantization is enabled or unaligned int8/uint8 vectors are compared against float queries, calculation falls back to scalar Go loops: `deq := minV + float32(v8[i])*scale; diff := val - deq; sum += diff*diff`.
+- **Action Plan**:
+  - Implement AVX2 and NEON fused dequantize-and-L2 distance kernels.
+  - Unpack uint8 to int16, widen to float32 using `VPMOVZXBD`, scale and accumulate with `VFMADD213PS`/`VFMADD231PS` across 4 parallel vector registers.
+- **Success Criteria**: 4x–6x throughput improvement on SQ8 and mixed-type candidate distance evaluation in `searchLayer`.
 
-Accepted indirect dependencies with no available upstream patch, tracked as accepted risk:
+#### Item 8: Port Assembly Fixes and Validate AVX-512 TurboQuant Pack Kernels (§7 Item 6)
+- **Target Files**: [turboquant_amd64.s](file:///home/rsd/REPOS/longbow/internal/simd/turboquant_amd64.s), [turboquant_pack_amd64_test.go](file:///home/rsd/REPOS/longbow/internal/simd/turboquant_pack_amd64_test.go)
+- **Problem**: `packTQ8AVX512Kernel`, `packTQ4AVX512Kernel`, and `packTQ2AVX512Kernel` in `turboquant_amd64.s` contain legacy assembly defects (ZMM constant broadcast clobbering, missing floor `VROUNDPS $1` prior to integer conversion, and lane-order permutations during narrowing).
+- **Action Plan**:
+  - Port verified memory-direct constant broadcasts, pre-floor rounding, and element-order packing logic from the AVX2 kernels to AVX-512 (utilizing AVX-512F / AVX-512BW / VBMI).
+  - Add comprehensive bit-exact parity tests in `turboquant_pack_amd64_test.go`.
+- **Success Criteria**: Bit-exact encoding parity between AVX-512 TurboQuant pack kernels and generic references across 2-bit, 4-bit, and 8-bit depths.
 
-| Advisory | Package | Reason | Fixed in |
+#### Item 9: TurboQuant Candidate Accumulation Across Graph Hops (R24)
+- **Target Files**: [distance_computer.go](file:///home/rsd/REPOS/longbow/internal/store/index/distance_computer.go), [arrow_hnsw_compute_tq.go](file:///home/rsd/REPOS/longbow/internal/store/index/arrow_hnsw_compute_tq.go)
+- **Problem**: TurboQuant graph construction cannot leverage 4-way SIMD batch distance kernels because `searchLayer` processes candidates hop-by-hop with small candidate sets (mean 7.2 candidates, peaking at 5–6).
+- **Action Plan**:
+  - Accumulate candidate nodes across graph traversal hops before dispatching distance calculations, forming blocks of $\ge 16$ candidates without altering greedy search convergence.
+- **Success Criteria**: Activate vectorized 4-way SIMD distance evaluation during TurboQuant graph construction.
+
+#### Item 10: Root-Cause Analysis of 6x Throughput Deficit on `int16`/`uint16` (R32)
+- **Target Files**: [internal/simd/](file:///home/rsd/REPOS/longbow/internal/simd/), [distance_resolvers.go](file:///home/rsd/REPOS/longbow/internal/store/index/distance_resolvers.go)
+- **Problem**: Benchmarks show `int16` and `uint16` achieving 653–658 QPS at 500k, approximately 6x lower than `int8`/`uint8` (3,717–3,933 QPS), despite having registered SIMD kernels that pass scalar validation.
+- **Action Plan**:
+  - Isolate whether the deficit stems from memory bandwidth / cache miss rates, SIMD vector unrolling quality, or widening conversion overhead in `searchLayer`.
+- **Success Criteria**: Identify root cause and optimize wide-integer distance throughput to scale monotonically with element byte width.
+
+---
+
+### 4.3 Distributed Streaming & Clustering
+
+#### Item 11: Streaming Heap-Merge for Distributed Flight Scatter-Gather (§7 Item 4)
+- **Target Files**: [stream_aggregator.go](file:///home/rsd/REPOS/longbow/internal/sharding/stream_aggregator.go)
+- **Problem**: `StreamAggregator.Aggregate` (lines 124–200) receives $M$ pre-sorted streams from cluster shards, flattens all incoming RecordBatches into a monolithic Arrow table, allocates an `indexItem` struct per row, executes a full $O(N \log N)$ `sort.Slice`, and reconstructs new batches via reflection.
+- **Action Plan**:
+  - Implement an $M$-way $K$-sized streaming tournament heap (Priority Queue) over incoming shard batch row readers.
+  - Stream top-$K$ rows directly into pre-allocated Arrow array builders without full in-memory flattening.
+- **Success Criteria**: Reduce multi-shard scatter-gather memory consumption from $O(M \cdot K)$ to $O(K)$; 3x–5x faster scatter-gather merge on large clusters.
+
+---
+
+### 4.4 CI, Benchmarks & Observability
+
+#### Item 12: Emulated ARM64 and AVX-512 CI Validation Lanes (§7 Item 7)
+- **Target Files**: [.github/workflows/ci.yml](file:///home/rsd/REPOS/longbow/.github/workflows/ci.yml)
+- **Problem**: CI currently executes on standard x86_64 runners. ARM64 is validated only via cross-compilation (`GOARCH=arm64 go build`), leaving assembly kernels in `turboquant_arm64.s` and `simd_arm64.s` unexecuted. AVX-512 kernels likewise remain unexecuted without specialized instruction emulation.
+- **Action Plan**:
+  - Configure GitHub Actions matrix lanes using `docker/setup-qemu-action` or `qemu-user-static` for ARM64 test execution.
+  - Integrate Intel SDE (Software Development Emulator) for automated validation of AVX-512, VBMI, and AMX kernels.
+- **Success Criteria**: 100% automated test execution coverage of non-AMD64 and AVX-512 assembly kernels in CI.
+
+#### Item 13: Regenerate Machine-Readable Baseline with Provenance (R29)
+- **Target Files**: [benchmarks/baseline_cpu.json](file:///home/rsd/REPOS/longbow/benchmarks/baseline_cpu.json)
+- **Problem**: `benchmarks/baseline_cpu.json` lacks provenance blocks and Little's Law verification fields, emitting advisory warnings in regression checks.
+- **Action Plan**:
+  - Regenerate on an isolated, unthrottled host using `python3 scripts/unified_benchmark.py --ci --runs 3 --save-baseline benchmarks/baseline_cpu.json`.
+- **Success Criteria**: Baseline file populated with full provenance, eliminating warnings in `check_regression.py`.
+
+#### Item 14: Re-baseline TurboQuant at Scale Post-`a955a0c1` (R9, R19, R27)
+- **Target Files**: [docs/performance.md](file:///home/rsd/REPOS/longbow/docs/performance.md), [benchmarks/](file:///home/rsd/REPOS/longbow/benchmarks/)
+- **Problem**: Historical TurboQuant throughput figures in `docs/performance.md` and early benchmarks were measured on graphs where up to 27% of nodes were unreachable due to type-blind neighbor selection.
+- **Action Plan**:
+  - Now that `turboquant_graph_quality_test.go` validates full graph connectivity, re-run full matrix benchmarks for 4-bit and 8-bit TurboQuant at 50k, 100k, and 250k scales, recording mean degree and reachability.
+- **Success Criteria**: Accurate, verified performance baseline published for TurboQuant.
+
+#### Item 15: Policy Decision for Interleaved A/B Benchmarking in CI (R30, R39)
+- **Target Files**: [.github/workflows/ci.yml](file:///home/rsd/REPOS/longbow/.github/workflows/ci.yml), [scripts/ab_benchmark.py](file:///home/rsd/REPOS/longbow/scripts/ab_benchmark.py)
+- **Problem**: Single-run benchmark comparisons exhibit a 77%–89% false-positive regression rate due to host background noise and thermal variation. `scripts/ab_benchmark.py` provides paired interleaved comparisons with a 1.2% false-positive rate, but requires $2 \times \text{reps}$ benchmark executions.
+- **Action Plan**:
+  - Formalize whether to execute paired A/B benchmarking on scheduled CI runs or retain performance regression gating as a manual release qualification step.
+- **Success Criteria**: Explicit documented policy preventing CI noise while enforcing regression boundaries.
+
+#### Item 16: Resolve Overlapping Grid Coordinates in Index-Storage Dashboard (R34)
+- **Target Files**: [grafana/dashboards/index-storage.json](file:///home/rsd/REPOS/longbow/grafana/dashboards/index-storage.json)
+- **Problem**: 192 overlapping grid cell coordinates exist across panels in `index-storage.json`, leading to visual collisions in Grafana.
+- **Action Plan**:
+  - Recalculate `gridPos` coordinates (`x`, `y`, `w`, `h`) to lay out metric panels cleanly without collisions.
+- **Success Criteria**: Zero overlapping panel coordinates in Grafana dashboard definitions.
+
+---
+
+## 5. Verified Completed Milestones (Archived)
+
+The following initiatives have been verified as **100% implemented, fully wired into the runtime, and backed by active automated test coverage**:
+
+| Initiative | Component | Resolution Summary | Verification Gate |
 |:---|:---|:---|:---|
-| `GO-2026-5046` / `CVE-2026-46385` | `hamba/avro` (via `pulsar-client-go`, temporal `avro.Freeze`) | CPU exhaustion in the Avro decoder | N/A |
-| `GO-2026-5047` / `CVE-2026-46384` | `hamba/avro` | Integer overflow in the Avro decoder | N/A |
-| `GO-2026-5048` / `GHSA-mx64-mj3q-7prj` | `hamba/avro` | Unbounded map allocation DoS | N/A |
-| `GO-2026-5932` | `golang.org/x/crypto/openpgp` | Unmaintained / unsafe by design; module is required but never called | N/A |
-
-These IDs are duplicated in `.trivyignore` and the `ALLOWLIST` array in `scripts/check_govuln.sh`; both now reference this section.
-
-**Why the three avro advisories are not reachable with untrusted input.** The trace
-govulncheck reports is misleading and worth stating plainly, because the table's
-`temporal avro.Freeze` attribution invites the wrong conclusion:
-
-- avro is a **transitive-only** dependency. Nothing in this repository imports
-  `hamba/avro` or `iskorotkov/avro`; it arrives solely through
-  `pulsar-client-go` (`go mod why` shows `store -> pulsar-client-go/pulsar -> hamba/avro`).
-- The Pulsar integration is **produce-only**. The entire surface used is
-  `pulsar.NewClient`, `ClientOptions`, `ProducerOptions`, `Producer` and
-  `ProducerMessage` (`internal/store/mq_exporter.go`). There is no consumer, no
-  `Subscribe`, no receiver and no schema-registry or Avro decoder anywhere in the
-  codebase - the `Subscribe` calls in the store are Longbow's own CDC
-  (`cdc.Subscribe`), not Pulsar.
-- **All three advisories are decoder defects** - unbounded map allocation, an integer
-  overflow, and CPU exhaustion, all on the decode path. A producer never decodes an
-  Avro payload, so the vulnerable code is not on any path this service executes with
-  external input.
-- The reported `SearchRange` trace is a static-analysis over-approximation: it routes
-  through generic `sync.Pool` machinery (the pool there is Longbow's own
-  `temporalVersionMapPool`, not avro's) and reaches `avro.Freeze` only because the
-  analysers cannot distinguish pool instances.
-
-The honest caveat: this rests on the Pulsar surface staying produce-only. A future
-consumer subscription or schema-registry use would make all three reachable with
-broker-supplied input, and they have no upstream fix - v2.31.0 is the latest release.
-Revisit this entry if the messaging integration ever gains a read path.
-
-`GO-2026-5932` is weaker still: `x/crypto/openpgp` is required by the module graph and
-never called by our code at all.
-
----
-
-## 7. Next Ten Steps (Performance & Features)
-
-Derived from the measurements in §5, the deep code analysis of the storage, indexing, SIMD, and clustering subsystems, and the open verification gaps. Each states the evidence it rests on, so the ordering can be re-checked when the numbers change.
-
-1. **SIMD Vectorized Dequantization & Fallback Distance Loops**
-   - **Empirical Finding**: In `internal/store/index/distance_dispatch.go:142-156` and `230-236`, when SQ8 quantization is active or when comparing unaligned int8/uint8 vectors against float query vectors, distance calculation executes scalar dequantization (`deq := minV + float32(v8[i])*scale; diff := val - deq; sum += diff*diff`) in element-by-element Go loops.
-   - **Optimization**: Implement AVX2/NEON fused dequantize-and-L2 kernels: unpack uint8 to int16, widen to float32 using `VPMOVZXBD`, scale with `VFMADD213PS` / `VFMADD231PS`, accumulating into 4 parallel vector registers.
-   - **Target Impact**: 4x-6x throughput increase on SQ8 and mixed-type candidate distance evaluation; eliminate scalar fallback bottlenecks in `searchLayer`.
-
-2. **Zero-Copy Native Batch Decoding in `DiskVectorStore`**
-   - **Empirical Finding**: Mutex and CPU profiling during auto-spill disk reads in `internal/store/disk_vector_store.go:530-534, 635-638, 685-687, 710-714` reveals that decompressed block vectors are parsed float-by-float and double-by-double using `binary.LittleEndian.Uint32` / `binary.LittleEndian.Uint64` / `float16.FromLEBytes` in nested loops over `dim`. For float32/float64/int8 on little-endian hardware (x86_64, ARM64), memory representation in the uncompressed buffer is already IEEE 754 contiguous.
-   - **Optimization**: Replace scalar loops with zero-allocation pointer casts (`unsafe.Slice((*float32)(unsafe.Pointer(&raw[offset])), dim)`) or fast vectorized chunk copy (`copy(results[i], rawSlice)`). Pre-size and reuse worker output buffers from an internal pool to eliminate `make([]float32, dim)` allocations per vector.
-   - **Target Impact**: 5x-8x faster vector extraction from decompressed disk blocks; reduce allocation overhead from $O(N \cdot \text{dim})$ to zero.
-
-3. **Missing Type Support in `DiskVectorStore.GetBatchAny` and Bound Validation**
-   - **Empirical Finding**: In `internal/store/disk_vector_store.go:614-720`, `GetBatchAny` only handles `float64`, `int8`, `uint8`, and `float16`. For `int16`, `uint16`, `int32`, `uint32`, `int64`, `uint64`, `complex64`, and `complex128`, it hits `default:`, which uses `elemSize = 4` and decodes as `[][]float32`, corrupting vector strides and returning invalid types. Additionally, `findBlock(idx)` in `disk_vector_store.go:395-408` does not validate `idx < block.StartIdx + block.NumVectors`, causing out-of-bounds indices beyond `totalCount` to alias the last block and trigger slicing panics.
-   - **Optimization**: Implement typed branches for all 16 supported data types in `GetBatchAny` (matching `VectorType` enum), fix vector stride calculations, and guard `findBlock` against indices $\ge$ `totalCount`.
-   - **Target Impact**: Prevent silent data corruption on disk reads for 11 data types; eliminate out-of-bounds index panics.
-
-4. **Streaming Heap-Merge for Distributed Flight Scatter-Gather**
-   - **Empirical Finding**: In `internal/sharding/stream_aggregator.go:124-200`, `StreamAggregator.Aggregate` receives $M$ pre-sorted streams from cluster shards, bundles all incoming batches into a global Arrow table, allocates an `indexItem` struct per row (`indices := make([]indexItem, 0, numRows)`), executes a full $O(N \log N)$ `sort.Slice` over the entire combined set, and reconstructs brand-new Arrow RecordBatches via dynamic reflection builders.
-   - **Optimization**: Since each shard stream is already sorted by score/distance, implement an $M$-way $K$-sized min/max streaming tournament heap (Priority Queue) over incoming Arrow batch row readers. Emit the top-$K$ directly into pre-allocated Arrow arrays without flattening the entire multi-shard result set into memory.
-   - **Target Impact**: Reduce scatter-gather memory consumption from $O(M \cdot K)$ to $O(K)$; speed up multi-shard query merge by 3x-5x on large clusters.
-
-5. **Full-Spectrum Runtime AVX-512 CPUID Dispatch Elimination of Build Tags**
-   - **Empirical Finding**: In `internal/simd/avx512.go` and `internal/simd/avx512_stubs_amd64.go`, all float32, float16, int8, int16, uint16, SQ8, and TurboQuant AVX-512 kernels are guarded by `//go:build amd64 && avx512`. Because `-tags avx512` is never passed in standard Go builds or releases, all non-float64 AVX-512 kernels remain completely dead code on every binary shipped, falling back to AVX2 even on AVX-512 capable processors.
-   - **Optimization**: Follow the model established in `internal/simd/avx512_float64_amd64.go`: remove `!avx512` build constraints, compile AVX-512 assembly wrappers into all AMD64 builds, and guard execution at runtime with `features.HasAVX512` (and `features.HasAVX512VBMI` for TQ/VBMI).
-   - **Target Impact**: Activate dormant AVX-512 kernels across float32, float16, and integer vector types on modern CPUs (+30% to +80% SIMD throughput without custom build tags).
-
-6. **Fix and Test AVX-512 TurboQuant Pack Kernels**
-   - **Empirical Finding**: `packTQ8AVX512Kernel`, `packTQ4AVX512Kernel`, and `packTQ2AVX512Kernel` in `internal/simd/turboquant_amd64.s` carry the same three assembly bugs previously fixed in AVX2: constant broadcasts clobbering upper ZMM lanes, missing `VROUNDPS $1` (floor) prior to `VCVTPS2DQ`, and lane-order permutations during int32->uint8/uint4/uint2 narrowing.
-   - **Optimization**: Port the verified memory-direct broadcasting, pre-floor rounding, and element-order packing logic from the AVX2 kernels to AVX-512 (512-bit ZMM registers with AVX-512F / AVX-512BW / VBMI). Pin correctness with bit-exact unit tests mirroring `turboquant_pack_amd64_test.go`.
-   - **Target Impact**: Bit-exact encoding parity between AVX-512 TurboQuant pack kernels and generic references across 2-bit, 4-bit, and 8-bit depths.
-
-7. **Establish Emulated ARM64 and AVX-512 CI Validation Lanes**
-   - **Empirical Finding**: ARM64 and AVX-512 tests currently cannot execute natively on standard GitHub Actions x86_64 runners without specialized tooling. While cross-compilation passes, assembly kernels in `turboquant_arm64.s`, `simd_arm64.s`, and AVX-512 assembly files remain unexecuted in automated testing.
-   - **Optimization**: Add a GitHub Actions CI matrix job utilizing `docker/setup-qemu-action` or `qemu-user-static` for ARM64 test execution, and Intel SDE (Software Development Emulator) for AVX-512 / VBMI / AMX test validation.
-   - **Target Impact**: 100% test execution coverage of non-AMD64 and AVX-512 assembly kernels in CI, preventing latent regressions.
-
-8. **Resolve `LookupNeighbors` Type Incompleteness and ID Mapping**
-   - **Empirical Finding**: In `internal/store/index/get_neighbors.go:96-115`, `arrowHNSWLookupNeighbors` computes neighbor distance only if the stored vector is `[]float32` (line 101); for all other vector types (`float64`, `int8`, `complex64`, etc.), distance is silently returned as `0.0`. Furthermore, line 110 populates `NeighborResult.ID` with the internal uint32 graph node index (`nbrID`) rather than translating it back to the external client `uint64` ID via `GetLocation` / batch records.
-   - **Optimization**: Use the index's resolved distance computer (`h.distFuncAny` or `DistanceComputer`) to compute neighbor distances across all vector types. Add internal-to-external ID translation using the index location metadata so clients receive correct external IDs.
-   - **Target Impact**: Correct distances and true external IDs for `LookupNeighbors` across all 16 supported data types.
-
-9. **Adaptive Cell Subdivision for Morton Grid Spatial Index (or Deprecation)**
-   - **Empirical Finding**: `MortonGrid` (`internal/store/morton_grid.go`) improves spatial insert latency (150.5 ns vs 349.4 ns, 2.3x faster, 0 allocs) but regresses query latency by 17% to 40% against `Quadtree` because its fixed uniform resolution causes excessive cell scanning and collision chain traversal in non-uniform geographic distributions.
-   - **Optimization**: Either implement two-tier adaptive cell subdivision (fine Z-order buckets only when points per cell $> 64$, keeping flat slice storage) to match Quadtree search pruning, or formalize deprecation of `GeoIndexTypeMorton` as a query engine, restricting it to append-heavy staging workloads.
-   - **Target Impact**: Bring Morton spatial query throughput within $\pm 5\%$ of Quadtree while retaining the 2.3x allocation-free insert throughput; or formalize documented deprecation to prevent query regressions.
-
-10. **Lock-Free Atomic Generation Pointers for EntryPoint and Level Updates**
-    - **Empirical Finding**: In `internal/store/index/arrow_hnsw_insert.go:412-430`, updating `entryPoint` and `maxLevel` during concurrent insertions requires taking `h.growMu.Lock()`, serializing concurrent batch writers even when inserting disjoint subgraphs. Mutex contention profiling during concurrent 50k batch ingestion shows up to 14% lock wait time on `growMu`.
-    - **Optimization**: Convert `entryPoint` and `maxLevel` to atomic 64-bit combined CAS (`(maxLevel << 32) | entryPoint`) or lock-free atomic generational snapshots, allowing concurrent insertions to update higher-level entry points without acquiring the exclusive `growMu` write lock.
-    - **Target Impact**: Eliminate writer lock contention on `growMu` during high-throughput parallel ingestion; +15% to +25% concurrent `AddBatch` ingestion throughput.
-
----
-
-## 8. AVX2 Non-EMLGo Matrix Validation — Findings and Recommendations
-
-Produced 2026-10-05 from a fresh `unified_benchmark.py` matrix: 50k / 250k / 500k vectors, 15 data types, all 13 search modes, `dim=128`, on both the CPU and CUDA **AVX2** builds with no `-tags emlgo`. Binaries were `bin/longbow_main` (`go build ./cmd/longbow`) and `bin/longbow-cuda_main` (`go build -tags gpu ./cmd/longbow`); `AVX2` was confirmed at runtime (CPUs 0-11 sit at 1.4-3.3 GHz under BD PROCHOT while CPUs 12-15 run unthrottled, so the harness was pinned with `--cpu-affinity 12-15`, matching the settings this document records in §4 item 10). Harness flags were `--queries 500 --workers 4` to match the `docs/performance.md` header.
-
-Raw artefacts are under `data/perf_logs/` (`perf_matrix_{cpu,cuda}_avx2_*`), and the comparison tooling used to produce the numbers below is in `scratch/bench-runs/` (`parse_docs_baseline.py`, `compare_matrix.py`, `ab_server.sh`, `bisect_server.sh`, `ab_bulkpath.sh`).
-
-### 8.1 Coverage
-
-| Scale | Engine | Configs | Search points | Not completed, and why |
-|---|---|---|---|---|
-| 50k | CPU | 15 / 15 | 195 | — |
-| 250k | CPU | 13 / 15 | 169 | `turboquant4`, `turboquant8` — see 8.5. (10 narrow dtypes were lost in the first pass to H1 and refilled.) |
-| 500k | CPU | 13 / 15 | 169 | `turboquant4`, `turboquant8` — see 8.5. Needs a 14 GiB ceiling; see 8.6/H2. |
-| 50k | GPU | 15 / 15 | 195 | — (4 narrow dtypes were lost in the first pass to H1 and refilled.) |
-| 250k | GPU | 13 / 15 | 169 | `turboquant4`, `turboquant8` — see 8.5 |
-| 500k | GPU | 3 / 15 | 39 | `float64`, `complex64`, `complex128` only; the 12 narrow dtypes were lost to H1 and the run was stopped. Same 14 GiB requirement as CPU. |
-
-`docs/performance.md` contains **no 500k rows at all**, so the 500k tier is new data with no baseline and is reported as absolute numbers only. Note that 15 configurations surface as only 14 distinct `dtype` labels because of H5 (`turboquant4` and `turboquant8` both record as `turboquant`).
-
-### 500k CPU, 14 GiB ceiling, `dim=128`, 500 queries x 4 workers (new data, no baseline)
-
-| dtype | dense | hybrid | sparse | byid | geo | temporal | learnedindex | ingest (vec/s) |
-|---|---|---|---|---|---|---|---|---|
-| int8 | 3,933 | 3,742 | 6,428 | 4,387 | 32 | 15 | 3,496 | 352,665 |
-| uint8 | 3,717 | 3,651 | 6,572 | 3,378 | 31 | 15 | 3,326 | 411,101 |
-| int32 | 3,614 | 3,197 | 4,511 | 3,501 | 31 | 15 | 3,146 | 166,808 |
-| uint64 | 3,097 | 2,999 | 6,223 | 3,389 | 30 | 15 | 2,844 | 86,025 |
-| uint16 | 658 | 630 | 5,823 | 3,393 | 30 | 15 | 608 | 222,731 |
-| int16 | 653 | 622 | 6,271 | 4,152 | 31 | 15 | 621 | 207,423 |
-| float32 | 506 | 386 | 4,937 | 349 | 31 | 41 | 559 | 254,156 |
-| float16 | 447 | 440 | 6,271 | 4,026 | 31 | 15 | 494 | 222,591 |
-| complex64 | 371 | 366 | 6,500 | 298 | 29 | 41 | 394 | 121,408 |
-| float64 | 345 | 301 | 6,538 | 215 | 32 | 40 | 365 | 105,265 |
-| uint32 | 339 | 307 | 6,299 | 3,965 | 32 | 15 | 302 | 144,889 |
-| int64 | 284 | 258 | 6,330 | 3,949 | 32 | 15 | 255 | 101,912 |
-| complex128 | 242 | 271 | 6,326 | 215 | 27 | 38 | 201 | 58,774 |
-
-Two things stand out and are worth a follow-up. First, `int16` and `uint16` sit 6x below `int8`/`uint8` at identical element counts and corpus sizes, which is not a property HNSW should have; `uint64` recovers to 3,097 QPS while `int64` drops to 284 QPS, so the spread is not monotonic in element width and is more likely a distance-kernel selection artefact than a memory-bandwidth one. Second, `geo` and `temporal` collapse to 27-41 QPS and 15 QPS respectively at 500k, three orders of magnitude below `sparse` — these two modes are the ones §8.4 and the §7 Morton-grid entry already flag, and 500k is where they stop being usable at all.
-
-### 8.2 The `docs/performance.md` baseline cannot gate a regression
-
-Diffing the fresh matrix against `docs/performance.md` at the ±10% threshold gives:
-
-| Tier | Compared points | Regressions | Improvements |
-|---|---|---|---|
-| 50k CPU | 65 | 32 | 30 |
-| 250k CPU | 129 | 37 | 77 |
-| 250k GPU | 117 | 24 | 80 |
-
-**None of those counts should be acted on as they stand**, because the baseline is not internally self-consistent: it is a merge of several benchmark invocations whose parameters were never recorded, and its own QPS and P50 columns contradict each other. The regression counts do cluster exactly where §8.3 predicts they should once the harness noise is removed, which is the encouraging part; the point is that the baseline cannot be trusted to *clear* a change either, because a recorded improvement may simply be a different worker count.
-
-The check is arithmetic. With `--workers W`, the reported QPS cannot exceed `W / P50`. Taking `W = 4` as the document claims, `QPS x P50` must not exceed 4000:
-
-| Baseline row | QPS | P50 (ms) | Implied concurrency |
-|---|---|---|---|
-| `250000 128 uint16 cuda byid` | 1,863.0 | 4.158 | **7.75** |
-| `100000 128 int32 cpu dense` | 2,181.8 | 3.458 | **7.54** |
-| `100000 128 int8 cpu sparse` | 2,742.5 | 2.817 | **7.73** |
-| `250000 128 float64 cpu hybrid` | 281.3 | 26.980 | **7.59** |
-| `50000 128 float32 cpu dense` | 2,935.0 | 1.241 | 3.64 (consistent with 4) |
-
-408 of 806 rows (**50.6%**) imply more than 4.2 concurrent workers at their own stated P50 — that is, more than the documented 4. The implied values top out at 7.75, with a median of 4.38 and a 95th percentile of 7.09, and **none exceeds 8.5**, so the high group is consistent with `unified_benchmark.py`'s default `--workers 8` while the 50k tier is consistent with 4. The remaining 398 rows imply *fewer* than 4, which means their QPS and P50 columns disagree in the other direction and are equally unusable. `docs/testplan.md` §4 says "8 concurrency workers", the `docs/performance.md` header says "4 Workers (`--workers 4`)", and the script default is 8. A reader cannot tell which tier used which.
-
-### Recommendations for the baseline
-
-- **R1. Stop diffing against `docs/performance.md`. [DONE - recorded as informational in section 3.1; not yet removed from docs/performance.md]** Treat it as an informational record only. The authoritative regression signal is a revision-to-revision A/B on identical hardware, cores, harness flags and client binary — the method used for everything in 8.3.
-- **R2. Regenerate the baseline as machine-readable, per-run artefacts** (`benchmarks/baseline_matrix.json` already has this shape) with the full parameter set recorded next to every number: binary revision, build tags, core affinity, worker count, query count, mode list, mode order, spill setting, and memory ceiling. One row per (revision, scale, dim, dtype, engine, mode).
-- **R3. Make the baseline self-validating.** Add the `QPS x P50 <= workers x 1000` invariant as an assertion in the report writer, and refuse to emit a report that violates it. A mis-recorded `--workers` then fails the report at generation time instead of being discovered by a later audit.
-- **R4. Reconcile `docs/testplan.md` §4 with the `docs/performance.md` header**, and state one worker count per tier. `docs/testplan.md` §3.2 also lists only 50k/100k/250k while §4, this document and the roadmap all target 500k; `docs/performance.md` has 1M rows and no 500k rows. Pick the tier list once.
-
-### 8.3 [REGRESSION — CONFIRMED] The bulk-insert chain link costs up to 4.4x on dense search
-
-This is the one regression that survived every attempt to explain it away, and it is code-caused, not environmental. Three independent methods agree on it: an end-to-end server A/B against the baseline revision, a server-level bisection across seven revisions, and a deterministic in-process micro-benchmark.
-
-**Step 1 — the regression is real.** Same harness, same `bench-tool`, same cores (0-3), same flags, four interleaved runs per variant, HEAD server binary vs the `docs/performance.md`-baseline commit `2f4dc1c4` server binary, `float32` `dim=128` `n=50000`, medians:
-
-| Mode | base `2f4dc1c4` | HEAD | Delta |
-|---|---|---|---|
-| filteredstring | 1,227.6 | 233.7 | **-81.0%** |
-| filteredbool | 1,431.2 | 330.4 | **-76.9%** |
-| learnedindex | 1,723.7 | 447.6 | **-74.0%** |
-| filtered | 1,431.5 | 514.7 | **-64.0%** |
-| dense | 1,802.2 | 704.4 | **-60.9%** |
-| hybrid | 607.4 | 306.0 | -49.6% |
-| graphrag | 1,147.6 | 596.3 | -48.0% |
-| globalgraphrag | 1,040.6 | 561.6 | -46.0% |
-| byid | 2,062.6 | 1,517.8 | -26.4% |
-| temporal | 352.4 | 329.0 | -6.6% |
-| geo | 245.5 | 296.6 | +20.8% |
-| sparse | 3,828.3 | 4,810.9 | +25.7% |
-| recommend | 327.5 | 448.6 | +37.0% |
-
-Only the HNSW-traversal family regresses. `sparse`, `geo` and `recommend` — the modes that do not walk the graph — all improved.
-
-**Step 2 — bisect.** One server binary per revision, three interleaved rounds, `--search-modes dense --queries 300`, medians:
-
-| Revision | Median dense QPS | vs base | What it changed |
-|---|---|---|---|
-| `2f4dc1c4` (baseline) | 1,801.1 | — | — |
-| `e145eb5c` | 1,680.5 | -6.7% | roadmap §5 items (4-ary heap, sharded counters, arena batching) |
-| `7f872022` | 2,548.2 | +41.5% | gate filtered traversal on the result set, not the frontier |
-| `a955a0c1` | 453.8 | **-74.8%** | **keep bulk-inserted nodes reachable** |
-| `ee17b3b9` | 578.6 | -67.9% | adaptive `ef` scaling |
-| `6a53fd7c` | 852.1 | -52.7% | AVX-512 kernels + temporal parser |
-| HEAD | 783.2 | -56.5% | — |
-
-The cliff is `a955a0c1`, and it is the only revision in the range that changes how the layer-0 graph is shaped.
-
-**Step 3 — mechanism.** `a955a0c1` fixes a real bug: bulk insert used to leave nodes with in-degree zero, so `TestAddBatch_Bulk_Typed` failed. Its fix, in `internal/store/index/arrow_hnsw_bulk.go:addBatchBulkInternal`, unconditionally chain-links every layer-0 bulk-inserted node to its insertion-order predecessor in both directions, and reserves two of the node's degree slots for it:
-
-```go
-if lc == 0 && node.id > 0 {
-    h.computeDistances(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:])
-    _ = h.AddConnectionsBatch(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:], lc, int(h.mMax0.Load()))
-    _ = h.AddConnectionsBatch(ctxLink, data, node.id, []uint32{node.id - 1}, chainDist[:], lc, int(h.mMax0.Load()))
-}
-...
-const chainLinksPerNode = 2   // m = mMax0 - 2 for every layer-0 node
-```
-
-The commit's own comment justifies it as "always linked and adjacent in distance for sorted-ish data", and its regression test (`arrow_hnsw_bulk_connectivity_test.go`) uses **collinear** data, where node `i` and node `i-1` genuinely are nearest neighbours. That reasoning does not transfer:
-
-- For unsorted input — which is what the benchmark generates and what any real embedding load looks like once rows are shuffled — the chain edge is a **long-range random shortcut**, not a proximity edge. Every node in the corpus gets one, so the layer-0 graph acquires 250k-500k arbitrary edges and loses the small-world structure that greedy HNSW descent depends on. More nodes are visited per query, which is exactly what the latency shows.
-- `chainLinksPerNode = 2` is additionally charged against every node unconditionally, which at the harness's `MMax0 = 16` (`unified_benchmark.py` sets `LONGBOW_HNSW_MMAX0=16` for `count >= 50000`) is 12.5% of the layer-0 degree budget spent on edges that were not selected by distance. The regression test uses `MMax0 = 64`, where the same reservation is 3% and invisible. Step 5 shows this is *not* the dominant term, so it should not be mistaken for the fix.
-- The cost is in the *index*, so it is paid by every query forever. It is not a one-off ingest cost.
-
-**Step 4 — confirmation.** Same HEAD binary, only `LONGBOW_HNSW_BULK_INSERT_THRESHOLD` changed (so the bulk path is bypassed), six interleaved runs each, `float32 dim=128 n=50000 dense`:
-
-| Insert path | Median dense QPS |
-|---|---|
-| bulk (`AddBatchBulk`, chain links active) | 626.7 |
-| sequential (`AddBatch`) | **2,764.3 (+341.1%)** |
-
-The non-bulk path at HEAD is also 53% *faster* than the base revision's bulk path (2,764 vs 1,801 QPS), so the fix can be had without giving anything up.
-
-**Step 5 — it is the arbitrary edge, not the degree reservation.** `BenchmarkDenseSearch_Float32_50k` and `..._M32` in `internal/store/index/bench_float32_dense_test.go` pin the corpus, the HNSW parameters and the query set and force a single ingest worker, so the graph is deterministic and ns/op differences are attributable to the search path alone. On an otherwise idle host, min of 4 x 400 iterations:
-
-| Revision | ns/op | vs base |
-|---|---|---|
-| `2f4dc1c4` (baseline) | 26,037 | — |
-| `7f872022` | 29,613 | +13.7% |
-| `a955a0c1` | 63,223 | **+142.9%** |
-| HEAD | 57,216 | +119.7% |
-
-That independently reproduces the server-level bisect through a completely different code path. Doubling the layer-0 degree budget at HEAD (`MMax0` 16 -> 32, min of 4 x 400) makes it **worse**, not better: 59,437 -> 64,205 ns/op. So the 2-slot reservation is not the cost. The entire regression is the navigation damage from an arbitrary long-range edge injected into every node.
-
-### 8.3.1 R5 was attempted, reverted, and cannot land before R26
-
-R5 - replace the unconditional chain link with a proximity-gated one - was
-implemented, measured, and **reverted**. Recording this because the revert is the
-finding, and because R5 as written is not implementable.
-
-**What was tried.** Add the predecessor edge only when the predecessor is within the
-node's own candidate median, and charge the two-slot `chainLinksPerNode` reservation
-only on nodes that actually received an edge:
-
-```go
-chainDist <= candidates[len(candidates)/2].Dist   // candidates sorted ascending
-```
-
-This is O(1), adds no locking, and does exactly what §8.3 asked: on shuffled input it
-stops injecting an arbitrary long-range edge into every layer-0 node. The collinear
-test still passed, because there the predecessor genuinely is the nearest neighbour
-and the gate admits it.
-
-**Why it was reverted.** It broke graph connectivity, badly, and the graph-quality
-gate added in §9.2 caught it:
-
-| Reachable at layer 0, n=20,000 | Unconditional | Proximity-gated |
-|---|---|---|
-| turboquant 4-bit | 98.2% | **81.8%** |
-| turboquant 8-bit | 97.9% | **86.8%** |
-
-That refutes the premise behind R5. The roadmap assumed the chain edge was "the one
-neighbour guaranteed to be linked", a fallback used only in the degenerate case. On
-unordered input the predecessor is usually far, so the gate rejects nearly every
-chain edge - and 18% of the TurboQuant corpus immediately became unreachable. The
-edge is not a rare fallback; on unordered input it is where most inbound edges come
-from, because a fresh node's only other inbound edges are reverse links that get
-pruned whenever the target is already at capacity.
-
-**Ordering consequence.** R5 cannot land before R26. The correct sequence is:
-
-1. **R26** - guarantee inbound edges properly: when every reverse link for a fresh
-   node was pruned, force an edge from the node's nearest pre-batch neighbour,
-   evicting that neighbour's farthest edge. Until this exists there is nothing safe
-   to replace the chain with.
-2. **R5** - *then* gate the chain edge on proximity, which by then is the redundant
-   safety net rather than the load-bearing structure.
-
-**The -60.9% dense QPS figure in §8.3 could not be reproduced.** Interleaved A/B of
-the gate against the unconditional edge, min of 3 x 300 iterations on
-`BenchmarkDenseSearch_Float32_50k`:
-
-| Round | Unconditional | Gated |
-|---|---|---|
-| 1 | 86,453 ns/op | 84,770 ns/op |
-| 2 | 79,426 ns/op | 91,280 ns/op |
-| 3 | 73,863 ns/op | 74,256 ns/op |
-
-No difference beyond run-to-run noise, and neither arm reproduces the 57,216 ns/op
-recorded for HEAD in Step 5. Recall was tried as the measurement over five corpus
-seeds:
-
-| Seed | 1 | 2 | 3 | 4 | 5 | mean |
-|---|---|---|---|---|---|---|
-| unconditional | 0.110 | 0.175 | 0.120 | 0.175 | 0.105 | 0.137 |
-| gated | 0.165 | 0.160 | 0.100 | 0.170 | 0.115 | 0.142 |
-
-The sign flips between seeds; a single-seed run read as a 50% improvement, which was
-an artifact. So while the *connectivity* regression above is unambiguous and large,
-a *query-throughput* benefit of gating is not demonstrated, and the harness cannot
-currently resolve one (§9.3). §8.3's QPS table should be treated as unverified.
-
-- **R5. NOT DONE - blocked on R26.** Implemented and reverted; the measured
-  connectivity regression is in the table above.
-- **R6. NOT DONE.** `chainLinksPerNode` is still charged unconditionally against
-  every layer-0 node. It was coupled to the gate, so it reverted with it. Note this
-  is the part that is genuinely safe to drop on its own, since §8.3 Step 5 showed the
-  reservation is not the regression - but it currently protects the edge that R26
-  still depends on, so dropping it alone is not obviously safe either.
-- **R7. DONE.** `arrow_hnsw_bulk_chainlink_test.go` covers unordered geometry -
-  `TestBulkInsert_UnorderedCorpusStaysReachable` on both shuffled and natural-order
-  corpora (99.9% reachable on both, asserted at a 99% floor) and
-  `TestBulkInsert_UnorderedCorpusRecallFloored`. The file documents the reverted gate
-  and its measured effect, so a future attempt fails here instead of in production.
-- **R26. Force an inbound edge when reverse links are all pruned - ATTEMPTED AND
-  REVERTED, see 8.3.2.**
-- **R27. Re-verify §8.3's server-level QPS table before acting on it.** The Step 2
-  bisection put the cliff at `a955a0c1` and three methods agreed, but the in-process
-  benchmark cannot reproduce the magnitude today. Either it was partly a property of
-  the machine state when measured, or the benchmark does not exercise the same ingest
-  shape as the server. That distinction matters: if it is the latter, then the fix's
-  benefit is invisible to the harness meant to gate it.
-
-### 8.3.2 R26 was attempted, and it is not achievable the way it was specified
-
-R26 - "force an inbound edge from the node's nearest pre-batch neighbour when all
-its reverse links were pruned" - was implemented two ways and both were reverted. It
-is the prerequisite for R5, so this closes off the obvious approach and says what
-the actual fix has to look like.
-
-**Attempt 1 - inline, where the reverse links are written.** Instrumented: of
-19,488 checks, **18,652 found the edge already present**, only 11 appended and 825
-evicted - and the graph still finished **22% unreachable**. The edges are real when
-they are written and gone by the end.
-
-**Attempt 2 - a repair pass at the end of the bulk insert, where the graph is
-quiescent.** Correct in principle, and it does repair nodes: with the chain link
-disabled it forced 814 and 936 edges across sub-batches. Reachability with the chain
-off went from **78.1% to 78.7%** - no better, because:
-
-- the pass runs per `AddBatch`, and **the next `AddBatch` prunes the forced edges
-  away**. Only a few hundred nodes are stranded per pass, all of them get fixed, and
-  the fix does not survive to the end of ingest;
-- the pass costs an O(nodes x probe) list read on every `AddBatch` regardless.
-
-**Why the chain link survives and a forced edge does not.** This is the useful part.
-A forced edge is hosted on the node's *nearest* neighbour, which is a long-lived,
-heavily-connected node that receives many competing insertions and is pruned
-constantly. The chain edge is hosted between two nodes inside the *same sub-batch*,
-and a fresh node sees far less contention, so the edge it holds is not immediately
-displaced. Durability here is a function of how contested the host node is, not of
-whether the edge is distance-selected.
-
-**What this rules out.** Any fix that repairs reachability after the fact, during a
-continuing bulk insert, is not going to hold. A candidate that lands must be one of:
-
-- **A pruning rule that never drops a node's last inbound edge.** Requires tracking
-  in-degree globally, and a read of it inside the pruning path. This is the
-  principled fix and it is what R26 should have said.
-- **DiskANN's `keep_pruned_connections`.** Pruned edges are not discarded but demoted
-  to a secondary list, so no edge is ever actually lost and a later pass can
-  re-promote them. Larger change; adds a second traversal structure per node.
-- **Host repair edges on nodes inside the current sub-batch** rather than on popular
-  old neighbours. Cheapest, and closest to what the chain link already does, but it
-  reintroduces the arbitrary edge that R5 exists to remove, so it only helps if the
-  host is chosen by distance among the sub-batch.
-
-- **R26. REFORMULATED - "never drop a node's last inbound edge".** The attempts above
-  are evidence that the post-hoc framing does not work, not that the guarantee is
-  unwanted. Kept open with the three candidate mechanisms above.
-- **R28. Measure how much contention each candidate host sees.** The difference
-  between a repair that holds and one that does not was node age and sub-batch
-  membership, neither of which is visible in the code today. Before choosing a
-  mechanism, count insertions per host node over a bulk insert, because that number
-  predicts durability and would tell us whether R5 is achievable at all.
-
-### Recommendations for the bulk-insert chain link
-
-- **R5. Replace the unconditional chain link with a proximity-gated one. [ATTEMPTED AND REVERTED - blocked on R26, see 8.3.1]** Only add the `i -> i-1` edge when the two nodes are actually near each other (for example when the chain distance is within the candidate pool's median distance), and otherwise guarantee reachability the way HNSW normally does: by relaxing pruning for reverse links, or by re-checking that the node has at least one inbound edge after selection and retrying with a relaxed heuristic. The invariant the test needs is "no node is stranded", not "every node has a predecessor edge".
-- **R6. Drop `chainLinksPerNode` once R5 lands. [NOT DONE - reverted with R5, see 8.3.1]** The degree reservation is currently charged unconditionally, but it is *not* the regression (Step 5: doubling `MMax0` makes the regression slightly worse, not better), so it should not be treated as the fix. Remove it together with the unconditional edge rather than tuning it, and re-measure.
-- **R7. Make the connectivity regression test cover unsorted data. [DONE, see 8.3.1]** `TestBulkInsert_CollinearGraphStaysConnected` only exercises the geometry where the chain edge is a good edge. Add a shuffled-corpus variant that asserts (a) zero unreachable nodes and (b) recall and node-visit count within a stated factor of the sequential-insert graph. Without (b) the test cannot catch this class of regression, because reachability alone is satisfied by the chain.
-- **R8. Guard `AddBatchBulk` behind a recall-and-visit-count budget** at dataset build time, the way `resolveDistanceKernel` already validates a SIMD kernel once at construction: build the bulk graph, compare recall and mean nodes-visited against the sequential path on a sample, and fall back if the bulk graph is materially worse. This makes the choice data-driven instead of a constant threshold.
-- **R9. Re-baseline TurboQuant's "recommended at scale" claim.** §4 item 2 of this document promotes TurboQuant as the default engine above 100k vectors on the strength of 100k/250k QPS. In this matrix TurboQuant has the worst dense-search numbers of any dtype at 50k on CPU — `turboquant4` at `dense` 278 / `hybrid` 258 / `recommend` 261 QPS and `turboquant8` at 502 / 488 / 499 QPS, against `float32` at 702 / 645 / 859 and `complex128` at 2,720 / 2,066 / 3,424 — because it is the most sensitive to the chain link — a 4-bit codebook discards the distance information that would otherwise make a wrong edge recoverable. Its ingest advantage is real; its query advantage at scale is not established and should be re-measured after R5.
-
-### 8.4 [NOT A REGRESSION] `temporal` needs a harness fix, not a code fix
-
-`temporal` is the worst-looking row in the whole matrix — 23 regressions, worst `-93.5%` (`250000 128 float16 cpu temporal`, 390.5 -> 25.3 QPS) and a uniform `-71%` to `-92%` across every dtype at 250k on both engines. It is also **not** a code regression: the base-vs-HEAD A/B in 8.3 puts it at **-6.6%**, i.e. within noise. What moved is the harness and the mode ordering.
-
-- `cmd/bench-tool/main.go:BuildSpecialTicket` stamps `"timestamp": time.Now().UnixNano()` into every `as_of` ticket. `TemporalIndex.SearchAsOf` keys its result cache on `fmt.Sprintf("asof:%d:%d", timestamp, k)`, so **every query is a cache miss and every query inserts a new cache entry** — 500 uncached searches plus 500 LRU inserts per config, and `TemporalResultCache.Get`/`Set` share one mutex across all workers.
-- The 13-mode order is `Dense, Hybrid, Filtered, FilteredBool, FilteredString, Sparse, ByID, GraphRAG, GlobalGraphRAG, Recommend, Geo, Temporal, LearnedIndex`. The `docs/performance.md` 250k rows were collected from a 9-mode run in which `Temporal` ran 8th. `Temporal` now runs 12th, immediately after `Geo` — the slowest mode in the set — so it inherits `Geo`'s cache and GC state.
-- The 5-minute `searchCtx` in `cmd/bench-tool/main.go:539` is shared by all 13 modes. It did not bite at these scales (the worst config summed to 44 s of search time), but at 500k and above `Temporal` alone is projected at 60 s+, so the later modes will start silently truncating. This is a latent failure that will be mistaken for a regression.
-
-### Recommendations for the temporal harness
-
-- **R10. DONE.** Each mode now gets its own `-search-timeout` budget (default 5m)
-  created inside the mode loop, rather than one context shared by all 13. The
-  deadline is read *before* `cancel()` so a mode that ran out of budget is labelled
-  rather than merely slow, and workers stop issuing once the budget is spent -
-  otherwise every remaining query fails instantly and is counted as a fast miss.
-  New JSON fields: `context_deadline_exceeded`, `queries_requested`,
-  `queries_failed`, `queries_truncated`. **The harness acts on the flag**: a
-  truncated mode is skipped when building metrics and listed under
-  `_truncated_modes` instead, so its throughput can never be recorded as a QPS and
-  read as a regression. A truncated mode also logs `[TRUNCATED: ... QPS is a floor
-  not a measurement]`.
-- **R11. DONE for the determinism half.** The as-of timestamp is a fixed constant
-  (`defaultTemporalAsOf`, 2100-01-01 in nanoseconds, overridable with
-  `-temporal-asof-nanos`), set once per run into `TemporalAsOfNanos`. Far-future is
-  deliberate: as-of search is inclusive, so a fixed value is both deterministic and
-  never returns zero rows whatever clock the corpus was generated on.
-  **Not done: the cache-hit/miss count.** `TemporalResultCache` already maintains
-  `hits`, `misses` and `evictions` as atomic counters, but nothing exposes them, so
-  the cache behaviour cannot be observed from a benchmark run. Wiring them to
-  Prometheus is R11a below.
-- **R12. DONE.** The resolved, ordered mode list is recorded per row as
-  `mode_order`, alongside `mode_index` and `mode_count`, so each result knows its
-  own position. The harness records the ordered list it hands the client in
-  provenance as `search_modes_resolved`, and surfaces the client's own
-  `mode_order` as `_mode_order`.
-
-### 8.4.1 What the temporal fixes do and do not tell us
-
-The determinism fix is necessary but it is **not** enough to conclude anything about
-temporal's numbers yet, and it is worth being explicit about why.
-
-- **Before, the mode measured the cache-miss path by construction.** A per-query
-  clock reading made every query a distinct key against a `(timestamp, k)` cache, so
-  500 searches meant 500 misses and 500 LRU inserts behind one mutex. The -71% to
-  -92% figures are consistent with that, but so is the mode-order explanation, and
-  this harness cannot separate them without a re-run.
-- **The mode-order effect is still unaddressed.** `Temporal` runs 12th, immediately
-  after `Geo`, the slowest mode in the set, so it inherits `Geo`'s cache and GC
-  state. The per-mode context budget removes the *shared-timeout* version of this
-  problem but not the inheritance itself. Fixing that means either randomising mode
-  order across runs or reporting each mode from a cold process, which is R12a.
-- **`SearchAsOf` queries with a zero vector.** The query vector is built as
-  `make([]float32, dim)` and never populated, so every temporal query is a
-  zero-vector search. That is independent of the cache and independent of ordering,
-  and it means the mode has never measured a real nearest-neighbour search. Whether
-  that is intentional - "as of T, what exists" rather than "as of T, what is nearest
-  to Q" - is not documented anywhere I could find. R11b.
-- **Still true:** a 9-mode baseline cannot be compared against a 13-mode run, and
-  every temporal figure in section 8.1 predates all of the above.
-
-- **R11a. DONE: the temporal cache is now observable.**
-
-  `TemporalResultCache` maintained hits, misses and evictions and read none of them.
-  They are now exported, and `Stats()` is the only reader:
-
-  | Metric | Meaning |
-  |---|---|
-  | `longbow_temporal_cache_hits_total{dataset}` | served from cache |
-  | `longbow_temporal_cache_misses_total{dataset}` | not served from cache |
-  | `longbow_temporal_cache_expiries_total{dataset}` | TTL had passed |
-  | `longbow_temporal_cache_evictions_total{dataset}` | LRU was full |
-  | `longbow_temporal_cache_entries{dataset}` | currently resident |
-
-  **Expiries and capacity evictions are separate series on purpose.** Both surface as
-  "not in cache", but they need opposite remedies: an expiry says the TTL is shorter
-  than the reuse interval and should be raised, a capacity eviction says the cache is
-  too small and should be grown. Collapsing them would have made the counter
-  observable and still useless, which is only a slightly better version of the bug.
-  This is the same split the bulk-insert latency buckets got right, and for the same
-  reason: a number nobody can act on is not observability.
-
-  Two alerts, each naming its own remedy rather than just reporting a number:
-  `LongbowTemporalCacheLowHitRatio` (below 20% for 15m) and
-  `LongbowTemporalCacheCapacityEvicting` (evictions above 1/sec). Both have promtool
-  unit tests asserting they fire when they should *and stay silent when they should
-  not* - an alert that never fires is indistinguishable from one that is broken.
-
-  **Also removed `longbow_temporal_tree_cache_hit_ratio`.** It was registered, graphed
-  on the memory-performance dashboard, and never set by anything, so that panel had
-  been reporting a flat 0 and reading as "the cache never hits". It is gone rather than
-  wired: the real result cache is covered by the counters above, and a precomputed
-  ratio gauge duplicates what PromQL derives from two counters while going stale the
-  moment either is missed. The panel now computes the ratio correctly, and a sibling
-  panel shows the two drop causes.
-
-  `grafana/tests/test-rules.sh` now runs every `*_alerts_test.yml` rather than only the
-  bulk-insert group, and its group extraction was rewritten as a single awk. The
-  previous `awk | awk` with an early `exit` in the second stage could SIGPIPE the
-  first; under `set -o pipefail` that aborts the script, but only when the timings
-  line up, so it passed interactively and failed under a redirect. Verified stable
-  over five consecutive redirected runs.
-
-- **R11b. RESOLVED: the zero query vector is not a bug, and it cannot be fixed the
-  way the item assumed.**
-
-  `SearchAsOf` allocates `queryVec := make([]float32, dim)` and never fills it, which
-  looks exactly like a missing assignment. It is not, and the way to tell is to read
-  the request type rather than the search:
-
-  ```go
-  type TemporalSearchRequest struct {
-      Dataset, SearchType string
-      K int
-      Timestamp, StartTime, EndTime int64
-      WindowSize int
-      Duration time.Duration
-      Filters []Filter
-  }
-  ```
-
-  **There is no query vector field to populate.** The API is an enumeration - "give me
-  k records that existed as of timestamp T" - and was never a similarity search. So
-  "if it is not intended, populate the query vector" is not available as a fix; there
-  is nothing to populate it *from*.
-
-  What that means in practice, now pinned by tests in
-  `internal/store/temporal_asof_semantics_test.go`:
-
-  - Ranking is by **distance to the origin**, i.e. by norm, because the zero vector is
-    the query. The k smallest-norm visible records come back, not the k most recent.
-  - Returned distances are distances to the zero vector and carry **no semantic
-    meaning**. They should not be interpreted as relevance.
-  - The timestamp filter itself is correct: records added after the as-of timestamp
-    are excluded, and the result set is monotonic in k.
-
-  **The caveat stands, and is now precise rather than vague.** Temporal measures a
-  different operation from every other mode in the matrix - enumeration by norm
-  rather than retrieval by relevance - so its numbers must not be compared against
-  them. The existing benchmark matrix does not separate them, which is a second reason
-  §8.1 needs rebaselining through R38.
-
-  A reflection-based test asserts `TemporalSearchRequest` has no vector-like field, so
-  if one is ever added the tests that pin the current behaviour fail loudly rather than
-  quietly changing meaning.
-- **R11b. Decide and document whether zero-vector as-of search is intended**, and if
-  it is not, populate the query vector. Until then temporal measures a different
-  operation from every other mode in the matrix and its numbers should not be
-  compared against them.
-- **R12a. Break the mode-order coupling.** Randomise mode order per run and record
-  the seed, or run each mode in a fresh process, so a mode's numbers do not depend on
-  which modes ran before it. This is the remaining half of R12 and the only way the
-  per-mode numbers become independent.
-
-### 8.5 [OBSERVATION] TurboQuant at 250k/500k is not viable on this engine
-
-TurboQuant is the one dtype that failed to index at every tier above 50k:
-
-| Tier / engine | `turboquant4` | `turboquant8` | Reference: same tier, other dtypes |
-|---|---|---|---|
-| 250k CPU | did not index inside 45 min | not attempted | 60.5 s (`int8`), 105.0 s (`float32`), 144.0 s (`complex128`) |
-| 250k GPU | failed | failed | 13 / 15 dtypes indexed normally |
-| 500k CPU | did not index inside 96 min | not attempted | 129.5 s (`int8`) to 266.5 s (`uint64`) at a 14 GiB ceiling |
-
-The bulk path charges one chain-link distance computation plus two `AddConnectionsBatch` calls per node on top of TurboQuant's own quantization work, and a 4- or 8-bit polar codebook gives the neighbour selector the least information with which to recover from a wrong edge. That is a third independent reason to land R5 before promoting TurboQuant, and it means §4 item 2's recommendation needs re-measuring end to end — ingest throughput and query throughput point in opposite directions here.
-
-### 8.6 Harness defects found while running the matrix
-
-| # | Defect | Location | Effect |
-|---|---|---|---|
-| H1 | `pkill -9 -x bench-tool` (and `longbow`, `longbow-cli`, ...) runs on **every** `start_server`, killing processes belonging to other benchmark invocations | `scripts/unified_benchmark.py:504` | Two concurrent runs are mutually destructive. This is what lost 10/15 configs at 250k CPU, 4/15 at 50k GPU and 12/15 at 500k GPU in the first pass — the in-flight client was SIGKILLed mid-search and reported as `FAILED` with an empty error. Any parallelism in the matrix must go through one invocation. |
-| H2 | The server memory ceiling is taken from `$LONGBOW_MAX_MEMORY` and defaults to 18 GiB; `--memory` is never read | `scripts/unified_benchmark.py:271` (`limit_gb = os.environ.get("LONGBOW_MAX_MEMORY", str(self.args.memory))`) vs the 18 GiB literal in `start_server` | On this 22 GiB host the documented `--memory 10GB` knob has no effect at all, and no setting of `--memory` would help because it is ignored. The probed envelope at 500k on CPU is narrow: **8 GiB is refused** by admission control with `ResourceExhausted` on all 13 non-TurboQuant dtypes; **12 GiB admits the narrow dtypes** (`int8` indexes in 138.5 s) **but refuses `complex128`**; **14 GiB admits everything** (`int8` 140.0 s, `complex128` 196.0 s); the harness default of **18 GiB is above the safe ceiling** and the client is SIGKILLed mid-indexing with no diagnostic. `docs/testplan.md` §4 asks for 16 GB, which is inside the danger zone on a 22 GiB host. |
-| H9 | `_save_checkpoint` is a no-op when `self.results` is empty | `scripts/unified_benchmark.py:283` | A run in which every config is `ResourceExhausted` writes **no artefact at all** — not even a record of the exhaustion. The 8 GiB probe produced a 9,194-line log and zero result files. |
-| H10 | Per-config results live only in memory until the checkpoint is written, and the checkpoint file name carries the run timestamp | `_save_checkpoint`, `output_file` | Resuming a tier requires `--resume` inside the *same* invocation; `--resume` on a fresh invocation finds no `output_file` and starts over. An interrupted multi-hour tier cannot be resumed. |
-| H3 | `int(self.args.memory)` on the string default `"10GB"` | `_check_memory_limit` | `--estimate-memory` raises `ValueError` whenever `LONGBOW_MAX_MEMORY` is unset. |
-| H4 | `self.args.memory // (1024**3)` on the same string | Markdown report writer | `--report-md` raises `TypeError`. |
-| H5 | `turboquant4` and `turboquant8` are both rewritten to dtype `turboquant` before the result is recorded | `scripts/unified_benchmark.py:run_benchmark` | The two bit depths are indistinguishable in the results JSON, so half the TurboQuant matrix cannot be attributed. Every "turboquant" row in this matrix is two configurations. |
-| H6 | `ByID` always builds `"id":"0"` | `cmd/bench-tool/main.go:BuildSpecialTicket` | Measures one permanently hot node instead of the mode. `byid` showed a 7x swing between runs (596 to 4,348 QPS) for this reason. |
-| H7 | `GenerateRecord` seeds from `time.Now().UnixNano()` per chunk | `cmd/bench-tool/main.go` | No two runs see the same corpus, so ingestion and index shape are not comparable across runs. Combined with H6, this is why per-mode variance reaches 40%+. |
-| H8 | Silent `FAILED` with no diagnostic on client death | harness failure path | A SIGKILLed client is indistinguishable from a timeout in the results. Record the child's exit signal. |
-
-### 8.6.1 What changed, and what it does not fix
-
-R13, R14, R14a and R14b are implemented and unit-tested in
-`scripts/tests/test_benchmark_memory.py` (17 tests, run in CI by
-`Test benchmark harness helpers`).
-
-- **`--memory` now works.** Before this, `--memory 10GB` could not be passed at all
-  (`type=int`, documented as `10GB`), `LONGBOW_MAX_MEMORY=18GB` crashed
-  `--estimate-memory` with `ValueError`, and `start_server` wrote an 18 GiB literal
-  while ignoring both. On a 22 GiB host the effective ceiling was therefore 18 GiB
-  no matter what was asked for - above the 14 GiB that the 500k CPU probe found
-  necessary, which is where the unexplained SIGKILLs came from.
-- **Concurrent runs no longer destroy each other.** This was the single largest
-  source of missing matrix data: 10/15 configs at 250k CPU, 4/15 at 50k GPU, 12/15
-  at 500k GPU in the first pass. Those are recoverable, but only by re-running, and
-  they were being reported as `FAILED` with an empty error rather than as "another
-  run killed my client".
-- **Not fixed: the measured data.** Every number in section 8.1 was collected under
-  these defects and is therefore suspect in two specific ways: configs that were
-  killed are missing rather than slow, and the memory ceiling applied was not the
-  one the invocation asked for. Re-running the matrix is a prerequisite for
-  publishing any of it, and R16 below is a prerequisite for that being worth doing.
-- **Not fixed: R14a's free-memory check is advisory.** It prints a warning when the
-  ceiling exceeds `MemAvailable` but does not refuse the tier. Refusing needs the
-  per-config estimate to be trustworthy, which is the same dependency as
-  `--estimate-memory` and which H3 previously made crash-prone.
-
-### Recommendations for the harness defects
-
-- **R13. DONE.** Process cleanup is scoped to the run. `_reap_only_own_ports` frees
-  only this run's ports, resolving the listening PID from `/proc/net/tcp` and
-  `/proc/*/fd` so no external tool is needed, and never matches on a process name.
-  Two global reapers were removed, not one: `pkill -9 -x bench-tool` and friends on
-  every `start_server`, **and** a second live `pkill -9 longbow || true` in the
-  cluster teardown path (H1 affected both). The cluster path already SIGKILLs every
-  node it started by PID, so the name match bought nothing and cost another run's
-  data. A test asserts via AST that no executable call to `run`/`Popen`/`system`
-  anywhere in the harness carries a `pkill` command string.
-- **R14. DONE.** One parser, `parse_size_bytes`, accepts `10737418240`, `10GB`,
-  `10GiB`, `512M`, `1.5GB`, with whitespace and case tolerance, and degrades to a
-  default on unparseable input rather than raising - a typo in an environment
-  variable must not abort a multi-hour run. `--memory` is now `type=str` and accepts
-  what its own help text always claimed. `resolve_memory_limit_bytes` applies one
-  precedence everywhere: `--memory`, then `LONGBOW_MAX_MEMORY`, then a host-derived
-  default. The flag is authoritative so an inherited variable cannot silently
-  override an explicit choice. All four call sites now use it, which closes H2, H3
-  and H4 - they were one missing parser.
-- **R14a. DONE.** The default is now 60% of detected physical RAM rather than an
-  18 GiB literal that was too high on a 22 GiB host and far too low on a large one.
-  `start_server` also compares the resolved ceiling against `MemAvailable` and says
-  so explicitly when the ceiling exceeds what the host can currently give, which is
-  the condition that produced silent mid-indexing OOM kills with no diagnostic.
-- **R14b. DONE.** `_save_checkpoint` no longer short-circuits on an empty result
-  set, so an all-`ResourceExhausted` run leaves an artefact recording the
-  exhaustion instead of a 9,194-line log and nothing else. The output is also
-  mirrored to `perf_matrix_<mode>[_<label>]_latest.json` alongside the timestamped
-  per-run file, so `--resume` in a fresh invocation finds the checkpoint.
-- **R15. DONE.** The bit-pack branch no longer reassigns `dtype`; it sets
-  `wire_dtype`, which is what the client is told, and keeps `requested_dtype` for the
-  record. Result rows now carry `requested_dtype`, `wire_dtype` and `tq_bits`, so
-  `turboquant4` and `turboquant8` are distinguishable by name *and* by an explicit
-  field. `check_regression.match_config` now keys on `tq_bits`, so a 4-bit baseline
-  cannot be paired with an 8-bit result and the difference called a regression;
-  `_tq_bits` also recovers the depth from the dtype string for reports written
-  before this change.
-- **R16. DONE.** New `-seed` flag, default 42 and fixed.
-  - Corpus: worker seeds are `*seed + w*10007`, derived from the run seed rather
-    than `time.Now().UnixNano()`.
-  - Queries: `BuildSearchTicket` takes a `queryIdx` and derives a per-query stream
-    from it. The previous code used the global `math/rand`, which Go seeds per
-    process, so two runs of the same binary issued different queries.
-  - `ByID`: the id is derived from the query index and wrapped into the corpus
-    instead of being hardcoded to `"0"`. That was measuring one permanently hot
-    node, which is where the 7x run-to-run swing came from.
-  - The seed is recorded on every result row.
-- **R17. DONE.** A failed run now reports *why*. Exit `-9` and `137` both resolve to
-  `SIGKILL`, `124` is a timeout, and a non-zero exit is named; the reason is stored
-  per config in `failure_reasons` and written into both the checkpoint and the
-  final report. One case is deliberately distinct: bench-tool can exit non-zero on
-  success, so "exited 0 but wrote no parsable metrics" is its own reason rather than
-  a crash.
-
-### 8.7.1 The SIMD kernel fallback is now visible, and the hypothesis about it is disproven
-
-§8.7 item 7 proposed that the integer-type spread at 500k might be explained by
-`resolveDistanceKernel` silently rejecting a wrong kernel, and asked for the fallback to
-be made observable first. Both halves are now answered, and the answer to the second is
-no.
-
-**Made observable.** `resolveDistanceKernel` takes an element-type label and records two
-outcomes:
-
-| Metric | Meaning |
-|---|---|
-| `longbow_hnsw_simd_kernel_fallbacks_total{element_type,metric,reason}` | A kernel was not used. `reason="mismatch"` means it disagreed with the scalar reference and was rejected - a real kernel defect. `reason="unavailable"` means none existed. |
-| `longbow_hnsw_simd_kernel_resolved_total{element_type,metric,outcome}` | `simd` or `scalar`, so the fallback rate is a ratio of two counters rather than an absence. |
-
-A `slog.Warn` accompanies each. Alerts: `LongbowSIMDKernelMismatch` (critical, on any
-`mismatch`) and `LongbowSIMDKernelScalarFallbackRatio` (info). A panel on
-`index-storage` charts fallbacks split by reason.
-
-**The two reasons must stay separate.** They mean different things and need different
-responses: `mismatch` is a defective kernel, `unavailable` is a missing one.
-
-This section originally recorded that **no float32 kernel was registered** at any
-dimension or metric, so float32 took `unavailable` on every index, and that the fallback
-(`simd.EuclideanDistance`, itself an auto-dispatching AVX2 kernel) was why float32
-stayed the fastest dtype in the matrix. **That observation was right about the symptom
-and wrong about the cause**, and the wrong cause turned out to be the more valuable half.
-
-The kernels were registered all along - 21 of them for float32, more than any other type.
-They were simply unreachable. See R33.
-
-**The hypothesis is half right, and the half that was wrong found a real bug.**
-`int8`, `uint8`, `int16`, `uint16`, `int32`, `uint32` and `float64` are registered and
-agree with their references numerically - the `int16` kernel returns `22.627417` and its
-reference returns `22.627417` - so **the 6x deficit of `int16`/`uint16` is not caused by a
-fallback.** That remains open as R32.
-
-For `uint64` the hypothesis was correct, and following it up found a genuine correctness
-bug rather than merely an explanation. See R32a below: `euclideanUint64Unrolled4x`
-subtracted in uint64 arithmetic and returned ~2.1e20 where the answer was ~22, and
-because it is the *reference* the gate validates against, it made uint64 both wrong and
-slow at the larger dimensions - exactly the 11x surplus §8.1 recorded.
-
-The lesson is about method rather than about uint64: the metric was added first, and the
-first benchmark run it was live on reported a defect. An alertable counter finds things
-that an argument about which kernel might be slow does not.
-
-- **R32a. DONE, and it found a real bug: `euclideanUint64Unrolled4x` wrapped on
-  subtraction.** Once the metric was live it fired on the first benchmark run:
-  `element_type=uint64 reason=mismatch`. Chasing it found that the function
-  computed `float64(a[i]-b[i])` - the subtraction happening in **uint64**. For a
-  probe pair of (1..n, 3..n+2) every difference is -2, which in uint64 wraps to
-  2^64-2, so the sum of squares came to ~4.4e40 and the function returned **~2.1e20
-  where the answer is sqrt(4n)**. Its own tail loop widened first and was always
-  right, so the unrolled body and the tail disagreed.
-
-  This was not merely a wrong fallback. That function *is* the scalar reference
-  `resolveDistanceKernel` validates registered uint64 SIMD kernels against, so:
-
-  | dims | uint64 kernel | reference (before) | gate outcome |
-  |---|---|---|---|
-  | 128 | ~2.1e20 (wrong) | ~2.1e20 (wrong) | **accepted** - wrong in the same way |
-  | 384 | 39.191837 (correct) | ~3.6e20 (wrong) | **rejected** |
-  | 768 | 55.425625 (correct) | ~5.1e20 (wrong) | **rejected** |
-
-  So uint64 vectors were returning nonsense distances *and* falling back to the slow
-  path at the larger dimensions. That is exactly the shape of the §8.1 observation
-  that uint64 sits 11x above int64, and the roadmap's hypothesis was right after all
-  - for uint64, and only for uint64.
-
-  Fixed by widening to float64 before subtracting. After the fix the kernel and the
-  reference agree at 128, 384 and 768, and uint64 resolves to SIMD at all three.
-  `internal/simd/unsigned_distance_test.go` covers it across the 8x unroll boundary,
-  at large magnitudes, and asserts int64 was already correct (an earlier attempt at
-  this fix patched the wrong function, since int64 and uint64 share a body shape).
-  uint8 and uint16 are pinned correct too, so the same change elsewhere fails.
-
-- **R32. Explain the int16/uint16 6x deficit by other means.** Fallback is ruled out
-  for these: their kernels are registered and agree with their references
-  numerically. The
-  remaining candidates are per-type kernel quality (the wide-integer kernels may be
-  genuinely slower rather than rejected), and conversion or widening cost in the search
-  path. Both are answerable now that `resolveDistanceKernel` reports its outcome, because
-  a dtype confirmed to be running SIMD and still slow points at the kernel rather than
-  at dispatch.
-- **R33. DONE, and it was a real bug rather than a missing feature.** The premise - that
-  float32 had no registered kernel - was wrong. It had 21, and not one of them could be
-  returned by `simd.GetKernel`.
-
-  `GetKernel` resolves a registered kernel by type-asserting it to
-  `func([]T, []T) (float32, error)`. In Go a value of a *defined* type does not satisfy an
-  assertion to its underlying type; they are different types. The five kernel types in
-  `internal/simd/simd_types.go` - `distanceFunc` (float32), `distanceF16Func`,
-  `distanceFloat64Func`, `distanceComplex64Func`, `distanceComplex128Func` - were defined
-  types, so the assertion inside `case distanceFunc:` could never succeed. Every kernel
-  registered under one of them was dead code.
-
-  | Type | Registered | Resolved before | after |
-  |---|---|---|---|
-  | float32 | 21 | **0** | 21 |
-  | float16 | 21 | **0** | 21 |
-  | complex64 | 21 | **14** | 21 |
-  | complex128 | 21 | **14** | 21 |
-  | float64 | 28 | 28 | 28 |
-  | int8/uint8/int16/uint16/int32/uint32/int64/uint64 | 21-28 each | 21-28 | 21-28 |
-
-  287 keys walked, 287 now resolve. The fix is to make those five types *aliases*
-  (`type distanceFunc = func(...)`), which makes them identical to their underlying
-  signatures so the assertion succeeds.
-
-  **It also changes which function runs, and it is faster.** The registered kernels are
-  not the same function as the fallback they replace (different code pointers), and they
-  are dimension-specialised. On the kernel microbenchmark, same host, 300ms x 3:
-
-  | dims | old fallback | registered kernel | |
-  |---|---|---|---|
-  | 128 | 17.0 ns | **9.3 ns** | 1.8x |
-  | 384 | 45.1 ns | **29.5 ns** | 1.55x |
-  | 768 | 92.4 ns | **71.6 ns** | 1.25x |
-  | 1024 | 124.8 ns | **92.1 ns** | 1.37x |
-  | 1536 | 207.4 ns | 195.8 ns | 1.06x |
-
-  **That is a kernel-level figure and must not be read as end-to-end QPS.** The distance
-  kernel is one component of a search, so the search-level gain is smaller and is not
-  measured here. Re-baselining float32 numbers is an open follow-up, not a claim.
-
-  What this does settle is coverage: the validation gate now protects float32, the dtype
-  the product uses most, in addition to the twelve types it already protected. The
-  existing `TestFloat32HasNoRegisteredKernel` was written to fire when this changed, and
-  it did; it is replaced by `TestFloat32KernelsResolveAndPassValidation`. A new
-  `internal/simd/kernel_resolution_test.go` walks the registry and asserts no registered
-  key is unresolvable, so this cannot regress silently again.
-
-  `LongbowSIMDKernelScalarFallbackRatio` no longer tells operators to ignore float32 -
-  that advice was correct when written and is now actively misleading.
-- **R34. Fix the pre-existing panel overlaps in `index-storage.json`.** 192 overlapping
-  grid cells exist at HEAD, predating this work. Not touched here.
-
-### 8.6.2 Repeatability: what is fixed and what is still not a 10% gate
-
-R16 makes two runs of the same binary *equivalent inputs*. That is a precondition
-for a percentage comparison, not the whole of it, and the remaining sources of
-variance are not all in the client:
-
-| Source | State |
-|---|---|
-| Corpus | Fixed by R16 |
-| Query vectors | Fixed by R16 |
-| `ByID` ids | Fixed by R16 |
-| Temporal as-of and cache key | Fixed by R11 |
-| Mode order | Recorded by R12, coupling not removed (R12a) |
-| Server-side cache state from prior modes | Not addressed (R12a) |
-| Machine state, page cache, CPU frequency | Not addressed; needs interleaved A/B, as in 9.4 |
-| Which revision is being measured | Recorded by R2 (provenance) |
-
-A 10% threshold on a single non-interleaved run is therefore still not defensible,
-and the honest statement is that the harness now *can* support such a gate once the
-remaining rows are addressed, rather than that it does today.
-
-- **R30. Interleave runs in the regression gate.** Every A/B in this document that
-  reached a conclusion used interleaved runs with a min-of-N, because single runs on
-  this host varied by 40%+ at times. `check_regression.py` compares one run to one
-  baseline; it should compare N interleaved runs, or refuse to gate on N=1.
-- **R31. DONE, and the answer is worse than assumed.** Ten runs of
-  `BenchmarkDenseSearch_Float32_50k`, same binary, fully deterministic corpus (R16 in
-  place), min-of-400 x 400 per run:
-
-  | | ns/op |
-  |---|---|
-  | min | 74,574 |
-  | p50 | 94,421 |
-  | max | 114,045 |
-
-  **min-to-max spread 52.9%, stdev 12.6% of the median.** That is with identical
-  inputs, so it is entirely machine state: page cache, CPU frequency, other
-  tenants. Comparing every pair of runs in the worst direction:
-
-  | Threshold | Pairs exceeding it | False-positive rate |
-  |---|---|---|
-  | 10% | 27/45 | **60%** |
-  | 20% | 15/45 | 33% |
-  | 30% | 5/45 | 11% |
-  | 50% | 1/45 | 2% |
-
-  **A 10% gate fires falsely 60% of the time comparing the same binary to itself.**
-  The `--threshold 10` in §3 is not a conservative default; it is close to useless,
-  and every regression count derived from single-run comparisons in this document
-  should be read with that in mind. It is also why this session's conclusions all
-  used interleaved runs with a min-of-N.
-
-- **R30. The gate must interleave, or its threshold must exceed the measured noise.**
-  Two workable options, and they are not equivalent:
-  1. Interleave N runs of baseline and candidate and compare **minimums**. The min
-     is far more stable than the mean here - the spread is one-sided, from
-     interference, not from the code under test.
-  2. Raise the threshold to at least 50%, accepting that the gate then only catches
-     large regressions.
-
-  Option 1 is what produced every reliable number in this document and is the
-  recommendation. Option 2 is a single-character change and is better than a gate
-  that cries wolf.
-
-- **R35. DONE, retrospectively, and it is much worse than the in-process figure.**
-  78 usable run files already in `data/perf_logs/` were grouped by identical config
-  block and session, which approximates "same harness settings, same binary". Two
-  sessions had enough repetition to measure:
-
-  | Session | Runs | Config | Series (>=3 runs) | Pairs | Median worst-dir spread | 10% gate | 20% | 50% |
-  |---|---|---|---|---|---|---|---|---|
-  | 2026-09-26 | 8 | 10k, dim 128, float32 | 13 | 208 | 21.7% | **76.9%** | 53.4% | 18.3% |
-  | 2026-10-04 | 47 | 50k, dim 128, float32 | 13 | 2173 | 83.3% | **89.4%** | 81.8% | 64.8% |
-
-  **A 10% gate fires falsely 77-89% of the time comparing a run to another run of the
-  same configuration.** At 50k it is still 64.8% at a 50% threshold. Pooled across all
-  143 series with >=3 runs, the false-positive rate is 86.1% at 10%, 76.2% at 20%,
-  68.9% at 30%, 57.3% at 50%.
-
-  This also explains the roadmap's own incoherence: §8.1's rows disagree with each other
-  by amounts that look like regressions and are not, because each row is a single
-  un-interleaved run.
-
-  **Honest caveat, and it does not weaken the conclusion.** These files predate the
-  provenance recording in §3.1, so it cannot be *proved* that all 47 runs in the
-  2026-10-04 session were the same binary. Some of that spread may be real code change.
-  But 2026-10-04 was a single session with one config block, and a median worst-direction
-  spread of 83.3% is not a plausible signature of deliberate code changes - those land in
-  a handful of configs, not across 13 modes uniformly. Treat 89.4% as an upper bound on
-  the noise and as a demonstration that the gate is unfit, either way.
-
-- **R36. DONE, and min-of-N - the fix I expected - makes things WORSE.** Measured
-  directly on the sessions in R35, splitting runs into disjoint baseline and candidate
-  groups and counting how often the 10% gate fires against itself:
-
-  | Session | runs | min-of-1 | min-of-2 | min-of-3 | min-of-5 | min-of-8 |
-  |---|---|---|---|---|---|---|
-  | 20261004_2 | 53 | 55.0% | 68.3% | 91.7% | 78.3% | 98.3% |
-  | 20260926_1 | 13 | 53.3% | 73.3% | 75.0% | 90.0% | - |
-  | 20261005_0 | 8 | 6.7% | 23.3% | 46.7% | - | - |
-
-  Median and max were tested too, and behave the same way:
-
-  | Session | min-of-1 | median-of-1 | max-of-1 | min-of-3 | median-of-3 | max-of-3 |
-  |---|---|---|---|---|---|---|
-  | 20261004_2 | 41.7% | 45.0% | 38.3% | 63.3% | 63.3% | 63.3% |
-  | 20260926_1 | 41.7% | 48.3% | 26.7% | 86.7% | 81.7% | 73.3% |
-
-  **No aggregator helps, and every one degrades as N grows.** The intuition that the
-  minimum would be stable because interference only ever makes a run slower is wrong
-  in the way the estimate is built: taking a min over N runs does not estimate the
-  fastest achievable time, it selects the single most favourable fluctuation out of N.
-  That estimate gets more extreme as N grows - a winner's curse - so a larger baseline
-  group is more likely to hold an unrepresentatively fast number, and the gate fires
-  more. The same mechanism explains why median and max, which should be immune, also
-  degrade: the problem is not the aggregator, it is that **the variation between
-  separate harness invocations is systematic, not zero-mean.**
-
-  Separate invocations differ in ways the reports do not record: which cores were
-  free, what the memory ceiling resolved to, what else was on the host, and - for
-  these files - which binary was under test. That is not a sampling distribution to be
-  averaged away.
-
-  `check_regression.py` still accepts multiple `--results` and `--baseline` files and
-  merges them by minimum; that is a convenience for combining runs, and the help text
-  and docstring now say plainly that it does **not** make a percentage threshold on
-  un-interleaved runs usable.
-
-- **R37. DONE: `scripts/ab_benchmark.py`.** The interleaved A/B harness now exists.
-
-  It takes two server binaries and a matrix, then alternates them **within one
-  invocation** in balanced order - ABBA across reps rather than ABAB, so within-rep
-  drift hits both arms equally - collecting QPS per (dtype, count, mode) per rep. The
-  comparison is then made **per adjacent pair and in ratio**, which cancels the
-  systematic component entirely rather than trying to average it away. This is the
-  thing R36 showed cannot be done after the fact.
-
-  A verdict needs **both** a magnitude and a consistency: median ratio at or beyond
-  the threshold, *and* at least 90% of pairs agreeing in that direction (one-sided sign
-  test, p < 0.05). Fewer than 3 usable pairs never produces a verdict. "Inconclusive"
-  is a first-class answer, not a silent pass - a gate that cannot tell a regression
-  from noise should say so instead of implying the change was safe.
-
-  **Measured soundness.** On synthetic null cases - the same binary on both arms, true
-  ratio exactly 1.0, with log-normal multiplicative noise injected at the magnitude
-  R35 measured - the false-regression rate is:
-
-  | Noise sigma | reps=6 | reps=10 |
-  |---|---|---|
-  | 0.20 | 1.40% | 0.90% |
-  | 0.30 | 1.15% | 1.20% |
-  | 0.40 | 1.75% | 1.25% |
-
-  **About 1.2%, against 77-89% for the single-run gate.** That is the whole argument
-  for pairing, measured rather than asserted. One of these soundness checks is a test
-  in `scripts/tests/test_ab_stats.py`, so the property cannot regress silently.
-
-  Usage, which is what §8.3 and §9.4 did by hand:
-
-  ```bash
-  python3 scripts/ab_benchmark.py \
-      --baseline-binary bin/longbow_main \
-      --candidate-binary /tmp/candidate/bin/longbow_main \
-      --counts 50000 --dtypes float32 --search-modes dense \
-      --queries 500 --reps 6 --threshold 5 --cpu-affinity 12-15 \
-      --seed 42 --out data/perf_logs/ab_verdict.json
-  ```
-
-- **R38. Measured noise floor: the harness works, and this host is noisy.**
-
-  The first thing to run was **not** a comparison of two revisions. Comparing two
-  different binaries would confound "the harness works" with "the change matters", so
-  the first run was a **null A/B**: the same binary on both arms, whose true ratio is
-  exactly 1.0. Any verdict from it is by definition a false positive, which makes it a
-  direct measurement of the gate's behaviour on real hardware rather than in
-  simulation. `float32`, 20,000 vectors, `dense`, 300 queries, 4 workers, 12s.
-
-  **Unpinned.** Median +4.1%, spread -12%..+9%, verdict `inconclusive`. Raw QPS on the
-  *same binary* ranged 3,594-4,717 - a **31% spread with nothing changed at all**.
-
-  **Pinned to cores 12-15.** Baseline tightened to 3,363-3,594, a 6% spread, but one
-  arm spiked down to 2,202 and dragged a pair to -35%. Median -3.4%, 4/4 pairs agreeing,
-  verdict `inconclusive`.
-
-  Both correct. Neither is a false regression. But the honest reading is uncomfortable:
-
-  - The real per-pair spread on this host is **-35%..+9%**, far wider than the
-    synthetic model R37 used (which assumed sigma 0.2-0.4 lognormal).
-  - A **5% threshold is marginal**, not comfortable. It happened to hold here only
-    because the paired median suppresses single outliers.
-  - **Four pairs is too few** for the median to be robust: one spike moved it by 3
-    points. Anything quoting a threshold tighter than ~8% should use `--reps 8` or
-    more, not the default 6, and should not trust a single pair.
-
-  **`--cpu-affinity` pins the server *and* the client to the same cores**
-  (`unified_benchmark.py:1080` and `:1408`). With `--workers 4` on a 4-core pin, the
-  client contends with the server it is measuring. This is still a fair comparison -
-  both arms suffer identically - and it is why pinning produced *lower* absolute QPS
-  with tighter spread. Leave more cores than `workers + 1`.
-
-  Two bugs surfaced by actually running it, both fixed in the same change:
-
-  - `load_qps` iterates its argument and `main()` passed a bare path string.
-    Iterating a string yields characters, `os.path.exists('d')` is false for each, and
-    the function returned an empty mapping. The report table was then empty and the
-    process **exited 0** - a clean pass carrying no measurements. It now accepts either
-    a path or a list, picks the newest result file by mtime rather than name order, and
-    a run that extracts nothing is a hard error rather than a silent pass.
-  - With 4/4 pairs agreeing at -3.4%, the reason string read *"only 100% of pairs
-    agree; direction is not consistent"* - self-contradictory, because the `else`
-    branch conflated "magnitude too small" with "direction inconsistent". The four
-    cases are now distinguished. The synthetic tests had asserted the *verdict* for
-    that case and never the *message*, which is why it survived.
-
-  Still outstanding: this was one config on one host. §8.1 remains un-rebaselined.
-- **R39. Decide what CI does.** The honest options are (a) run an interleaved A/B in CI
-  against a stored candidate binary, which costs `reps x 2` full matrix runs, or (b) drop
-  the benchmark-regression job and say the measurement is manual. Option (b) is cheaper
-  and more honest than (a) with a threshold too low to mean anything. This is a
-  resource decision, not a technical one.
-
-### 8.7 Recommended order of work
-
-1. **R5/R6/R7** — the bulk-insert chain link. This is the only confirmed product regression in the matrix, it is worth up to 4.4x on every HNSW-family query at every dtype and scale, and it is currently baked into every published baseline.
-2. **R1/R2/R3** — make the baseline trustworthy. Until the baseline records its parameters and asserts `QPS x P50 <= workers x 1000`, no regression count in this document can be acted on.
-3. **R13/R14** — remove the two harness defects that silently destroy matrix data (H1) and disable the documented memory knob (H2).
-4. **R10/R11/R12** — fix the temporal harness so the mode's numbers mean something, then re-measure.
-5. **R15/R16/R17** — remove the remaining sources of non-repeatability.
-6. **R8/R9** — re-baseline TurboQuant at scale once the insert path is fixed.
-7. **Make the `resolveDistanceKernel` fallback observable, then chase the integer-type spread** surfaced by the 500k table in §8.1: `int16`/`uint16` sit 6x below `int8`/`uint8` at identical element count and corpus size, and `uint64` sits 11x above `int64`. `resolveDistanceKernel` validates each resolved SIMD kernel against the scalar reference once at construction and silently falls back when they disagree, which would produce exactly this shape of spread — but that is a hypothesis, not a measurement, and it is testable in minutes: log or metric the fallback (`internal/store/index/distance_resolvers.go:33`) and re-run one 500k config. This is worth doing first because the gate is invisible today, and an invisible kernel fallback is precisely the failure mode it was added to prevent.
-
----
-
-## 9. TurboQuant: Query Path Improved, Construction Cost Explained
-
-Follow-up to §8, after the matrix showed TurboQuant as the only dtype that never
-finished indexing above 50k (§8.5). §9.1 landed a query-path improvement; §9.2
-explains the construction cost, which turns out to be correctness rather than a
-regression - and which invalidates the TurboQuant numbers published before
-`a955a0c1`.
-
-### 9.1 What was fixed, and measured
-
-The TurboQuant search path resolved a TurboQuant code slice from scratch **per
-candidate, three times over**: once in the inline prefetch-touch loop in
-`distance_dispatch.go`, once in `tqComputer.Prefetch`, and once again in
-`tqComputer.ComputeBatch`, which looped over `ComputeSingle`. Each resolution is
-an atomic slab-table load, a division, a slab pointer chase and a generation
-comparison. Profiling a 250k TurboQuant build (`longbow_main`, pprof over the
-metrics port) showed the distance computation was only ~3% of CPU while the
-lookups around it were ~43%.
-
-| Change | File |
-|---|---|
-| `GraphData.BeginTQChunkBatch` opens a batch-scoped view of the TurboQuant chunk table, mirroring `BeginFloat32ChunkBatch` | `internal/store/types/graph_data.go` |
-| `VectorChunkBatch.Width()` exposes the packed byte stride | `internal/store/types/graph_data.go` |
-| `TurboQuantCompute.DistanceDirectCodes` scores an already-resolved code slice | `internal/store/index/arrow_hnsw_compute_tq.go` |
-| `tqComputer.ComputeBatch` resolves the chunk once per search instead of once per candidate, falling back to `ComputeSingle` for any id the batch will not serve | `internal/store/index/distance_computer.go` |
-| `tqComputer.Prefetch` uses a 16-entry chunk cache instead of a lookup per call | `internal/store/index/distance_computer.go` |
-| Deleted a dead per-candidate float32 chunk lookup whose result was discarded | `internal/store/index/distance_dispatch.go` |
-| Hoisted `GraphData.PackedSize()` out of the per-candidate loop | `internal/store/index/distance_dispatch.go` |
-| The TQ batch view is owned by the computer (built per search) instead of being reopened per candidate block and per graph hop | `internal/store/index/distance_dispatch.go` |
-| QJL sign selection is arithmetic instead of a data-dependent branch, bit-exact because `correction * -1` is an exact IEEE negation (2,905 -> 2,721 ns/op at dim=768, bits=4, -6%) | `internal/simd/turboquant.go` |
-
-Effect on the 250k TurboQuant build profile, before → after:
-
-| Symbol | Before | After |
-|---|---|---|
-| `SlabArena.GetWithGeneration` | 13.2% | **1.3%** |
-| `tqComputer.Prefetch` | 26.0% | **12.9%** |
-| `BeginTQChunkBatch` + `newVectorChunkBatch` + `BeginBatch` | 12.1% (introduced, then hoisted away) | gone |
-| `GraphData.PackedSize` | 5.2% | gone |
-| `turboQuantDistanceAVX2Scratch` | 2.5% | 2.2% |
-
-**What the evidence is, and is not.** The profile deltas above are the evidence
-for the batching: they come from the 250k server build, where the arena is large
-enough for the slab-table load and pointer chase to miss cache. The in-process
-`BenchmarkTQComputeBatch` does *not* show the win — at 20k vectors the whole
-TurboQuant arena is one slab, so the lookup is an L1 hit either way and the
-batched and per-candidate variants land within noise (33.2-36.1 us vs 34.0 us for
-64 candidates). Anyone reading that benchmark as confirmation of the batching would
-be wrong; it is there to pin the distance-function floor (about 470 ns per
-candidate) and the prefetch cost (about 5 ns per call with the cache), both of
-which are chunk-local.
-
-**Correctness**: `TestTQComputeBatch_MatchesPerCandidate` asserts the batched
-loop is bit-identical to the per-candidate reference for 4-bit and 8-bit, across
-chunk boundaries and past the resident range. `./internal/simd`,
-`./internal/store/index`, `./internal/store/types`, `./internal/memory` and
-`./internal/store` all pass; `golangci-lint` reports 0 issues.
-
-**What is left in the distance function.** After the above, the remaining
-TurboQuant distance cost is the scalar polar reconstruction - `pow2-1` pairs of
-two table lookups, two multiplies and two interleaved stores - at 47% of
-`turboQuantDistanceAVX2Scratch`, plus the angle unpack at 14%. The AVX2 path only
-vectorises the final 128-float L2. Closing the reconstruction needs an AVX2 kernel
-with a shuffle-based gather from the 16-entry (4-bit) lookup table, which is real
-assembly work and is **not** done here. It is the next lever on TurboQuant query
-throughput, and it is independent of both the bulk-insert stall below and the
-chain-link regression in §8.3.
-
-### 9.2 The TurboQuant construction cost is CORRECTNESS, not a regression
-
-**This supersedes the earlier claim in this section that the TurboQuant stall was
-a ~9x regression.** That claim was wrong. The cost is real and large, but it is
-`a955a0c1` building TurboQuant graphs correctly for the first time, and the
-baseline it was measured against was building broken ones.
-
-**Bisection.** `TestBisectTQBuild` (in `internal/store/index/zz_bisect_tq_test.go`)
-grows one index through the store's real ingest shape - 25 record batches of
-10,000 into 250,000 - and reports the `turboquant/float32` ratio. float32 and
-turboquant run in the same process, so the ratio is drift-free even though the
-absolute times move between runs.
-
-| Revision | float32 | turboquant4 | ratio | f32 last batch | tq last batch |
-|---|---|---|---|---|---|
-| `2f4dc1c4` (docs baseline) | 30.0 s | **15.8 s** | 0.53 | 1.370 s | 0.651 s |
-| `e145eb5c` | 33.1 s | 15.6 s | 0.47 | 1.508 s | 0.636 s |
-| `7f872022` | 33.7 s | 15.9 s | 0.47 | 1.513 s | 0.663 s |
-| **`a955a0c1`** | 34.2 s | **129.1 s** | **3.77** | 1.706 s | **9.981 s** |
-| `ee17b3b9` | 36.0 s | 140.4 s | 3.90 | 1.694 s | 11.178 s |
-| `6a53fd7c` | 36.3 s | 143.7 s | 3.96 | 1.645 s | 10.619 s |
-| HEAD | 37.7 s | 139.1 s | 3.69 | 1.908 s | 8.958 s |
-
-TurboQuant construction jumps 8.1x at `a955a0c1` while float32 does not move.
-TurboQuant's last batch goes 0.663 s -> 9.981 s (15x) while float32's stays flat
-at ~1.5-1.9 s across the entire range.
-
-**The cause is that commit's type-aware neighbour selection, and the old numbers
-were measuring a broken index.** `a955a0c1` fixed three defects at once; the
-relevant one is that neighbour selection read the float32 arena, which is empty
-for every other element type, so for TurboQuant *every candidate was rejected*
-and each node was left with a single oldest link. Graph shape at the same shape,
-40,000 vectors, `dim=128`, `MMax0=16`:
-
-| Revision | layer-0 edges | mean degree | nodes with edges | reachable from entry point |
-|---|---|---|---|---|
-| `7f872022` | 276,940 | 6.92 | 29,215 / 40,000 | **29,215** |
-| `a955a0c1` | 628,013 | 15.70 | 39,251 / 40,000 | **39,251** |
-
-Before the fix, **10,785 of 40,000 nodes - 27% - had no layer-0 edges at all and
-were unreachable from the entry point**, at any `ef`. That is the defect
-`a955a0c1` exists to fix. Afterwards mean degree is 15.70 against an `MMax0` of
-16, i.e. the graph is essentially fully connected.
-
-So the baseline's flattering `turboquant/float32 = 0.53` was not TurboQuant being
-efficient. It was TurboQuant being cheap because it was skipping work: 2.3x fewer
-edges, and a quarter of the corpus invisible to search. **The 8x is the bill for
-the fix.**
-
-### What this invalidates and what it does not
-
-- **Invalidated:** §4 item 2 and §5 item 2, which promote TurboQuant as the
-  recommended engine above 100k vectors partly on "rock-solid throughput" at
-  100k/250k. Those measurements were taken on a graph where 27% of vectors were
-  unreachable. Any TurboQuant throughput number recorded before `a955a0c1` needs
-  re-measuring before it is cited again.
-- **Invalidated:** the TurboQuant rows in §8.1 of this document, for the same
-  reason. §8.5 described TurboQuant as "the worst dense-search numbers of any
-  dtype"; those rows come from the same pre-`a955a0c1` graph and describe how the
-  broken index performed, not how TurboQuant performs.
-- **Not invalidated:** §8.3. The chain link is still a genuine **query-quality**
-  regression for float32 (dense -60.9%, filteredstring -81.0% against
-  `2f4dc1c4`). It is a different bug from this one. Confirmed independently here:
-  at `a955a0c1` with the chain link disabled, TurboQuant construction is
-  **236.1 s against 142.0 s with it enabled** - the chain link is not the
-  construction cost, and removing it makes things worse at this scale.
-- **Unchanged:** §9.1's query-path work. It is worth ~1.3x on TurboQuant
-  construction (139.1 s -> 106.3 s) and its bit-exactness is pinned by
-  `TestTQComputeBatch_MatchesPerCandidate`.
-
-**The server symptom is therefore expected, not a bug to be removed.** At 250k,
-`longbow_hnsw_bulk_insert_duration_seconds_sum` reaches 1,952 s for 250,000
-TurboQuant vectors (7.8 ms per vector) where float32 completes in 71.5 s, and
-the tier does not finish inside a 45-minute budget. That is the correct cost of
-building a connected graph at that size with this code.
-
-### Recommendations after the bisection
-
-- **R18. Stop treating the TurboQuant build cost as a defect.** The right
-  question is not how to make it fast again but how much of the 8x is
-  reducible while keeping the graph connected. Any optimisation must be judged on
-  `TestBisectTQGraphShape`'s numbers - mean degree and reachable count - not on
-  wall clock alone, because wall clock alone is exactly what the broken graph
-  optimised.
-- **R19. Re-baseline every TurboQuant number recorded before `a955a0c1`.** §8.1's
-  TurboQuant rows and the `docs/performance.md` TurboQuant rows were all measured
-  on a partially disconnected graph. Re-run them before quoting them, and record
-  mean degree and reachable-node count alongside the QPS so the graph quality is
-  never invisible again.
-- **R20. Gate TurboQuant graph quality in CI - DONE.**
-  `internal/store/index/turboquant_graph_quality_test.go` now does this. Without
-  such a gate, a change that quietly strands nodes looks like a large speedup -
-  which is precisely how the pre-`a955a0c1` numbers came to look good. The suite:
-
-  | Test | Asserts | Measured |
-  |---|---|---|
-  | `TestTurboQuantIndexIsEngaged` | bit depth, chunk offsets written, packed stride below the float32 footprint | 4 bits, stride 84 vs 512 |
-  | `TestTurboQuantGraphIsConnected` | mean layer-0 degree >= 8 (half of `MMax0`), >= 95% reachable from the entry point; 4- and 8-bit | 15.71 / 15.62 degree, 98.2% / 97.6% reachable |
-  | `TestTurboQuantRecallNotBelowFloat32` | TurboQuant recall >= float32 recall - 5 points, relative | 0.120 vs 0.045 |
-  | `TestTQComputeBatchMatchesPerCandidate` | batched loop bit-identical to the per-candidate reference, ids across chunk boundaries | exact, 4- and 8-bit |
-  | `TestTQDistanceDirectCodesMatchesDistanceDirect` | both paths to the SIMD kernel agree | exact, 4- and 8-bit |
-  | `TestTQPrefetchChunkIsBoundsSafe` | no panic or out-of-range read on nil, negative, truncated and past-the-end chunks | 100% covered |
-  | `TestTurboQuantConstructionScalesLikeFloat32` | `turboquant/float32` construction ratio <= 8; opt-in via `LONG_BOW_TQ_BUILD=1` | 2.91 at 250k |
-
-  The degree and reachability thresholds are deliberately loose enough to tolerate
-  natural variation but tight enough to fail the pre-`a955a0c1` shape, which
-  measured 6.92 mean degree and 73.0% reachable. Thresholds are not the
-  mechanism of protection anyway: any test that only checks the graph is
-  non-empty passes on the broken graph, so both assertions exist.
-- **R23. Absolute recall is not measurable on the in-process harness, and no
-  TurboQuant recall claim should rest on it.** `TestDenseRecallHarnessSanity`
-  measures that the harness returns a corpus vector as its own nearest neighbour
-  only 69% of the time, on float32 as well as on TurboQuant - a property of
-  `MockDataset`, not of either index. Absolute recall on the uniform-random
-  fixture is additionally depressed by the fixture having no cluster structure.
-  `TestTurboQuantRecallNotBelowFloat32` is therefore a direction-of-effect test,
-  not a quality gate. A real recall number needs the server benchmark with real
-  queries, which has not been re-run since `a955a0c1` - see R19.
-- **R21. Do not disable the bulk path for TurboQuant as a workaround.**
-  `LONGBOW_HNSW_BULK_INSERT_THRESHOLD` above the dataset size makes 250k index in
-  180 s, but it buys that by taking the broken-graph path. It is a way to measure
-  the old behaviour on demand, not a fix.
-- **R22. Add a bulk-insert time budget with a diagnostic - PARTIALLY DONE.** The
-  alerting half is now in place: `LongbowSlowBulkInsertByType` and
-  `LongbowBulkInsertFasterThanFloat32` in `grafana/rules.yml`. The in-process half is
-  not. A bulk insert that exceeds a configured wall-clock budget should log node
-  count, elapsed time and per-vector cost and mark the dataset degraded, rather than
-  leaving an operator watching `Indexing queue is filling up`.
-
-  Note what was and was not missing. The metrics existed and were charted - the
-  `ingestion-performance` dashboard has a p99-by-type panel on
-  `longbow_hnsw_bulk_insert_latency_by_type_seconds` - so the gap was never
-  visibility of the metric. It was that `rules.yml` matched no bulk-insert
-  expression, so a 250k TurboQuant build could run for 45 minutes with nothing to
-  alert on. An earlier draft of this roadmap claimed the metric had "nothing
-  consuming it", which was wrong: the dashboard had been consuming it all along.
-
-### 9.3 The in-process recall harness does not measure recall
-
-`TestDenseRecallHarnessSanity` queries a 5,000-vector corpus with vectors taken
-from that corpus, so every query has an exact match at distance zero and a correct
-index must return it first. It returns it **67.5%** of the time.
-
-That is a property of the in-process `MockDataset` harness, not of TurboQuant -
-it reproduces on float32 - and it means no absolute recall figure measured through
-that harness is trustworthy. `TestTQSearchRecallsFloat32` is therefore written as
-a *relative* comparison against a float32 index built from the same corpus, and
-the 5-point gate is expressed relative to that baseline rather than absolutely.
-
-### 9.4 Attempted optimisation that does not work, and why
-
-R18 asks how much of the 8x is reducible while keeping the graph connected. The
-obvious lever is the distance kernel, so it was profiled and attacked. The result is
-a negative one, recorded here so the next attempt does not repeat it.
-
-**Where the time actually goes.** TurboQuant-only profile of a 250k build (`dim=128`,
-10,000-row batches, 4 workers, no float32 phase so the numbers are not blended):
-
-| Symbol | Flat | Share |
-|---|---|---|
-| `simd.l2SquaredAVX2Kernel` | 318.82s | **40.96%** |
-| `index.(*ArrowHNSW).searchLayer` | 83.34s | 10.71% (95.31% cum) |
-| `index.(*tqComputer).ComputeSingle` | 9.63s | 1.24% (45.73% cum) |
-
-The distance arithmetic is 41% of CPU, so the kernel is the right place to look.
-
-**The attempt.** While the decode cache is live, TurboQuant distances are ordinary
-float32 Euclidean distances against `decodeCache[id*dim : id*dim+dim]` - the packed
-codes are never read. So `tqComputer.ComputeBatch` was given a batched decode-cache
-path that gathers the block and calls `simd.EuclideanDistanceBatch`, exactly what
-`float32ToFloat32Computer` already does.
-
-In isolation the change looks like an obvious win, at every block size (dim=128, ns
-per block):
-
-| Block size | single | batched | Speedup |
-|---|---|---|---|
-| 4 | 648.6 | 331.4 | 1.96x |
-| 8 | 1305 | 566.3 | 2.31x |
-| 16 | 2606 | 1031 | 2.53x |
-| 64 | 10404 | 3879 | 2.68x |
-| 256 | 41580 | 16335 | 2.54x |
-
-**End to end it was 25% slower**, consistently:
-
-| Variant | Runs | Mean |
-|---|---|---|
-| baseline | 102.1s, 102.6s, 103.4s | **102.7s** |
-| batched decode cache | 115.6s, 128.4s, 130.7s, 130.2s, 130.8s | **127.1s** |
-
-Not allocation pressure - total allocated 19,438 MB against 19,516 MB, mallocs
-339.9M either way, GC cycles 83 against 82. Two measurable reasons:
-
-- **Blocks are far smaller than the microbenchmark assumes.** `searchLayer` hands
-  over one node's neighbour list per hop. Instrumenting the batch path gives 2.55e9
-  candidates across 3.55e8 calls, **mean 7.2, peaking at 5-6**, and only 337 calls
-  ever reach size 17. The 4-way kernel cannot amortise its setup at that size.
-- **The microbenchmark's working set is hot; the real one is not.** It cycles over
-  32 KB, which stays in L2. The decode cache is 128 MB read in node-id order, so it
-  is cache-miss bound. The gather pass adds a dependent load chain and cannot buy
-  the misses back.
-
-Graph quality was unaffected either way - mean layer-0 degree 15.71 and 98.2%
-reachable with batching against 15.71 and 98.2% without, at both 4 and 8 bit - which
-is the point of having that gate. The change was reverted; the reason is recorded in
-a comment on the branch in `tqComputer.ComputeBatch` so nobody re-attempts it blind.
-
-- **R24. The remaining lever is block size, not the kernel.** TurboQuant construction
-  cannot get 4-way SIMD because it is never asked for 4 vectors at once. Accumulating
-  candidates across graph hops before computing distances would fix that, but it
-  changes traversal order and therefore graph structure, so it needs a design and a
-  recall measurement, not a patch. Expect it to trade against search latency.
-
-### 9.5 The larger lead: neighbour-list lookups are 13% of CPU and dtype-independent
-
-Found in the same profile, and worth more than the TurboQuant-specific work because
-it applies to every data type:
-
-| Symbol | Flat | Share |
-|---|---|---|
-| `index.(*LockFreeNeighborCache).GetNeighbors` | 34.53s | 4.44% (23.29% cum) |
-| `index.(*syncMapShim).Load` | - | 13.23% cum |
-| `sync.(*Map).Load` -> `sync.HashTrieMap[any,any].Load` | 84.52s | **10.86%** |
-
-`LockFreeNeighborCache` backs its node-id -> neighbour-list map with
-`sync.Map[any]any`. Every lookup boxes a `uint32` key into an `interface{}`, so the
-hot path pays interface hashing (`runtime.nilinterhash` 3.19s) and interface equality
-(`runtime.memequal32` 8.46s) on every single neighbour access. Node ids are dense and
-small, which is the worst case for a hashed interface map and the best case for a
-flat array or a small sharded slice keyed by `uint32`.
-
-- **R25. Replace the `sync.Map` backing in `LockFreeNeighborCache` with a typed,
-  id-keyed structure.** This is a concurrency change to a structure used by every
-  dtype, so it wants its own branch, its own race-detector run and a benchmark on
-  float32 as well as TurboQuant. It is the highest-value single item found in this
-  investigation: ~13% of construction CPU, for all data types.
-
-### 9.6 Side finding: leftover debug output in the arena read path
-
-`SlabArena.GetWithGeneration` and `SlabArena.Get` in `internal/memory/arena.go`
-carry seven `fmt.Printf("ARENA_NIL_DEBUG: ...")` calls on their nil/bounds
-rejection paths. They did not fire during this work, but they sit in the hottest
-read accessor in the codebase: `fmt.Printf` takes the process-wide stdout lock and
-formats, so a bounds rejection that happens per candidate would both stall every
-other writer to stdout and flood the log. They should be deleted or replaced with a
-`Debug`-level structured log. Not fixed here because it is outside the TurboQuant
-change and untested against a real rejection.
+| **Lock-Free Neighbor Cache Typed Map (R25)** | `internal/store/index/` | Replaced `sync.Map[any]any` with `typedNeighborMap` (2-level chunked atomic directory). 0 allocs, 6.3 ns/lookup. | `lockfree_neighbors_test.go` |
+| **Arena Clean Read Path (§9.6)** | `internal/memory/` | Removed all leftover debug `fmt.Printf` statements from `SlabArena.GetWithGeneration`. | `arena_test.go` |
+| **ADC Table Squared L2 Metric** | `internal/pq/` | Fixed metric resolution to `MetricL2Squared` in `BuildADCTable`, restoring mathematical ADC parity. | `adc_test.go`, `fuzz_test.go` |
+| **AVX-512 Unconditional Compilation (§7.5)** | `internal/simd/` | Eliminated build tag constraints; AVX-512 kernels compile on `amd64` guarded by runtime CPUID flags. | `simd_test.go` |
+| **Lock-Free EntryPoint / Level CAS (§7.10)** | `internal/store/index/` | Converted entry point and level updates to atomic CAS metadata snapshots without acquiring `growMu`. | `arrow_hnsw_insert.go` |
+| **Benchmark Mode Decoupling (R12a)** | `cmd/bench-tool/`, `scripts/` | Implemented `-shuffle-modes` in `bench-tool` and `--shuffle-modes` in `unified_benchmark.py`. | Unit tests & runner CLI |
+| **Bulk Insert Diagnostic Budget (R22)** | `internal/store/index/` | Added `BulkInsertBudget` and structured timeout warning logging in `arrow_hnsw_bulk.go`. | `arrow_hnsw_bulk_test.go` |
+| **Test Plan Metric Alignment (R4)** | `docs/testplan.md` | Aligned test plan to 500k tier, 4 concurrency workers, and 14 GiB physical memory ceiling. | Documentation audit |
+| **Self-Validating Benchmark Invariant (R3)** | `scripts/` | Enforced Little's Law concurrency band validation across benchmark generation and regression checks. | `test_benchmark_validation.py` |
+| **Report Provenance Recording (R2)** | `scripts/` | Full environment and execution provenance recorded in benchmark output JSON. | `test_benchmark_attribution.py` |
+| **Unsorted Corpus Reachability Tests (R7)** | `internal/store/index/` | Added tests asserting reachability floor on natural and shuffled corpora. | `arrow_hnsw_bulk_chainlink_test.go` |
+| **Per-Mode Search Budget (R10)** | `cmd/bench-tool/` | Isolated search timeout per mode, recording `queries_truncated`. | `cmd/bench-tool/main.go` |
+| **Temporal Determinism & Metrics (R11, R11a, R11b)** | `cmd/bench-tool/`, `internal/store/` | Fixed as-of timestamp determinism, observable cache hit/miss/expiry metrics, pinned zero-vector semantics. | `temporal_asof_semantics_test.go` |
+| **Harness Process Isolation & Memory (R13, R14)** | `scripts/` | Run-scoped port cleanup, unified memory string parsing, 60% RAM defaults, and latest checkpoint mirroring. | `test_benchmark_memory.py` |
+| **Deterministic Seed Propagation (R16)** | `cmd/bench-tool/`, `scripts/` | Deterministic random seed used across corpus generation, query stream, and ByID selection. | Benchmark tests |
+| **TurboQuant Graph Quality Gate (R20)** | `internal/store/index/` | Automated CI test asserting $\ge 95\%$ reachability and mean degree $\ge 8$ for TurboQuant graphs. | `turboquant_graph_quality_test.go` |
+| **Scalar Kernel Fallback Observability (R32a)** | `internal/simd/` | Fixed uint64 subtraction wrapping in `euclideanUint64Unrolled4x` and added fallback metrics. | `unsigned_distance_test.go` |
+| **SIMD Kernel Registry Type Aliases (R33)** | `internal/simd/` | Converted defined distance function types to aliases, allowing `GetKernel` type assertions to succeed. | `kernel_resolution_test.go` |
+| **100% Package Test Coverage Gate** | Whole repository | All 69 packages verified to contain active, passing unit tests with 0 untested packages. | `ci.yml` coverage gate |

@@ -94,20 +94,21 @@ func arrowHNSWLookupNeighbors(h *ArrowHNSW, externalID uint64, k int) ([]Neighbo
 	}
 
 	results := make([]NeighborResult, 0, len(neighborIDs))
-	srcVec, _ := data.GetVector(internalID)
+	srcVec, _ := h.GetVector(internalID)
 	for _, nbrID := range neighborIDs {
 		dist := float32(0)
-		nbrVec, _ := data.GetVector(nbrID)
-		if srcF32, ok := srcVec.([]float32); ok {
-			if nbrF32, ok := nbrVec.([]float32); ok {
-				d, dErr := h.distFunc(srcF32, nbrF32)
-				if dErr == nil {
-					dist = d
-				}
+		nbrVec, _ := h.GetVector(nbrID)
+		if srcVec != nil && nbrVec != nil {
+			if d, dErr := h.ComputeDistanceAny(srcVec, nbrVec); dErr == nil {
+				dist = d
 			}
 		}
+		extID, ok := h.LookupExternalID(nbrID)
+		if !ok {
+			extID = uint64(nbrID)
+		}
 		results = append(results, NeighborResult{
-			ID:       uint64(nbrID),
+			ID:       extID,
 			Distance: dist,
 		})
 	}

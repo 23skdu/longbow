@@ -513,7 +513,7 @@ func (g *GraphData) BeginFloat32ChunkBatch(maxGen uint64) VectorChunkBatch[float
 	if g == nil {
 		return VectorChunkBatch[float32]{}
 	}
-	return newVectorChunkBatch[float32](g.Float32Arena, g.VectorsF32, g.Vectors,
+	return newVectorChunkBatch(g.Float32Arena, g.VectorsF32, g.Vectors,
 		g.GetPaddedDimsForType(VectorTypeFloat32), maxGen, true)
 }
 
@@ -523,8 +523,68 @@ func (g *GraphData) BeginInt8ChunkBatch(maxGen uint64) VectorChunkBatch[int8] {
 	if g == nil {
 		return VectorChunkBatch[int8]{}
 	}
-	return newVectorChunkBatch[int8](g.Int8Arena, g.VectorsInt8, nil,
+	return newVectorChunkBatch(g.Int8Arena, g.VectorsInt8, nil,
 		g.GetPaddedDimsForType(VectorTypeInt8), maxGen, false)
+}
+
+// BeginInt16ChunkBatch opens a batch-scoped view over the int16 chunk table,
+// matching GetVectorsInt16ChunkWithGen / GetVectorsInt16ChunkFast.
+func (g *GraphData) BeginInt16ChunkBatch(maxGen uint64) VectorChunkBatch[int16] {
+	if g == nil {
+		return VectorChunkBatch[int16]{}
+	}
+	return newVectorChunkBatch(g.Int16Arena, g.VectorsInt16, nil,
+		g.GetPaddedDimsForType(VectorTypeInt16), maxGen, true)
+}
+
+// BeginUint16ChunkBatch opens a batch-scoped view over the uint16 chunk table,
+// matching GetVectorsUint16ChunkWithGen / GetVectorsUint16ChunkFast.
+func (g *GraphData) BeginUint16ChunkBatch(maxGen uint64) VectorChunkBatch[uint16] {
+	if g == nil {
+		return VectorChunkBatch[uint16]{}
+	}
+	return newVectorChunkBatch(g.Uint16Arena, g.VectorsUint16, nil,
+		g.GetPaddedDimsForType(VectorTypeUint16), maxGen, true)
+}
+
+// BeginInt32ChunkBatch opens a batch-scoped view over the int32 chunk table,
+// matching GetVectorsInt32ChunkWithGen / GetVectorsInt32ChunkFast.
+func (g *GraphData) BeginInt32ChunkBatch(maxGen uint64) VectorChunkBatch[int32] {
+	if g == nil {
+		return VectorChunkBatch[int32]{}
+	}
+	return newVectorChunkBatch(g.Int32Arena, g.VectorsInt32, nil,
+		g.GetPaddedDimsForType(VectorTypeInt32), maxGen, true)
+}
+
+// BeginUint32ChunkBatch opens a batch-scoped view over the uint32 chunk table,
+// matching GetVectorsUint32ChunkWithGen / GetVectorsUint32ChunkFast.
+func (g *GraphData) BeginUint32ChunkBatch(maxGen uint64) VectorChunkBatch[uint32] {
+	if g == nil {
+		return VectorChunkBatch[uint32]{}
+	}
+	return newVectorChunkBatch(g.Uint32Arena, g.VectorsUint32, nil,
+		g.GetPaddedDimsForType(VectorTypeUint32), maxGen, true)
+}
+
+// BeginInt64ChunkBatch opens a batch-scoped view over the int64 chunk table,
+// matching GetVectorsInt64ChunkWithGen / GetVectorsInt64ChunkFast.
+func (g *GraphData) BeginInt64ChunkBatch(maxGen uint64) VectorChunkBatch[int64] {
+	if g == nil {
+		return VectorChunkBatch[int64]{}
+	}
+	return newVectorChunkBatch(g.Int64Arena, g.VectorsInt64, nil,
+		g.GetPaddedDimsForType(VectorTypeInt64), maxGen, true)
+}
+
+// BeginUint64ChunkBatch opens a batch-scoped view over the uint64 chunk table,
+// matching GetVectorsUint64ChunkWithGen / GetVectorsUint64ChunkFast.
+func (g *GraphData) BeginUint64ChunkBatch(maxGen uint64) VectorChunkBatch[uint64] {
+	if g == nil {
+		return VectorChunkBatch[uint64]{}
+	}
+	return newVectorChunkBatch(g.Uint64Arena, g.VectorsUint64, nil,
+		g.GetPaddedDimsForType(VectorTypeUint64), maxGen, true)
 }
 
 // BeginFloat64ChunkBatch opens a batch-scoped view over the float64 chunk
@@ -533,7 +593,7 @@ func (g *GraphData) BeginFloat64ChunkBatch(maxGen uint64) VectorChunkBatch[float
 	if g == nil {
 		return VectorChunkBatch[float64]{}
 	}
-	return newVectorChunkBatch[float64](g.Float64Arena, g.VectorsFloat64Offsets, g.VectorsFloat64,
+	return newVectorChunkBatch(g.Float64Arena, g.VectorsFloat64Offsets, g.VectorsFloat64,
 		g.GetPaddedDimsForType(VectorTypeFloat64), maxGen, true)
 }
 
@@ -549,7 +609,7 @@ func (g *GraphData) BeginTQChunkBatch(maxGen uint64) VectorChunkBatch[byte] {
 	if g == nil {
 		return VectorChunkBatch[byte]{}
 	}
-	return newVectorChunkBatch[byte](g.Uint8Arena, g.VectorsTQ, nil,
+	return newVectorChunkBatch(g.Uint8Arena, g.VectorsTQ, nil,
 		g.PackedSize(), maxGen, true)
 }
 

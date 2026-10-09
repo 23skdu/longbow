@@ -143,6 +143,21 @@ env:
   # filteredstring -81.0% against 2f4dc1c4). Disabling it does not speed up
   # construction - a 250k turboquant build measured 236.1s without vs 142.0s with.
   LONGBOW_HNSW_BULK_CHAIN_LINKS: "1"
+  # Bulk-insert graph quality (R8). Every batch is measured and logged either
+  # way; these decide whether a rejected batch is rebuilt sequentially.
+  # LONGBOW_HNSW_BULK_QUALITY_GUARD=0 reports without enforcing. A purely bulk
+  # 100k float32 build indexed in 23.5s and served 742 dense QPS; enforcing the
+  # floors trades index time for search throughput, so leave this on unless you
+  # are measuring ingest.
+  LONGBOW_HNSW_BULK_QUALITY_GUARD: "1"
+  LONGBOW_HNSW_BULK_REACHABILITY_FLOOR: "0.80" # Sampled layer-0 reachability a batch must show (0.0-1.0)
+  # Disabled by default: at 0.50 it rejected four of nine batches in a 100k
+  # build, taking index time from 23.5s to 215s for no measurable QPS gain.
+  LONGBOW_HNSW_BULK_MIN_DEGREE_RATIO: "0"    # Floor as a fraction of MMAX0 (0 disables)
+  LONGBOW_HNSW_BULK_MAX_HOP_DEPTH: "1.5"     # Multiple of log(N)/log(MMax0) descent depth (0 disables)
+  # R26 last-inbound-edge invariant. Off by default: it changes what a
+  # predicate-filtered search can reach, and buys only +19/20000 reachability.
+  LONGBOW_HNSW_INBOUND_GUARD: "0"
 
 # RDMA (RoCEv2) Configuration
 # Requires RDMA-capable NICs and libibverbs on the host.

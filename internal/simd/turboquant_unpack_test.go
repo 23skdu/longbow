@@ -96,4 +96,3 @@ func BenchmarkUnpackTQ2(b *testing.B) {
 		UnpackTQ2(src, dst, scale, bias)
 	}
 }
-

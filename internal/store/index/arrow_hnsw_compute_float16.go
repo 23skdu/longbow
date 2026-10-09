@@ -20,26 +20,8 @@ type float16Computer struct {
 }
 
 func (c *float16Computer) Compute(ids []uint32, dists []float32) error {
-	for i, id := range ids {
-		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsF16ChunkFast(int(cID))
-		if chunk != nil {
-			cOff := int(id) % types.ChunkSize
-			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
-			start := cOff * pd
-			if start+c.dims <= len(chunk) {
-				v := chunk[start : start+c.dims]
-				d, err := c.h.distFuncF16(c.q, v)
-				if err != nil {
-					return err
-				}
-				dists[i] = d
-				continue
-			}
-		}
-		dists[i] = math.MaxFloat32
-	}
-	return nil
+	_, err := c.ComputeBatch(ids, dists)
+	return err
 }
 
 func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
@@ -51,7 +33,12 @@ func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
 	}
 
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsF16ChunkWithGen(int(cID), c.maxGen)
+	var chunk []float16.Num
+	if c.maxGen == math.MaxUint64 {
+		chunk = c.data.GetVectorsF16ChunkFast(int(cID))
+	} else {
+		chunk = c.data.GetVectorsF16ChunkWithGen(int(cID), c.maxGen)
+	}
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
@@ -70,45 +57,44 @@ func (c *float16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 	} else {
 		dst = dst[:len(ids)]
 	}
-
-	// Try optimized batched SIMD path: gather all vectors first
-	if cap(c.batchVecs) < len(ids) {
-		c.batchVecs = make([][]float16.Num, len(ids))
+	if len(ids) == 0 {
+		return dst, nil
 	}
-	c.batchVecs = c.batchVecs[:len(ids)]
 
-	var lastCID int = -1
-	var lastChunk []float16.Num
+	pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
+	var lastChunkID int32 = -1
+	var chunk []float16.Num
+
 	for i, id := range ids {
-		cID := int(types.ChunkID(id))
-		if cID != lastCID {
-			lastChunk = c.data.GetVectorsF16ChunkFast(cID)
-			lastCID = cID
+		cID := int32(types.ChunkID(id)) // #nosec G115
+		if cID != lastChunkID {
+			if c.maxGen == math.MaxUint64 {
+				chunk = c.data.GetVectorsF16ChunkFast(int(cID))
+			} else {
+				chunk = c.data.GetVectorsF16ChunkWithGen(int(cID), c.maxGen)
+			}
+			lastChunkID = cID
 		}
-		if lastChunk != nil {
+		if chunk != nil {
 			cOff := int(id) % types.ChunkSize
-			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
 			start := cOff * pd
-			if start+c.dims <= len(lastChunk) {
-				c.batchVecs[i] = lastChunk[start : start+c.dims]
+			if start+c.dims <= len(chunk) {
+				d, err := c.h.distFuncF16(c.q, chunk[start:start+c.dims])
+				if err != nil {
+					return nil, err
+				}
+				dst[i] = d
 				continue
 			}
 		}
-		// Fallback to disk for this vector
-		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+		// Fallback for this vector
+		d, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		if v, ok := vecAny.([]float16.Num); ok {
-			c.batchVecs[i] = v
-		} else {
-			dst[i] = math.MaxFloat32
-			continue
-		}
+		dst[i] = d
 	}
-
-	err := simd.EuclideanDistanceF16Batch(c.q, c.batchVecs, dst)
-	return dst, err
+	return dst, nil
 }
 
 func (c *float16Computer) Prefetch(id uint32) {

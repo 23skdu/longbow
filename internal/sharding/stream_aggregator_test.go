@@ -168,3 +168,102 @@ func BenchmarkStreamAggregator_Merge(b *testing.B) {
 		batch.Release()
 	}
 }
+
+func TestStreamAggregator_TournamentHeap(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "id", Type: arrow.PrimitiveTypes.Int32},
+			{Name: "distance", Type: arrow.PrimitiveTypes.Float32},
+			{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
+		}, nil,
+	)
+
+	// Shard 0: distances [0.1, 0.4, 0.7] (pre-sorted ascending)
+	b0 := func() arrow.RecordBatch {
+		b := array.NewRecordBuilder(mem, schema)
+		defer b.Release()
+		b.Field(0).(*array.Int32Builder).AppendValues([]int32{10, 11, 12}, nil)
+		b.Field(1).(*array.Float32Builder).AppendValues([]float32{0.1, 0.4, 0.7}, nil)
+		vb := b.Field(2).(*array.FixedSizeListBuilder)
+		vb.Append(true)
+		vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{1.0, 1.1}, nil)
+		vb.Append(true)
+		vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{2.0, 2.1}, nil)
+		vb.Append(true)
+		vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{3.0, 3.1}, nil)
+		return b.NewRecordBatch()
+	}()
+
+	// Shard 1: distances [0.2, 0.3, 0.9] (pre-sorted ascending)
+	b1 := func() arrow.RecordBatch {
+		b := array.NewRecordBuilder(mem, schema)
+		defer b.Release()
+		b.Field(0).(*array.Int32Builder).AppendValues([]int32{20, 21, 22}, nil)
+		b.Field(1).(*array.Float32Builder).AppendValues([]float32{0.2, 0.3, 0.9}, nil)
+		vb := b.Field(2).(*array.FixedSizeListBuilder)
+		vb.Append(true)
+		vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{4.0, 4.1}, nil)
+		vb.Append(true)
+		vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{5.0, 5.1}, nil)
+		vb.Append(true)
+		vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{6.0, 6.1}, nil)
+		return b.NewRecordBatch()
+	}()
+
+	// Shard 2: distances [0.05, 0.5, 0.8] (pre-sorted ascending)
+	b2 := func() arrow.RecordBatch {
+		b := array.NewRecordBuilder(mem, schema)
+		defer b.Release()
+		b.Field(0).(*array.Int32Builder).AppendValues([]int32{30, 31, 32}, nil)
+		b.Field(1).(*array.Float32Builder).AppendValues([]float32{0.05, 0.5, 0.8}, nil)
+		vb := b.Field(2).(*array.FixedSizeListBuilder)
+		vb.Append(true)
+		vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{7.0, 7.1}, nil)
+		vb.Append(true)
+		vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{8.0, 8.1}, nil)
+		vb.Append(true)
+		vb.ValueBuilder().(*array.Float32Builder).AppendValues([]float32{9.0, 9.1}, nil)
+		return b.NewRecordBatch()
+	}()
+
+	sa := NewStreamAggregator(mem, zerolog.Nop())
+
+	// Top K = 4: Expected order of distances: 0.05 (id 30), 0.1 (id 10), 0.2 (id 20), 0.3 (id 21)
+	res, err := sa.mergeAndSort([]arrow.RecordBatch{b0, b1, b2}, 4)
+	if err != nil {
+		t.Fatalf("mergeAndSort failed: %v", err)
+	}
+	defer func() {
+		for _, r := range res {
+			r.Release()
+		}
+	}()
+
+	if len(res) != 1 {
+		t.Fatalf("Expected 1 result batch, got %d", len(res))
+	}
+	rec := res[0]
+	if rec.NumRows() != 4 {
+		t.Fatalf("Expected 4 rows, got %d", rec.NumRows())
+	}
+
+	ids := rec.Column(0).(*array.Int32)
+	distances := rec.Column(1).(*array.Float32)
+	vectors := rec.Column(2).(*array.FixedSizeList)
+
+	expectedIDs := []int32{30, 10, 20, 21}
+	expectedDist := []float32{0.05, 0.1, 0.2, 0.3}
+
+	for i := 0; i < 4; i++ {
+		if ids.Value(i) != expectedIDs[i] {
+			t.Errorf("Row %d: expected ID %d, got %d", i, expectedIDs[i], ids.Value(i))
+		}
+		if distances.Value(i) != expectedDist[i] {
+			t.Errorf("Row %d: expected distance %f, got %f", i, expectedDist[i], distances.Value(i))
+		}
+		if vectors.IsNull(i) {
+			t.Errorf("Row %d: vector is null", i)
+		}
+	}
+}

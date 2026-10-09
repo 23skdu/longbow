@@ -1,9 +1,9 @@
 package sharding
 
 import (
+	"container/heap"
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -45,14 +45,7 @@ func (sa *StreamAggregator) Aggregate(ctx context.Context, sg *ScatterGather, k 
 	var batches []arrow.RecordBatch
 	var mu sync.Mutex
 
-	// 2. Gather (Read streams in parallel - efficiently handled by Scatter results already if they are streams?)
-	// Wait, sg.Scatter returns `[]Result`. The `Data` in Result is the return value of fn.
-	// We expect fn to return `flight.FlightService_DoGetClient` (the stream).
-
-	// We need to read from these streams. Ideally in parallel, but here we iterate the results.
-	// Since `sg.Scatter` waits for all fn to complete, if fn returns the *stream*, we haven't read data yet.
-	// So we should iterate results and read. Reading can be parallelized.
-
+	// 2. Gather
 	var wg sync.WaitGroup
 	for _, res := range results {
 		if res.Error != nil {
@@ -113,14 +106,155 @@ func (sa *StreamAggregator) Aggregate(ctx context.Context, sg *ScatterGather, k 
 		return nil, nil // No results found
 	}
 
-	// 3. Merge & Sort
-	// If we have just one batch, no need to sort if we trust the shard (but typically we re-sort for safety or just return)
-	// For distributed, we must Global Sort.
-
+	// 3. Merge & Sort via streaming heap
 	return sa.mergeAndSort(batches, k)
 }
 
-// mergeAndSort consolidates batches, sorts by Score (assumed col "score" or "distance"), and returns Top K.
+type streamHeapItem struct {
+	batchIdx int
+	rowIdx   int
+	score    float64
+}
+
+// streamTournamentHeap implements heap.Interface for M-way merging pre-sorted streams.
+type streamTournamentHeap struct {
+	items     []streamHeapItem
+	ascending bool
+}
+
+func (h streamTournamentHeap) Len() int { return len(h.items) }
+func (h streamTournamentHeap) Less(i, j int) bool {
+	if h.ascending {
+		return h.items[i].score < h.items[j].score
+	}
+	return h.items[i].score > h.items[j].score
+}
+func (h streamTournamentHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
+func (h *streamTournamentHeap) Push(x any) {
+	h.items = append(h.items, x.(streamHeapItem))
+}
+func (h *streamTournamentHeap) Pop() any {
+	old := h.items
+	n := len(old)
+	x := old[n-1]
+	h.items = old[0 : n-1]
+	return x
+}
+
+// boundedHeap implements heap.Interface for maintaining the top-K items.
+// When ascending (smallest items wanted), the root holds the maximum of the top-K so larger items can be rejected.
+// When descending (largest items wanted), the root holds the minimum of the top-K so smaller items can be rejected.
+type boundedHeap struct {
+	items     []streamHeapItem
+	ascending bool
+}
+
+func (h boundedHeap) Len() int { return len(h.items) }
+func (h boundedHeap) Less(i, j int) bool {
+	if h.ascending {
+		return h.items[i].score > h.items[j].score
+	}
+	return h.items[i].score < h.items[j].score
+}
+func (h boundedHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
+func (h *boundedHeap) Push(x any) {
+	h.items = append(h.items, x.(streamHeapItem))
+}
+func (h *boundedHeap) Pop() any {
+	old := h.items
+	n := len(old)
+	x := old[n-1]
+	h.items = old[0 : n-1]
+	return x
+}
+
+func extractScore(col arrow.Array, rowIdx int) (float64, error) {
+	switch arr := col.(type) {
+	case *array.Float32:
+		return float64(arr.Value(rowIdx)), nil
+	case *array.Float64:
+		return arr.Value(rowIdx), nil
+	case *array.Int32:
+		return float64(arr.Value(rowIdx)), nil
+	case *array.Int64:
+		return float64(arr.Value(rowIdx)), nil
+	default:
+		return 0, fmt.Errorf("unsupported score column type: %T", col)
+	}
+}
+
+func isBatchSorted(col arrow.Array, ascending bool) bool {
+	n := col.Len()
+	if n <= 1 {
+		return true
+	}
+	switch arr := col.(type) {
+	case *array.Float32:
+		vals := arr.Float32Values()
+		if ascending {
+			for i := 1; i < n; i++ {
+				if vals[i] < vals[i-1] {
+					return false
+				}
+			}
+		} else {
+			for i := 1; i < n; i++ {
+				if vals[i] > vals[i-1] {
+					return false
+				}
+			}
+		}
+		return true
+	case *array.Float64:
+		vals := arr.Float64Values()
+		if ascending {
+			for i := 1; i < n; i++ {
+				if vals[i] < vals[i-1] {
+					return false
+				}
+			}
+		} else {
+			for i := 1; i < n; i++ {
+				if vals[i] > vals[i-1] {
+					return false
+				}
+			}
+		}
+		return true
+	default:
+		prev, _ := extractScore(col, 0)
+		for i := 1; i < n; i++ {
+			curr, _ := extractScore(col, i)
+			if ascending && curr < prev {
+				return false
+			}
+			if !ascending && curr > prev {
+				return false
+			}
+			prev = curr
+		}
+		return true
+	}
+}
+
+func (sa *StreamAggregator) buildResultBatch(schema *arrow.Schema, getCol func(bIdx, cIdx int) arrow.Array, items []streamHeapItem) (arrow.RecordBatch, error) {
+	b := array.NewRecordBuilder(sa.mem, schema)
+	defer b.Release()
+
+	numFields := len(schema.Fields())
+	for _, it := range items {
+		for colI := 0; colI < numFields; colI++ {
+			srcArr := getCol(it.batchIdx, colI)
+			bldr := b.Field(colI)
+			if err := appendValue(bldr, srcArr, it.rowIdx); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return b.NewRecordBatch(), nil
+}
+
+// mergeAndSort consolidates batches using an M-way streaming tournament heap or bounded top-K heap.
 func (sa *StreamAggregator) mergeAndSort(inputs []arrow.RecordBatch, k int) ([]arrow.RecordBatch, error) {
 	if len(inputs) == 0 {
 		return nil, nil
@@ -131,154 +265,157 @@ func (sa *StreamAggregator) mergeAndSort(inputs []arrow.RecordBatch, k int) ([]a
 		}
 	}()
 
-	// Zero-copy optimization: If we only have 1 batch and its length <= k, just return it.
-	// But we need to ensure it's sorted... let's assume shards sort.
 	if len(inputs) == 1 && int(inputs[0].NumRows()) <= k {
 		inputs[0].Retain()
 		return []arrow.RecordBatch{inputs[0]}, nil
 	}
 
-	// Create a Table to treat as one big dataset
-	// NewTableFromRecords retains the records, so we are good.
-	// Actually NewTableFromRecords does NOT retain, so we rely on our ownership.
 	schema := inputs[0].Schema()
-	tbl := array.NewTableFromRecords(schema, inputs)
-	defer tbl.Release()
-
-	// Find "score" or "distance" column
-	// We prefer "score" (descending) or "distance" (ascending).
-	// Let's assume standard "score" and sort Descending.
 	scoreIdx := schema.FieldIndices("score")
+	ascending := false
 	if len(scoreIdx) == 0 {
 		scoreIdx = schema.FieldIndices("distance")
 		if len(scoreIdx) == 0 {
-			// Fallback: Return first K loosely
-			// Or should we return error?
-			// For fault tolerance, let's just slice.
+			tbl := array.NewTableFromRecords(schema, inputs)
+			defer tbl.Release()
 			return sa.sliceTable(tbl, k)
 		}
-		// Distance -> Ascending
-		return sa.sortAndSlice(tbl, scoreIdx[0], k, true)
+		ascending = true
 	}
-	// Score -> Descending
-	return sa.sortAndSlice(tbl, scoreIdx[0], k, false)
-}
+	colIdx := scoreIdx[0]
 
-func (sa *StreamAggregator) sortAndSlice(tbl arrow.Table, colIdx, k int, ascending bool) ([]arrow.RecordBatch, error) {
-	// Consolidate table to get contiguous arrays for sorting
-	// This might involve copy if multiple chunks exist, which is inevitable for global sort.
-	// But Arrow's CombineChunks attempts to be smart.
-	// Actually, we can just extract the score column, getting a chunked array.
-	// If we want to sort, we need indices.
-
-	// Fast Path: If total rows <= k, we can potentially skip sort if we don't care about order?
-	// Usually verify.
-
-	// Construct a list of (rowIndex, batchIndex, score) tuples? Too slow in Go.
-	//
-	// Better: Use a simple slice of struct for sorting indices.
-	// struct { globalIndex int, score float64 }
-	// Then verify map back.
-
-	numRows := int(tbl.NumRows())
-	if numRows == 0 {
-		return nil, nil
-	}
-
-	// Helper to access score column
-	scoreCol := tbl.Column(colIdx)
-	// We need to iterate chunked array
-
-	type indexItem struct {
-		chunkIdx int
-		rowIdx   int
-		score    float64
-	}
-
-	indices := make([]indexItem, 0, numRows)
-
-	for cIdx, chunk := range scoreCol.Data().Chunks() {
-		// Assume float32 for vectors usually, but could be double.
-		// Flight usually uses Float32 for distance? Check HNSW.
-		// HNSW uses float32.
-
-		switch arr := chunk.(type) {
-		case *array.Float32:
-			for i := 0; i < arr.Len(); i++ {
-				indices = append(indices, indexItem{
-					chunkIdx: cIdx,
-					rowIdx:   i,
-					score:    float64(arr.Value(i)),
-				})
-			}
-		case *array.Float64:
-			for i := 0; i < arr.Len(); i++ {
-				indices = append(indices, indexItem{
-					chunkIdx: cIdx,
-					rowIdx:   i,
-					score:    arr.Value(i),
-				})
-			}
-		default:
-			return nil, fmt.Errorf("unsupported score column type: %T", chunk)
+	// Determine if all input batches are individually sorted
+	allSorted := true
+	for _, b := range inputs {
+		if b.NumRows() > 1 && !isBatchSorted(b.Column(colIdx), ascending) {
+			allSorted = false
+			break
 		}
 	}
 
-	// Sort
-	if ascending {
-		sort.Slice(indices, func(i, j int) bool {
-			return indices[i].score < indices[j].score
-		})
-	} else {
-		sort.Slice(indices, func(i, j int) bool {
-			return indices[i].score > indices[j].score
-		})
+	if allSorted {
+		// M-way tournament heap: O(K log M) time and O(M) memory
+		h := &streamTournamentHeap{ascending: ascending}
+		heap.Init(h)
+		for bIdx, b := range inputs {
+			if b.NumRows() > 0 {
+				sc, err := extractScore(b.Column(colIdx), 0)
+				if err != nil {
+					return nil, err
+				}
+				heap.Push(h, streamHeapItem{batchIdx: bIdx, rowIdx: 0, score: sc})
+			}
+		}
+
+		selected := make([]streamHeapItem, 0, k)
+		for len(selected) < k && h.Len() > 0 {
+			top := heap.Pop(h).(streamHeapItem)
+			selected = append(selected, top)
+			nextRow := top.rowIdx + 1
+			if int64(nextRow) < inputs[top.batchIdx].NumRows() {
+				sc, err := extractScore(inputs[top.batchIdx].Column(colIdx), nextRow)
+				if err != nil {
+					return nil, err
+				}
+				heap.Push(h, streamHeapItem{batchIdx: top.batchIdx, rowIdx: nextRow, score: sc})
+			}
+		}
+
+		res, err := sa.buildResultBatch(schema, func(bIdx, cIdx int) arrow.Array {
+			return inputs[bIdx].Column(cIdx)
+		}, selected)
+		if err != nil {
+			return nil, err
+		}
+		return []arrow.RecordBatch{res}, nil
 	}
 
-	// Take Top K
-	if k > len(indices) {
-		k = len(indices)
-	}
-	topKIndices := indices[:k]
-
-	// Construct Result Batch
-	// We need to build a new record batch by picking rows.
-	// This is the "Copy" part. Zero-copy random access construction is hard.
-	// But we minimize copies by just doing it once here.
-
-	// To do this efficiently, we can use a RecordBuilder.
-	b := array.NewRecordBuilder(sa.mem, tbl.Schema())
-	defer b.Release()
-
-	// We can group by chunk to minimize context switching, but we must preserve Order.
-	// So we must iterate topKIndices in order.
-
-	for _, idx := range topKIndices {
-		// Copy row idx.rowIdx from chunk idx.chunkIdx
-		// For each column...
-		for colI := 0; colI < int(tbl.NumCols()); colI++ {
-			// Get column chunk
-			colChunk := tbl.Column(colI).Data().Chunk(idx.chunkIdx)
-
-			// AppendValue from specific index.
-			// This is generic handling.
-			// Ideally we use a specialized "Take" kernel if available or type switch.
-			// For minimal code in this task, we rely on generic array access or simple type switch.
-			// `RecordBuilder` doesn't have a generic "AppendFrom".
-			// But arrays have.
-
-			// Workaround: We have to handle types.
-			// For RC3, let's handle the common types: Int32 (ID), Float32 (Vector/Score).
-
-			bldr := b.Field(colI)
-			err := appendValue(bldr, colChunk, idx.rowIdx)
+	// Fallback to bounded top-K heap: O(N log K) time and O(K) memory
+	bh := &boundedHeap{ascending: ascending}
+	heap.Init(bh)
+	for bIdx, b := range inputs {
+		col := b.Column(colIdx)
+		numRows := int(b.NumRows())
+		for r := 0; r < numRows; r++ {
+			sc, err := extractScore(col, r)
 			if err != nil {
 				return nil, err
 			}
+			if bh.Len() < k {
+				heap.Push(bh, streamHeapItem{batchIdx: bIdx, rowIdx: r, score: sc})
+			} else if ascending {
+				if sc < bh.items[0].score {
+					bh.items[0] = streamHeapItem{batchIdx: bIdx, rowIdx: r, score: sc}
+					heap.Fix(bh, 0)
+				}
+			} else {
+				if sc > bh.items[0].score {
+					bh.items[0] = streamHeapItem{batchIdx: bIdx, rowIdx: r, score: sc}
+					heap.Fix(bh, 0)
+				}
+			}
 		}
 	}
 
-	res := b.NewRecordBatch()
+	selected := make([]streamHeapItem, bh.Len())
+	for i := len(selected) - 1; i >= 0; i-- {
+		selected[i] = heap.Pop(bh).(streamHeapItem)
+	}
+
+	res, err := sa.buildResultBatch(schema, func(bIdx, cIdx int) arrow.Array {
+		return inputs[bIdx].Column(cIdx)
+	}, selected)
+	if err != nil {
+		return nil, err
+	}
+	return []arrow.RecordBatch{res}, nil
+}
+
+func (sa *StreamAggregator) sortAndSlice(tbl arrow.Table, colIdx, k int, ascending bool) ([]arrow.RecordBatch, error) {
+	numRows := int(tbl.NumRows())
+	if numRows == 0 || k <= 0 {
+		return nil, nil
+	}
+
+	scoreCol := tbl.Column(colIdx)
+	bh := &boundedHeap{ascending: ascending}
+	heap.Init(bh)
+
+	chunks := scoreCol.Data().Chunks()
+	for cIdx, chunk := range chunks {
+		chunkLen := chunk.Len()
+		for r := 0; r < chunkLen; r++ {
+			sc, err := extractScore(chunk, r)
+			if err != nil {
+				return nil, err
+			}
+			if bh.Len() < k {
+				heap.Push(bh, streamHeapItem{batchIdx: cIdx, rowIdx: r, score: sc})
+			} else if ascending {
+				if sc < bh.items[0].score {
+					bh.items[0] = streamHeapItem{batchIdx: cIdx, rowIdx: r, score: sc}
+					heap.Fix(bh, 0)
+				}
+			} else {
+				if sc > bh.items[0].score {
+					bh.items[0] = streamHeapItem{batchIdx: cIdx, rowIdx: r, score: sc}
+					heap.Fix(bh, 0)
+				}
+			}
+		}
+	}
+
+	selected := make([]streamHeapItem, bh.Len())
+	for i := len(selected) - 1; i >= 0; i-- {
+		selected[i] = heap.Pop(bh).(streamHeapItem)
+	}
+
+	res, err := sa.buildResultBatch(tbl.Schema(), func(cIdx, colI int) arrow.Array {
+		return tbl.Column(colI).Data().Chunk(cIdx)
+	}, selected)
+	if err != nil {
+		return nil, err
+	}
 	return []arrow.RecordBatch{res}, nil
 }
 
@@ -343,11 +480,29 @@ func appendValue(b array.Builder, src arrow.Array, idx int) error {
 		return nil
 	}
 	switch vb := b.(type) {
+	case *array.Int8Builder:
+		arr := src.(*array.Int8)
+		vb.Append(arr.Value(idx))
+	case *array.Uint8Builder:
+		arr := src.(*array.Uint8)
+		vb.Append(arr.Value(idx))
+	case *array.Int16Builder:
+		arr := src.(*array.Int16)
+		vb.Append(arr.Value(idx))
+	case *array.Uint16Builder:
+		arr := src.(*array.Uint16)
+		vb.Append(arr.Value(idx))
 	case *array.Int32Builder:
 		arr := src.(*array.Int32)
 		vb.Append(arr.Value(idx))
+	case *array.Uint32Builder:
+		arr := src.(*array.Uint32)
+		vb.Append(arr.Value(idx))
 	case *array.Int64Builder:
 		arr := src.(*array.Int64)
+		vb.Append(arr.Value(idx))
+	case *array.Uint64Builder:
+		arr := src.(*array.Uint64)
 		vb.Append(arr.Value(idx))
 	case *array.Float32Builder:
 		arr := src.(*array.Float32)
@@ -358,27 +513,30 @@ func appendValue(b array.Builder, src arrow.Array, idx int) error {
 	case *array.StringBuilder:
 		arr := src.(*array.String)
 		vb.Append(arr.Value(idx))
-	case *array.BinaryBuilder: // Vectors are often Binary or FixedSizeBinary
-		// Handle FixedSizeBinary?
-		// For now simple Binary
+	case *array.BinaryBuilder:
 		arr := src.(*array.Binary)
 		vb.Append(arr.Value(idx))
 	case *array.FixedSizeBinaryBuilder:
 		arr := src.(*array.FixedSizeBinary)
 		vb.Append(arr.Value(idx))
+	case *array.FixedSizeListBuilder:
+		arr := src.(*array.FixedSizeList)
+		listLen := int(arr.DataType().(*arrow.FixedSizeListType).Len())
+		vb.Append(true)
+		subValues := arr.ListValues()
+		subBuilder := vb.ValueBuilder()
+		for subIdx := idx * listLen; subIdx < (idx+1)*listLen; subIdx++ {
+			if err := appendValue(subBuilder, subValues, subIdx); err != nil {
+				return err
+			}
+		}
 	default:
-		// Attempt specific fixed size binary check if generic
-		// This is tedious in Go without generics.
-
-		// For Longbow, vectors are usually FixedSizeBinary.
-		// Check interface
 		if fsb, ok := src.(*array.FixedSizeBinary); ok {
 			if fsbB, ok := b.(*array.FixedSizeBinaryBuilder); ok {
 				fsbB.Append(fsb.Value(idx))
 				return nil
 			}
 		}
-
 		return fmt.Errorf("unsupported type for merge: %T", b)
 	}
 	return nil

@@ -359,6 +359,8 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	upperOptions := searchOptions
 	upperOptions.ForceQuantized = true
+	upperOptions.Predicate = nil
+	upperOptions.FilterExpr = nil
 	upperComputer := h.resolveHNSWComputer(data, searchCtx, queryVec, false, upperOptions)
 
 	// 1. Initial Greedy Search to find entry point at level 0
@@ -374,28 +376,44 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		}
 	}
 
-	for level := int(maxLevel); level > 0; level-- { // #nosec G115
-		// Greedy search: keep 1 best candidate
-		var res []types.Candidate
-		var err error
-		if compF32, ok := upperComputer.(*float32ToFloat32Computer); ok {
-			res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, 1, level, searchCtx, data)
-		} else if compF64, ok := upperComputer.(*float64Computer); ok {
-			res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, 1, level, searchCtx, data)
-		} else if compSQ8, ok := upperComputer.(*float32ToSQ8Computer); ok {
-			res, err = h.searchLayer(ctx, compSQ8, currObj.ID, 1, level, searchCtx, data, queryVec)
-		} else {
-			res, err = h.searchLayer(ctx, upperComputer, currObj.ID, 1, level, searchCtx, data, queryVec)
-		}
-		if err != nil {
-			h.flushSearchMetrics(searchCtx)
-			return nil, err
+	{
+		upperPredicate := searchCtx.predicate
+		upperFilterMask := searchCtx.filterMask
+		upperFilterBitmap := searchCtx.filterBitmap
+		searchCtx.predicate = nil
+		searchCtx.filterMask = nil
+		searchCtx.filterBitmap = nil
+
+		for level := int(maxLevel); level > 0; level-- { // #nosec G115
+			// Greedy search: keep 1 best candidate
+			var res []types.Candidate
+			var err error
+			if compF32, ok := upperComputer.(*float32ToFloat32Computer); ok {
+				res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, 1, level, searchCtx, data)
+			} else if compF64, ok := upperComputer.(*float64Computer); ok {
+				res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, 1, level, searchCtx, data)
+			} else if compSQ8, ok := upperComputer.(*float32ToSQ8Computer); ok {
+				res, err = h.searchLayer(ctx, compSQ8, currObj.ID, 1, level, searchCtx, data, queryVec)
+			} else {
+				res, err = h.searchLayer(ctx, upperComputer, currObj.ID, 1, level, searchCtx, data, queryVec)
+			}
+			if err != nil {
+				searchCtx.predicate = upperPredicate
+				searchCtx.filterMask = upperFilterMask
+				searchCtx.filterBitmap = upperFilterBitmap
+				h.flushSearchMetrics(searchCtx)
+				return nil, err
+			}
+
+			candidates := res
+			if len(candidates) > 0 {
+				currObj = candidates[0]
+			}
 		}
 
-		candidates := res
-		if len(candidates) > 0 {
-			currObj = candidates[0]
-		}
+		searchCtx.predicate = upperPredicate
+		searchCtx.filterMask = upperFilterMask
+		searchCtx.filterBitmap = upperFilterBitmap
 	}
 
 search_layer0:
@@ -626,26 +644,44 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 	currObj := types.Candidate{ID: ep, Dist: math.MaxFloat32}
 	upperOptions := searchOptions
 	upperOptions.ForceQuantized = true
+	upperOptions.Predicate = nil
+	upperOptions.FilterExpr = nil
 	upperComputer := h.resolveHNSWComputer(data, searchCtx, queryVec, false, upperOptions)
 
-	for level := int(maxLevel); level > 0; level-- { // #nosec G115
-		var res []types.Candidate
-		var err error
-		if compF32, ok := upperComputer.(*float32ToFloat32Computer); ok {
-			res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, 1, level, searchCtx, data)
-		} else if compF64, ok := upperComputer.(*float64Computer); ok {
-			res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, 1, level, searchCtx, data)
-		} else if compSQ8, ok := upperComputer.(*float32ToSQ8Computer); ok {
-			res, err = h.searchLayer(ctx, compSQ8, currObj.ID, 1, level, searchCtx, data, queryVec)
-		} else {
-			res, err = h.searchLayer(ctx, upperComputer, currObj.ID, 1, level, searchCtx, data, queryVec)
+	{
+		upperPredicate := searchCtx.predicate
+		upperFilterMask := searchCtx.filterMask
+		upperFilterBitmap := searchCtx.filterBitmap
+		searchCtx.predicate = nil
+		searchCtx.filterMask = nil
+		searchCtx.filterBitmap = nil
+
+		for level := int(maxLevel); level > 0; level-- { // #nosec G115
+			var res []types.Candidate
+			var err error
+			if compF32, ok := upperComputer.(*float32ToFloat32Computer); ok {
+				res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, 1, level, searchCtx, data)
+			} else if compF64, ok := upperComputer.(*float64Computer); ok {
+				res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, 1, level, searchCtx, data)
+			} else if compSQ8, ok := upperComputer.(*float32ToSQ8Computer); ok {
+				res, err = h.searchLayer(ctx, compSQ8, currObj.ID, 1, level, searchCtx, data, queryVec)
+			} else {
+				res, err = h.searchLayer(ctx, upperComputer, currObj.ID, 1, level, searchCtx, data, queryVec)
+			}
+			if err != nil {
+				searchCtx.predicate = upperPredicate
+				searchCtx.filterMask = upperFilterMask
+				searchCtx.filterBitmap = upperFilterBitmap
+				return nil, err
+			}
+			if len(res) > 0 {
+				currObj = res[0]
+			}
 		}
-		if err != nil {
-			return nil, err
-		}
-		if len(res) > 0 {
-			currObj = res[0]
-		}
+
+		searchCtx.predicate = upperPredicate
+		searchCtx.filterMask = upperFilterMask
+		searchCtx.filterBitmap = upperFilterBitmap
 	}
 
 	var res []types.Candidate

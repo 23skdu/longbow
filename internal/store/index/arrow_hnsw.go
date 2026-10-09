@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 
@@ -127,11 +128,17 @@ type ArrowHNSW struct {
 
 	// externalIDIndex maps external (client-visible) IDs to internal uint32 node IDs.
 	// Used by resolveInternalID for O(1) lookup instead of O(n) scan.
-	externalIDIndex   map[uint64]uint32
-	externalIDIndexMu sync.RWMutex
+	externalIDIndex      map[uint64]uint32
+	internalToExternalID map[uint32]uint64
+	externalIDIndexMu    sync.RWMutex
 
 	// Parallel Search Config
 	parallelConfig types.ParallelSearchConfig
+
+	// R26 & R28: Layer 0 inbound edge tracking and bulk ingestion contention metrics
+	inDegreeL0          inDegreeTracker
+	bulkContentionCount atomic.Uint64
+	bulkEvictionCount   atomic.Uint64
 
 	// GPU Support
 	gpuMu          sync.RWMutex
@@ -164,6 +171,12 @@ type ArrowHNSW struct {
 	efTuner       *PIDTuner
 
 	inBulkInsert atomic.Int64
+
+	// inAddBatch counts AddBatch callers for the whole call, including the
+	// spans where a caller is between bulk links. The R8 quality gate uses it to
+	// tell a measurement of one batch apart from a measurement of a graph other
+	// callers are still mutating.
+	inAddBatch atomic.Int64
 
 	// MetadataRegistry for pre-cached field lookups
 	metadata struct {
@@ -198,14 +211,15 @@ func NewArrowHNSW(dataset types.IndexDataProvider, config *types.ArrowHNSWConfig
 // NewArrowHNSWWithConfig creates a new ArrowHNSW index with the given configuration.
 func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowHNSWConfig, topo *memory.NUMATopology) *ArrowHNSW {
 	h := &ArrowHNSW{
-		config:          config,
-		dataset:         dataset,
-		m:               atomic.Int32{},
-		mMax:            atomic.Int32{},
-		mMax0:           atomic.Int32{},
-		searchPool:      NewArrowSearchContextPool(),
-		insertPool:      NewInsertContextPool(),
-		externalIDIndex: make(map[uint64]uint32),
+		config:               config,
+		dataset:              dataset,
+		m:                    atomic.Int32{},
+		mMax:                 atomic.Int32{},
+		mMax0:                atomic.Int32{},
+		searchPool:           NewArrowSearchContextPool(),
+		insertPool:           NewInsertContextPool(),
+		externalIDIndex:      make(map[uint64]uint32),
+		internalToExternalID: make(map[uint32]uint64),
 		candidatePool: sync.Pool{
 			New: func() any {
 				s := make([]types.Candidate, 0, config.EfConstruction)
@@ -1048,4 +1062,105 @@ func (h *ArrowHNSW) RelocateToOffHeap() error {
 		return fmt.Errorf("no graph data to relocate")
 	}
 	return gd.RelocateToOffHeap()
+}
+
+// ComputeDistanceAny computes the distance between two vectors of matching arbitrary type.
+func (h *ArrowHNSW) ComputeDistanceAny(v1, v2 any) (float32, error) {
+	if v1 == nil || v2 == nil {
+		return 0, fmt.Errorf("nil vector")
+	}
+	switch a := v1.(type) {
+	case []float32:
+		if b, ok := v2.([]float32); ok {
+			if h.distFunc != nil {
+				return h.distFunc(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []float64:
+		if b, ok := v2.([]float64); ok {
+			if h.distFuncF64 != nil {
+				return h.distFuncF64(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []int8:
+		if b, ok := v2.([]int8); ok {
+			if h.distFuncInt8 != nil {
+				return h.distFuncInt8(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []uint8:
+		if b, ok := v2.([]uint8); ok {
+			if h.distFuncUint8 != nil {
+				return h.distFuncUint8(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []float16.Num:
+		if b, ok := v2.([]float16.Num); ok {
+			if h.distFuncF16 != nil {
+				return h.distFuncF16(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []int16:
+		if b, ok := v2.([]int16); ok {
+			if h.distFuncInt16 != nil {
+				return h.distFuncInt16(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []uint16:
+		if b, ok := v2.([]uint16); ok {
+			if h.distFuncUint16 != nil {
+				return h.distFuncUint16(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []int32:
+		if b, ok := v2.([]int32); ok {
+			if h.distFuncInt32 != nil {
+				return h.distFuncInt32(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []uint32:
+		if b, ok := v2.([]uint32); ok {
+			if h.distFuncUint32 != nil {
+				return h.distFuncUint32(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []int64:
+		if b, ok := v2.([]int64); ok {
+			if h.distFuncInt64 != nil {
+				return h.distFuncInt64(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []uint64:
+		if b, ok := v2.([]uint64); ok {
+			if h.distFuncUint64 != nil {
+				return h.distFuncUint64(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []complex64:
+		if b, ok := v2.([]complex64); ok {
+			if h.distFuncC64 != nil {
+				return h.distFuncC64(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	case []complex128:
+		if b, ok := v2.([]complex128); ok {
+			if h.distFuncC128 != nil {
+				return h.distFuncC128(a, b)
+			}
+			return simd.DispatchDistance(simd.MetricEuclidean, a, b)
+		}
+	}
+	return 0, fmt.Errorf("unsupported or mismatched vector types: %T and %T", v1, v2)
 }

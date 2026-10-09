@@ -421,13 +421,17 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		neighbors = filtered
 
 		maxConn := cachedMMax
+		targetM := cachedM
 		if l == 0 {
 			maxConn = cachedMMax0
+			targetM = cachedM
 		}
 
 		if len(neighbors) > 0 {
 			ensurePrivate()
-			for _, nb := range neighbors {
+			selectedNeighbors := neighbors
+			_ = targetM
+			for _, nb := range selectedNeighbors {
 				h.AddConnection(ctx, data, id, nb.ID, l, maxConn, nb.Dist)
 				h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
 			}

@@ -31,22 +31,25 @@ func (c *int16Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-	if err == nil {
-		if v, ok := vecAny.([]int16); ok {
-			return c.h.distFuncInt16(c.q, v)
-		}
-	}
-
-	// Fallback to direct chunk access if type-specific GetVector fails (COW path)
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt16ChunkWithGen(int(cID), c.maxGen)
+	var chunk []int16
+	if c.maxGen == math.MaxUint64 {
+		chunk = c.data.GetVectorsInt16ChunkFast(int(cID))
+	} else {
+		chunk = c.data.GetVectorsInt16ChunkWithGen(int(cID), c.maxGen)
+	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt16)
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+			return c.h.distFuncInt16(c.q, chunk[start:start+c.dims])
+		}
+	}
+
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err == nil {
+		if v, ok := vecAny.([]int16); ok {
 			return c.h.distFuncInt16(c.q, v)
 		}
 	}
@@ -67,58 +70,46 @@ func (c *int16Computer) Prefetch(id uint32) {
 }
 
 func (c *int16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
-	if cap(c.batchVecs) < len(ids) {
-		c.batchVecs = make([][]int16, len(ids))
+	n := len(ids)
+	if cap(dst) < n {
+		dst = make([]float32, n)
+	} else {
+		dst = dst[:n]
 	}
-	c.batchVecs = c.batchVecs[:len(ids)]
-
-	needsFallback := false
-	for i, id := range ids {
-		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-		if err == nil {
-			if v, ok := vecAny.([]int16); ok {
-				c.batchVecs[i] = v
-				continue
-			}
-		}
-		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsInt16ChunkWithGen(int(cID), c.maxGen)
-		if chunk != nil {
-			cOff := types.ChunkOffset(id)
-			pd := c.data.GetPaddedDimsForType(types.VectorTypeInt16)
-			start := cOff * pd
-			if start+c.dims <= len(chunk) {
-				c.batchVecs[i] = chunk[start : start+c.dims]
-				continue
-			}
-		}
-		needsFallback = true
-		break
-	}
-
-	if needsFallback {
-		dst = dst[:0]
-		for _, id := range ids {
-			d, err := c.ComputeSingle(id)
-			if err != nil {
-				return nil, err
-			}
-			dst = append(dst, d)
-		}
+	if n == 0 {
 		return dst, nil
 	}
 
-	if cap(dst) < len(ids) {
-		dst = make([]float32, len(ids))
-	} else {
-		dst = dst[:len(ids)]
-	}
-	for i, v := range c.batchVecs {
-		d, err := c.h.distFuncInt16(c.q, v)
-		if err != nil {
-			return nil, err
+	pd := c.data.GetPaddedDimsForType(types.VectorTypeInt16)
+	var lastChunkID int32 = -1
+	var chunk []int16
+	batch := c.data.BeginInt16ChunkBatch(c.maxGen)
+
+	for i, id := range ids {
+		cID := int32(types.ChunkID(id)) // #nosec G115
+		if cID != lastChunkID {
+			lastChunkID = cID
+			chunk = batch.Chunk(int(cID))
 		}
-		dst[i] = d
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			start := cOff * pd
+			if start+c.dims <= len(chunk) {
+				d, err := c.h.distFuncInt16(c.q, chunk[start:start+c.dims])
+				if err != nil {
+					dst[i] = math.MaxFloat32
+					continue
+				}
+				dst[i] = d
+				continue
+			}
+		}
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			dst[i] = math.MaxFloat32
+			continue
+		}
+		dst[i] = dist
 	}
 	return dst, nil
 }
@@ -135,15 +126,13 @@ type uint16Computer struct {
 }
 
 func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-	if err == nil {
-		if v, ok := vecAny.([]uint16); ok {
-			return c.h.distFuncUint16(c.q, v)
-		}
-	}
-
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint16ChunkWithGen(int(cID), c.maxGen)
+	var chunk []uint16
+	if c.maxGen == math.MaxUint64 {
+		chunk = c.data.GetVectorsUint16ChunkFast(int(cID))
+	} else {
+		chunk = c.data.GetVectorsUint16ChunkWithGen(int(cID), c.maxGen)
+	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint16)
@@ -152,62 +141,57 @@ func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 			return c.h.distFuncUint16(c.q, chunk[start:start+c.dims])
 		}
 	}
+
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err == nil {
+		if v, ok := vecAny.([]uint16); ok {
+			return c.h.distFuncUint16(c.q, v)
+		}
+	}
 	return math.MaxFloat32, nil
 }
 
 func (c *uint16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
-	if cap(c.batchVecs) < len(ids) {
-		c.batchVecs = make([][]uint16, len(ids))
+	n := len(ids)
+	if cap(dst) < n {
+		dst = make([]float32, n)
+	} else {
+		dst = dst[:n]
 	}
-	c.batchVecs = c.batchVecs[:len(ids)]
-
-	needsFallback := false
-	for i, id := range ids {
-		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-		if err == nil {
-			if v, ok := vecAny.([]uint16); ok {
-				c.batchVecs[i] = v
-				continue
-			}
-		}
-		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsUint16ChunkWithGen(int(cID), c.maxGen)
-		if chunk != nil {
-			cOff := types.ChunkOffset(id)
-			pd := c.data.GetPaddedDimsForType(types.VectorTypeUint16)
-			start := cOff * pd
-			if start+c.dims <= len(chunk) {
-				c.batchVecs[i] = chunk[start : start+c.dims]
-				continue
-			}
-		}
-		needsFallback = true
-		break
-	}
-
-	if needsFallback {
-		dst = dst[:0]
-		for _, id := range ids {
-			d, err := c.ComputeSingle(id)
-			if err != nil {
-				return nil, err
-			}
-			dst = append(dst, d)
-		}
+	if n == 0 {
 		return dst, nil
 	}
 
-	if cap(dst) < len(ids) {
-		dst = make([]float32, len(ids))
-	} else {
-		dst = dst[:len(ids)]
-	}
-	for i, v := range c.batchVecs {
-		d, err := c.h.distFuncUint16(c.q, v)
-		if err != nil {
-			return nil, err
+	pd := c.data.GetPaddedDimsForType(types.VectorTypeUint16)
+	var lastChunkID int32 = -1
+	var chunk []uint16
+	batch := c.data.BeginUint16ChunkBatch(c.maxGen)
+
+	for i, id := range ids {
+		cID := int32(types.ChunkID(id)) // #nosec G115
+		if cID != lastChunkID {
+			lastChunkID = cID
+			chunk = batch.Chunk(int(cID))
 		}
-		dst[i] = d
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			start := cOff * pd
+			if start+c.dims <= len(chunk) {
+				d, err := c.h.distFuncUint16(c.q, chunk[start:start+c.dims])
+				if err != nil {
+					dst[i] = math.MaxFloat32
+					continue
+				}
+				dst[i] = d
+				continue
+			}
+		}
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			dst[i] = math.MaxFloat32
+			continue
+		}
+		dst[i] = dist
 	}
 	return dst, nil
 }
@@ -248,22 +232,26 @@ func (c *int32Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-	if err == nil {
-		if v, ok := vecAny.([]int32); ok {
-			return c.h.distFuncInt32(c.q, v)
-		}
-	}
-
-	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt32ChunkWithGen(int(cID), c.maxGen)
+	var chunk []int32
+	if c.maxGen == math.MaxUint64 {
+		chunk = c.data.GetVectorsInt32ChunkFast(int(cID))
+	} else {
+		chunk = c.data.GetVectorsInt32ChunkWithGen(int(cID), c.maxGen)
+	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt32)
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
 			return c.h.distFuncInt32(c.q, chunk[start:start+c.dims])
+		}
+	}
+
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err == nil {
+		if v, ok := vecAny.([]int32); ok {
+			return c.h.distFuncInt32(c.q, v)
 		}
 	}
 	return math.MaxFloat32, nil
@@ -283,58 +271,46 @@ func (c *int32Computer) Prefetch(id uint32) {
 }
 
 func (c *int32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
-	if cap(c.batchVecs) < len(ids) {
-		c.batchVecs = make([][]int32, len(ids))
+	n := len(ids)
+	if cap(dst) < n {
+		dst = make([]float32, n)
+	} else {
+		dst = dst[:n]
 	}
-	c.batchVecs = c.batchVecs[:len(ids)]
-
-	needsFallback := false
-	for i, id := range ids {
-		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-		if err == nil {
-			if v, ok := vecAny.([]int32); ok {
-				c.batchVecs[i] = v
-				continue
-			}
-		}
-		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsInt32ChunkWithGen(int(cID), c.maxGen)
-		if chunk != nil {
-			cOff := types.ChunkOffset(id)
-			pd := c.data.GetPaddedDimsForType(types.VectorTypeInt32)
-			start := cOff * pd
-			if start+c.dims <= len(chunk) {
-				c.batchVecs[i] = chunk[start : start+c.dims]
-				continue
-			}
-		}
-		needsFallback = true
-		break
-	}
-
-	if needsFallback {
-		dst = dst[:0]
-		for _, id := range ids {
-			d, err := c.ComputeSingle(id)
-			if err != nil {
-				return nil, err
-			}
-			dst = append(dst, d)
-		}
+	if n == 0 {
 		return dst, nil
 	}
 
-	if cap(dst) < len(ids) {
-		dst = make([]float32, len(ids))
-	} else {
-		dst = dst[:len(ids)]
-	}
-	for i, v := range c.batchVecs {
-		d, err := c.h.distFuncInt32(c.q, v)
-		if err != nil {
-			return nil, err
+	pd := c.data.GetPaddedDimsForType(types.VectorTypeInt32)
+	var lastChunkID int32 = -1
+	var chunk []int32
+	batch := c.data.BeginInt32ChunkBatch(c.maxGen)
+
+	for i, id := range ids {
+		cID := int32(types.ChunkID(id)) // #nosec G115
+		if cID != lastChunkID {
+			lastChunkID = cID
+			chunk = batch.Chunk(int(cID))
 		}
-		dst[i] = d
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			start := cOff * pd
+			if start+c.dims <= len(chunk) {
+				d, err := c.h.distFuncInt32(c.q, chunk[start:start+c.dims])
+				if err != nil {
+					dst[i] = math.MaxFloat32
+					continue
+				}
+				dst[i] = d
+				continue
+			}
+		}
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			dst[i] = math.MaxFloat32
+			continue
+		}
+		dst[i] = dist
 	}
 	return dst, nil
 }
@@ -351,15 +327,13 @@ type uint32Computer struct {
 }
 
 func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-	if err == nil {
-		if v, ok := vecAny.([]uint32); ok {
-			return c.h.distFuncUint32(c.q, v)
-		}
-	}
-
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint32ChunkWithGen(int(cID), c.maxGen)
+	var chunk []uint32
+	if c.maxGen == math.MaxUint64 {
+		chunk = c.data.GetVectorsUint32ChunkFast(int(cID))
+	} else {
+		chunk = c.data.GetVectorsUint32ChunkWithGen(int(cID), c.maxGen)
+	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint32)
@@ -368,62 +342,57 @@ func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 			return c.h.distFuncUint32(c.q, chunk[start:start+c.dims])
 		}
 	}
+
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err == nil {
+		if v, ok := vecAny.([]uint32); ok {
+			return c.h.distFuncUint32(c.q, v)
+		}
+	}
 	return math.MaxFloat32, nil
 }
 
 func (c *uint32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
-	if cap(c.batchVecs) < len(ids) {
-		c.batchVecs = make([][]uint32, len(ids))
+	n := len(ids)
+	if cap(dst) < n {
+		dst = make([]float32, n)
+	} else {
+		dst = dst[:n]
 	}
-	c.batchVecs = c.batchVecs[:len(ids)]
-
-	needsFallback := false
-	for i, id := range ids {
-		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-		if err == nil {
-			if v, ok := vecAny.([]uint32); ok {
-				c.batchVecs[i] = v
-				continue
-			}
-		}
-		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsUint32ChunkWithGen(int(cID), c.maxGen)
-		if chunk != nil {
-			cOff := types.ChunkOffset(id)
-			pd := c.data.GetPaddedDimsForType(types.VectorTypeUint32)
-			start := cOff * pd
-			if start+c.dims <= len(chunk) {
-				c.batchVecs[i] = chunk[start : start+c.dims]
-				continue
-			}
-		}
-		needsFallback = true
-		break
-	}
-
-	if needsFallback {
-		dst = dst[:0]
-		for _, id := range ids {
-			d, err := c.ComputeSingle(id)
-			if err != nil {
-				return nil, err
-			}
-			dst = append(dst, d)
-		}
+	if n == 0 {
 		return dst, nil
 	}
 
-	if cap(dst) < len(ids) {
-		dst = make([]float32, len(ids))
-	} else {
-		dst = dst[:len(ids)]
-	}
-	for i, v := range c.batchVecs {
-		d, err := c.h.distFuncUint32(c.q, v)
-		if err != nil {
-			return nil, err
+	pd := c.data.GetPaddedDimsForType(types.VectorTypeUint32)
+	var lastChunkID int32 = -1
+	var chunk []uint32
+	batch := c.data.BeginUint32ChunkBatch(c.maxGen)
+
+	for i, id := range ids {
+		cID := int32(types.ChunkID(id)) // #nosec G115
+		if cID != lastChunkID {
+			lastChunkID = cID
+			chunk = batch.Chunk(int(cID))
 		}
-		dst[i] = d
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			start := cOff * pd
+			if start+c.dims <= len(chunk) {
+				d, err := c.h.distFuncUint32(c.q, chunk[start:start+c.dims])
+				if err != nil {
+					dst[i] = math.MaxFloat32
+					continue
+				}
+				dst[i] = d
+				continue
+			}
+		}
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			dst[i] = math.MaxFloat32
+			continue
+		}
+		dst[i] = dist
 	}
 	return dst, nil
 }
@@ -464,22 +433,26 @@ func (c *int64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-	if err == nil {
-		if v, ok := vecAny.([]int64); ok {
-			return c.h.distFuncInt64(c.q, v)
-		}
-	}
-
-	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt64ChunkWithGen(int(cID), c.maxGen)
+	var chunk []int64
+	if c.maxGen == math.MaxUint64 {
+		chunk = c.data.GetVectorsInt64ChunkFast(int(cID))
+	} else {
+		chunk = c.data.GetVectorsInt64ChunkWithGen(int(cID), c.maxGen)
+	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt64)
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
 			return c.h.distFuncInt64(c.q, chunk[start:start+c.dims])
+		}
+	}
+
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err == nil {
+		if v, ok := vecAny.([]int64); ok {
+			return c.h.distFuncInt64(c.q, v)
 		}
 	}
 	return math.MaxFloat32, nil
@@ -518,65 +491,36 @@ func (c *int64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, er
 		return dst, nil
 	}
 
-	const blockSize = 64
-	for blockStart := 0; blockStart < n; blockStart += blockSize {
-		blockEnd := blockStart + blockSize
-		if blockEnd > n {
-			blockEnd = n
-		}
+	pd := c.data.GetPaddedDimsForType(types.VectorTypeInt64)
+	var lastChunkID int32 = -1
+	var chunk []int64
+	batch := c.data.BeginInt64ChunkBatch(c.maxGen)
 
-		// Cache-blocking optimization: prefetch next 64-vector block while computing current block
-		if blockEnd < n {
-			nextEnd := blockEnd + blockSize
-			if nextEnd > n {
-				nextEnd = n
-			}
-			for _, nextID := range ids[blockEnd:nextEnd] {
-				c.Prefetch(nextID)
-			}
+	for i, id := range ids {
+		cID := int32(types.ChunkID(id)) // #nosec G115
+		if cID != lastChunkID {
+			lastChunkID = cID
+			chunk = batch.Chunk(int(cID))
 		}
-
-		// Process current 64-vector block
-		for i := blockStart; i < blockEnd; i++ {
-			id := ids[i]
-			cID := types.ChunkID(id)
-			var chunk []int64
-			if c.maxGen == math.MaxUint64 {
-				chunk = c.data.GetVectorsInt64ChunkFast(int(cID))
-			} else {
-				chunk = c.data.GetVectorsInt64ChunkWithGen(int(cID), c.maxGen)
-			}
-			if chunk != nil {
-				cOff := types.ChunkOffset(id)
-				pd := c.data.GetPaddedDimsForType(types.VectorTypeInt64)
-				start := cOff * pd
-				if start+c.dims <= len(chunk) {
-					d, err := c.h.distFuncInt64(c.q, chunk[start:start+c.dims])
-					if err != nil {
-						dst[i] = math.MaxFloat32
-						continue
-					}
-					dst[i] = d
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			start := cOff * pd
+			if start+c.dims <= len(chunk) {
+				d, err := c.h.distFuncInt64(c.q, chunk[start:start+c.dims])
+				if err != nil {
+					dst[i] = math.MaxFloat32
 					continue
 				}
-			}
-			vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-			if err != nil {
-				dst[i] = math.MaxFloat32
+				dst[i] = d
 				continue
 			}
-			v, ok := vecAny.([]int64)
-			if !ok {
-				dst[i] = math.MaxFloat32
-				continue
-			}
-			d, err := c.h.distFuncInt64(c.q, v)
-			if err != nil {
-				dst[i] = math.MaxFloat32
-				continue
-			}
-			dst[i] = d
 		}
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			dst[i] = math.MaxFloat32
+			continue
+		}
+		dst[i] = dist
 	}
 	return dst, nil
 }
@@ -593,13 +537,6 @@ type uint64Computer struct {
 }
 
 func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-	if err == nil {
-		if v, ok := vecAny.([]uint64); ok {
-			return c.h.distFuncUint64(c.q, v)
-		}
-	}
-
 	cID := types.ChunkID(id)
 	var chunk []uint64
 	if c.maxGen == math.MaxUint64 {
@@ -613,6 +550,13 @@ func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
 			return c.h.distFuncUint64(c.q, chunk[start:start+c.dims])
+		}
+	}
+
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err == nil {
+		if v, ok := vecAny.([]uint64); ok {
+			return c.h.distFuncUint64(c.q, v)
 		}
 	}
 	return math.MaxFloat32, nil
@@ -629,65 +573,36 @@ func (c *uint64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, e
 		return dst, nil
 	}
 
-	const blockSize = 64
-	for blockStart := 0; blockStart < n; blockStart += blockSize {
-		blockEnd := blockStart + blockSize
-		if blockEnd > n {
-			blockEnd = n
-		}
+	pd := c.data.GetPaddedDimsForType(types.VectorTypeUint64)
+	var lastChunkID int32 = -1
+	var chunk []uint64
+	batch := c.data.BeginUint64ChunkBatch(c.maxGen)
 
-		// Cache-blocking optimization: prefetch next 64-vector block while computing current block
-		if blockEnd < n {
-			nextEnd := blockEnd + blockSize
-			if nextEnd > n {
-				nextEnd = n
-			}
-			for _, nextID := range ids[blockEnd:nextEnd] {
-				c.Prefetch(nextID)
-			}
+	for i, id := range ids {
+		cID := int32(types.ChunkID(id)) // #nosec G115
+		if cID != lastChunkID {
+			lastChunkID = cID
+			chunk = batch.Chunk(int(cID))
 		}
-
-		// Process current 64-vector block
-		for i := blockStart; i < blockEnd; i++ {
-			id := ids[i]
-			cID := types.ChunkID(id)
-			var chunk []uint64
-			if c.maxGen == math.MaxUint64 {
-				chunk = c.data.GetVectorsUint64ChunkFast(int(cID))
-			} else {
-				chunk = c.data.GetVectorsUint64ChunkWithGen(int(cID), c.maxGen)
-			}
-			if chunk != nil {
-				cOff := types.ChunkOffset(id)
-				pd := c.data.GetPaddedDimsForType(types.VectorTypeUint64)
-				start := cOff * pd
-				if start+c.dims <= len(chunk) {
-					d, err := c.h.distFuncUint64(c.q, chunk[start:start+c.dims])
-					if err != nil {
-						dst[i] = math.MaxFloat32
-						continue
-					}
-					dst[i] = d
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			start := cOff * pd
+			if start+c.dims <= len(chunk) {
+				d, err := c.h.distFuncUint64(c.q, chunk[start:start+c.dims])
+				if err != nil {
+					dst[i] = math.MaxFloat32
 					continue
 				}
-			}
-			vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-			if err != nil {
-				dst[i] = math.MaxFloat32
+				dst[i] = d
 				continue
 			}
-			v, ok := vecAny.([]uint64)
-			if !ok {
-				dst[i] = math.MaxFloat32
-				continue
-			}
-			d, err := c.h.distFuncUint64(c.q, v)
-			if err != nil {
-				dst[i] = math.MaxFloat32
-				continue
-			}
-			dst[i] = d
 		}
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			dst[i] = math.MaxFloat32
+			continue
+		}
+		dst[i] = dist
 	}
 	return dst, nil
 }

@@ -137,6 +137,62 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | `LONGBOW_AUTO_SPILL_DISK` | `true` | Auto-spill vectors to disk when memory exceeds threshold. HNSW indexing still runs in-memory; only spills after indexing completes. Recommended for large datasets. |
 | `LONGBOW_SPILL_THRESHOLD_RATIO` | `0.70` | Memory threshold (0.0-1.0) at which auto-spill triggers. Lower values spill earlier, using more disk but less RAM. |
 | `LONGBOW_HNSW_BULK_CHAIN_LINKS` | `1` (on) | Bulk-insert every node to its insertion-order predecessor at layer 0. Set to `0` to disable. See the tradeoff note below. |
+| `LONGBOW_HNSW_BULK_QUALITY_GUARD` | `1` (enforcing) | Enforce the bulk-insert graph-quality floors, falling back to sequential insertion when a batch is rejected. Set to `0` to report the measurements without enforcing them. Every batch is logged either way. |
+| `LONGBOW_HNSW_BULK_REACHABILITY_FLOOR` | `0.80` | Layer-0 reachability a batch must show, sampled from the entry point, before the guard rejects it. Only applies when the guard is enforcing. |
+| `LONGBOW_HNSW_BULK_MIN_DEGREE_RATIO` | `0` (disabled) | Reject a batch whose mean layer-0 degree is below this fraction of `LONGBOW_HNSW_MMAX0`. Disabled by default; see the note below. |
+| `LONGBOW_HNSW_BULK_MAX_HOP_DEPTH` | `1.5` | Reject a batch whose mean layer-0 greedy descent depth exceeds this multiple of `log(N)/log(MMax0)`. `0` disables the check. Only applies when the guard is enforcing. |
+| `LONGBOW_HNSW_INBOUND_GUARD` | `0` (off) | Enforce the R26 invariant that pruning never drops a node's last inbound edge at layer 0. Off by default; see the note below. |
+
+#### Bulk-insert graph quality: `LONGBOW_HNSW_BULK_QUALITY_GUARD`
+
+Every bulk-inserted batch is measured and logged, whether or not the guard
+enforces:
+
+```
+[HNSW] bulk batch nodes=100000 reachable=99794/100000 sampled=100.0% mean_degree=5.46 hops=3.1/6.2 addbatch_inflight=1 fallback=false
+```
+
+`sampled` is the reachability of 20 nodes drawn from the batch, `mean_degree` is
+the mean layer-0 degree over the reachable component, and `hops` is the mean
+greedy-descent depth needed to reach the sampled nodes, against a budget of
+1.5x the `log(N)/log(MMax0)` a navigable graph of this size should need.
+
+**Why the degree floor is off by default.** On uniform random 128-d vectors the
+bulk path builds layer 0 at a mean degree of 4-6 where `MMax0=16`, because the
+diversity heuristic in `selectNeighbors` rejects a candidate whenever it is
+closer to an already-selected neighbour than to the node being linked. On
+concentrated distances that fires for most candidates. Every node stays
+reachable — `sampled` reads 100% — and the graph still serves dense search
+several times slower than a sequentially-built one, so reachability alone does
+not detect it.
+
+Enforcing the degree floor at 0.50 rejected four of the nine batches in a 100k
+float32 build. Each rejection is rebuilt sequentially, which costs about 6x the
+bulk build it replaced: index time went from 23.5s to 215s, and dense QPS went
+from 3286 to 3474 — inside the ±5% run-to-run spread. It buys nothing measurable
+and costs 9x the index time, so it ships disabled. Enable it if you would rather
+pay the index time than ship a sparse layer.
+
+#### Last-inbound-edge invariant: `LONGBOW_HNSW_INBOUND_GUARD`
+
+`LONGBOW_HNSW_INBOUND_GUARD=1` enforces the R26 invariant: when pruning a
+node's neighbour list, a neighbour whose only inbound edge is the one being
+dropped keeps it, and the furthest kept link is given up instead.
+
+It is off by default because it changes what a predicate-filtered search can
+reach. With it on, `TestPredicateTraversal_ReachesMatchBehindRejectedNodes`
+returns a different number of results for `float32`, `float64` and
+`float16_dispatch` — that test requires a single admitted node to be found by
+traversing *through* rejected ones, and the protection changes which nodes the
+traversal reaches. What it buys is real but small: on 20,000 shuffled 128-d
+vectors it lifts layer-0 reachability from 19,788 to 19,807 of 20,000 and
+recall@10 from 0.28 to 0.30.
+
+It also does not reach the goal the roadmap sets for it. R26 asks for 100%
+reachability, and a fixed-degree layer cannot hold every unique inbound edge at
+once — the invariant holds one edge at a time, not unconditionally. Closing that
+gap needs demoted-connection storage that search can still traverse, which does
+not exist yet.
 
 #### Bulk-insert chain links: `LONGBOW_HNSW_BULK_CHAIN_LINKS`
 

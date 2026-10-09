@@ -5,43 +5,149 @@ import (
 	"sync/atomic"
 )
 
-// syncMapShim wraps sync.Map to provide a typed interface for [uint32]*LockFreeNeighborList.
-type syncMapShim struct {
-	m sync.Map
+const (
+	neighborChunkShift = 12
+	neighborChunkSize  = 1 << neighborChunkShift // 4096 entries per chunk (32 KB per chunk)
+	neighborChunkMask  = neighborChunkSize - 1
+)
+
+type neighborChunk [neighborChunkSize]atomic.Pointer[LockFreeNeighborList]
+
+// typedNeighborMap provides a lock-free, zero-allocation, typed mapping
+// from uint32 nodeID to *LockFreeNeighborList using a 2-level chunked directory.
+// This resolves roadmap R25 by avoiding sync.Map interface boxing, hashing
+// (runtime.nilinterhash), and interface equality checks (runtime.memequal32)
+// on the HNSW query hot path (~13% of construction CPU).
+type typedNeighborMap struct {
+	dir    atomic.Pointer[[]*neighborChunk]
+	growMu sync.Mutex
+	count  atomic.Int64
 }
 
-func (s *syncMapShim) Load(key uint32) (*LockFreeNeighborList, bool) {
-	v, ok := s.m.Load(key)
-	if !ok {
+// syncMapShim is maintained as a type alias for typedNeighborMap for backward compatibility.
+type syncMapShim = typedNeighborMap
+
+func (m *typedNeighborMap) Load(key uint32) (*LockFreeNeighborList, bool) {
+	dPtr := m.dir.Load()
+	if dPtr == nil {
 		return nil, false
 	}
-	return v.(*LockFreeNeighborList), true
+	d := *dPtr
+	chunkIdx := int(key >> neighborChunkShift)
+	if chunkIdx >= len(d) {
+		return nil, false
+	}
+	c := d[chunkIdx]
+	if c == nil {
+		return nil, false
+	}
+	list := c[key&neighborChunkMask].Load()
+	if list == nil {
+		return nil, false
+	}
+	return list, true
 }
 
-func (s *syncMapShim) Store(key uint32, value *LockFreeNeighborList) {
-	s.m.Store(key, value)
+func (m *typedNeighborMap) getOrCreateChunk(chunkIdx int) *neighborChunk {
+	dPtr := m.dir.Load()
+	if dPtr != nil {
+		d := *dPtr
+		if chunkIdx < len(d) && d[chunkIdx] != nil {
+			return d[chunkIdx]
+		}
+	}
+
+	m.growMu.Lock()
+	defer m.growMu.Unlock()
+
+	dPtr = m.dir.Load()
+	var d []*neighborChunk
+	if dPtr != nil {
+		d = *dPtr
+	}
+
+	if chunkIdx < len(d) && d[chunkIdx] != nil {
+		return d[chunkIdx]
+	}
+
+	newLen := len(d)
+	if chunkIdx >= newLen {
+		newLen = len(d) * 2
+		if newLen <= chunkIdx {
+			newLen = chunkIdx + 1
+		}
+		if newLen < 16 {
+			newLen = 16
+		}
+	}
+
+	newD := make([]*neighborChunk, newLen)
+	copy(newD, d)
+	if newD[chunkIdx] == nil {
+		newD[chunkIdx] = new(neighborChunk)
+	}
+	m.dir.Store(&newD)
+	return newD[chunkIdx]
 }
 
-func (s *syncMapShim) LoadOrStore(key uint32, value *LockFreeNeighborList) (actual *LockFreeNeighborList, loaded bool) {
-	v, loaded := s.m.LoadOrStore(key, value)
-	return v.(*LockFreeNeighborList), loaded
+func (m *typedNeighborMap) Store(key uint32, value *LockFreeNeighborList) {
+	c := m.getOrCreateChunk(int(key >> neighborChunkShift))
+	offset := key & neighborChunkMask
+	old := c[offset].Swap(value)
+	if old == nil {
+		m.count.Add(1)
+	}
 }
 
-func (s *syncMapShim) Delete(key uint32) {
-	s.m.Delete(key)
+func (m *typedNeighborMap) LoadOrStore(key uint32, value *LockFreeNeighborList) (*LockFreeNeighborList, bool) {
+	chunkIdx := int(key >> neighborChunkShift)
+	offset := key & neighborChunkMask
+
+	for {
+		c := m.getOrCreateChunk(chunkIdx)
+		if existing := c[offset].Load(); existing != nil {
+			return existing, true
+		}
+		if c[offset].CompareAndSwap(nil, value) {
+			m.count.Add(1)
+			return value, false
+		}
+		if existing := c[offset].Load(); existing != nil {
+			return existing, true
+		}
+	}
 }
 
-func (s *syncMapShim) Len() int {
-	var n int
-	s.m.Range(func(_, _ any) bool {
-		n++
-		return true
-	})
-	return n
+func (m *typedNeighborMap) Delete(key uint32) {
+	dPtr := m.dir.Load()
+	if dPtr == nil {
+		return
+	}
+	d := *dPtr
+	chunkIdx := int(key >> neighborChunkShift)
+	if chunkIdx >= len(d) || d[chunkIdx] == nil {
+		return
+	}
+	old := d[chunkIdx][key&neighborChunkMask].Swap(nil)
+	if old != nil {
+		m.count.Add(-1)
+	}
 }
 
-func (s *syncMapShim) Clear() {
-	s.m.Clear()
+func (m *typedNeighborMap) Len() int {
+	n := m.count.Load()
+	if n < 0 {
+		return 0
+	}
+	return int(n)
+}
+
+func (m *typedNeighborMap) Clear() {
+	m.growMu.Lock()
+	defer m.growMu.Unlock()
+	empty := make([]*neighborChunk, 0)
+	m.dir.Store(&empty)
+	m.count.Store(0)
 }
 
 // LockFreeNeighborList provides lock-free reads with copy-on-write updates

@@ -5,10 +5,13 @@ package index
 import (
 	"fmt"
 	"math"
+	"os"
 	"slices"
+	"strings"
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // AddConnection establishes a directed edge between two nodes in the HNSW graph.
@@ -27,25 +30,42 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
 
+		var lastOld []uint32
+		var lastNew []uint32
+
 		// Pre-compute targets to avoid doing it inside the CAS loop
 		_ = pn.UpdateNeighbors(source, func(old []uint32) []uint32 {
 			for _, n := range old {
 				if n == target {
+					// No change. The bookkeeping below runs once, after the CAS
+					// loop settles, so it has to be told about this path too:
+					// leaving a previous losing attempt's pair in place would
+					// apply a diff that was never committed.
+					lastOld, lastNew = old, old
 					return nil
-				} // No change
+				}
 			}
 
 			if len(old) < maxConn {
 				next := append(ctx.scratchPool[:0], old...)
 				next = append(next, target)
+				lastOld = old
+				lastNew = next
 				return next
 			}
 
 			// Pruning needed - Diversity heuristic
 			// This is expensive, but only happens when we hit maxConn
-			next := h.computePrunedNeighbors(ctx, data, source, old, []uint32{target}, maxConn)
+			h.bulkContentionCount.Add(1)
+			next := h.computePrunedNeighbors(ctx, data, source, old, []uint32{target}, maxConn, layer)
+			lastOld = old
+			lastNew = next
 			return next
 		})
+
+		if layer == 0 && lastNew != nil && InboundEdgeGuardEnabled {
+			h.updateInDegreeL0Diff(lastOld, lastNew)
+		}
 
 		// Note: Legacy arena sync removed to achieve true lock-free access.
 		// Adjacency is now managed exclusively by PackedNeighbors in the hot path.
@@ -108,6 +128,9 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 	// 1. Try Lock-Free path with PackedNeighbors
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
+		var lastOld []uint32
+		var lastNew []uint32
+
 		_ = pn.UpdateNeighbors(target, func(old []uint32) []uint32 {
 			// Find truly new sources
 			var newSources []uint32
@@ -125,6 +148,9 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 			}
 
 			if len(newSources) == 0 {
+				// No change; see the matching note in AddConnection about
+				// keeping lastOld/lastNew in step with the winning attempt.
+				lastOld, lastNew = old, old
 				return nil
 			}
 
@@ -132,12 +158,22 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 				next := make([]uint32, len(old)+len(newSources))
 				copy(next, old)
 				copy(next[len(old):], newSources)
+				lastOld = old
+				lastNew = next
 				return next
 			}
 
 			// Pruning needed
-			return h.computePrunedNeighbors(ctx, data, target, old, newSources, maxConn)
+			h.bulkContentionCount.Add(1)
+			next := h.computePrunedNeighbors(ctx, data, target, old, newSources, maxConn, layer)
+			lastOld = old
+			lastNew = next
+			return next
 		})
+
+		if layer == 0 && lastNew != nil && InboundEdgeGuardEnabled {
+			h.updateInDegreeL0Diff(lastOld, lastNew)
+		}
 		atomic.AddUint64(&data.GlobalVersion, 1)
 		if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
 			h.neighborCache[layer].Remove(target)
@@ -181,15 +217,26 @@ func (h *ArrowHNSW) AddConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *types.GraphData, id uint32, maxConn, layer int) *types.GraphData {
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
+		var lastOld []uint32
+		var lastNew []uint32
+
 		_ = pn.UpdateNeighbors(id, func(old []uint32) []uint32 {
 			if len(old) <= maxConn {
+				// No change; see the matching note in AddConnection.
+				lastOld, lastNew = old, old
 				return nil
 			}
 
-			next := h.computePrunedNeighbors(ctx, data, id, old, nil, maxConn)
+			h.bulkContentionCount.Add(1)
+			next := h.computePrunedNeighbors(ctx, data, id, old, nil, maxConn, layer)
+			lastOld = old
+			lastNew = next
 			atomic.AddUint64(&data.GlobalVersion, 1)
 			return next
 		})
+		if layer == 0 && lastNew != nil && InboundEdgeGuardEnabled {
+			h.updateInDegreeL0Diff(lastOld, lastNew)
+		}
 		if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
 			h.neighborCache[layer].Remove(id)
 		}
@@ -210,6 +257,9 @@ func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *types.GraphD
 
 // addConnectionLocked performs mutation assuming lock held.
 func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.GraphData, source, target uint32, layer, maxConn int) {
+	if source == target {
+		return
+	}
 	cID := types.ChunkID(source)
 	cOff := types.ChunkOffset(source)
 	countsChunk := data.GetCountsChunk(layer, cID)
@@ -245,6 +295,9 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 		baseIdx := int(cOff) * types.MaxNeighbors
 		atomic.StoreUint32(&neighborsChunk[baseIdx+slot], target)
 		atomic.StoreInt32(&countsChunk[cOff], int32(slot+1)) // #nosec G115
+		if layer == 0 && InboundEdgeGuardEnabled {
+			h.inDegreeL0.Inc(target)
+		}
 	}
 
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
@@ -289,6 +342,9 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 
 	added := 0
 	for _, src := range sources {
+		if src == target {
+			continue
+		}
 		if int(currentCount) >= types.MaxNeighbors {
 			break
 		}
@@ -303,6 +359,9 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 			atomic.StoreUint32(&neighborsChunk[baseIdx+int(currentCount)], src)
 			currentCount++
 			added++
+			if layer == 0 && InboundEdgeGuardEnabled {
+				h.inDegreeL0.Inc(src)
+			}
 		}
 	}
 
@@ -325,20 +384,25 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 }
 
 // computePrunedNeighbors is the core diversity-aware pruning logic, reusable by CAS loops.
-func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, current []uint32, extra []uint32, maxConn int) []uint32 {
+func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, current []uint32, extra []uint32, maxConn, layer int) []uint32 {
+	_ = layer
 	var pool []uint32
 	totalCap := len(current) + len(extra)
 	if ctx != nil {
 		if cap(ctx.scratchPool) >= totalCap {
-			pool = ctx.scratchPool[:len(current)]
+			pool = ctx.scratchPool[:0]
 		} else {
-			pool = make([]uint32, len(current), totalCap)
+			pool = make([]uint32, 0, totalCap)
 			ctx.scratchPool = pool
 		}
 	} else {
-		pool = make([]uint32, len(current), totalCap)
+		pool = make([]uint32, 0, totalCap)
 	}
-	copy(pool, current)
+	for _, c := range current {
+		if c != nodeID {
+			pool = append(pool, c)
+		}
+	}
 
 	if len(extra) > 0 {
 		for _, n := range extra {
@@ -346,22 +410,14 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 				continue
 			}
 			found := false
-			for _, c := range current {
-				if c == n {
+			for _, p := range pool {
+				if p == n {
 					found = true
 					break
 				}
 			}
 			if !found {
-				for _, p := range pool[len(current):] {
-					if p == n {
-						found = true
-						break
-					}
-				}
-				if !found {
-					pool = append(pool, n)
-				}
+				pool = append(pool, n)
 			}
 		}
 	}
@@ -453,6 +509,9 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 	// pool to it rejected every candidate and left the node with the single
 	// oldest link in the pool.
 	selected := h.selectNeighbors(ctx, candidates, maxConn, data)
+	if layer == 0 && InboundEdgeGuardEnabled {
+		protectLastInboundEdges(&h.inDegreeL0, pool, dists, selected, maxConn)
+	}
 
 	var result []uint32
 	if ctx != nil {
@@ -472,10 +531,155 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 	return result
 }
 
+// InboundEdgeGuardEnabled reports whether the R26 last-inbound-edge invariant is
+// enforced during pruning.
+//
+// Off by default, because it is a functional regression rather than a tuning
+// question. Swapping the furthest kept link for an at-risk one changes which
+// nodes a predicate-filtered search can reach: it makes
+// TestPredicateTraversal_ReachesMatchBehindRejectedNodes return a different
+// number of results for float32, float64 and float16_dispatch, where a single
+// admitted node has to be found by traversing through rejected ones. That test
+// passes with the guard off and fails with it on, for every element type it
+// covers.
+//
+// What it does buy is real but small, and it is not enough to pay for that. On
+// 20k shuffled 128-d vectors it lifts layer-0 reachability from 19788 to 19807
+// of 20000 and recall@10 from 0.28 to 0.30, and it is what keeps the R8 gate
+// quiet under concurrent AddBatch. It does not reach the roadmap's 100%
+// reachability criterion, because a fixed-degree layer cannot hold every unique
+// inbound edge at once - the invariant holds one edge at a time, not
+// unconditionally.
+//
+// Set LONGBOW_HNSW_INBOUND_GUARD=1 to enforce it.
+//
+// The bookkeeping it needs is gated with it, so a disabled guard pays nothing
+// for a guarantee it is not making.
+var InboundEdgeGuardEnabled = func() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("LONGBOW_HNSW_INBOUND_GUARD"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}()
+
+// protectLastInboundEdges enforces the R26 invariant on the layer-0 neighbour set
+// that is about to be committed: a neighbour whose only inbound edge is the one
+// being dropped must not lose it.
+//
+// Dropping H->W takes away one of W's inbound edges. When that was W's last, W
+// becomes unreachable from the entry point at any ef, because an HNSW search only
+// ever walks the entry point's in-component. That is what strands whole
+// sub-batches of bulk-inserted nodes: a fresh node's only inbound edges are the
+// reverse links it hands to its pre-batch neighbours, and a saturated host prunes
+// exactly those away (see the chain-link comment in arrow_hnsw_bulk.go).
+//
+// Three bounds keep the guarantee affordable, and all three are load-bearing:
+//
+//   - Only a node's *first* inbound edge is protected. Protecting every unique
+//     inbound edge lets a fresh node claim a slot at each host it reverse-links
+//     to, those hosts fill with nothing but protected edges, layer 0 stops being
+//     a navigable proximity graph, and the build that was meant to be the cheap
+//     path becomes the slow one.
+//   - At most one link is protected per prune, for the same reason.
+//   - The loop runs at most len(pool)-len(selected) times. Protection swaps a
+//     kept link out and an at-risk link in; when every pool member is itself at
+//     risk there is no fixed point to reach, and an unbounded loop oscillates
+//     between two equivalent states forever.
+func protectLastInboundEdges(inDegree *inDegreeTracker, pool []uint32, dists []float32, selected []types.Candidate, maxConn int) {
+	room := len(pool) - len(selected)
+	if len(selected) < maxConn || room <= 0 {
+		return
+	}
+
+	for swaps := 0; swaps < room; swaps++ {
+		risk, riskDist := -1, float32(0)
+		for i, id := range pool {
+			// Only a node's *first* inbound edge is protected. Protecting
+			// every unique inbound edge instead would let a fresh node claim
+			// a slot at each of the hosts it reverse-links to, and those hosts
+			// then fill with nothing but protected edges - layer 0 stops being
+			// a navigable proximity graph and greedy descent needs an order of
+			// magnitude more node visits. One hold per node is enough to get it
+			// into the entry point's in-component at all, which is what
+			// reachability means.
+			if inDegree.Get(id) > 0 || keptNeighbor(selected, id) {
+				continue
+			}
+			if risk < 0 || dists[i] < riskDist {
+				risk, riskDist = i, dists[i]
+			}
+		}
+		if risk < 0 {
+			return
+		}
+
+		// Give up the furthest link being kept. An unreachable node costs
+		// recall everywhere, while a worse local neighbourhood costs it only
+		// around one node, so this is the right thing to spend.
+		worst := 0
+		for i := 1; i < len(selected); i++ {
+			if selected[i].Dist > selected[worst].Dist {
+				worst = i
+			}
+		}
+		selected[worst] = types.Candidate{ID: pool[risk], Dist: dists[risk]}
+	}
+}
+
+// keptNeighbor reports whether id survived selection. The kept set is a handful
+// of entries and is not sorted, so a linear scan beats any auxiliary structure.
+func keptNeighbor(selected []types.Candidate, id uint32) bool {
+	for i := range selected {
+		if selected[i].ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// updateInDegreeL0Diff updates the layer 0 in-degree tracker and eviction counts
+// based on the difference between old and next neighbor sets.
+func (h *ArrowHNSW) updateInDegreeL0Diff(old, next []uint32) {
+	if len(old) == 0 && len(next) == 0 {
+		return
+	}
+	for _, n := range next {
+		found := false
+		for _, o := range old {
+			if o == n {
+				found = true
+				break
+			}
+		}
+		if !found {
+			h.inDegreeL0.Inc(n)
+		}
+	}
+	for _, o := range old {
+		found := false
+		for _, n := range next {
+			if n == o {
+				found = true
+				break
+			}
+		}
+		if !found {
+			h.inDegreeL0.Dec(o)
+			h.bulkEvictionCount.Add(1)
+		}
+	}
+}
+
 // pruneConnectionsLocked reduces connections using robust diversity heuristic.
 // Legacy method for non-PackedNeighbors storage.
 func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, maxConn, layer int, newNeighbors []uint32) {
-	selected := h.computePrunedNeighbors(ctx, data, nodeID, h.GetNeighborsCombinedManualLocked(data, layer, nodeID, ctx.neighborBatch, math.MaxUint64), newNeighbors, maxConn)
+	currentNeighbors := h.GetNeighborsCombinedManualLocked(data, layer, nodeID, ctx.neighborBatch, math.MaxUint64)
+	selected := h.computePrunedNeighbors(ctx, data, nodeID, currentNeighbors, newNeighbors, maxConn, layer)
+	if layer == 0 && InboundEdgeGuardEnabled {
+		h.updateInDegreeL0Diff(currentNeighbors, selected)
+	}
 
 	if h.topLayerManager != nil {
 		h.topLayerManager.ClearNeighbors(layer, nodeID)
@@ -510,6 +714,28 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 
 // computeDistances calculates distance from nodeID to multiple targets using type-aware helper.
 func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, neighbors []uint32, dists []float32) {
+	if data.Type == types.VectorTypeTQ {
+		dim := int(h.dims.Load())
+		if p := h.tqDecodeCache.Load(); p != nil && dim > 0 {
+			off1 := int(nodeID) * dim
+			if off1+dim <= len(p.data) {
+				v1 := p.data[off1 : off1+dim]
+				for i, nbID := range neighbors {
+					off2 := int(nbID) * dim
+					if off2+dim <= len(p.data) {
+						v2 := p.data[off2 : off2+dim]
+						if d, err := h.distFunc(v1, v2); err == nil {
+							dists[i] = d
+							continue
+						}
+					}
+					dists[i] = math.MaxFloat32
+				}
+				return
+			}
+		}
+	}
+
 	vQuery, err := data.GetVector(nodeID)
 	if err != nil || vQuery == nil {
 		return
@@ -584,6 +810,8 @@ func (h *ArrowHNSW) DispatchDistance(vt types.VectorDataType, a, b any) (float32
 		return h.distFuncC64(a.([]complex64), b.([]complex64))
 	case types.VectorTypeComplex128:
 		return h.distFuncC128(a.([]complex128), b.([]complex128))
+	case types.VectorTypeFloat16:
+		return h.distFuncF16(a.([]float16.Num), b.([]float16.Num))
 	default:
 		return 0, fmt.Errorf("unsupported vector type for distance: %v", vt)
 	}

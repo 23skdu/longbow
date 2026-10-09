@@ -191,6 +191,7 @@ def parse_bench_json(json_file):
                     continue
 
                 metrics[f"{prefix}_qps"] = entry.get("throughput", 0)
+                metrics[f"{prefix}_mean_ms"] = entry.get("mean_latency_ms", 0)
                 metrics[f"{prefix}_p50_ms"] = entry.get("p50_latency_ms", 0)
                 metrics[f"{prefix}_p95_ms"] = entry.get("p95_latency_ms", 0)
                 metrics[f"{prefix}_p99_ms"] = entry.get("p99_latency_ms", 0)
@@ -417,6 +418,8 @@ def collect_provenance(args):
         # baseline and a 13-mode run are not comparable.
         "search_modes_resolved": getattr(args, "resolved_search_modes", None),
         "runs": getattr(args, "runs", None),
+        "seed": getattr(args, "seed", None),
+        "shuffle_modes": getattr(args, "shuffle_modes", False),
         "duration": getattr(args, "duration", None),
         "numa_bind": getattr(args, "numa_bind", None),
         "mode": getattr(args, "mode", None),
@@ -428,22 +431,80 @@ def collect_provenance(args):
 
 
 def validate_concurrency_invariant(results, workers):
-    """Check QPS x P50 <= workers x 1000 for every search result row.
+    """Check QPS x mean_latency ~= workers for every search result row.
 
     QPS and latency are only meaningful together with the worker count that
-    produced them: with W concurrent workers no more than W requests can be in
-    flight, so QPS x P50_ms cannot exceed W x 1000. A row that violates it means
-    either the worker count was recorded wrong or the two numbers came from
-    different runs - both of which silently invalidate every regression decision
-    made against the file (roadmap R3).
+    produced them: with W concurrent workers, throughput is completed/duration and
+    mean latency is sum/completed, so
+
+        QPS x mean_latency == W
+
+    holds by construction. That identity is what makes this a useful provenance
+    check: a row violating it means the worker count was recorded wrongly, or the
+    QPS and the latency came from different runs - both of which silently
+    invalidate every regression decision made against the file (roadmap R3).
+
+    It previously checked QPS x P50 <= W x 1000 instead, which was wrong. The
+    physical bound applies to the mean; P50 is a percentile and carries no such
+    bound. The consequence was that the check fired on any right-skewed latency
+    distribution - the normal case - and rejected valid reports. A real example
+    from the 13-mode matrix: `sparse` at 20k, 4 workers, recorded 5424.9 QPS with
+    P50 0.778ms, giving 4221 > 4000 and refusing the report, while its p99/p50
+    ratio was 1.26 and the run was entirely sound.
+
+    The identity is a band, not an equality, because QPS x mean = sum(latencies)
+    / wall_duration, which equals W only if the workers were busy for the entire
+    window. They never quite are: goroutine start-up, and the last in-flight query
+    straddling the end of the window, both leave the workers briefly idle. Measured
+    across all 13 search modes at 20k on 4 workers, the implied worker count ran
+    3.66-3.96 against a recorded 4 - consistently 92-99% of it, never above.
+
+    So the upper bound is hard (implied cannot exceed W: at most W requests are in
+    flight) and the lower bound is a floor, set well below the observed floor of
+    92% to absorb run-to-run variation while still catching the failure the check
+    exists for - a row whose worker count was mis-recorded, or whose QPS and
+    latency came from different runs.
+
+    Rows recorded before mean existed fall back to P50 and are reported as a note
+    rather than silently passed on a weaker check.
 
     Returns a list of human-readable violations; empty means the file is sound.
     """
     if not workers or workers <= 0:
-        return ["no worker count recorded, cannot validate the QPS x P50 <= workers x 1000 invariant"]
+        return [f"no worker count recorded, cannot validate the QPS x mean ~= workers {workers} identity"]
 
-    limit = float(workers) * 1000.0
+    limit = float(workers)
+    busy_floor = 0.75  # implied worker count must be at least this fraction of W
     violations = []
+    stale = []
+
+    def check(where, mode, qps, mean, p50):
+        if not qps or qps <= 0:
+            return
+        latency = mean if mean and mean > 0 else None
+        source = "mean"
+        if latency is None:
+            # No mean recorded. Fall back to P50, which cannot support a bound;
+            # only flag it if even P50 is implausible.
+            latency, source = p50, "p50(fallback)"
+            if not latency or latency <= 0:
+                return
+            stale.append(f"{where} mode={mode}")
+        implied = qps * latency / 1000.0  # workers actually kept busy
+        if implied > limit * 1.02:
+            violations.append(
+                f"{where} mode={mode}: QPS {qps:.1f} x {source} {latency:.3f}ms "
+                f"= {implied:.2f} workers, which exceeds the recorded {limit:.0f}; "
+                f"more requests were in flight than there were workers"
+            )
+        elif implied < limit * busy_floor:
+            violations.append(
+                f"{where} mode={mode}: QPS {qps:.1f} x {source} {latency:.3f}ms "
+                f"= {implied:.2f} workers, only {implied / limit * 100:.0f}% of the recorded "
+                f"{limit:.0f}; the numbers are too low to come from a fully busy worker pool, "
+                f"so they were not produced by the run the provenance claims"
+            )
+
     for row in results or []:
         if not isinstance(row, dict):
             continue
@@ -455,27 +516,18 @@ def validate_concurrency_invariant(results, workers):
             for mode, m in search.items():
                 if not isinstance(m, dict):
                     continue
-                qps, p50 = m.get("qps"), m.get("p50")
-                if not qps or not p50 or qps <= 0 or p50 <= 0:
-                    continue
-                product = qps * p50
-                if product > limit:
-                    violations.append(
-                        f"{where} mode={mode}: QPS {qps:.1f} x P50 {p50:.3f}ms "
-                        f"= {product:.0f} > workers {workers} x 1000 = {limit:.0f}"
-                    )
+                check(where, mode, m.get("qps"), m.get("mean"), m.get("p50"))
             continue
 
         # Rows with top-level qps/p50, e.g. exchange_search.
-        qps, p50 = row.get("qps"), row.get("p50")
-        if not qps or not p50 or qps <= 0 or p50 <= 0:
-            continue
-        product = qps * p50
-        if product > limit:
-            violations.append(
-                f"{where} mode={row.get('operation', '?')}: QPS {qps:.1f} x P50 "
-                f"{p50:.3f}ms = {product:.0f} > workers {workers} x 1000 = {limit:.0f}"
-            )
+        check(where, row.get("operation", "?"), row.get("qps"), row.get("mean"), row.get("p50"))
+
+    if stale and not violations:
+        violations.append(
+            f"NOTE: {len(stale)} row(s) predate mean_latency and were checked with the "
+            f"weaker P50 fallback: {', '.join(stale[:5])}"
+            + (" ..." if len(stale) > 5 else "")
+        )
     return violations
 
 
@@ -1403,7 +1455,8 @@ class BenchmarkRunner:
         # same order. bench-tool normalises and reorders the list it is given.
         self.args.resolved_search_modes = [m for m in str(search_modes).split(",") if m]
         seed_arg = f" -seed {self.args.seed}" if getattr(self.args, "seed", None) is not None else ""
-        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {wire_dtype}{tq_arg}{seed_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
+        shuffle_arg = " -shuffle-modes" if getattr(self.args, "shuffle_modes", False) else ""
+        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {wire_dtype}{tq_arg}{seed_arg}{shuffle_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
         cpu_affinity = getattr(self.args, "cpu_affinity", None) or os.environ.get("LONGBOW_CPU_AFFINITY")
         if cpu_affinity and platform.system() == "Linux":
             cmd = f"taskset -c {cpu_affinity} {cmd}"
@@ -1520,6 +1573,7 @@ class BenchmarkRunner:
                 prefix = key.replace("_qps", "")
                 search_metrics[prefix] = {
                     "qps": value,
+                    "mean": metrics.get(f"{prefix}_mean_ms", 0),
                     "p50": metrics.get(f"{prefix}_p50_ms", 0),
                     "p95": metrics.get(f"{prefix}_p95_ms", 0),
                     "p99": metrics.get(f"{prefix}_p99_ms", 0),
@@ -1676,6 +1730,7 @@ class BenchmarkRunner:
                                 "alpha": alpha,
                                 "k": k,
                                 "qps": qps,
+                                "mean": sum(latencies) / len(latencies),
                                 "p50": latencies[int(0.5 * len(latencies))],
                                 "p95": latencies[int(0.95 * len(latencies))],
                                 "p99": latencies[int(0.99 * len(latencies))],
@@ -1944,6 +1999,7 @@ class BenchmarkRunner:
                                     "alpha": alpha,
                                     "k": k_val,
                                     "qps": qps,
+                                    "mean": sum(latencies) / len(latencies),
                                     "p50": latencies[int(0.5 * len(latencies))],
                                     "p95": latencies[int(0.95 * len(latencies))],
                                     "p99": latencies[int(0.99 * len(latencies))],
@@ -2057,6 +2113,7 @@ class BenchmarkRunner:
                         "count": count,
                         "operation": "exchange_search",
                         "qps": qps,
+                        "mean": sum(latencies) / len(latencies),
                         "p50": latencies[int(0.5 * len(latencies))],
                         "p95": latencies[int(0.95 * len(latencies))],
                         "p99": latencies[int(0.99 * len(latencies))],
@@ -2826,6 +2883,7 @@ class BenchmarkRunner:
                                 "nodes": len(nodes),
                                 "operation": "global_search",
                                 "qps": qps,
+                                "mean": sum(latencies) / len(latencies),
                                 "ingest_vec_per_sec": ingest_vec_per_sec,
                                 "p50": latencies[int(0.5 * len(latencies))],
                                 "p99": latencies[int(0.99 * len(latencies))],
@@ -3597,7 +3655,7 @@ class BenchmarkRunner:
         self.print_summary()
 
         # Self-validate before writing (roadmap R3). A report that violates
-        # QPS x P50 <= workers x 1000 is refused rather than emitted, because a
+        # QPS x mean_latency ~= workers is refused rather than emitted, because a
         # number that cannot be true of its own worker count cannot gate a
         # regression: every later comparison against it is meaningless.
         provenance = collect_provenance(self.args)
@@ -3615,7 +3673,7 @@ class BenchmarkRunner:
             },
             "provenance": provenance,
             "validation": {
-                "invariant": "qps * p50_ms <= workers * 1000",
+                "invariant": "qps * mean_latency_ms implies >=75% and <=102% of recorded workers",
                 "workers": provenance.get("workers"),
                 "ok": not violations,
                 "violations": violations,
@@ -4280,6 +4338,11 @@ if __name__ == "__main__":
         type=str,
         default="all",
         help="Comma-separated search modes to run (default: all)",
+    )
+    parser.add_argument(
+        "--shuffle-modes",
+        action="store_true",
+        help="Randomize search mode execution order per run using seed to break mode-order coupling (roadmap R12a)",
     )
     parser.add_argument(
         "--full", action="store_true", help="Run the full release candidate matrix (overrides dims/counts/dtypes if not explicitly set)"

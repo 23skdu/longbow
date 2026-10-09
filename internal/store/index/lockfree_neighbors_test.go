@@ -364,3 +364,160 @@ func TestLockFreeNeighbors_ConcurrentUpdates(t *testing.T) {
 	result := list.Read()
 	assert.NotNil(t, result)
 }
+
+// TestLockFreeNeighborCache_Basic verifies basic operations on LockFreeNeighborCache.
+func TestLockFreeNeighborCache_Basic(t *testing.T) {
+	cache := NewLockFreeNeighborCache()
+	assert.Equal(t, 0, cache.Len())
+
+	// Miss on non-existent node
+	nbrs, ok := cache.GetNeighbors(10)
+	assert.False(t, ok)
+	assert.Nil(t, nbrs)
+	hits, misses := cache.Stats()
+	assert.Equal(t, int64(0), hits)
+	assert.Equal(t, int64(1), misses)
+
+	// Set neighbors
+	cache.SetNeighbors(10, []uint32{1, 2, 3})
+	assert.Equal(t, 1, cache.Len())
+
+	// Hit
+	nbrs, ok = cache.GetNeighbors(10)
+	assert.True(t, ok)
+	assert.Equal(t, []uint32{1, 2, 3}, nbrs)
+	hits, misses = cache.Stats()
+	assert.Equal(t, int64(1), hits)
+	assert.Equal(t, int64(1), misses)
+
+	// Update existing
+	cache.SetNeighbors(10, []uint32{4, 5})
+	assert.Equal(t, 1, cache.Len())
+	nbrs, ok = cache.GetNeighbors(10)
+	assert.True(t, ok)
+	assert.Equal(t, []uint32{4, 5}, nbrs)
+
+	// Remove
+	cache.Remove(10)
+	assert.Equal(t, 0, cache.Len())
+	nbrs, ok = cache.GetNeighbors(10)
+	assert.False(t, ok)
+	assert.Nil(t, nbrs)
+
+	// Multi-chunk insertion (crossing chunk boundary at 4096)
+	nodes := []uint32{0, 1, 4095, 4096, 4097, 8192, 100000}
+	for _, n := range nodes {
+		cache.SetNeighbors(n, []uint32{n + 1, n + 2})
+	}
+	assert.Equal(t, len(nodes), cache.Len())
+
+	for _, n := range nodes {
+		nbrs, ok = cache.GetNeighbors(n)
+		assert.True(t, ok)
+		assert.Equal(t, []uint32{n + 1, n + 2}, nbrs)
+	}
+
+	// Clear
+	cache.Clear()
+	assert.Equal(t, 0, cache.Len())
+	for _, n := range nodes {
+		_, ok = cache.GetNeighbors(n)
+		assert.False(t, ok)
+	}
+}
+
+// TestLockFreeNeighborCache_ConcurrentReadWrite tests heavy concurrent reading and writing.
+func TestLockFreeNeighborCache_ConcurrentReadWrite(t *testing.T) {
+	cache := NewLockFreeNeighborCache()
+	const numNodes = 2000
+	const numReaders = 8
+	const numWriters = 4
+
+	// Pre-populate half the nodes
+	for i := uint32(0); i < numNodes/2; i++ {
+		cache.SetNeighbors(i, []uint32{i, i + 1})
+	}
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// Readers
+	for r := 0; r < numReaders; r++ {
+		wg.Add(1)
+		go func(readerID int) {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					nodeID := uint32((readerID * 17) % numNodes)
+					nbrs, ok := cache.GetNeighbors(nodeID)
+					if ok {
+						_ = len(nbrs)
+					}
+					runtime.Gosched()
+				}
+			}
+		}(r)
+	}
+
+	// Writers
+	for w := 0; w < numWriters; w++ {
+		wg.Add(1)
+		go func(writerID int) {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				nodeID := uint32((writerID*250 + i) % numNodes)
+				cache.SetNeighbors(nodeID, []uint32{nodeID, uint32(writerID)})
+			}
+		}(w)
+	}
+
+	// Wait for writers to finish
+	time.Sleep(50 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+
+	assert.True(t, cache.Len() > 0)
+}
+
+// BenchmarkLockFreeNeighborCache_GetNeighbors measures typed neighbor cache lookup.
+func BenchmarkLockFreeNeighborCache_GetNeighbors(b *testing.B) {
+	cache := NewLockFreeNeighborCache()
+	const numNodes = 10000
+	for i := uint32(0); i < numNodes; i++ {
+		cache.SetNeighbors(i, []uint32{i, i + 1, i + 2})
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for b.Loop() {
+		for i := uint32(0); i < 1000; i++ {
+			n, _ := cache.GetNeighbors(i)
+			_ = n[0]
+		}
+	}
+}
+
+// BenchmarkLockFreeNeighborCache_GetNeighbors_Parallel measures parallel lookup under contention.
+func BenchmarkLockFreeNeighborCache_GetNeighbors_Parallel(b *testing.B) {
+	cache := NewLockFreeNeighborCache()
+	const numNodes = 10000
+	for i := uint32(0); i < numNodes; i++ {
+		cache.SetNeighbors(i, []uint32{i, i + 1, i + 2})
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		var idx uint32
+		for pb.Next() {
+			n, _ := cache.GetNeighbors(idx % numNodes)
+			_ = n[0]
+			idx++
+		}
+	})
+}

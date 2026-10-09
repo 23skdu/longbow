@@ -7,6 +7,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
@@ -139,21 +140,10 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					if h.quantizer != nil && h.sq8Ready.Load() {
 						minV, maxV := h.quantizer.Params()
 						scale := (maxV - minV) / 255.0
-						var sum float32
-						for i, val := range q {
-							deq := minV + float32(v8[i])*scale
-							diff := val - deq
-							sum += diff * diff
-						}
-						return float32(math.Sqrt(float64(sum))), nil
+						return simd.DequantizeL2Float32Uint8(q, v8, minV, scale), nil
 					}
 					// Fallback
-					var sum float32
-					for i, val := range q {
-						diff := val - float32(v8[i])
-						sum += diff * diff
-					}
-					return float32(math.Sqrt(float64(sum))), nil
+					return simd.L2Float32Uint8(q, v8), nil
 				case []complex64:
 					qLen := len(q)
 					var qComplex []complex64
@@ -222,18 +212,13 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				case []float32:
 					// Convert q to float32
 					var minV, maxV float32
-					var scale float32
+					var scale float32 = 1.0
 					if h.quantizer != nil {
 						minV, maxV = h.quantizer.Params()
 						scale = (maxV - minV) / 255.0
+						return simd.DequantizeL2Float32Int8(vAny, q, minV, scale), nil
 					}
-					var sum float32
-					for i, val := range q {
-						deq := minV + float32(val)*scale
-						diff := deq - vAny[i]
-						sum += diff * diff
-					}
-					return float32(math.Sqrt(float64(sum))), nil
+					return simd.L2Float32Int8(vAny, q), nil
 				case []int8, []uint8:
 					var v8 []uint8
 					if vi8, ok := vAny.([]int8); ok {
@@ -249,17 +234,10 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 						return math.MaxFloat32, nil
 					}
 
-					var sum float32
 					if h.quantizer != nil && h.sq8Ready.Load() {
 						minV, maxV := h.quantizer.Params()
 						scale := (maxV - minV) / 255.0
-						for i, val := range q8 {
-							// De-quantize: min + level * scale
-							deqQ := minV + float32(val)*scale
-							deqV := minV + float32(v8[i])*scale
-							diff := deqQ - deqV
-							sum += diff * diff
-						}
+						return simd.DequantizeL2Uint8Uint8(q8, v8, scale), nil
 					} else {
 						// use optimized SIMD kernel
 						qI8 := *(*[]int8)(unsafe.Pointer(&q8)) // #nosec G103

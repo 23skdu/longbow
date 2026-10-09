@@ -273,7 +273,6 @@ func TestPredicateTraversal_ReachesMatchBehindRejectedNodes(t *testing.T) {
 					asQuery(dt.elemType, vecs[target]), k, nil,
 					types.SearchOptions{Predicate: soleIDPredicate{only: sole}, Ef: 64})
 				require.NoError(t, err)
-
 				require.Len(t, res, 1,
 					"build %d: the sole admitted node %d sits %d hops from entry point %d, "+
 						"behind %d rejected nodes, and must be found through them",

@@ -16,6 +16,40 @@
     ],
     "duration": 15
   },
+  "provenance": {
+    "revision": "e98e4d3",
+    "revision_dirty": false,
+    "binary": {
+      "path": "bin/bench-tool",
+      "size": 24512384,
+      "mtime": 1727117470
+    },
+    "workers": 8,
+    "queries": 10000,
+    "cpu_affinity": null,
+    "search_modes_requested": "dense",
+    "search_modes_resolved": [
+      "dense"
+    ],
+    "runs": 3,
+    "seed": 42,
+    "shuffle_modes": false,
+    "duration": 15,
+    "numa_bind": false,
+    "mode": "cpu",
+    "python_version": "3.12.0",
+    "cpu_count": 8,
+    "env": {
+      "LONGBOW_BENCH_FAST": "1",
+      "LONGBOW_MATH_DISPATCH": "standard"
+    }
+  },
+  "validation": {
+    "invariant": "qps * mean_latency_ms implies >=75% and <=102% of recorded workers",
+    "workers": 8,
+    "ok": true,
+    "violations": []
+  },
   "results": [
     {
       "dim": 128,
@@ -30,6 +64,7 @@
         "dense": {
           "qps": 2665.1,
           "qps_stdev": 1100.6,
+          "mean": 2.95,
           "p50": 2.522,
           "p50_stdev": 0.226,
           "p95": 9.01,
@@ -57,6 +92,7 @@
         "dense": {
           "qps": 2825.6,
           "qps_stdev": 339.5,
+          "mean": 2.78,
           "p50": 2.74,
           "p50_stdev": 0.246,
           "p95": 3.689,
@@ -84,6 +120,7 @@
         "dense": {
           "qps": 2373.7,
           "qps_stdev": 108.2,
+          "mean": 3.32,
           "p50": 3.162,
           "p50_stdev": 0.24,
           "p95": 4.846,
@@ -111,6 +148,7 @@
         "dense": {
           "qps": 2121.7,
           "qps_stdev": 353.2,
+          "mean": 3.71,
           "p50": 3.641,
           "p50_stdev": 0.474,
           "p95": 5.428,

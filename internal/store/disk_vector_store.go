@@ -218,6 +218,84 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 		if len(slice) > 0 {
 			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*2) // #nosec G103
 		}
+	case *array.Int16:
+		inferredType = types.VectorTypeInt16
+		elemSize = 2
+		vals := valuesArr.Int16Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*2) // #nosec G103
+		}
+	case *array.Uint16:
+		inferredType = types.VectorTypeUint16
+		elemSize = 2
+		vals := valuesArr.Uint16Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*2) // #nosec G103
+		}
+	case *array.Int32:
+		inferredType = types.VectorTypeInt32
+		elemSize = 4
+		vals := valuesArr.Int32Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*4) // #nosec G103
+		}
+	case *array.Uint32:
+		inferredType = types.VectorTypeUint32
+		elemSize = 4
+		vals := valuesArr.Uint32Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*4) // #nosec G103
+		}
+	case *array.Int64:
+		inferredType = types.VectorTypeInt64
+		elemSize = 8
+		vals := valuesArr.Int64Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*8) // #nosec G103
+		}
+	case *array.Uint64:
+		inferredType = types.VectorTypeUint64
+		elemSize = 8
+		vals := valuesArr.Uint64Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*8) // #nosec G103
+		}
 	default:
 		return 0, fmt.Errorf("unsupported list element type: %T", valuesArr)
 	}
@@ -392,7 +470,259 @@ func (dvs *DiskVectorStore) BatchAppend(vectors [][]float32) (int, error) {
 	return len(vectors), nil
 }
 
+// BatchAppendAny appends a slice of typed vector slices to the disk store.
+func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
+	if vectors == nil {
+		return 0, nil
+	}
+
+	var numVectors int
+	var inferredType types.VectorDataType
+	var elemSize int
+	var raw []byte
+
+	dvs.mu.RLock()
+	dim := dvs.dim
+	compAlg := dvs.compression
+	dvs.mu.RUnlock()
+
+	switch v := vectors.(type) {
+	case [][]float32:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeFloat32
+		elemSize = 4
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]float64:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeFloat64
+		elemSize = 8
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]int8:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeInt8
+		elemSize = 1
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]uint8:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeUint8
+		elemSize = 1
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], vec)
+			}
+		}
+	case [][]float16.Num:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeFloat16
+		elemSize = 2
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]int16:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeInt16
+		elemSize = 2
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]uint16:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeUint16
+		elemSize = 2
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]int32:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeInt32
+		elemSize = 4
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]uint32:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeUint32
+		elemSize = 4
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]int64:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeInt64
+		elemSize = 8
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]uint64:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeUint64
+		elemSize = 8
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]complex64:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeComplex64
+		elemSize = 8
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	case [][]complex128:
+		numVectors = len(v)
+		if numVectors == 0 {
+			return 0, nil
+		}
+		inferredType = types.VectorTypeComplex128
+		elemSize = 16
+		raw = make([]byte, numVectors*dim*elemSize)
+		for i, vec := range v {
+			if len(vec) > 0 {
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+			}
+		}
+	default:
+		return 0, fmt.Errorf("unsupported vector slice type: %T", vectors)
+	}
+
+	dvs.writeMu.Lock()
+	defer dvs.writeMu.Unlock()
+
+	var dataToWrite []byte
+	var compType byte // 0: none, 1: zstd, 2: lz4
+
+	switch compAlg {
+	case "zstd":
+		dataToWrite = dvs.zstdEnc.EncodeAll(raw, nil)
+		compType = 1
+	case "lz4":
+		maxLen := lz4.CompressBlockBound(len(raw))
+		compressed := make([]byte, maxLen)
+		n, err := lz4.CompressBlock(raw, compressed, nil)
+		if err != nil {
+			return 0, fmt.Errorf("lz4 compression failed: %w", err)
+		}
+		dataToWrite = compressed[:n]
+		compType = 2
+	default:
+		dataToWrite = raw
+		compType = 0
+	}
+
+	header := make([]byte, 13)
+	binary.LittleEndian.PutUint32(header[0:4], 0x56434D50)
+	header[4] = compType
+	binary.LittleEndian.PutUint32(header[5:9], uint32(len(raw)))          // #nosec G115
+	binary.LittleEndian.PutUint32(header[9:13], uint32(len(dataToWrite))) // #nosec G115
+
+	offset, _ := dvs.backend.Size()
+	if _, err := dvs.backend.WriteAt(header, offset); err != nil {
+		return 0, err
+	}
+	if _, err := dvs.backend.WriteAt(dataToWrite, offset+13); err != nil {
+		return 0, err
+	}
+	if err := dvs.backend.Sync(); err != nil {
+		return 0, err
+	}
+
+	dvs.mu.Lock()
+	dvs.dataType = inferredType
+	dvs.blocks = append(dvs.blocks, BlockEntry{
+		Offset:     offset,
+		CompSize:   uint32(len(dataToWrite)), // #nosec G115
+		RawSize:    uint32(len(raw)),         // #nosec G115
+		NumVectors: numVectors,
+		StartIdx:   dvs.totalCount,
+		CompType:   compType,
+		Tier:       storage.TierHot,
+		CreatedAt:  time.Now(),
+	})
+	dvs.totalCount += numVectors
+	dvs.mu.Unlock()
+
+	return numVectors, nil
+}
+
 func (dvs *DiskVectorStore) findBlock(idx int) int {
+	if idx < 0 || idx >= dvs.totalCount {
+		return -1
+	}
 	l, r := 0, len(dvs.blocks)-1
 	res := -1
 	for l <= r {
@@ -402,6 +732,12 @@ func (dvs *DiskVectorStore) findBlock(idx int) int {
 			l = mid + 1
 		} else {
 			r = mid - 1
+		}
+	}
+	if res >= 0 && res < len(dvs.blocks) {
+		block := dvs.blocks[res]
+		if idx >= block.StartIdx+block.NumVectors {
+			return -1
 		}
 	}
 	return res
@@ -528,10 +864,8 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 			}
 		} else {
 			offset := localIdx * dim * 4
-			for j := 0; j < dim; j++ {
-				bits := binary.LittleEndian.Uint32(raw[offset+j*4 : offset+(j+1)*4])
-				vec[j] = math.Float32frombits(bits)
-			}
+			rawF32 := unsafe.Slice((*float32)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawF32)
 		}
 		results[i] = vec
 	}
@@ -611,14 +945,9 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		blockData[bIdx] = raw
 	}
 
-	elemSize := 4
-	switch dataType {
-	case types.VectorTypeFloat64:
-		elemSize = 8
-	case types.VectorTypeInt8, types.VectorTypeUint8:
-		elemSize = 1
-	case types.VectorTypeFloat16:
-		elemSize = 2
+	elemSize := dataType.ElementSize()
+	if elemSize <= 0 {
+		elemSize = 4
 	}
 
 	switch dataType {
@@ -632,10 +961,8 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 
 			vec := make([]float64, dim)
 			offset := localIdx * dim * elemSize
-			for j := 0; j < dim; j++ {
-				bits := binary.LittleEndian.Uint64(raw[offset+j*8 : offset+(j+1)*8])
-				vec[j] = math.Float64frombits(bits)
-			}
+			rawF64 := unsafe.Slice((*float64)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawF64)
 			results[i] = vec
 		}
 		return results, nil
@@ -650,9 +977,8 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 
 			vec := make([]int8, dim)
 			offset := localIdx * dim * elemSize
-			for j := 0; j < dim; j++ {
-				vec[j] = int8(raw[offset+j]) // #nosec G115 -- bit reinterpretation of int8 stored as byte on disk
-			}
+			rawI8 := unsafe.Slice((*int8)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawI8)
 			results[i] = vec
 		}
 		return results, nil
@@ -682,9 +1008,136 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 
 			vec := make([]float16.Num, dim)
 			offset := localIdx * dim * elemSize
-			for j := 0; j < dim; j++ {
-				vec[j] = float16.FromLEBytes(raw[offset+j*2 : offset+(j+1)*2])
-			}
+			rawF16 := unsafe.Slice((*float16.Num)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawF16)
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeInt16:
+		results := make([][]int16, len(filtered))
+		for i, idx := range filtered {
+			bIdx := blockOf[i]
+			raw := blockData[bIdx]
+			block := blockCopies[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]int16, dim)
+			offset := localIdx * dim * elemSize
+			rawI16 := unsafe.Slice((*int16)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawI16)
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeUint16:
+		results := make([][]uint16, len(filtered))
+		for i, idx := range filtered {
+			bIdx := blockOf[i]
+			raw := blockData[bIdx]
+			block := blockCopies[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]uint16, dim)
+			offset := localIdx * dim * elemSize
+			rawU16 := unsafe.Slice((*uint16)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawU16)
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeInt32:
+		results := make([][]int32, len(filtered))
+		for i, idx := range filtered {
+			bIdx := blockOf[i]
+			raw := blockData[bIdx]
+			block := blockCopies[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]int32, dim)
+			offset := localIdx * dim * elemSize
+			rawI32 := unsafe.Slice((*int32)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawI32)
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeUint32:
+		results := make([][]uint32, len(filtered))
+		for i, idx := range filtered {
+			bIdx := blockOf[i]
+			raw := blockData[bIdx]
+			block := blockCopies[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]uint32, dim)
+			offset := localIdx * dim * elemSize
+			rawU32 := unsafe.Slice((*uint32)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawU32)
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeInt64:
+		results := make([][]int64, len(filtered))
+		for i, idx := range filtered {
+			bIdx := blockOf[i]
+			raw := blockData[bIdx]
+			block := blockCopies[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]int64, dim)
+			offset := localIdx * dim * elemSize
+			rawI64 := unsafe.Slice((*int64)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawI64)
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeUint64:
+		results := make([][]uint64, len(filtered))
+		for i, idx := range filtered {
+			bIdx := blockOf[i]
+			raw := blockData[bIdx]
+			block := blockCopies[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]uint64, dim)
+			offset := localIdx * dim * elemSize
+			rawU64 := unsafe.Slice((*uint64)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawU64)
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeComplex64:
+		results := make([][]complex64, len(filtered))
+		for i, idx := range filtered {
+			bIdx := blockOf[i]
+			raw := blockData[bIdx]
+			block := blockCopies[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]complex64, dim)
+			offset := localIdx * dim * elemSize
+			rawC64 := unsafe.Slice((*complex64)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawC64)
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeComplex128:
+		results := make([][]complex128, len(filtered))
+		for i, idx := range filtered {
+			bIdx := blockOf[i]
+			raw := blockData[bIdx]
+			block := blockCopies[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]complex128, dim)
+			offset := localIdx * dim * elemSize
+			rawC128 := unsafe.Slice((*complex128)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+			copy(vec, rawC128)
 			results[i] = vec
 		}
 		return results, nil
@@ -708,10 +1161,8 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 				}
 			} else {
 				offset := localIdx * dim * elemSize
-				for j := 0; j < dim; j++ {
-					bits := binary.LittleEndian.Uint32(raw[offset+j*4 : offset+(j+1)*4])
-					vec[j] = math.Float32frombits(bits)
-				}
+				rawF32 := unsafe.Slice((*float32)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
+				copy(vec, rawF32)
 			}
 			results[i] = vec
 		}

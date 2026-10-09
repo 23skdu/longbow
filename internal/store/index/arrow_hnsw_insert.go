@@ -240,6 +240,29 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
+	case types.VectorTypeFloat16:
+		for i, cand := range candidates {
+			if len(selected) >= m {
+				break
+			}
+			isDiverse := true
+			v1, _ := extracted[i].([]float16.Num)
+			if v1 == nil {
+				continue
+			}
+			for j := range selected {
+				v2 := selectedVecs[j].([]float16.Num)
+				d, _ := h.distFuncF16(v1, v2)
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
+			}
+			if isDiverse {
+				selected = append(selected, cand)
+				selectedVecs = append(selectedVecs, v1)
+			}
+		}
 	case types.VectorTypeFloat64:
 		for i, cand := range candidates {
 			if len(selected) >= m {
@@ -307,6 +330,42 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 			if isDiverse {
 				selected = append(selected, cand)
 				selectedVecs = append(selectedVecs, v1)
+			}
+		}
+	case types.VectorTypeTQ:
+		if p := h.tqDecodeCache.Load(); p != nil {
+			dim := int(h.dims.Load())
+			for _, cand := range candidates {
+				if len(selected) >= m {
+					break
+				}
+				isDiverse := true
+				off1 := int(cand.ID) * dim
+				if off1+dim > len(p.data) {
+					continue
+				}
+				v1 := p.data[off1 : off1+dim]
+				for j := range selected {
+					off2 := int(selected[j].ID) * dim
+					if off2+dim <= len(p.data) {
+						v2 := p.data[off2 : off2+dim]
+						d, _ := h.distFunc(v1, v2)
+						if d < cand.Dist {
+							isDiverse = false
+							break
+						}
+					}
+				}
+				if isDiverse {
+					selected = append(selected, cand)
+				}
+			}
+		} else {
+			for _, cand := range candidates {
+				if len(selected) >= m {
+					break
+				}
+				selected = append(selected, cand)
 			}
 		}
 	default:
@@ -599,6 +658,14 @@ func (h *ArrowHNSW) generateLevel() int {
 }
 
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+	// Count callers for the whole call, not just the bulk link. The R8 quality
+	// gate can only measure a batch's reachability when no other ingest caller is
+	// mutating the graph; it reads inBulkInsert for this and misses the case
+	// where the other callers are in their own bulk link or their own sequential
+	// fallback at that moment.
+	h.inAddBatch.Add(1)
+	defer h.inAddBatch.Add(-1)
+
 	h.bulkMu.Lock()
 	var startID uint32
 	var startIDAssigned bool
@@ -1079,6 +1146,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return nil, ctxErr
 				}
+				fmt.Printf("[INFO][HNSW] Bulk insert quality guard or failure (%v), falling back to sequential AddBatch\n", err)
 			}
 		}
 	}

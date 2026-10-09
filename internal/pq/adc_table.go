@@ -25,7 +25,7 @@ func (e *PQEncoder) BuildADCTable(query []float32) ([]float32, error) {
 	subDim := e.SubDim
 	table := make([]float32, m*k)
 
-	kernel := simd.GetKernel[float32](simd.MetricEuclidean, subDim)
+	kernel := simd.GetKernel[float32](simd.MetricL2Squared, subDim)
 	if kernel == nil {
 		kernel = simd.L2Squared
 	}

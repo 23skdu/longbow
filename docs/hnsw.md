@@ -17,6 +17,14 @@ Longbow uses HNSW (Hierarchical Navigable Small World) graphs for approximate ne
 | `LONGBOW_MAX_M0` | `64` (unset) | Caps max connections at layer 0; the benchmark script sets `32` |
 | `LONGBOW_HNSW_EF_CONSTRUCTION` | `400` | Dynamic candidate list size during insert |
 | `LONGBOW_ADAPTIVE_M_MAX_FACTOR` | `1.5` | Adaptive M scaling factor; the env var only overrides the built-in `1.5` default |
+| `LONGBOW_HNSW_BULK_QUALITY_GUARD` | `1` | Enforce the bulk-insert graph-quality floors; `0` reports them without enforcing |
+| `LONGBOW_HNSW_BULK_REACHABILITY_FLOOR` | `0.80` | Layer-0 reachability a bulk batch must show before it is rejected |
+| `LONGBOW_HNSW_BULK_MIN_DEGREE_RATIO` | `0` (disabled) | Reject a bulk batch below this fraction of `MMax0` mean layer-0 degree |
+| `LONGBOW_HNSW_BULK_MAX_HOP_DEPTH` | `1.5` | Reject a bulk batch above this multiple of the ideal `log(N)/log(MMax0)` descent depth; `0` disables |
+| `LONGBOW_HNSW_INBOUND_GUARD` | `0` (off) | Never drop a node's last layer-0 inbound edge during pruning (R26) |
+
+See [deploy.md](deploy.md#bulk-insert-graph-quality-longbow_hnsw_bulk_quality_guard)
+for what each floor measures and why two of them ship disabled.
 
 Internal (Go) defaults: `M=32`, `MMax=64`, `MMax0=64`, `EfConstruction=400`, `EfSearch=50`.
 

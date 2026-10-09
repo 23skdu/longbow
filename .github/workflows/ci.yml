@@ -73,6 +73,28 @@ jobs:
           fi
           echo "All packages have active test coverage."
 
+  test-arm64-emulation:
+    name: Emulated ARM64 SIMD & Kernel Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.0"
+          cache: true
+
+      - name: Run SIMD Tests under ARM64 Emulation
+        run: |
+          GOARCH=arm64 go test -v ./internal/simd/...
+
   benchmark-regression:
     name: Benchmark Regression (--ci)
     needs: validate

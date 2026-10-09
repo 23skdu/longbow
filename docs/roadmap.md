@@ -259,6 +259,28 @@ Two items follow:
 - **Success Criteria**: 5x–8x faster vector extraction from decompressed disk blocks; reduce heap allocation from $O(N \cdot \text{dim})$ to zero.
 
 #### Item 4: Comprehensive Data Type Support & Bounds Validation in `DiskVectorStore.GetBatchAny` (§7 Item 3)
+
+**Status: done, and the item's description was stale.** Both halves were
+already resolved in the working tree before this was picked up: `findBlock` has
+carried the `idx >= totalCount` and `idx >= block.StartIdx+block.NumVectors` checks
+for some time, and twelve of the element types already had explicit typed cases.
+The residual gap was float32 and TurboQuant, both of which dispatch separately.
+
+What is now true:
+
+- `GetBatchAny` returns an error naming the type instead of falling through to a
+  float32 decode at stride `dim*4` for anything unrecognised.
+- A TurboQuant decode failure returns an error rather than a zeroed vector,
+  which was indistinguishable from a genuine all-zero vector and silently
+  corrupted a search result.
+- The twelve near-identical unsafe row views are now one generic
+  `extractTypedRows[T]`, with the block-range and payload-length checks in that
+  single place. They previously differed only in the type parameter, and one had
+  grown a bounds check while the other eleven had not.
+
+A note on the tests: they are characterisation tests, not regression tests for a
+demonstrated defect. float32 and TurboQuant round-tripped correctly before the
+change, verified by running the new tests against the unmodified file.
 - **Target Files**: [disk_vector_store.go](file:///home/rsd/REPOS/longbow/internal/store/disk_vector_store.go)
 - **Problem**: `GetBatchAny` (lines 614–720) only handles `float64`, `int8`, `uint8`, and `float16`. 11 valid data types (`int16`, `uint16`, `int32`, `uint32`, `int64`, `uint64`, `complex64`, `complex128`, etc.) fall into `default:`, which decodes as `[][]float32` with stride `elemSize = 4`, causing silent vector truncation or corruption. In addition, `findBlock(idx)` lacks upper-bound checking against `block.StartIdx + block.NumVectors`, causing out-of-bounds queries to alias the last block and panic.
 - **Action Plan**:

@@ -591,3 +591,56 @@ func TestDiskVectorStore_GetBatchAny_OutOfRange(t *testing.T) {
 		require.Contains(t, err.Error(), "out of bounds")
 	}
 }
+
+// TestDiskVectorStore_ExtractTypedRows_Bounds pins the two bounds checks that
+// now live in one shared place rather than in twelve copies of the same unsafe
+// expression, where only one of them had them.
+//
+// It calls extractTypedRows directly with a hand-built block so the row can be
+// asked for out of range without having to construct a store that would produce
+// one, which is the point: the corruption this guards against is a truncated
+// block, and a test that only ever writes well-formed blocks cannot reach it.
+func TestDiskVectorStore_ExtractTypedRows_Bounds(t *testing.T) {
+	const dim, rows = 4, 2
+	block := BlockEntry{StartIdx: 10, NumVectors: rows}
+	payload := make([]byte, rows*dim*8) // float64 rows
+	blockData := map[int][]byte{0: payload}
+	blockOf := []int{0, 0}
+	copies := map[int]BlockEntry{0: block}
+
+	t.Run("in range", func(t *testing.T) {
+		got, err := extractTypedRows[float64](blockData, blockOf, copies, []int{10, 11}, dim)
+		require.NoError(t, err)
+		require.Len(t, got, 2)
+		for _, r := range got {
+			require.Len(t, r, dim)
+		}
+	})
+
+	t.Run("missing block mapping", func(t *testing.T) {
+		_, err := extractTypedRows[float64](blockData, []int{0}, copies, []int{10, 11}, dim)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no block mapping")
+	})
+
+	t.Run("local index past the block", func(t *testing.T) {
+		_, err := extractTypedRows[float64](blockData, blockOf, copies, []int{12}, dim)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "outside block")
+	})
+
+	t.Run("local index before the block", func(t *testing.T) {
+		_, err := extractTypedRows[float64](blockData, blockOf, copies, []int{9}, dim)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "outside block")
+	})
+
+	t.Run("truncated payload", func(t *testing.T) {
+		// Block claims two rows but only carries one and a half. Without the
+		// payload check this reads past the end of raw.
+		short := map[int][]byte{0: payload[:dim*8+8]}
+		_, err := extractTypedRows[float64](short, blockOf, copies, []int{11}, dim)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "exceeds block payload")
+	})
+}

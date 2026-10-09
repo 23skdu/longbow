@@ -952,237 +952,58 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 
 	switch dataType {
 	case types.VectorTypeFloat64:
-		results := make([][]float64, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]float64, dim)
-			offset := localIdx * dim * elemSize
-			rawF64 := unsafe.Slice((*float64)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawF64)
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[float64](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeInt8:
-		results := make([][]int8, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]int8, dim)
-			offset := localIdx * dim * elemSize
-			rawI8 := unsafe.Slice((*int8)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawI8)
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[int8](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeUint8:
-		results := make([][]uint8, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]uint8, dim)
-			offset := localIdx * dim * elemSize
-			copy(vec, raw[offset:offset+dim])
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[uint8](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeFloat16:
-		results := make([][]float16.Num, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]float16.Num, dim)
-			offset := localIdx * dim * elemSize
-			rawF16 := unsafe.Slice((*float16.Num)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawF16)
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[float16.Num](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeInt16:
-		results := make([][]int16, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]int16, dim)
-			offset := localIdx * dim * elemSize
-			rawI16 := unsafe.Slice((*int16)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawI16)
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[int16](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeUint16:
-		results := make([][]uint16, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]uint16, dim)
-			offset := localIdx * dim * elemSize
-			rawU16 := unsafe.Slice((*uint16)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawU16)
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[uint16](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeInt32:
-		results := make([][]int32, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]int32, dim)
-			offset := localIdx * dim * elemSize
-			rawI32 := unsafe.Slice((*int32)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawI32)
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[int32](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeUint32:
-		results := make([][]uint32, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]uint32, dim)
-			offset := localIdx * dim * elemSize
-			rawU32 := unsafe.Slice((*uint32)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawU32)
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[uint32](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeInt64:
-		results := make([][]int64, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]int64, dim)
-			offset := localIdx * dim * elemSize
-			rawI64 := unsafe.Slice((*int64)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawI64)
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[int64](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeUint64:
-		results := make([][]uint64, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]uint64, dim)
-			offset := localIdx * dim * elemSize
-			rawU64 := unsafe.Slice((*uint64)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawU64)
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[uint64](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeComplex64:
-		results := make([][]complex64, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]complex64, dim)
-			offset := localIdx * dim * elemSize
-			rawC64 := unsafe.Slice((*complex64)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawC64)
-			results[i] = vec
-		}
-		return results, nil
-
+		return extractTypedRows[complex64](blockData, blockOf, blockCopies, filtered, dim)
 	case types.VectorTypeComplex128:
-		results := make([][]complex128, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			vec := make([]complex128, dim)
-			offset := localIdx * dim * elemSize
-			rawC128 := unsafe.Slice((*complex128)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawC128)
-			results[i] = vec
-		}
-		return results, nil
+		return extractTypedRows[complex128](blockData, blockOf, blockCopies, filtered, dim)
 
 	case types.VectorTypeFloat32:
-		results := make([][]float32, len(filtered))
-		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-
-			// A TurboQuant block stores PackedSize() bytes per row, not
-			// dim*4, so it has to be decoded rather than reinterpreted. A
-			// dataset can switch to TurboQuant after float32 rows exist,
-			// which is why both are checked here.
-			if block.CompType == 3 {
-				vec, err := decodeTQRow(raw, localIdx, dim, tqEnc)
+		// A dataset can switch to TurboQuant after float32 rows already
+		// exist, and the store keeps reporting float32 as its data type, so
+		// the block decides how the rows are laid out, not the switch.
+		// TurboQuant rows are PackedSize() bytes wide, not dim*4, and reading
+		// them as float32 returns plausible garbage.
+		for _, bIdx := range sortedBlockIdxs {
+			if blockCopies[bIdx].CompType != 3 {
+				continue
+			}
+			results := make([][]float32, len(filtered))
+			for i, idx := range filtered {
+				b := blockOf[i]
+				vec, err := decodeTQRow(blockData[b], idx-blockCopies[b].StartIdx, dim, tqEnc)
 				if err != nil {
 					return nil, err
 				}
 				results[i] = vec
-				continue
 			}
-
-			offset := localIdx * dim * elemSize
-			if offset+dim*elemSize > len(raw) {
-				return nil, fmt.Errorf("vector %d: row offset %d exceeds block payload of %d bytes",
-					idx, offset, len(raw))
-			}
-			vec := make([]float32, dim)
-			rawF32 := unsafe.Slice((*float32)(unsafe.Pointer(&raw[offset])), dim) // #nosec G103
-			copy(vec, rawF32)
-			results[i] = vec
+			return results, nil
 		}
-		return results, nil
+		return extractTypedRows[float32](blockData, blockOf, blockCopies, filtered, dim)
 
 	case types.VectorTypeTQ:
 		results := make([][]float32, len(filtered))
 		for i, idx := range filtered {
-			bIdx := blockOf[i]
-			raw := blockData[bIdx]
-			block := blockCopies[bIdx]
-			localIdx := idx - block.StartIdx
-			vec, err := decodeTQRow(raw, localIdx, dim, tqEnc)
+			b := blockOf[i]
+			vec, err := decodeTQRow(blockData[b], idx-blockCopies[b].StartIdx, dim, tqEnc)
 			if err != nil {
 				return nil, err
 			}
@@ -1197,6 +1018,60 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		// no error. An unknown type is a bug at the call site; say so.
 		return nil, fmt.Errorf("GetBatchAny: unsupported vector data type %v", dataType)
 	}
+}
+
+// extractTypedRows reads one row per requested index out of the already
+// decompressed blocks.
+//
+// On little-endian hardware every supported element type is a plain IEEE 754 or
+// two's-complement scalar, so a contiguous row in the block payload already
+// matches its native representation and a row is a pointer view rather than a
+// per-component decode loop.
+//
+// This replaced twelve near-identical copies of that view, one per type. They
+// differed only in the type parameter, and one of them had grown a bounds check
+// while the other eleven had not - which is exactly the failure mode to expect
+// from keeping the same unsafe expression twelve times, and the reason the
+// bounds check belongs here rather than in any single case.
+func extractTypedRows[T any](
+	blockData map[int][]byte,
+	blockOf []int,
+	blockCopies map[int]BlockEntry,
+	filtered []int,
+	dim int,
+) ([][]T, error) {
+	var zero T
+	elemSize := int(unsafe.Sizeof(zero))
+	if elemSize == 0 {
+		return nil, fmt.Errorf("extractTypedRows: %T has zero size", zero)
+	}
+	rowBytes := dim * elemSize
+
+	results := make([][]T, len(filtered))
+	for i, idx := range filtered {
+		if i >= len(blockOf) {
+			return nil, fmt.Errorf("vector %d: no block mapping for index %d of %d", idx, i, len(filtered))
+		}
+		bIdx := blockOf[i]
+		raw := blockData[bIdx]
+		block := blockCopies[bIdx]
+
+		localIdx := idx - block.StartIdx
+		if localIdx < 0 || localIdx >= int(block.NumVectors) {
+			return nil, fmt.Errorf("vector %d: local index %d outside block of %d vectors",
+				idx, localIdx, block.NumVectors)
+		}
+		offset := localIdx * rowBytes
+		if offset+rowBytes > len(raw) {
+			return nil, fmt.Errorf("vector %d: row [%d,%d) exceeds block payload of %d bytes",
+				idx, offset, offset+rowBytes, len(raw))
+		}
+
+		vec := make([]T, dim)
+		copy(vec, unsafe.Slice((*T)(unsafe.Pointer(&raw[offset])), dim)) // #nosec G103
+		results[i] = vec
+	}
+	return results, nil
 }
 
 // decodeTQRow reconstructs one TurboQuant row from a decompressed block.

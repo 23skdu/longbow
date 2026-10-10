@@ -54,6 +54,9 @@ func TestArrowHNSW_ConcurrentAddBatch_Int8_2Batches(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	dims := 128
 	batchSize := 5_000
+	if testing.Short() {
+		batchSize = 1_000
+	}
 
 	rec1 := makeInt8TestRecordBatch(mem, dims, batchSize)
 	defer rec1.Release()

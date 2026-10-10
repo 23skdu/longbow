@@ -24,5 +24,6 @@ func dequantL2Float32Uint8AVX2(q []float32, v []uint8, minV, scale float32) floa
 	if n < 8 {
 		return dequantL2Float32Uint8Generic(q[:n], v[:n], minV, scale)
 	}
+	// #nosec G103 -- SIMD kernel pointer passing requires unsafe.Pointer
 	return dequantL2Float32Uint8AVX2Kernel(unsafe.Pointer(&q[0]), unsafe.Pointer(&v[0]), n, minV, scale)
 }

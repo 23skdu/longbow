@@ -49,8 +49,8 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 			if len(old) < maxConn {
 				next := append(ctx.scratchPool[:0], old...)
 				next = append(next, target)
-				lastOld = old
-				lastNew = next
+				lastOld = slices.Clone(old)
+				lastNew = slices.Clone(next)
 				return next
 			}
 
@@ -58,8 +58,8 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 			// This is expensive, but only happens when we hit maxConn
 			h.bulkContentionCount.Add(1)
 			next := h.computePrunedNeighbors(ctx, data, source, old, []uint32{target}, maxConn, layer)
-			lastOld = old
-			lastNew = next
+			lastOld = slices.Clone(old)
+			lastNew = slices.Clone(next)
 			return next
 		})
 
@@ -158,16 +158,16 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 				next := make([]uint32, len(old)+len(newSources))
 				copy(next, old)
 				copy(next[len(old):], newSources)
-				lastOld = old
-				lastNew = next
+				lastOld = slices.Clone(old)
+				lastNew = slices.Clone(next)
 				return next
 			}
 
 			// Pruning needed
 			h.bulkContentionCount.Add(1)
 			next := h.computePrunedNeighbors(ctx, data, target, old, newSources, maxConn, layer)
-			lastOld = old
-			lastNew = next
+			lastOld = slices.Clone(old)
+			lastNew = slices.Clone(next)
 			return next
 		})
 
@@ -229,8 +229,8 @@ func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *types.GraphD
 
 			h.bulkContentionCount.Add(1)
 			next := h.computePrunedNeighbors(ctx, data, id, old, nil, maxConn, layer)
-			lastOld = old
-			lastNew = next
+			lastOld = slices.Clone(old)
+			lastNew = slices.Clone(next)
 			atomic.AddUint64(&data.GlobalVersion, 1)
 			return next
 		})
@@ -510,7 +510,7 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 	// oldest link in the pool.
 	selected := h.selectNeighbors(ctx, candidates, maxConn, data)
 	if layer == 0 && InboundEdgeGuardEnabled {
-		protectLastInboundEdges(&h.inDegreeL0, pool, dists, selected, maxConn)
+		protectLastInboundEdges(&h.inDegreeL0, current, pool, dists, selected, maxConn)
 	}
 
 	var result []uint32
@@ -556,13 +556,17 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 // The bookkeeping it needs is gated with it, so a disabled guard pays nothing
 // for a guarantee it is not making.
 var InboundEdgeGuardEnabled = func() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("LONGBOW_HNSW_INBOUND_GUARD"))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
+	if v := os.Getenv("LONGBOW_HNSW_INBOUND_GUARD"); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "0", "false", "no", "off":
+			return false
+		case "1", "true", "yes", "on":
+			return true
+		}
 	}
+	return true
 }()
+
 
 // protectLastInboundEdges enforces the R26 invariant on the layer-0 neighbour set
 // that is about to be committed: a neighbour whose only inbound edge is the one
@@ -587,24 +591,25 @@ var InboundEdgeGuardEnabled = func() bool {
 //     kept link out and an at-risk link in; when every pool member is itself at
 //     risk there is no fixed point to reach, and an unbounded loop oscillates
 //     between two equivalent states forever.
-func protectLastInboundEdges(inDegree *inDegreeTracker, pool []uint32, dists []float32, selected []types.Candidate, maxConn int) {
+func protectLastInboundEdges(inDegree *inDegreeTracker, current []uint32, pool []uint32, dists []float32, selected []types.Candidate, maxConn int) {
 	room := len(pool) - len(selected)
-	if len(selected) < maxConn || room <= 0 {
+	if len(selected) < maxConn || room <= 0 || len(current) == 0 {
 		return
 	}
 
 	for swaps := 0; swaps < room; swaps++ {
 		risk, riskDist := -1, float32(0)
 		for i, id := range pool {
-			// Only a node's *first* inbound edge is protected. Protecting
-			// every unique inbound edge instead would let a fresh node claim
-			// a slot at each of the hosts it reverse-links to, and those hosts
-			// then fill with nothing but protected edges - layer 0 stops being
-			// a navigable proximity graph and greedy descent needs an order of
-			// magnitude more node visits. One hold per node is enough to get it
-			// into the entry point's in-component at all, which is what
-			// reachability means.
-			if inDegree.Get(id) > 0 || keptNeighbor(selected, id) {
+			// Only an existing edge being dropped can take away a node's inbound edge.
+			// Extra candidates were not existing edges, so not selecting them does not
+			// drop an inbound edge.
+			if !slices.Contains(current, id) {
+				continue
+			}
+			// If inDegree > 1, the node has other inbound edges and dropping this edge
+			// does not leave it stranded. Because this edge is still counted in inDegree,
+			// a node at risk has inDegree <= 1.
+			if inDegree.Get(id) > 1 || keptNeighbor(selected, id) {
 				continue
 			}
 			if risk < 0 || dists[i] < riskDist {
@@ -615,14 +620,21 @@ func protectLastInboundEdges(inDegree *inDegreeTracker, pool []uint32, dists []f
 			return
 		}
 
-		// Give up the furthest link being kept. An unreachable node costs
-		// recall everywhere, while a worse local neighbourhood costs it only
-		// around one node, so this is the right thing to spend.
-		worst := 0
-		for i := 1; i < len(selected); i++ {
-			if selected[i].Dist > selected[worst].Dist {
-				worst = i
+		// Give up the furthest link being kept, but do not evict another link
+		// that is also at risk of losing its only inbound edge.
+		worst := -1
+		var worstDist float32 = -1
+		for i := 0; i < len(selected); i++ {
+			if slices.Contains(current, selected[i].ID) && inDegree.Get(selected[i].ID) <= 1 {
+				continue
 			}
+			if selected[i].Dist > worstDist {
+				worst = i
+				worstDist = selected[i].Dist
+			}
+		}
+		if worst < 0 {
+			return
 		}
 		selected[worst] = types.Candidate{ID: pool[risk], Dist: dists[risk]}
 	}
@@ -669,6 +681,84 @@ func (h *ArrowHNSW) updateInDegreeL0Diff(old, next []uint32) {
 			h.inDegreeL0.Dec(o)
 			h.bulkEvictionCount.Add(1)
 		}
+	}
+}
+
+// ensureInboundEdge guarantees that target has at least one layer-0 inbound edge
+// by linking from host (its nearest geometric neighbor). If host is full,
+// it evicts the furthest neighbor that has in-degree > 1, preserving reachability.
+func (h *ArrowHNSW) ensureInboundEdge(ctx *ArrowSearchContext, data *types.GraphData, host, target uint32, maxConn int) {
+	if data == nil {
+		data = h.data.Load()
+	}
+	if len(data.PackedNeighbors) == 0 || data.PackedNeighbors[0] == nil {
+		return
+	}
+	pn := data.PackedNeighbors[0]
+	var lastOld, lastNew []uint32
+
+	_ = pn.UpdateNeighbors(host, func(old []uint32) []uint32 {
+		for _, o := range old {
+			if o == target {
+				lastOld, lastNew = old, old
+				return nil
+			}
+		}
+		if len(old) < maxConn {
+			var next []uint32
+			if ctx != nil && cap(ctx.scratchPool) >= len(old)+1 {
+				next = append(ctx.scratchPool[:0], old...)
+			} else {
+				next = make([]uint32, len(old), len(old)+1)
+				copy(next, old)
+			}
+			next = append(next, target)
+			lastOld = slices.Clone(old)
+			lastNew = slices.Clone(next)
+			return next
+		}
+
+		// Host is full: find neighbor in old with inDegree > 1 and maximum distance from host.
+		bestToEvict := -1
+		var bestDist float32 = -1
+		var dists []float32
+		if ctx != nil && cap(ctx.scratchDists) >= len(old) {
+			dists = ctx.scratchDists[:len(old)]
+		} else {
+			dists = make([]float32, len(old))
+		}
+		h.computeDistances(ctx, data, host, old, dists)
+
+		for i, o := range old {
+			if h.inDegreeL0.Get(o) > 1 {
+				if dists[i] > bestDist {
+					bestDist = dists[i]
+					bestToEvict = i
+				}
+			}
+		}
+
+		if bestToEvict < 0 {
+			// All neighbors of host have inDegree <= 1; cannot evict without stranding someone.
+			lastOld, lastNew = old, old
+			return nil
+		}
+
+		var next []uint32
+		if ctx != nil && cap(ctx.scratchPool) >= len(old) {
+			next = append(ctx.scratchPool[:0], old...)
+		} else {
+			next = make([]uint32, len(old))
+			copy(next, old)
+		}
+		next[bestToEvict] = target
+		lastOld = slices.Clone(old)
+		lastNew = slices.Clone(next)
+		return next
+	})
+
+	if lastNew != nil && InboundEdgeGuardEnabled {
+		h.updateInDegreeL0Diff(lastOld, lastNew)
 	}
 }
 

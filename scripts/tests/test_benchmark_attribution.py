@@ -42,26 +42,31 @@ ub = _load("unified_benchmark_r15", _SCRIPT)
 cr = _load("check_regression_r15", _REGRESSION)
 
 
+def _read_file(path):
+    with open(path) as f:
+        return f.read()
+
+
 class TestTurboQuantIdentity(unittest.TestCase):
     """R15 / H5."""
 
     def test_dtype_is_not_reassigned(self):
         # The exact defect: `dtype = "turboquant"` inside the bit-pack branch.
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         self.assertNotIn('if dtype == "turboquant4":\n            dtype = "turboquant"', src)
 
     def test_wire_and_requested_dtype_are_separate_variables(self):
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         self.assertIn("requested_dtype = dtype", src)
         self.assertIn("wire_dtype = dtype", src)
         self.assertIn('wire_dtype = "turboquant"', src)
 
     def test_client_receives_wire_dtype_not_the_label(self):
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         self.assertIn("-dtype {wire_dtype}", src)
 
     def test_result_row_records_requested_dtype_and_bits(self):
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         self.assertIn('"requested_dtype": requested_dtype', src)
         self.assertIn('"tq_bits": tq_bits', src)
 
@@ -93,38 +98,38 @@ class TestSeedPlumbing(unittest.TestCase):
     """R16 at the harness boundary."""
 
     def test_harness_exposes_a_seed_flag(self):
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         self.assertIn('"--seed"', src)
 
     def test_seed_is_passed_to_the_client_when_set(self):
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         self.assertIn("seed_arg = f\" -seed {self.args.seed}\"", src)
         self.assertIn("{seed_arg}", src)
 
     def test_seed_is_recorded_on_the_result_row(self):
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         self.assertIn('"seed": self.args.seed', src)
 
     def test_seed_flag_absent_by_default(self):
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         block = src[src.index('"--seed"'):src.index('"--memory-default-fraction"')]
         self.assertIn("default=None", block)
 
     def test_client_source_has_no_clock_seeded_corpus(self):
-        src = open(os.path.join(_ROOT, "cmd", "bench-tool", "main.go")).read()
+        src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
         # The corpus worker seeds from the fixed run seed now.
         self.assertIn("workerSeed := *seed + int64(w)*10007", src)
         self.assertNotIn("workerSeed := time.Now().UnixNano()", src)
 
     def test_client_source_has_no_global_rand_for_queries(self):
-        src = open(os.path.join(_ROOT, "cmd", "bench-tool", "main.go")).read()
+        src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
         # Go seeds the global math/rand per process, so a query drawn from it is
         # different on every run.
         self.assertNotIn("s.vector[i] = rand.Float32()", src)
         self.assertIn("qRng := rand.New(rand.NewSource(RunSeed", src)
 
     def test_client_defaults_to_a_fixed_seed(self):
-        src = open(os.path.join(_ROOT, "cmd", "bench-tool", "main.go")).read()
+        src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
         self.assertIn("const defaultSeed int64 = 42", src)
 
 
@@ -152,19 +157,19 @@ class TestFailureReasons(unittest.TestCase):
         self.assertEqual(self._reason(137), "SIGKILL")
 
     def test_source_records_failure_reasons(self):
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         self.assertIn("last_failure_reason", src)
         self.assertIn("self.failure_reasons[config_key] = reason", src)
         self.assertIn('"failure_reasons"', src)
 
     def test_timeout_is_distinguished_from_a_crash(self):
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         self.assertIn('reason = "client timed out"', src)
 
     def test_empty_output_with_zero_exit_is_its_own_reason(self):
         # bench-tool can exit non-zero on success, so exit 0 with no metrics must
         # not be reported as a crash.
-        src = open(_SCRIPT).read()
+        src = _read_file(_SCRIPT)
         self.assertIn("client exited 0 but wrote no parsable metrics", src)
 
 
@@ -237,7 +242,7 @@ class TestMultiRunMerge(unittest.TestCase):
     def test_help_text_does_not_claim_min_is_a_noise_fix(self):
         # R36 measured that combining runs makes the gate worse. Anyone reading
         # --help must not be told otherwise.
-        src = open(_REGRESSION).read()
+        src = _read_file(_REGRESSION)
         self.assertIn("does NOT make the gate reliable", src)
         self.assertIn("Interleaving", src)
 

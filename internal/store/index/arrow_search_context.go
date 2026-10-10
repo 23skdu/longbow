@@ -81,6 +81,7 @@ type ArrowSearchContext struct {
 	queryC64    []complex64
 	queryC128   []complex128
 	queryInt8   []int8
+	queryUint8  []uint8
 	queryInt16  []int16
 	queryUint16 []uint16
 	queryInt32  []int32
@@ -297,6 +298,8 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.queryF16 = ctx.queryF16[:0]
 	ctx.queryC64 = ctx.queryC64[:0]
 	ctx.queryC128 = ctx.queryC128[:0]
+	ctx.queryInt8 = ctx.queryInt8[:0]
+	ctx.queryUint8 = ctx.queryUint8[:0]
 	ctx.bufInt64 = ctx.bufInt64[:0]
 	ctx.bufInt32 = ctx.bufInt32[:0]
 	ctx.bufF32 = ctx.bufF32[:0]

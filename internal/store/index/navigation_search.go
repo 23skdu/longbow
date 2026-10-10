@@ -885,15 +885,41 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		if searchCtx != nil {
 			maxGen = searchCtx.MaxGeneration
 		}
-		if searchCtx != nil {
-			if data.Type == types.VectorTypeInt8 || data.Type == types.VectorTypeUint8 {
+		if data.Type == types.VectorTypeInt8 {
+			var qInt8 []int8
+			if searchCtx != nil {
 				searchCtx.queryInt8 = searchCtx.queryInt8[:0]
 				for _, val := range q {
 					searchCtx.queryInt8 = append(searchCtx.queryInt8, int8(val))
 				}
-				qUint8 := *(*[]uint8)(unsafe.Pointer(&searchCtx.queryInt8)) // #nosec G103
-				return &int8Computer{data: data, q: qUint8, qInt8: searchCtx.queryInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+				qInt8 = searchCtx.queryInt8
+			} else {
+				qInt8 = make([]int8, len(q))
+				for i, val := range q {
+					qInt8[i] = int8(val)
+				}
 			}
+			qUint8 := *(*[]uint8)(unsafe.Pointer(&qInt8)) // #nosec G103
+			return &int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: false}
+		}
+		if data.Type == types.VectorTypeUint8 {
+			var qUint8 []uint8
+			if searchCtx != nil {
+				searchCtx.queryUint8 = searchCtx.queryUint8[:0]
+				for _, val := range q {
+					searchCtx.queryUint8 = append(searchCtx.queryUint8, uint8(val))
+				}
+				qUint8 = searchCtx.queryUint8
+			} else {
+				qUint8 = make([]uint8, len(q))
+				for i, val := range q {
+					qUint8[i] = uint8(val)
+				}
+			}
+			qInt8 := *(*[]int8)(unsafe.Pointer(&qUint8)) // #nosec G103
+			return &int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: true}
+		}
+		if searchCtx != nil {
 			if data.Type == types.VectorTypeInt16 {
 				searchCtx.queryInt16 = searchCtx.queryInt16[:0]
 				for _, val := range q {
@@ -1036,10 +1062,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 					}
 				}
 			}
-			return &sharedInt8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen, slices: slices}
+			return &sharedInt8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen, slices: slices, isUint8: data.Type == types.VectorTypeUint8}
 		}
 
-		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen}
+		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen, isUint8: data.Type == types.VectorTypeUint8}
 	case []float64:
 		var dg *DiskGraph
 		if searchCtx != nil {

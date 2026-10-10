@@ -173,11 +173,13 @@ func BenchmarkHNSW_ScratchPoolAllocs(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	var i int
+	for b.Loop() {
 		// Mock search with vector retrieval overhead included?
 		// We'll just search using a vector from the set.
 		queryVec := vectors[i%numVectors]
 		_, _ = idx.SearchVectors(context.Background(), queryVec, 10, nil, types.SearchOptions{})
+		i++
 	}
 }
 

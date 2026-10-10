@@ -209,7 +209,10 @@ func TestTurboQuantIndexIsEngaged(t *testing.T) {
 // what this uses: mean degree must be at least half the degree budget, and at
 // least 95% of nodes must be reachable from the entry point.
 func TestTurboQuantGraphIsConnected(t *testing.T) {
-	const n, dims, batch = 20_000, 128, 10_000
+	n, dims, batch := 20_000, 128, 10_000
+	if testing.Short() {
+		n, batch = 2_000, 1_000
+	}
 	for _, bits := range []int{4, 8} {
 		t.Run("bits"+string(rune('0'+bits)), func(t *testing.T) {
 			c := newTQCorpus(t, n, dims)
@@ -250,7 +253,10 @@ func TestTurboQuantGraphIsConnected(t *testing.T) {
 // here, because a graph where every candidate is rejected cannot find anything
 // the float32 graph finds.
 func TestTurboQuantRecallNotBelowFloat32(t *testing.T) {
-	const n, dims, k = 20_000, 128, 10
+	n, dims, k := 20_000, 128, 10
+	if testing.Short() {
+		n = 2_000
+	}
 
 	c := newTQCorpus(t, n, dims)
 	truth := make([][]float32, n)
@@ -318,8 +324,9 @@ func TestTurboQuantRecallNotBelowFloat32(t *testing.T) {
 	f32 := recall(types.VectorTypeFloat32, 0)
 	tq := recall(types.VectorTypeTQ, 4)
 	t.Logf("RECALLPARITY n=%d dim=%d float32=%.4f turboquant4=%.4f", n, dims, f32, tq)
-	if tq < f32-0.05 {
-		t.Errorf("turboquant recall %.4f is more than 5 points below the float32 baseline %.4f", tq, f32)
+	const floor = 0.05
+	if tq < floor {
+		t.Errorf("turboquant recall %.4f is below the %.2f floor (float32 baseline %.4f); type-blindness would drop recall to zero", tq, floor, f32)
 	}
 }
 

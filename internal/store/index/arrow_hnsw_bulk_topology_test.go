@@ -31,7 +31,7 @@ import (
 
 // layer0Stats walks layer 0 and reports mean degree and reachability, which are
 // the two quantities the R8 gate compares.
-func layer0Stats(t *testing.T, idx *ArrowHNSW, n int) (meanDegree float64, reachable int) {
+func layer0Stats(t *testing.T, idx *ArrowHNSW) (meanDegree float64, reachable int) {
 	t.Helper()
 	ep := idx.GetEntryPoint()
 	seen := map[uint32]bool{ep: true}
@@ -60,7 +60,7 @@ func layer0Stats(t *testing.T, idx *ArrowHNSW, n int) (meanDegree float64, reach
 
 // buildSequential ingests one row per AddBatch call, which is the path the R8
 // gate falls back to.
-func buildSequential(t *testing.T, rec arrow.RecordBatch, n, dims int, cfg types.ArrowHNSWConfig) *ArrowHNSW {
+func buildSequential(t *testing.T, rec arrow.RecordBatch, n int, cfg types.ArrowHNSWConfig) *ArrowHNSW {
 	t.Helper()
 	ds := NewMockDataset("seqcmp", rec.Schema())
 	ds.Records = append(ds.Records, rec)
@@ -88,13 +88,13 @@ func TestBulkInsert_GraphTopologyVsSequential(t *testing.T) {
 	cfg := chainLinkTestConfig(types.VectorTypeFloat32, dims)
 
 	bulk := buildThroughBulk(t, rec, n, batch, cfg)
-	bulkDeg, bulkReach := layer0Stats(t, bulk, n)
+	bulkDeg, bulkReach := layer0Stats(t, bulk)
 	bulkRecall := bruteForceRecall(t, bulk, corpus, probeQueries(corpus, 20, 7), 10)
 	t.Logf("TOPOLOGY bulk       mean_degree=%.2f reachable=%d/%d recall@10=%.4f",
 		bulkDeg, bulkReach, n, bulkRecall)
 
-	seq := buildSequential(t, rec, n, dims, cfg)
-	seqDeg, seqReach := layer0Stats(t, seq, n)
+	seq := buildSequential(t, rec, n, cfg)
+	seqDeg, seqReach := layer0Stats(t, seq)
 	seqRecall := bruteForceRecall(t, seq, corpus, probeQueries(corpus, 20, 7), 10)
 	t.Logf("TOPOLOGY sequential mean_degree=%.2f reachable=%d/%d recall@10=%.4f",
 		seqDeg, seqReach, n, seqRecall)

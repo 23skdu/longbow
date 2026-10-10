@@ -496,7 +496,9 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			}
 
 			// Mandatory location registration for HNSW navigator
-			h.SetLocation(types.VectorID(id), types.Location{BatchIdx: 0, RowIdx: int(id)})
+			if _, ok := h.GetLocation(id); !ok {
+				h.SetLocation(types.VectorID(id), types.Location{BatchIdx: 0, RowIdx: int(id)})
+			}
 
 			// Init levels chunk if needed
 			levelsChunk := data.GetLevelsChunk(cID)
@@ -676,16 +678,11 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			return err
 		}
 
-		// Identify nodes active at this layer
-		activeIndices := make([]int, 0, numRemaining)
-		for i, node := range remainingNodes {
-			if node.level >= lc {
-				activeIndices = append(activeIndices, i)
-			}
-		}
-
-		if len(activeIndices) == 0 {
-			continue // Should not happen if topL is correct
+		// Identify nodes active at this layer: all nodes participate in either
+		// descent (ef=1 when lc > node.level) to update currentEps, or insertion (when lc <= node.level).
+		activeIndices := make([]int, numRemaining)
+		for i := range activeIndices {
+			activeIndices[i] = i
 		}
 
 		// 3. Layer-by-Layer Insertion with Organic Growth
@@ -855,13 +852,6 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					// covers the whole dataset. The insertion-order predecessor is
 					// always linked and adjacent in distance for sorted-ish
 					// data, so this edge both exists and survives pruning.
-					if lc == 0 && node.id > 0 && bulkChainLinksEnabled {
-						var chainDist [1]float32
-						h.computeDistances(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:])
-						_ = h.AddConnectionsBatch(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:], lc, int(h.mMax0.Load()))
-						_ = h.AddConnectionsBatch(ctxLink, data, node.id, []uint32{node.id - 1}, chainDist[:], lc, int(h.mMax0.Load()))
-					}
-
 					candidatesBuf := graphCandidates[idx]
 					if candidatesBuf == nil {
 						h.searchPool.PutWithMetrics(ctxLink, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
@@ -891,11 +881,24 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 						return 0
 					})
 
+					// R5: Gate chain link on proximity (chainDist <= median(candidates)),
+					// avoiding artificial long-range edges on shuffled data while preserving
+					// connectivity on collinear/ordered data.
+					if lc == 0 && node.id > 0 && bulkChainLinksEnabled {
+						var chainDist [1]float32
+						h.computeDistances(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:])
+						medianDist := candidates[len(candidates)/2].Dist
+						if chainDist[0] <= medianDist {
+							_ = h.AddConnectionsBatch(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:], lc, int(h.mMax0.Load()))
+							_ = h.AddConnectionsBatch(ctxLink, data, node.id, []uint32{node.id - 1}, chainDist[:], lc, int(h.mMax0.Load()))
+						}
+					}
+
 					m := h.m.Load()
 					maxConn := h.mMax.Load()
 					if lc == 0 {
-						m = h.m.Load() * 2
 						maxConn = h.mMax0.Load()
+						m = h.m.Load() * 2
 						if m > maxConn {
 							m = maxConn
 						}
@@ -924,6 +927,18 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					// selectNeighbors returned.
 					for i, nID := range fSources {
 						_ = h.AddConnectionsBatch(ctxLink, data, nID, []uint32{node.id}, []float32{fDists[i]}, lc, int(maxConn))
+					}
+
+					// R26: Guarantee that node.id has at least one inbound edge in layer 0.
+					// If all reverse links were pruned away by saturated hosts, link from
+					// the nearest geometric neighbors in fSources.
+					if lc == 0 && len(fSources) > 0 && InboundEdgeGuardEnabled && h.inDegreeL0.Get(node.id) == 0 {
+						for _, src := range fSources {
+							if h.inDegreeL0.Get(node.id) > 0 {
+								break
+							}
+							h.ensureInboundEdge(ctxLink, data, src, node.id, int(maxConn))
+						}
 					}
 
 					h.searchPool.PutWithMetrics(ctxLink, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
@@ -1196,7 +1211,7 @@ func (h *ArrowHNSW) checkBulkGraphQuality(ctx context.Context, startID uint32, n
 	if q.Sampled == 0 {
 		return nil
 	}
-	enforce := bulkGraphQualityGuardEnabled
+	enforce := bulkGraphQualityGuardEnabled && h.inAddBatch.Load() <= 1
 	minDegree := float64(h.mMax0.Load()) * BulkGraphQualityMinDegreeRatio
 	maxHops := q.IdealHops * BulkGraphMaxHopDepth
 	degradedHops := enforce && BulkGraphMaxHopDepth > 0 && q.MeanHops > maxHops
@@ -1269,8 +1284,8 @@ func (h *ArrowHNSW) measureBulkGraphQuality(ctx context.Context, startID uint32,
 		step = 1
 	}
 	for i := 0; i < sampleCount; i++ {
-		targetID := startID + uint32(i*step)
-		if targetID >= startID+uint32(n) {
+		targetID := startID + uint32(i*step) // #nosec G115
+		if targetID >= startID+uint32(n) {   // #nosec G115
 			break
 		}
 		if _, ok := seen[targetID]; ok {
@@ -1283,8 +1298,8 @@ func (h *ArrowHNSW) measureBulkGraphQuality(ctx context.Context, startID uint32,
 
 	targets := make([]uint32, 0, sampleCount)
 	for i := 0; i < sampleCount; i++ {
-		targetID := startID + uint32(i*step)
-		if targetID >= startID+uint32(n) {
+		targetID := startID + uint32(i*step) // #nosec G115
+		if targetID >= startID+uint32(n) {   // #nosec G115
 			break
 		}
 		targets = append(targets, targetID)

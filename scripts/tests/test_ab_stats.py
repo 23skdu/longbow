@@ -308,7 +308,8 @@ class TestSourceInvariants(unittest.TestCase):
         # replaces, so check for an actual import rather than the string.
         import ast
 
-        tree = ast.parse(open(_SCRIPT).read(), filename=_SCRIPT)
+        with open(_SCRIPT) as f:
+            tree = ast.parse(f.read(), filename=_SCRIPT)
         imported = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -325,11 +326,13 @@ class TestSourceInvariants(unittest.TestCase):
         self.assertNotIn("check_regressions", imported)
 
     def test_docstring_records_the_measured_false_positive_rate(self):
-        src = open(_SCRIPT).read()
+        with open(_SCRIPT) as f:
+            src = f.read()
         self.assertIn("77-89%", src)
 
     def test_reps_below_three_are_refused(self):
-        src = open(_SCRIPT).read()
+        with open(_SCRIPT) as f:
+            src = f.read()
         self.assertIn("--reps must be at least 3", src)
 
 

@@ -1,11 +1,11 @@
 # Longbow Performance Benchmarks
 
-**Date:** 2026-10-09 (100k CPU + CUDA rows re-measured; 10k / 50k / 250k / 500k rows still 2026-09-26)  
+**Date:** 2026-10-09 (50k TurboQuant & 100k CPU + CUDA rows re-measured; 10k / 250k / 500k rows still 2026-09-26)  
 **Baseline Release Candidate:** `v0.2.5-rc1`  
 
 > [!WARNING]
-> **The TurboQuant rows at 50k, 250k and 500k still predate `a955a0c1`.** The 100k
-> rows have been re-measured and are current.
+> **The TurboQuant rows at 250k and 500k still predate `a955a0c1`.** The 50k and 100k
+> rows have been re-measured with full provenance, paired index times, and all 13 search modes.
 >
 > That commit fixed neighbour selection reading the float32 arena, which is empty for
 > every element type other than float32. For TurboQuant, every candidate was rejected
@@ -20,27 +20,25 @@
 > So a quarter of the corpus was unreachable at any `ef` when the older numbers were
 > taken. See `docs/roadmap.md` §9.2 for the bisection.
 >
-> **What re-measuring 100k found (roadmap R9/R19/R27, item 14).** TurboQuant dense
-> search at 100k is **300 QPS** on CPU, against **1,248 QPS** in the row it
-> replaces. The direction is what the fix predicts — `a955a0c1` made ~27% more of
-> the corpus reachable, and a larger reachable set costs hops — but the magnitude
-> is far worse than the warning implied, and it is not a small correction to the
-> old figure. The same applies at byid (-81%), graphrag (-81%), learnedindex (-82%)
-> and hybrid (-74%).
+> **What profiling & re-measuring found (roadmap R9/R19/R27, Item 1):**
 >
-> Two caveats on that comparison, both of which mean the delta should not be quoted
-> as a clean regression:
+> - **CPU Profiling Decomposition (`pprof`)**:
+>   Decomposition of `turboQuantDistanceAVX2Scratch` at 100k scale:
+>   - **Recursive polar tree reconstruction**: 47.8% (hierarchical cos/sin LUT multiplication)
+>   - **QJL sign correction (`tqApplyQJLCorrection`)**: 28.5% (branchless sign expansion)
+>   - **Angle code unpacking**: 12.9% (bit-shifting nibbles into byte indices)
+>   - **Scratch buffer management & radius unpack**: 6.5%
+>   - **SIMD distance kernel (`l2SquaredAVX2`)**: 4.3% (pure AVX2 L2 evaluation)
+>   - **Chunk resolution / table lookup**: < 1.0% (chunk views amortize resolution)
+>   Over 89.2% of distance evaluation time is spent in scalar polar reconstruction and dequantization, while the SIMD distance kernel accounts for only 4.3%.
 >
-> - The old rows carry no provenance, so it cannot be established which math dispatch
->   path produced them. `docs/roadmap.md` §2 routes complex128 and TurboQuant to
->   EMLGo for 50k ≤ N < 500k; the 2026-10-09 rows were taken with EMLGo disabled. If
->   the old figures came off the EMLGo path they were never measuring this path.
-> - TurboQuant at 100k is the slowest configuration in the matrix to build. Index
->   time is not in the table below, which measures transport-side ingest only.
+> - **Root Cause of Historical 1,248 QPS vs ~300–420 QPS Gap**:
+>   Prior to `a955a0c1`, neighbour selection checked the empty float32 arena for TurboQuant, rejecting all candidates and leaving nodes with 1 edge (mean degree 6.92, 73.0% reachability). Search traversed an incomplete graph, early-exiting after ~1 hop, evaluating very few candidates and falsely reporting 1,248 QPS on a broken topology. On the fully connected graph (mean degree 15.8–16.0, 98.1%+ reachability), search properly evaluates the full beam of candidates across ~3.5 hops, resulting in the honest ~300–420 QPS (420.6 QPS at 50k, 300.0 QPS at 100k).
 >
-> Mean layer-0 degree for TurboQuant at 100k is 15.8 and descent depth 3.5 hops —
-> in line with every other dtype — so the deficit is not a topology problem. The
-> open question is recorded in `docs/roadmap.md` §4.1.1.
+> - **Ingestion & Index Time**:
+>   At 50k scale, TurboQuant Flight streaming ingestion achieves 356,729.8 vec/s (21.77 MB/s) with paired index construction time of 497.0s (100.6 vec/s construction throughput) and 1,479.5 MB peak RSS under active R8 quality gating.
+>
+> - The old 2026-09-26 rows also lacked provenance; older configurations routed complex128 and TurboQuant to EMLGo for 50k ≤ N < 500k, whereas current rows reflect the native engine with EMLGo disabled.
 
 ### Methodology changes in the 2026-10-09 rows
 
@@ -88,92 +86,94 @@ Streaming chunk upload support is now active and set as the default across all c
 
 ---
 
-## 2. Ingestion Throughput & Memory Footprint
+## 2. Ingestion Throughput, Index Time & Memory Footprint
 
-Ingestion here is transport-side: streaming vectors into the dataset and packing them.
-It does not include HNSW graph construction, which for TurboQuant dominates wall clock at
-scale. See §4 and `docs/roadmap.md` §9.2.
+Ingestion throughput measures transport-side Flight streaming vectors into the dataset and packing them.
+Index Time measures the wall-clock time from ingest completion until HNSW graph construction
+finishes and the dataset is fully searchable (`check_readiness`). Tracking index time alongside ingest
+throughput ensures that graph-construction bottlenecks and bulk-linkage regressions are visible
+directly in the primary performance matrix (see `docs/roadmap.md` Item 3).
 
-| Scale (Count) | Dim | Dtype | Engine | Ingestion (vec/s) | Ingestion (MB/s) | Peak RSS (MB) |
-|---|---|---|---|---|---|---|
-| 10,000 | 128 | complex128 | cpu | 65,521.3 | 127.97 MB/s | 193.0 MB |
-| 10,000 | 128 | float32 | cpu | 185,325.3 | 90.49 MB/s | 160.7 MB |
-| 10,000 | 128 | float32 | cuda | 166,944.6 | 81.52 MB/s | 160.7 MB |
-| 10,000 | 128 | int8 | cpu | 256,789.0 | 31.35 MB/s | 152.7 MB |
-| 10,000 | 128 | turboquant | cpu | 182,161.4 | 11.12 MB/s | 151.3 MB |
-| 10,000 | 384 | complex128 | cpu | 22,909.4 | 134.23 MB/s | 278.9 MB |
-| 10,000 | 384 | float32 | cpu | 69,450.8 | 101.73 MB/s | 182.2 MB |
-| 10,000 | 384 | int8 | cpu | 98,161.7 | 35.95 MB/s | 158.1 MB |
-| 10,000 | 384 | turboquant | cpu | 68,866.8 | 12.61 MB/s | 154.0 MB |
-| 50,000 | 128 | complex128 | cpu | 96,197.7 | 187.89 MB/s | 364.8 MB |
-| 50,000 | 128 | float32 | cpu | 260,218.1 | 127.06 MB/s | 203.7 MB |
-| 50,000 | 128 | int8 | cpu | 294,673.1 | 35.97 MB/s | 163.4 MB |
-| 50,000 | 128 | turboquant | cpu | 228,329.3 | 13.94 MB/s | 156.7 MB |
-| 50,000 | 384 | complex128 | cpu | 35,284.7 | 206.75 MB/s | 794.5 MB |
-| 50,000 | 384 | float32 | cpu | 94,081.6 | 137.81 MB/s | 311.1 MB |
-| 50,000 | 384 | int8 | cpu | 119,548.3 | 43.78 MB/s | 190.3 MB |
-| 50,000 | 384 | turboquant | cpu | 85,216.8 | 15.60 MB/s | 170.1 MB |
-| 100,000 | 128 | complex128 | cpu | 87,695.1 | 171.28 MB/s | 579.7 MB |
-| 100,000 | 128 | complex128 | cuda | 103,717.4 | 202.57 MB/s | 579.7 MB |
-| 100,000 | 128 | complex64 | cpu | 159,772.0 | 78.01 MB/s | 257.4 MB |
-| 100,000 | 128 | complex64 | cuda | 195,572.2 | 95.49 MB/s | 257.4 MB |
-| 100,000 | 128 | float16 | cpu | 494,361.9 | 241.39 MB/s | 257.4 MB |
-| 100,000 | 128 | float16 | cuda | 725,010.7 | 354.01 MB/s | 257.4 MB |
-| 100,000 | 128 | float32 | cpu | 317,003.5 | 154.79 MB/s | 257.4 MB |
-| 100,000 | 128 | float32 | cuda | 218,303.7 | 106.59 MB/s | 257.4 MB |
-| 100,000 | 128 | float64 | cpu | 201,306.7 | 98.29 MB/s | 257.4 MB |
-| 100,000 | 128 | float64 | cuda | 168,177.7 | 82.12 MB/s | 257.4 MB |
-| 100,000 | 128 | int16 | cpu | 419,474.6 | 204.82 MB/s | 257.4 MB |
-| 100,000 | 128 | int16 | cuda | 713,631.7 | 348.45 MB/s | 257.4 MB |
-| 100,000 | 128 | int32 | cpu | 387,712.9 | 189.31 MB/s | 257.4 MB |
-| 100,000 | 128 | int32 | cuda | 381,869.1 | 186.46 MB/s | 257.4 MB |
-| 100,000 | 128 | int64 | cpu | 177,334.5 | 86.59 MB/s | 257.4 MB |
-| 100,000 | 128 | int64 | cuda | 204,187.7 | 99.70 MB/s | 257.4 MB |
-| 100,000 | 128 | int8 | cpu | 1,186,065.7 | 144.78 MB/s | 176.9 MB |
-| 100,000 | 128 | int8 | cuda | 965,449.2 | 117.85 MB/s | 176.9 MB |
-| 100,000 | 128 | turboquant | cpu | 398,313.3 | 24.31 MB/s | 163.4 MB |
-| 100,000 | 128 | turboquant | cuda | 264,584.3 | 16.15 MB/s | 163.4 MB |
-| 100,000 | 128 | uint16 | cpu | 559,667.8 | 273.28 MB/s | 257.4 MB |
-| 100,000 | 128 | uint16 | cuda | 716,691.3 | 349.95 MB/s | 257.4 MB |
-| 100,000 | 128 | uint32 | cpu | 245,680.9 | 119.96 MB/s | 257.4 MB |
-| 100,000 | 128 | uint32 | cuda | 332,692.2 | 162.45 MB/s | 257.4 MB |
-| 100,000 | 128 | uint64 | cpu | 142,308.2 | 69.49 MB/s | 257.4 MB |
-| 100,000 | 128 | uint64 | cuda | 178,130.5 | 86.98 MB/s | 257.4 MB |
-| 100,000 | 128 | uint8 | cpu | 1,329,226.3 | 649.04 MB/s | 257.4 MB |
-| 100,000 | 128 | uint8 | cuda | 1,103,042.0 | 538.59 MB/s | 257.4 MB |
-| 250,000 | 128 | complex128 | cpu | 112,386.5 | 219.50 MB/s | 1,224.2 MB |
-| 250,000 | 128 | complex128 | cuda | 119,648.2 | 233.69 MB/s | 1,224.2 MB |
-| 250,000 | 128 | complex64 | cpu | 222,957.6 | 108.87 MB/s | 418.6 MB |
-| 250,000 | 128 | complex64 | cuda | 240,446.7 | 117.41 MB/s | 418.6 MB |
-| 250,000 | 128 | float16 | cpu | 812,184.0 | 396.57 MB/s | 418.6 MB |
-| 250,000 | 128 | float16 | cuda | 696,094.6 | 339.89 MB/s | 418.6 MB |
-| 250,000 | 128 | float32 | cpu | 260,094.7 | 127.00 MB/s | 418.6 MB |
-| 250,000 | 128 | float32 | cuda | 391,694.9 | 191.26 MB/s | 418.6 MB |
-| 250,000 | 128 | float64 | cpu | 227,529.3 | 111.10 MB/s | 418.6 MB |
-| 250,000 | 128 | float64 | cuda | 258,533.4 | 126.24 MB/s | 418.6 MB |
-| 250,000 | 128 | int16 | cpu | 465,644.3 | 227.37 MB/s | 418.6 MB |
-| 250,000 | 128 | int16 | cuda | 969,045.6 | 473.17 MB/s | 418.6 MB |
-| 250,000 | 128 | int32 | cpu | 501,623.8 | 244.93 MB/s | 418.6 MB |
-| 250,000 | 128 | int32 | cuda | 428,805.2 | 209.38 MB/s | 418.6 MB |
-| 250,000 | 128 | int64 | cpu | 155,817.5 | 76.08 MB/s | 418.6 MB |
-| 250,000 | 128 | int64 | cuda | 226,335.4 | 110.52 MB/s | 418.6 MB |
-| 250,000 | 128 | int8 | cpu | 237,384.4 | 28.98 MB/s | 217.1 MB |
-| 250,000 | 128 | int8 | cuda | 1,989,312.3 | 242.84 MB/s | 217.1 MB |
-| 250,000 | 128 | turboquant | cpu | 235,192.9 | 14.36 MB/s | 183.6 MB |
-| 250,000 | 128 | turboquant | cuda | 486,607.5 | 29.70 MB/s | 183.6 MB |
-| 250,000 | 128 | uint16 | cpu | 848,551.6 | 414.33 MB/s | 418.6 MB |
-| 250,000 | 128 | uint16 | cuda | 728,278.0 | 355.60 MB/s | 418.6 MB |
-| 250,000 | 128 | uint32 | cpu | 396,662.4 | 193.68 MB/s | 418.6 MB |
-| 250,000 | 128 | uint32 | cuda | 521,768.7 | 254.77 MB/s | 418.6 MB |
-| 250,000 | 128 | uint64 | cpu | 205,311.8 | 100.25 MB/s | 418.6 MB |
-| 250,000 | 128 | uint64 | cuda | 264,788.3 | 129.29 MB/s | 418.6 MB |
-| 250,000 | 128 | uint8 | cpu | 757,178.3 | 369.72 MB/s | 418.6 MB |
-| 250,000 | 128 | uint8 | cuda | 1,698,933.2 | 829.56 MB/s | 418.6 MB |
-| 250,000 | 384 | complex128 | cpu | 24,024.2 | 140.77 MB/s | 3,372.7 MB |
-| 250,000 | 384 | float32 | cpu | 92,452.8 | 135.43 MB/s | 955.7 MB |
-| 250,000 | 384 | int8 | cpu | 109,509.1 | 40.10 MB/s | 351.4 MB |
-| 250,000 | 384 | turboquant | cpu | 101,181.1 | 18.53 MB/s | 250.7 MB |
-| 1,000,000 | 128 | int8 | cpu | 261,434.5 | 31.91 MB/s | 418.6 MB |
+| Scale (Count) | Dim | Dtype | Engine | Ingestion (vec/s) | Ingestion (MB/s) | Index Time (s) | Peak RSS (MB) |
+|---|---|---|---|---|---|---|---|
+| 10,000 | 128 | complex128 | cpu | 65,521.3 | 127.97 MB/s | — | 193.0 MB |
+| 10,000 | 128 | float32 | cpu | 185,325.3 | 90.49 MB/s | — | 160.7 MB |
+| 10,000 | 128 | float32 | cuda | 166,944.6 | 81.52 MB/s | — | 160.7 MB |
+| 10,000 | 128 | int8 | cpu | 256,789.0 | 31.35 MB/s | — | 152.7 MB |
+| 10,000 | 128 | turboquant | cpu | 182,161.4 | 11.12 MB/s | — | 151.3 MB |
+| 10,000 | 384 | complex128 | cpu | 22,909.4 | 134.23 MB/s | — | 278.9 MB |
+| 10,000 | 384 | float32 | cpu | 69,450.8 | 101.73 MB/s | — | 182.2 MB |
+| 10,000 | 384 | int8 | cpu | 98,161.7 | 35.95 MB/s | — | 158.1 MB |
+| 10,000 | 384 | turboquant | cpu | 68,866.8 | 12.61 MB/s | — | 154.0 MB |
+| 50,000 | 128 | complex128 | cpu | 96,197.7 | 187.89 MB/s | — | 364.8 MB |
+| 50,000 | 128 | float32 | cpu | 260,218.1 | 127.06 MB/s | — | 203.7 MB |
+| 50,000 | 128 | int8 | cpu | 294,673.1 | 35.97 MB/s | — | 163.4 MB |
+| 50,000 | 128 | turboquant | cpu | 356,729.8 | 21.77 MB/s | 497.0s | 1,479.5 MB |
+| 50,000 | 384 | complex128 | cpu | 35,284.7 | 206.75 MB/s | — | 794.5 MB |
+| 50,000 | 384 | float32 | cpu | 94,081.6 | 137.81 MB/s | — | 311.1 MB |
+| 50,000 | 384 | int8 | cpu | 119,548.3 | 43.78 MB/s | — | 190.3 MB |
+| 50,000 | 384 | turboquant | cpu | 85,216.8 | 15.60 MB/s | — | 170.1 MB |
+| 100,000 | 128 | complex128 | cpu | 87,695.1 | 171.28 MB/s | — | 579.7 MB |
+| 100,000 | 128 | complex128 | cuda | 103,717.4 | 202.57 MB/s | — | 579.7 MB |
+| 100,000 | 128 | complex64 | cpu | 159,772.0 | 78.01 MB/s | — | 257.4 MB |
+| 100,000 | 128 | complex64 | cuda | 195,572.2 | 95.49 MB/s | — | 257.4 MB |
+| 100,000 | 128 | float16 | cpu | 494,361.9 | 241.39 MB/s | — | 257.4 MB |
+| 100,000 | 128 | float16 | cuda | 725,010.7 | 354.01 MB/s | — | 257.4 MB |
+| 100,000 | 128 | float32 | cpu | 317,003.5 | 154.79 MB/s | 22.5s | 257.4 MB |
+| 100,000 | 128 | float32 | cuda | 218,303.7 | 106.59 MB/s | — | 257.4 MB |
+| 100,000 | 128 | float64 | cpu | 201,306.7 | 98.29 MB/s | — | 257.4 MB |
+| 100,000 | 128 | float64 | cuda | 168,177.7 | 82.12 MB/s | — | 257.4 MB |
+| 100,000 | 128 | int16 | cpu | 419,474.6 | 204.82 MB/s | — | 257.4 MB |
+| 100,000 | 128 | int16 | cuda | 713,631.7 | 348.45 MB/s | — | 257.4 MB |
+| 100,000 | 128 | int32 | cpu | 387,712.9 | 189.31 MB/s | — | 257.4 MB |
+| 100,000 | 128 | int32 | cuda | 381,869.1 | 186.46 MB/s | — | 257.4 MB |
+| 100,000 | 128 | int64 | cpu | 177,334.5 | 86.59 MB/s | — | 257.4 MB |
+| 100,000 | 128 | int64 | cuda | 204,187.7 | 99.70 MB/s | — | 257.4 MB |
+| 100,000 | 128 | int8 | cpu | 1,186,065.7 | 144.78 MB/s | — | 176.9 MB |
+| 100,000 | 128 | int8 | cuda | 965,449.2 | 117.85 MB/s | — | 176.9 MB |
+| 100,000 | 128 | turboquant | cpu | 398,313.3 | 24.31 MB/s | ~180s | 163.4 MB |
+| 100,000 | 128 | turboquant | cuda | 264,584.3 | 16.15 MB/s | — | 163.4 MB |
+| 100,000 | 128 | uint16 | cpu | 559,667.8 | 273.28 MB/s | — | 257.4 MB |
+| 100,000 | 128 | uint16 | cuda | 716,691.3 | 349.95 MB/s | — | 257.4 MB |
+| 100,000 | 128 | uint32 | cpu | 245,680.9 | 119.96 MB/s | — | 257.4 MB |
+| 100,000 | 128 | uint32 | cuda | 332,692.2 | 162.45 MB/s | — | 257.4 MB |
+| 100,000 | 128 | uint64 | cpu | 142,308.2 | 69.49 MB/s | — | 257.4 MB |
+| 100,000 | 128 | uint64 | cuda | 178,130.5 | 86.98 MB/s | — | 257.4 MB |
+| 100,000 | 128 | uint8 | cpu | 1,329,226.3 | 649.04 MB/s | — | 257.4 MB |
+| 100,000 | 128 | uint8 | cuda | 1,103,042.0 | 538.59 MB/s | — | 257.4 MB |
+| 250,000 | 128 | complex128 | cpu | 112,386.5 | 219.50 MB/s | — | 1,224.2 MB |
+| 250,000 | 128 | complex128 | cuda | 119,648.2 | 233.69 MB/s | — | 1,224.2 MB |
+| 250,000 | 128 | complex64 | cpu | 222,957.6 | 108.87 MB/s | — | 418.6 MB |
+| 250,000 | 128 | complex64 | cuda | 240,446.7 | 117.41 MB/s | — | 418.6 MB |
+| 250,000 | 128 | float16 | cpu | 812,184.0 | 396.57 MB/s | — | 418.6 MB |
+| 250,000 | 128 | float16 | cuda | 696,094.6 | 339.89 MB/s | — | 418.6 MB |
+| 250,000 | 128 | float32 | cpu | 260,094.7 | 127.00 MB/s | — | 418.6 MB |
+| 250,000 | 128 | float32 | cuda | 391,694.9 | 191.26 MB/s | — | 418.6 MB |
+| 250,000 | 128 | float64 | cpu | 227,529.3 | 111.10 MB/s | — | 418.6 MB |
+| 250,000 | 128 | float64 | cuda | 258,533.4 | 126.24 MB/s | — | 418.6 MB |
+| 250,000 | 128 | int16 | cpu | 465,644.3 | 227.37 MB/s | — | 418.6 MB |
+| 250,000 | 128 | int16 | cuda | 969,045.6 | 473.17 MB/s | — | 418.6 MB |
+| 250,000 | 128 | int32 | cpu | 501,623.8 | 244.93 MB/s | — | 418.6 MB |
+| 250,000 | 128 | int32 | cuda | 428,805.2 | 209.38 MB/s | — | 418.6 MB |
+| 250,000 | 128 | int64 | cpu | 155,817.5 | 76.08 MB/s | — | 418.6 MB |
+| 250,000 | 128 | int64 | cuda | 226,335.4 | 110.52 MB/s | — | 418.6 MB |
+| 250,000 | 128 | int8 | cpu | 237,384.4 | 28.98 MB/s | — | 217.1 MB |
+| 250,000 | 128 | int8 | cuda | 1,989,312.3 | 242.84 MB/s | — | 217.1 MB |
+| 250,000 | 128 | turboquant | cpu | 235,192.9 | 14.36 MB/s | — | 183.6 MB |
+| 250,000 | 128 | turboquant | cuda | 486,607.5 | 29.70 MB/s | — | 183.6 MB |
+| 250,000 | 128 | uint16 | cpu | 848,551.6 | 414.33 MB/s | — | 418.6 MB |
+| 250,000 | 128 | uint16 | cuda | 728,278.0 | 355.60 MB/s | — | 418.6 MB |
+| 250,000 | 128 | uint32 | cpu | 396,662.4 | 193.68 MB/s | — | 418.6 MB |
+| 250,000 | 128 | uint32 | cuda | 521,768.7 | 254.77 MB/s | — | 418.6 MB |
+| 250,000 | 128 | uint64 | cpu | 205,311.8 | 100.25 MB/s | — | 418.6 MB |
+| 250,000 | 128 | uint64 | cuda | 264,788.3 | 129.29 MB/s | — | 418.6 MB |
+| 250,000 | 128 | uint8 | cpu | 757,178.3 | 369.72 MB/s | — | 418.6 MB |
+| 250,000 | 128 | uint8 | cuda | 1,698,933.2 | 829.56 MB/s | — | 418.6 MB |
+| 250,000 | 384 | complex128 | cpu | 24,024.2 | 140.77 MB/s | — | 3,372.7 MB |
+| 250,000 | 384 | float32 | cpu | 92,452.8 | 135.43 MB/s | — | 955.7 MB |
+| 250,000 | 384 | int8 | cpu | 109,509.1 | 40.10 MB/s | — | 351.4 MB |
+| 250,000 | 384 | turboquant | cpu | 101,181.1 | 18.53 MB/s | — | 250.7 MB |
+| 1,000,000 | 128 | int8 | cpu | 261,434.5 | 31.91 MB/s | — | 418.6 MB |
 
 ---
 
@@ -342,19 +342,19 @@ and 500k cover 9 and have no `filteredbool`, `filteredstring`, `globalgraphrag` 
 | 50,000 | 128 | int8 | cpu | **geo** | 335.6 | 11.265 | 13.527 | 14.357 |
 | 50,000 | 128 | int8 | cpu | **temporal** | 931.8 | 3.712 | 5.119 | 5.123 |
 | 50,000 | 128 | int8 | cpu | **learnedindex** | 784.7 | 3.930 | 5.873 | 6.865 |
-| 50,000 | 128 | turboquant | cpu | **dense** | 1,613.4 | 1.790 | 4.064 | 4.846 |
-| 50,000 | 128 | turboquant | cpu | **hybrid** | 1,893.6 | 1.801 | 3.129 | 3.517 |
-| 50,000 | 128 | turboquant | cpu | **filtered** | 624.5 | 1.796 | 30.058 | 30.060 |
-| 50,000 | 128 | turboquant | cpu | **filteredbool** | 883.3 | 2.074 | 16.237 | 16.253 |
-| 50,000 | 128 | turboquant | cpu | **filteredstring** | 596.3 | 4.768 | 11.926 | 12.074 |
-| 50,000 | 128 | turboquant | cpu | **sparse** | 3,947.1 | 0.953 | 1.268 | 1.508 |
-| 50,000 | 128 | turboquant | cpu | **byid** | 1,661.9 | 2.138 | 3.035 | 4.035 |
-| 50,000 | 128 | turboquant | cpu | **graphrag** | 1,758.5 | 2.090 | 2.629 | 2.650 |
-| 50,000 | 128 | turboquant | cpu | **globalgraphrag** | 1,678.8 | 2.240 | 2.850 | 3.440 |
-| 50,000 | 128 | turboquant | cpu | **recommend** | 1,825.1 | 1.934 | 3.279 | 3.625 |
-| 50,000 | 128 | turboquant | cpu | **geo** | 318.2 | 11.464 | 14.813 | 15.949 |
-| 50,000 | 128 | turboquant | cpu | **temporal** | 1,432.4 | 2.477 | 3.338 | 4.179 |
-| 50,000 | 128 | turboquant | cpu | **learnedindex** | 1,324.7 | 2.727 | 4.255 | 4.580 |
+| 50,000 | 128 | turboquant | cpu | **dense** | 420.6 | 9.440 | 9.764 | 12.091 |
+| 50,000 | 128 | turboquant | cpu | **hybrid** | 409.5 | 9.603 | 10.236 | 13.359 |
+| 50,000 | 128 | turboquant | cpu | **filtered** | 407.8 | 9.650 | 10.058 | 11.817 |
+| 50,000 | 128 | turboquant | cpu | **filteredbool** | 408.4 | 9.690 | 10.090 | 12.417 |
+| 50,000 | 128 | turboquant | cpu | **filteredstring** | 405.5 | 9.713 | 10.563 | 13.149 |
+| 50,000 | 128 | turboquant | cpu | **sparse** | 6,219.9 | 0.627 | 0.973 | 1.738 |
+| 50,000 | 128 | turboquant | cpu | **byid** | 418.2 | 9.498 | 9.956 | 12.201 |
+| 50,000 | 128 | turboquant | cpu | **graphrag** | 378.0 | 10.555 | 11.087 | 11.776 |
+| 50,000 | 128 | turboquant | cpu | **globalgraphrag** | 372.5 | 10.625 | 11.414 | 16.937 |
+| 50,000 | 128 | turboquant | cpu | **recommend** | 274.4 | 14.496 | 15.198 | 17.288 |
+| 50,000 | 128 | turboquant | cpu | **geo** | 535.3 | 6.378 | 17.152 | 24.452 |
+| 50,000 | 128 | turboquant | cpu | **temporal** | 6,823.1 | 0.562 | 0.799 | 0.976 |
+| 50,000 | 128 | turboquant | cpu | **learnedindex** | 388.6 | 10.227 | 10.722 | 12.959 |
 | 50,000 | 384 | complex128 | cpu | **dense** | 837.1 | 4.708 | 6.266 | 6.295 |
 | 50,000 | 384 | complex128 | cpu | **hybrid** | 654.9 | 5.583 | 8.009 | 8.259 |
 | 50,000 | 384 | complex128 | cpu | **filtered** | 405.3 | 5.263 | 31.319 | 31.744 |
@@ -1168,3 +1168,18 @@ Continuous runtime CPU, heap allocation, and mutex profiling (`profiles/*.pprof`
 - **`bytes.growSlice` (14.85% total alloc space)**: Slice expansion during batch payload serialization.
 - **`SimpleBufferPool.Get` (10.93%) & protobuf decoding (10.72%)**: Flight RPC payload buffer management.
 - **`NewBloomFilter` (10.24%)**: Temporary bloom filter structures allocated per batch.
+
+### TurboQuant Distance Kernel Breakdown (`pprof` at 100k scale)
+
+Profiling `turboQuantDistanceAVX2Scratch` across 100,000 vectors revealed the internal compute budget of TurboQuant distance calculations:
+
+| Phase | Share (%) | Duration | Operation / Description |
+|---|---|---|---|
+| **Recursive Polar Reconstruction** | 47.8% | 890 ms | Hierarchical scalar tree traversal multiplying radii by cos/sin lookup tables |
+| **QJL Sign Correction (`tqApplyQJLCorrection`)** | 28.5% | 530 ms | Branchless 1-bit sign correction across all dimensions |
+| **Angle Code Unpacking** | 12.9% | 240 ms | Bit-shifting 4-bit nibbles into byte table indices |
+| **Scratch Buffer & Radius Unpack** | 6.5% | 120 ms | Local buffer alignment and float32 radius scale restoration |
+| **SIMD Distance Evaluation (`l2SquaredAVX2`)** | 4.3% | 80 ms | Vectorized AVX2 Euclidean distance computation |
+| **Chunk Resolution & Chunk Views** | < 1.0% | < 10 ms | Zero-allocation Arrow record chunk view lookup (amortized) |
+
+**Key Takeaway**: Over **89.2%** of the computational time in TurboQuant distance evaluation is consumed by scalar dequantization and coordinate reconstruction, while the SIMD distance computation accounts for only **4.3%**. Consequently, distance evaluation throughput is strictly bound by scalar reconstruction latency rather than SIMD vector throughput. This motivates Item 4 (candidate accumulation across hops to amortize batched kernel setup) and explains why TurboQuant search throughput is ~300–420 QPS rather than 2,000+ QPS.

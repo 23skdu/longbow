@@ -382,14 +382,15 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 			return c.h.distFuncSquared(c.q, v)
 		}
 		return c.h.distFunc(c.q, v)
-	case []int8, []uint8:
-		var v8 []uint8
-		if vi8, ok := v.([]int8); ok {
-			v8 = *(*[]uint8)(unsafe.Pointer(&vi8)) // #nosec G103
-		} else {
-			v8 = v.([]uint8)
+	case []int8:
+		var sum float32
+		for i, val := range c.q {
+			diff := val - float32(v[i])
+			sum += diff * diff
 		}
-
+		return float32(math.Sqrt(float64(sum))), nil
+	case []uint8:
+		v8 := v
 		if c.h.quantizer != nil && c.h.sq8Ready.Load() {
 			minV, maxV := c.h.quantizer.Params()
 			scale := (maxV - minV) / 255.0
@@ -738,6 +739,11 @@ type int8Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
+	isUint8   bool
+}
+
+func (c *int8Computer) uint8Mode() bool {
+	return c.isUint8 || (c.data != nil && c.data.Type == types.VectorTypeUint8)
 }
 
 func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
@@ -754,7 +760,14 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
 			v8 := chunk[start : start+c.dims]
-			if c.squared {
+			if c.uint8Mode() {
+				u8 := *(*[]uint8)(unsafe.Pointer(&v8)) // #nosec G103
+				if c.squared && c.h.distFuncUint8Squared != nil {
+					return c.h.distFuncUint8Squared(c.q, u8)
+				}
+				return c.h.distFuncUint8(c.q, u8)
+			}
+			if c.squared && c.h.distFuncInt8Squared != nil {
 				return c.h.distFuncInt8Squared(c.qInt8, v8)
 			}
 			return c.h.distFuncInt8(c.qInt8, v8)
@@ -772,6 +785,15 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * pd
 		if start+c.dims <= len(chunkSQ8) {
 			v8 := chunkSQ8[start : start+c.dims]
+			if c.uint8Mode() {
+				if c.squared && c.h.distFuncUint8Squared != nil {
+					return c.h.distFuncUint8Squared(c.q, v8)
+				}
+				return c.h.distFuncUint8(c.q, v8)
+			}
+			if c.squared && c.h.distFuncInt8Squared != nil {
+				return c.h.distFuncInt8Squared(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8))) // #nosec G103
+			}
 			return c.h.distFuncInt8(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8))) // #nosec G103
 		}
 	}
@@ -794,12 +816,29 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 			return float32(math.Sqrt(float64(sum))), nil
 		}
 		var sum float32
-		for i, val := range c.q {
-			diff := float32(val) - v[i]
-			sum += diff * diff
+		if c.uint8Mode() {
+			for i, val := range c.q {
+				diff := float32(val) - v[i]
+				sum += diff * diff
+			}
+		} else {
+			for i, val := range c.qInt8 {
+				diff := float32(val) - v[i]
+				sum += diff * diff
+			}
 		}
 		return float32(math.Sqrt(float64(sum))), nil
 	case []int8:
+		if c.uint8Mode() {
+			u8 := *(*[]uint8)(unsafe.Pointer(&v)) // #nosec G103
+			if c.squared && c.h.distFuncUint8Squared != nil {
+				return c.h.distFuncUint8Squared(c.q, u8)
+			}
+			return c.h.distFuncUint8(c.q, u8)
+		}
+		if c.squared && c.h.distFuncInt8Squared != nil {
+			return c.h.distFuncInt8Squared(c.qInt8, v)
+		}
 		return c.h.distFuncInt8(c.qInt8, v)
 	case []uint8:
 		v8 := v
@@ -815,7 +854,16 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 			}
 			return float32(math.Sqrt(float64(sum))), nil
 		}
+		if c.uint8Mode() {
+			if c.squared && c.h.distFuncUint8Squared != nil {
+				return c.h.distFuncUint8Squared(c.q, v8)
+			}
+			return c.h.distFuncUint8(c.q, v8)
+		}
 		vI8 := *(*[]int8)(unsafe.Pointer(&v8)) // #nosec G103
+		if c.squared && c.h.distFuncInt8Squared != nil {
+			return c.h.distFuncInt8Squared(c.qInt8, vI8)
+		}
 		return c.h.distFuncInt8(c.qInt8, vI8)
 	}
 	return math.MaxFloat32, nil
@@ -844,10 +892,19 @@ func (c *int8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, err
 			start := cOff * pd
 			if start+c.dims <= len(chunk) {
 				v8 := chunk[start : start+c.dims]
-				if c.squared {
-					dst[i], _ = c.h.distFuncInt8Squared(c.qInt8, v8)
+				if c.uint8Mode() {
+					u8 := *(*[]uint8)(unsafe.Pointer(&v8)) // #nosec G103
+					if c.squared && c.h.distFuncUint8Squared != nil {
+						dst[i], _ = c.h.distFuncUint8Squared(c.q, u8)
+					} else {
+						dst[i], _ = c.h.distFuncUint8(c.q, u8)
+					}
 				} else {
-					dst[i], _ = c.h.distFuncInt8(c.qInt8, v8)
+					if c.squared && c.h.distFuncInt8Squared != nil {
+						dst[i], _ = c.h.distFuncInt8Squared(c.qInt8, v8)
+					} else {
+						dst[i], _ = c.h.distFuncInt8(c.qInt8, v8)
+					}
 				}
 				continue
 			}
@@ -1107,6 +1164,11 @@ type sharedInt8Computer struct {
 	slices    [][]int8
 	startID   uint32
 	n         int
+	isUint8   bool
+}
+
+func (c *sharedInt8Computer) uint8Mode() bool {
+	return c.isUint8 || (c.data != nil && c.data.Type == types.VectorTypeUint8)
 }
 
 func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
@@ -1114,7 +1176,14 @@ func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
 		idx := int(id - c.startID)
 		if idx < len(c.slices) {
 			vec := c.slices[idx]
-			if c.squared {
+			if c.uint8Mode() {
+				u8 := *(*[]uint8)(unsafe.Pointer(&vec)) // #nosec G103
+				if c.squared && c.h.distFuncUint8Squared != nil {
+					return c.h.distFuncUint8Squared(c.q, u8)
+				}
+				return c.h.distFuncUint8(c.q, u8)
+			}
+			if c.squared && c.h.distFuncInt8Squared != nil {
 				return c.h.distFuncInt8Squared(c.qInt8, vec)
 			}
 			return c.h.distFuncInt8(c.qInt8, vec)
@@ -1125,11 +1194,31 @@ func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
 	if err != nil {
 		return 0, err
 	}
-	if v, ok := vecAny.([]int8); ok {
-		if c.squared {
+	switch v := vecAny.(type) {
+	case []int8:
+		if c.uint8Mode() {
+			u8 := *(*[]uint8)(unsafe.Pointer(&v)) // #nosec G103
+			if c.squared && c.h.distFuncUint8Squared != nil {
+				return c.h.distFuncUint8Squared(c.q, u8)
+			}
+			return c.h.distFuncUint8(c.q, u8)
+		}
+		if c.squared && c.h.distFuncInt8Squared != nil {
 			return c.h.distFuncInt8Squared(c.qInt8, v)
 		}
 		return c.h.distFuncInt8(c.qInt8, v)
+	case []uint8:
+		if c.uint8Mode() {
+			if c.squared && c.h.distFuncUint8Squared != nil {
+				return c.h.distFuncUint8Squared(c.q, v)
+			}
+			return c.h.distFuncUint8(c.q, v)
+		}
+		vI8 := *(*[]int8)(unsafe.Pointer(&v)) // #nosec G103
+		if c.squared && c.h.distFuncInt8Squared != nil {
+			return c.h.distFuncInt8Squared(c.qInt8, vI8)
+		}
+		return c.h.distFuncInt8(c.qInt8, vI8)
 	}
 	return math.MaxFloat32, nil
 }

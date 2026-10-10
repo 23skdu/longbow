@@ -596,7 +596,11 @@ func run() error {
 
 	// Start background indexing
 	indexingWorkers := runtime.NumCPU() / 2
-	if indexingWorkers < 2 {
+	if env := os.Getenv("LONGBOW_INDEXING_WORKERS"); env != "" {
+		if w, err := strconv.Atoi(env); err == nil && w > 0 {
+			indexingWorkers = w
+		}
+	} else if indexingWorkers < 2 {
 		indexingWorkers = 2
 	}
 	vectorStore.StartIndexingWorkers(indexingWorkers)

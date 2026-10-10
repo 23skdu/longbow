@@ -497,7 +497,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]float64:
@@ -510,7 +510,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]int8:
@@ -523,7 +523,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]uint8:
@@ -549,7 +549,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]int16:
@@ -562,7 +562,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]uint16:
@@ -575,7 +575,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]int32:
@@ -588,7 +588,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]uint32:
@@ -601,7 +601,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]int64:
@@ -614,7 +614,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]uint64:
@@ -627,7 +627,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]complex64:
@@ -640,7 +640,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	case [][]complex128:
@@ -653,7 +653,7 @@ func (dvs *DiskVectorStore) BatchAppendAny(vectors any) (int, error) {
 		raw = make([]byte, numVectors*dim*elemSize)
 		for i, vec := range v {
 			if len(vec) > 0 {
-				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize))
+				copy(raw[i*dim*elemSize:], unsafe.Slice((*byte)(unsafe.Pointer(&vec[0])), len(vec)*elemSize)) // #nosec G103
 			}
 		}
 	default:

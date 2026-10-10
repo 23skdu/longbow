@@ -204,7 +204,7 @@ func BenchmarkSequential_1000Candidates(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		results := make([]float32, len(candidates))
 		for j, cand := range candidates {
 			results[j], _ = simd.EuclideanDistance(query, cand)

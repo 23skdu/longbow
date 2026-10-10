@@ -234,7 +234,10 @@ func seedFromEnv(def int64) int64 {
 // information. Both geometries are covered because the failed proximity gate
 // regressed on the natural-order one more than on the shuffled one.
 func TestBulkInsert_UnorderedCorpusStaysReachable(t *testing.T) {
-	const n, dims, batch = 20_000, 128, 10_000
+	n, dims, batch := 20_000, 128, 10_000
+	if testing.Short() {
+		n, batch = 2_000, 1_000
+	}
 
 	corpora := map[string]func(*testing.T) (arrow.RecordBatch, [][]float32){
 		"shuffled": func(t *testing.T) (arrow.RecordBatch, [][]float32) {
@@ -270,7 +273,10 @@ func TestBulkInsert_UnorderedCorpusStaysReachable(t *testing.T) {
 // (TestDenseRecallHarnessSanity), and uniform random 128-d vectors are close to a
 // worst case for graph search, so the absolute number is low by construction.
 func TestBulkInsert_UnorderedCorpusRecallFloored(t *testing.T) {
-	const n, dims, k, probes, batch = 20_000, 128, 10, 20, 10_000
+	n, dims, k, probes, batch := 20_000, 128, 10, 20, 10_000
+	if testing.Short() {
+		n, batch = 2_000, 1_000
+	}
 
 	rec, corpus := shuffledCorpus(t, n, dims, seedFromEnv(99))
 	defer rec.Release()

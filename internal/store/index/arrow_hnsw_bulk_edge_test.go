@@ -113,8 +113,11 @@ func TestArrowHNSW_AddBatch_CancelMidFlight(t *testing.T) {
 	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer mem.AssertSize(t, 0)
 
-	const dims = 128
-	const n = 20000
+	dims := 128
+	n := 20000
+	if testing.Short() {
+		n = 2000
+	}
 
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},

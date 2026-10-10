@@ -172,6 +172,12 @@ def parse_bench_json(json_file):
                 mode_orders = entry["mode_order"]
             if name == "DoPut":
                 metrics["ingest_vec_per_sec"] = entry.get("throughput", 0)
+                metrics["ingest_duration_seconds"] = entry.get("duration_seconds", 0)
+                if entry.get("indexing_duration_seconds"):
+                    metrics["indexing_duration_seconds"] = entry.get("indexing_duration_seconds", 0)
+            elif name == "Indexing":
+                metrics["indexing_duration_seconds"] = entry.get("duration_seconds", 0)
+                metrics["indexing_vec_per_sec"] = entry.get("throughput", 0)
             elif name == "DoGet":
                 metrics["get_vec_per_sec"] = entry.get("throughput", 0)
             elif name.startswith("Search_"):
@@ -1613,6 +1619,9 @@ class BenchmarkRunner:
             "mode": self.args.mode,
             "ingest": {
                 "vec_per_sec": metrics.get("ingest_vec_per_sec", 0),
+                "duration_seconds": metrics.get("ingest_duration_seconds", 0),
+                "indexing_duration_seconds": metrics.get("indexing_duration_seconds", 0),
+                "indexing_vec_per_sec": metrics.get("indexing_vec_per_sec", 0),
             },
             "search": search_metrics,
             "disk_usage_mb": disk_mb,
@@ -1639,7 +1648,11 @@ class BenchmarkRunner:
             # Persist for dynamic re-calibration
             setattr(self, f'_speed_{dtype}', vec_per_sec)
 
-        print(f" {vec_per_sec:.0f} vec/s")
+        idx_sec = metrics.get("indexing_duration_seconds", 0)
+        if idx_sec > 0:
+            print(f" {vec_per_sec:.0f} vec/s (index: {idx_sec:.2f}s)")
+        else:
+            print(f" {vec_per_sec:.0f} vec/s")
         return True
 
     def execute_recommend(self):
@@ -3256,6 +3269,18 @@ class BenchmarkRunner:
                 var = sum((x - ingest_mean) ** 2 for x in ingest_values) / (len(ingest_values) - 1)
                 ingest_stdev = math.sqrt(var)
 
+        idx_values = [
+            r.get("ingest", {}).get("indexing_duration_seconds", 0)
+            for r in run_results
+            if r.get("ingest", {}).get("indexing_duration_seconds", 0) > 0
+        ]
+        idx_mean, idx_stdev = 0, 0
+        if idx_values:
+            idx_mean = sum(idx_values) / len(idx_values)
+            if len(idx_values) >= 2:
+                var = sum((x - idx_mean) ** 2 for x in idx_values) / (len(idx_values) - 1)
+                idx_stdev = math.sqrt(var)
+
         # Peak memory
         peak_mbs = [r.get("peak_memory_mb", 0) for r in run_results]
         peak_mb = max(peak_mbs) if peak_mbs else 0
@@ -3268,6 +3293,8 @@ class BenchmarkRunner:
             "ingest": {
                 "vec_per_sec": round(ingest_mean, 1),
                 "vec_per_sec_stdev": round(ingest_stdev, 1),
+                "indexing_duration_seconds": round(idx_mean, 3),
+                "indexing_duration_seconds_stdev": round(idx_stdev, 3),
             },
             "search": aggregated_search,
             "peak_memory_mb": round(peak_mb, 2),
@@ -4025,7 +4052,7 @@ class BenchmarkRunner:
             all_search_modes = sorted(all_search_modes)
 
             f.write("## Results Table\n\n")
-            header_cols = ["DType", "Dim", "Count", "TqBits", "Ingest (vec/s)"]
+            header_cols = ["DType", "Dim", "Count", "TqBits", "Ingest (vec/s)", "Index Time (s)"]
             for m in all_search_modes:
                 header_cols.append(f"{m.capitalize()} QPS")
                 header_cols.append(f"{m.capitalize()} P50")
@@ -4037,12 +4064,15 @@ class BenchmarkRunner:
                 if not isinstance(r, dict) or "search" not in r:
                     continue
                 search = r["search"]
+                idx_time = r.get("ingest", {}).get("indexing_duration_seconds", 0)
+                idx_str = f"{idx_time:.2f}s" if idx_time > 0 else "-"
                 row = [
                     r["dtype"],
                     str(r["dim"]),
                     f"{r['count']:,}",
                     str(r.get("tq_bits", 0)),
                     f"{r['ingest']['vec_per_sec']:,.0f}",
+                    idx_str,
                 ]
                 for m in all_search_modes:
                     s = search.get(m, {"qps": 0, "p50": 0})
@@ -4054,7 +4084,7 @@ class BenchmarkRunner:
             f.write(
                 f"## {datetime.now().strftime('%Y-%m-%d')} Full Performance Benchmark Summary ({mode_title})\n\n"
             )
-            cols = ["Dim", "Dtype", "TqBits", "Vec/s Ingest"]
+            cols = ["Dim", "Dtype", "TqBits", "Vec/s Ingest", "Index Time (s)"]
             for m in all_search_modes:
                 cols.extend([f"{m.capitalize()} QPS", f"{m.capitalize()} P50", f"{m.capitalize()} P95"])
             f.write("| " + " | ".join(cols) + " |\n")
@@ -4065,11 +4095,14 @@ class BenchmarkRunner:
             max_count = max(r["count"] for r in valid_results) if valid_results else 0
             for r in valid_results:
                 if r["count"] == max_count:
+                    idx_time = r.get("ingest", {}).get("indexing_duration_seconds", 0)
+                    idx_str = f"{idx_time:.2f}s" if idx_time > 0 else "-"
                     row = [
                         str(r["dim"]),
                         r["dtype"],
                         str(r.get("tq_bits", 0)),
                         f"{r['ingest']['vec_per_sec']:,.0f}",
+                        idx_str,
                     ]
                     for m in all_search_modes:
                         s = r["search"].get(m, {"qps": 0, "p50": 0, "p95": 0})
@@ -4493,6 +4526,15 @@ if __name__ == "__main__":
                                     f"  {b_cfg['dim']}d/{b_cfg['dtype']}/{b_cfg['count']}v "
                                     f"{mode}: {b_qps:.1f} -> {r_qps:.1f} QPS ({change_pct:+.1f}%)"
                                 )
+                        b_idx = b_cfg.get("ingest", {}).get("indexing_duration_seconds", 0)
+                        r_idx = r_cfg.get("ingest", {}).get("indexing_duration_seconds", 0)
+                        if b_idx > 0 and r_idx > 0:
+                            idx_change_pct = ((r_idx - b_idx) / b_idx) * 100
+                            if idx_change_pct > args.threshold:
+                                regressions.append(
+                                    f"  {b_cfg['dim']}d/{b_cfg['dtype']}/{b_cfg['count']}v "
+                                    f"index_time: {b_idx:.2f}s -> {r_idx:.2f}s ({idx_change_pct:+.1f}%)"
+                                )
                 if regressions:
                     print(f"\n  [regression] FAIL: {len(regressions)} regression(s) beyond {args.threshold}%:")
                     for r in regressions:
@@ -4519,13 +4561,15 @@ if __name__ == "__main__":
                     f.write(f"**Mode**: {args.mode}  \n")
                     f.write(f"**Configs**: {len(configs)}  \n\n")
                     f.write("## Results\n\n")
-                    f.write("| Dim | Dtype | Count | Search Mode | QPS | P50 (ms) | P95 (ms) | P99 (ms) | Ingest (vec/s) |\n")
-                    f.write("|-----|-------|-------|-------------|-----|----------|----------|----------|----------------|\n")
+                    f.write("| Dim | Dtype | Count | Search Mode | QPS | P50 (ms) | P95 (ms) | P99 (ms) | Ingest (vec/s) | Index Time (s) |\n")
+                    f.write("|-----|-------|-------|-------------|-----|----------|----------|----------|----------------|----------------|\n")
                     for cfg in configs:
                         dim = cfg.get("dim", "?")
                         dtype = cfg.get("dtype", "?")
                         count = cfg.get("count", "?")
                         ingest = cfg.get("ingest", {}).get("vec_per_sec", 0)
+                        idx_time = cfg.get("ingest", {}).get("indexing_duration_seconds", 0)
+                        idx_str = f"{idx_time:.2f}s" if idx_time > 0 else "-"
                         for mode, s_data in cfg.get("search", {}).items():
                             f.write(
                                 f"| {dim} | {dtype} | {count} | {mode} "
@@ -4533,7 +4577,8 @@ if __name__ == "__main__":
                                 f"| {s_data.get('p50', 0):.3f} "
                                 f"| {s_data.get('p95', 0):.3f} "
                                 f"| {s_data.get('p99', 0):.3f} "
-                                f"| {ingest:.1f} |\n"
+                                f"| {ingest:.1f} "
+                                f"| {idx_str} |\n"
                             )
                     f.write("\n---\n\n")
                     f.write(f"*Report generated by unified_benchmark.py*\n")

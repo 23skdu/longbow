@@ -507,13 +507,20 @@ func main() {
 		log.Fatalf("FATAL: Benchmark aborted for dataset %s: ResourceExhausted (admission blocked by memory limit)", *dataset)
 	}
 	indexingSeconds := time.Since(indexingStart).Seconds()
+	for i := range results {
+		if results[i].Name == "DoPut" {
+			results[i].IndexingDuration = indexingSeconds
+		}
+	}
 	results = append(results, BenchmarkResult{
 		Name:             "Indexing",
 		DurationSeconds:  indexingSeconds,
+		Throughput:       float64(*scale) / indexingSeconds,
+		ThroughputUnit:   "vec/s",
 		Rows:             int64(*scale),
 		IndexingDuration: indexingSeconds,
 	})
-	log.Printf("Indexing complete in %.4fs (status: %s).", indexingSeconds, readyStatus)
+	log.Printf("Indexing complete in %.4fs (status: %s, %.2f vec/s).\n", indexingSeconds, readyStatus, float64(*scale)/indexingSeconds)
 	logLoadHints(sc)
 
 	// 2. DoGet
@@ -572,7 +579,7 @@ func main() {
 
 	// R12a: randomize mode order using the run seed if requested to break order coupling.
 	if *shuffleModes && len(modes) > 1 {
-		r := rand.New(rand.NewSource(*seed))
+		r := rand.New(rand.NewSource(*seed)) // #nosec G404 -- deterministic benchmark order shuffle
 		r.Shuffle(len(modes), func(i, j int) {
 			modes[i], modes[j] = modes[j], modes[i]
 		})

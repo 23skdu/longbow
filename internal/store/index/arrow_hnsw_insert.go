@@ -393,6 +393,26 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 		}
 	}
 
+	// KeepPrunedConnections (Malkov & Yashunin Algorithm 4): if diversity heuristic leaves
+	// selected below m, top up from the discarded candidates in distance order.
+	if len(selected) < m {
+		for _, cand := range candidates {
+			if len(selected) >= m {
+				break
+			}
+			alreadySelected := false
+			for _, s := range selected {
+				if s.ID == cand.ID {
+					alreadySelected = true
+					break
+				}
+			}
+			if !alreadySelected {
+				selected = append(selected, cand)
+			}
+		}
+	}
+
 	if len(selected) == 0 && len(candidates) > 0 {
 		selected = append(selected, candidates[0])
 	}
@@ -482,6 +502,28 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 		if isDiverse {
 			selected = append(selected, cand)
 			selectedVecs = append(selectedVecs, v1)
+		}
+	}
+
+	// KeepPrunedConnections (Malkov & Yashunin Algorithm 4): if the diversity
+	// heuristic leaves selected below m, top up from the discarded candidates in
+	// distance order so the node does not suffer from connection starvation.
+	if len(selected) < m {
+		for i, cand := range candidates {
+			if len(selected) >= m {
+				break
+			}
+			alreadySelected := false
+			for _, s := range selected {
+				if s.ID == cand.ID {
+					alreadySelected = true
+					break
+				}
+			}
+			if !alreadySelected && extracted[i] != nil {
+				selected = append(selected, cand)
+				selectedVecs = append(selectedVecs, extracted[i])
+			}
 		}
 	}
 
@@ -809,7 +851,11 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					if rec != nil {
 						if _, ok := valuesCache[rec]; !ok {
 							col := rec.Column(vecColIdx)
-							if f32Arr, okCol := col.(*arrowarray.Float32); okCol {
+							if list, okList := col.(*arrowarray.FixedSizeList); okList {
+								if f32Arr, okArr := list.ListValues().(*arrowarray.Float32); okArr {
+									valuesCache[rec] = f32Arr.Float32Values()
+								}
+							} else if f32Arr, okCol := col.(*arrowarray.Float32); okCol {
 								valuesCache[rec] = f32Arr.Float32Values()
 							}
 						}
@@ -894,7 +940,6 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 							// the zero-copy mapping.
 							data := h.data.Load()
 							data.AcquireReader()
-							defer data.ReleaseReader()
 							numFullChunks := n / types.ChunkSize
 							for c := 0; c < numFullChunks; c++ {
 								cID := int(startID)/types.ChunkSize + c
@@ -908,6 +953,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 									_ = data.SetZeroCopyMapping(cID, chunkData, col)
 								}
 							}
+							data.ReleaseReader()
 						}
 					}
 				}

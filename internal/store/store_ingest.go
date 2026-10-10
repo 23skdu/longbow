@@ -1,0 +1,1153 @@
+package store
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"runtime"
+	"runtime/pprof"
+	"strconv"
+	"strings"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+
+	lmem "github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
+	internalcore "github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/23skdu/longbow/internal/tracing"
+)
+
+func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
+	_, span := tracing.CreateSpan(stream.Context(), "DoPut")
+	if span != nil {
+		defer span.End()
+	}
+
+	r, err := flight.NewRecordReader(stream, ipc.WithAllocator(s.pooledMem))
+	if err != nil {
+		s.logger.Error().Err(err).Msg("DoPut failed to create reader")
+		return err
+	}
+	defer r.Release()
+
+	var name string
+
+	// Check descriptor immediately (sent with Schema)
+	fd := r.LatestFlightDescriptor()
+	if fd != nil && len(fd.Path) > 0 {
+		name = fd.Path[0]
+		// Pre-warm dataset with schema to avoid lazy init overhead in first batch
+		s.PrewarmDataset(name, r.Schema())
+	} else {
+		return fmt.Errorf("missing flight descriptor path")
+	}
+
+	s.logger.Info().Str("dataset", name).Msg("DoPut started (Batched)")
+
+	// 0. Admission Control (Backpressure)
+	if s.admission != nil {
+		if err := s.admission.Admit(stream.Context(), "ingest"); err != nil {
+			return err
+		}
+	}
+
+	s.logger.Info().Str("schema", r.Schema().String()).Msg("DoPut Schema")
+	// Use RCU helper for create
+	ds, created := s.getOrCreateDataset(name, func() *Dataset {
+		ds := NewDataset(name, r.Schema())
+		ds.Logger = s.logger
+		ds.Topo = s.numaTopology
+		s.initDiskStore(ds, name, r.Schema())
+		return ds
+	})
+
+	if ds == nil {
+		return status.Errorf(codes.Internal, "failed to retrieve or create dataset %s", name)
+	}
+
+	ds.ActiveIngestStreams.Add(1)
+	defer ds.ActiveIngestStreams.Add(-1)
+
+	// Namespace quota check (will be done per-flush in the loop below)
+	nsName, _ := ParseNamespacedPath(name)
+	var ns *Namespace
+	if ns = s.GetNamespace(nsName); ns != nil {
+		// Check initial quota on first batch
+	}
+
+	// Schema Evolution & Validation
+	// Validate compatibility and evolve if additive changes are present
+	if err := ds.SchemaManager.Evolve(r.Schema()); err != nil {
+		s.logger.Error().Err(err).Str("dataset", name).Msg("Schema evolution/validation failed")
+		return status.Errorf(codes.InvalidArgument, "schema mismatch: %v", err)
+	}
+
+	// Update dataset's schema reference to ensure it uses the latest version
+	// We need to lock to update the pointer safely
+	ds.dataMu.Lock()
+	ds.Schema = ds.SchemaManager.GetCurrentSchema()
+	ds.dataMu.Unlock()
+
+	if created {
+		mem := ds.IndexMemoryBytes.Load()
+		if mem > 100*1024*1024 {
+			s.logger.Warn().
+				Str("dataset", name).
+				Int64("mem", mem).
+				Msg("Huge initial memory for dataset")
+		}
+		s.currentMemory.Add(mem)
+	}
+
+	// Initialize GPU if enabled
+	ds.dataMu.RLock()
+	idx := ds.Index
+	ds.dataMu.RUnlock()
+	if idx != nil {
+		s.initGPUIfEnabled(idx)
+	}
+
+	// Batching configuration
+	const maxBatchRows = 10000             // Aggressive batching for small vectors
+	const maxBatchBytes = 32 * 1024 * 1024 // 32MB cap
+	batch := make([]arrow.RecordBatch, 0, 100)
+
+	// Helper to flush batch
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		defer func() {
+			for _, b := range batch {
+				b.Release()
+			}
+			batch = batch[:0]
+		}()
+
+		// Namespace quota check on flush
+		if ns != nil {
+			numVectors := int64(0)
+			totalBytes := int64(0)
+			for _, b := range batch {
+				numVectors += b.NumRows()
+				totalBytes += estimateBatchSize(b)
+			}
+			if err := ns.CheckQuota(numVectors, 0, totalBytes); err != nil {
+				return status.Errorf(codes.ResourceExhausted, "namespace quota exceeded: %v", err)
+			}
+		}
+
+		// Check total size of batch
+		totalBytes := int64(0)
+		totalRows := int64(0)
+		for _, b := range batch {
+			totalBytes += estimateBatchSize(b)
+			totalRows += b.NumRows()
+		}
+
+		startFlush := time.Now()
+		metrics.DoPutBatchSizeBytes.Observe(float64(totalBytes))
+		metrics.DoPutBatchSizeVectors.Observe(float64(totalRows))
+
+		// Optimization: Concatenate small batches into one large batch
+		// to reduce WAL overhead and lock contention.
+		var combined arrow.RecordBatch
+		if len(batch) == 1 {
+			combined = batch[0]
+			combined.Retain()
+		} else {
+			var err error
+			combined, err = s.concatenateBatches(batch)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("Failed to concatenate batches")
+				// Fallback to processing individually
+				if err := s.flushPutBatch(stream.Context(), ds, batch); err != nil {
+					return err
+				}
+				return nil
+			}
+		}
+
+		// Flush single combined batch with Circuit Breaker.
+		// pprof labels allow "go tool pprof" to filter by dataset/op so profiles
+		// show per-dataset ingestion cost rather than a flat flushPutBatch stack.
+		cb := s.Breakers.GetOrCreate(ds.Name)
+		var flushErr error
+		pprof.Do(stream.Context(), pprof.Labels("dataset", ds.Name, "op", "flush"), func(ctx context.Context) {
+			_, flushErr = cb.Execute(func() (any, error) {
+				return nil, s.flushPutBatch(ctx, ds, []arrow.RecordBatch{combined})
+			})
+		})
+		combined.Release()
+		if flushErr != nil {
+			return flushErr
+		}
+
+		metrics.DoPutBatchLatencySeconds.Observe(time.Since(startFlush).Seconds())
+		return nil
+	}
+
+	for r.Next() {
+		rec := r.RecordBatch()
+
+		// If the record itself is larger than maxBatchRows, slice it into manageable chunks.
+		// This prevents O(N^2) bottlenecks in the indexing worker's AddBatchBulk phase.
+		if rec.NumRows() > maxBatchRows {
+			for i := int64(0); i < rec.NumRows(); i += maxBatchRows {
+				end := i + maxBatchRows
+				if end > rec.NumRows() {
+					end = rec.NumRows()
+				}
+				subRec := rec.NewSlice(i, end)
+
+				// Process sub-record
+				subRecSize := estimateBatchSize(subRec)
+				if len(batch) == 0 && subRecSize >= maxBatchBytes {
+					metrics.DoPutBatchSizeBytes.Observe(float64(subRecSize))
+					err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{subRec})
+					subRec.Release()
+					if err != nil {
+						return err
+					}
+					continue
+				}
+
+				batch = append(batch, subRec)
+
+				// Check accumulator size
+				totalBatchRows := int64(0)
+				for _, b := range batch {
+					totalBatchRows += b.NumRows()
+				}
+
+				if totalBatchRows >= maxBatchRows {
+					if err := flush(); err != nil {
+						return err
+					}
+				}
+			}
+			continue
+		}
+
+		// Adaptive Batching (Byte-Aware Option 1):
+		// If the record is large enough (>= 10MB) and we don't have pending small records,
+		// write it directly to avoid concatenation/slice overhead.
+		recSize := estimateBatchSize(rec)
+		if len(batch) == 0 && recSize >= maxBatchBytes {
+			rec.Retain()
+			metrics.DoPutBatchSizeBytes.Observe(float64(recSize))
+			if err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{rec}); err != nil {
+				rec.Release()
+				return err
+			}
+			rec.Release()
+			continue
+		}
+
+		rec.Retain()
+		batch = append(batch, rec)
+
+		// Check accumulator size
+		totalBatchRows := int64(0)
+		for _, b := range batch {
+			totalBatchRows += b.NumRows()
+		}
+
+		if totalBatchRows >= maxBatchRows {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+	}
+
+	if r.Err() != nil {
+		s.logger.Error().Err(r.Err()).Msg("DoPut stream error")
+		// Cleanup pending
+		for _, b := range batch {
+			b.Release()
+		}
+		return r.Err()
+	}
+
+	// Flush remaining
+	if len(batch) > 0 {
+		if err := flush(); err != nil {
+			return err
+		}
+	}
+
+	s.logger.Info().Str("name", name).Msg("DoPut completed (Batched)")
+	s.PublishIndexBoundaries()
+	return nil
+}
+
+// flushPutBatch handles writing a batch of records to WAL and memory
+func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []arrow.RecordBatch) error {
+	s.broadcastCDC(ds.Name, batch)
+
+	if len(batch) == 0 {
+		return nil
+	}
+	name := ds.Name
+	s.logger.Info().Str("dataset", name).Int("batch_size", len(batch)).Msg("Flushing put batch")
+
+	// 1. Enqueue to Persistence Queue (Async WAL) & Ingestion Queue (Async Indexing)
+	// We do this in parallel or sequentially.
+	// Since both are async queues now, the latency is just channel send.
+
+	ts := time.Now().UnixNano()
+
+	// Record to auto-scaler (Part 1.1)
+	if s.scaler != nil {
+		totalRows := 0
+		for _, rec := range batch {
+			totalRows += int(rec.NumRows())
+		}
+		s.scaler.RecordIngest(totalRows)
+	}
+
+	// Soft Backpressure: Apply linear delay if system is starting to get stressed
+	if delay := s.IngestionBackpressureDelay(); delay > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+
+	// Hard Backpressure: Block if system is at capacity
+	if s.CheckIngestionBackpressure() {
+		// Log warning occasionally (every 5 seconds?) or use rate limiter
+		s.logger.Warn().Msg("Applying ingestion backpressure (HARD block)")
+		// Loop with sleep until pressure relieves or context done
+		ticker := time.NewTicker(200 * time.Millisecond) // Check every 200ms
+		defer ticker.Stop()
+
+		// Wait loop
+		for s.CheckIngestionBackpressure() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
+		}
+	}
+
+	for _, rec := range batch {
+		rec.Retain() // Retain for Persistence Worker
+		rec.Retain() // Retain for Ingestion Worker (applyBatchToMemory triggers release)
+
+		// Note: We retain twice because two different workers will Release() it.
+
+		// Update lag metric
+		metrics.IngestionLagCount.Add(float64(rec.NumRows()))
+
+		// 1. Send to Persistence (Backpressure if full to ensure durability logic isn't overrun)
+		// If queue is full, we block. This throttles client if disk is slow.
+		select {
+		case s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}:
+		case <-ctx.Done():
+			rec.Release() // Release both retains on cancellation
+			rec.Release()
+			return ctx.Err()
+		}
+
+		// 2. Send to Ingestion
+		// Increment pending ingestion count
+		ds.PendingIngestion.Add(1)
+
+		if !s.ingestionQueue.PushBlocking(IngestionJob{DS: ds, Batch: rec, TS: ts}, 5*time.Second) {
+			// If PushBlocking fails (timeout or stop), we must adjust PendingIngestion
+			ds.PendingIngestion.Add(-1)
+			return errors.New("failed to enqueue ingestion job (timeout or queue closed)")
+		}
+	}
+
+	return nil
+}
+
+// StoreRecordBatch ingests a record batch into the specified dataset.
+func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
+	if rec == nil {
+		return errors.New("nil record batch")
+	}
+	ts := time.Now().UnixNano()
+
+	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
+		d := NewDataset(name, rec.Schema())
+		d.Logger = s.logger
+		return d
+	})
+
+	rec.Retain() // For Persistence
+	rec.Retain() // For Ingestion
+	metrics.IngestionLagCount.Add(float64(rec.NumRows()))
+
+	select {
+	case s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}:
+	case <-ctx.Done():
+		rec.Release()
+		rec.Release()
+		return ctx.Err()
+	}
+
+	// Track pending ingestion BEFORE enqueuing to fix WaitForIndexing races
+	ds.PendingIngestion.Add(1)
+
+	// Dispatch for ingestion
+	if !s.ingestionQueue.PushBlocking(IngestionJob{DS: ds, Batch: rec, TS: ts}, 10*time.Second) {
+		ds.PendingIngestion.Add(-1)
+		return errors.New("failed to enqueue ingestion job")
+	}
+
+	return nil
+}
+
+// concatenateBatches merges multiple record batches into one
+func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.RecordBatch, error) {
+	if len(batches) == 0 {
+		return nil, fmt.Errorf("no batches to concatenate")
+	}
+	schema := batches[0].Schema()
+	numCols := int(schema.NumFields())
+	columns := make([]arrow.Array, numCols)
+	success := false
+	defer func() {
+		if !success {
+			// Clean up if we fail mid-way
+			for _, col := range columns {
+				if col != nil {
+					col.Release()
+				}
+			}
+		}
+	}()
+
+	for i := 0; i < numCols; i++ {
+		// Collect arrays for this column from all batches
+		colArrays := make([]arrow.Array, len(batches))
+		for j, batch := range batches {
+			colArrays[j] = batch.Column(i)
+		}
+
+		// Use Arrow's array.Concatenate with pooled allocator for transient ingestion buffers
+		alloc := s.pooledMem
+		if alloc == nil {
+			alloc = s.mem
+		}
+		if alloc == nil {
+			alloc = memory.DefaultAllocator
+		}
+		concatenated, err := array.Concatenate(colArrays, alloc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to concatenate column %d: %w", i, err)
+		}
+		columns[i] = concatenated
+	}
+
+	// Calculate total rows
+	totalRows := int64(0)
+	for _, b := range batches {
+		totalRows += b.NumRows()
+	}
+
+	success = true
+	batch := array.NewRecordBatch(schema, columns, totalRows)
+	for _, col := range columns {
+		col.Release()
+	}
+	return batch, nil
+}
+
+// applyBatchToMemory applies a batch to the in-memory dataset and dispatches indexing
+func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts int64) error {
+	name := ds.Name
+	traceStart := time.Now()
+	traceLog := func(step string) {
+		if elapsed := time.Since(traceStart); elapsed > 5*time.Second {
+			s.logger.Warn().
+				Str("dataset", name).
+				Str("step", step).
+				Int64("elapsed_ms", elapsed.Milliseconds()).
+				Msg("applyBatchToMemory trace: slow step")
+		}
+	}
+
+	// Memory tracking
+	batchSize := estimateBatchSize(rec)
+	// Check memory limit
+	if err := s.checkMemoryBeforeWrite(batchSize, name); err != nil {
+		return err
+	}
+	traceLog("checkMemoryBeforeWrite")
+
+	// Auto-quantization under memory pressure (>60% capacity).
+	// Threshold intentionally lowered from 70% to 60% to give the compression path
+	// a wider window before the heap is exhausted — preventing ResourceExhausted at ~425K vectors.
+	maxMem := s.maxMemory.Load()
+	if maxMem > 0 && s.currentMemory.Load() > int64(float64(maxMem)*0.60) {
+		pvt := ds.GetPreferredVectorType()
+		if pvt == types.VectorTypeFloat32 || pvt == types.VectorTypeUnknown {
+			s.logger.Warn().Str("dataset", ds.Name).Msg("Memory pressure >60%. Dynamically promoting dataset to TurboQuant8.")
+			ds.SetPreferredVectorType(types.VectorTypeTQ)
+
+			if h, ok := ds.Index.(*ArrowHNSW); ok {
+				h.EnableTurboQuant(8)
+			} else if asi, ok := ds.Index.(*AutoShardingIndex); ok {
+				asi.mu.Lock()
+				if h, ok := asi.current.(*ArrowHNSW); ok {
+					h.EnableTurboQuant(8)
+				} else if sh, ok := asi.current.(*ShardedHNSW); ok {
+					for _, shardIdx := range sh.Shards() {
+						if ah, ok := shardIdx.(*ArrowHNSW); ok {
+							ah.EnableTurboQuant(8)
+						}
+					}
+				}
+				asi.mu.Unlock()
+			} else if sh, ok := ds.Index.(*ShardedHNSW); ok {
+				for _, shardIdx := range sh.Shards() {
+					if ah, ok := shardIdx.(*ArrowHNSW); ok {
+						ah.EnableTurboQuant(8)
+					}
+				}
+			}
+		}
+	}
+
+	metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
+
+	if batchSize > 100*1024*1024 {
+		s.logger.Warn().Int64("size", batchSize).Msg("Large memory addition in DoPut")
+	}
+	s.currentMemory.Add(batchSize)
+	ds.SizeBytes.Add(batchSize)
+	metrics.FlightRowsProcessed.WithLabelValues("put", "ok").Add(float64(rec.NumRows()))
+
+	// Extract IDs and Vectors outside lock for better concurrency
+	idMap := ds.ExtractIDs(rec)
+
+	// Determine vector column for DiskStore (Zero-Copy Persistence)
+	if ds.DiskStore == nil && s.ShouldSpillToDisk(ds, rec.Schema()) {
+		s.initDiskStore(ds, name, rec.Schema())
+	}
+	diskVecColIdx := -1
+	if ds.DiskStore != nil {
+		for i, f := range rec.Schema().Fields() {
+			if f.Name == "vector" || f.Name == "embedding" {
+				diskVecColIdx = i
+				break
+			}
+		}
+	}
+
+	dsLockStart := time.Now()
+
+	// dataMu leak-guard: always unlock on panic so subsequent ingestion workers
+	// don't block forever at dataMu.Lock(). The explicit Unlock at the end of the
+	// critical section clears the flag so the defer is a no-op on the normal path.
+	var dataMuLocked bool
+	defer func() {
+		if dataMuLocked {
+			s.logger.Error().
+				Str("dataset", name).
+				Msg("dataMu was locked at panic time — recovering and unlocking to prevent worker deadlock")
+			ds.dataMu.Unlock()
+		}
+	}()
+	ds.dataMu.Lock()
+	dataMuLocked = true
+
+	// Lazy Index Initialization
+	// Also check if existing index has wrong DataType (e.g. Pre-warmed with Float32 but data is Float64)
+	var needsReindex bool
+	if ds.Index != nil {
+		if hnsw, ok := ds.Index.(*ArrowHNSW); ok {
+			for _, f := range ds.Schema.Fields() {
+				if f.Name == "vector" {
+					break
+				}
+			}
+			wantType := InferVectorDataType(ds.Schema, "vector")
+			if hnsw.GetConfig().DataType != wantType {
+				s.logger.Info().Str("dataset", name).Str("have", hnsw.GetConfig().DataType.String()).Str("want", wantType.String()).Msg("Re-creating index for DataType mismatch")
+				needsReindex = true
+			}
+		}
+	}
+	if ds.Index == nil || needsReindex {
+		ds.initMu.Lock()
+		needsReindex = false
+		if ds.Index != nil {
+			if hnsw, ok := ds.Index.(*ArrowHNSW); ok {
+				wantType := InferVectorDataType(ds.Schema, "vector")
+				if hnsw.GetConfig().DataType != wantType {
+					needsReindex = true
+				}
+			}
+		}
+		if ds.Index == nil || needsReindex {
+			s.logger.Info().Str("dataset", name).Msg("Attempting lazy index initialization")
+			config := s.autoShardingConfig
+			if config.ShardThreshold == 0 {
+				config.ShardThreshold = 10000
+				config.Enabled = true
+				config.ShardCount = runtime.NumCPU()
+			}
+
+			// Infer DataType from the FIRST record
+			vecColName := "vector"
+			for _, f := range rec.Schema().Fields() {
+				if f.Name == "vector" || f.Name == "embedding" {
+					vecColName = f.Name
+					break
+				}
+			}
+			dataType := InferVectorDataType(rec.Schema(), vecColName)
+
+			// Unspecified default logic: promote to turboquant8
+			hasMetadataType := false
+			if rec.Schema() != nil {
+				md := rec.Schema().Metadata()
+				if _, ok := md.GetValue("longbow.vector_type"); ok {
+					hasMetadataType = true
+				} else {
+					idx := rec.Schema().FieldIndices(vecColName)
+					if len(idx) > 0 {
+						f := rec.Schema().Field(idx[0])
+						if _, ok := f.Metadata.GetValue("longbow.vector_type"); ok {
+							hasMetadataType = true
+						}
+					}
+				}
+			}
+
+			// Infer dimension
+			dim := 0
+			if vecCol := findVectorColumn(rec); vecCol != nil {
+				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+					dim = int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+				}
+			}
+
+			// Automatic TurboQuant standardization for high-scale (500k+) or memory-constrained infrastructure
+			autoQuantizeEnabled := os.Getenv("LONGBOW_AUTO_QUANTIZE") == "1" || os.Getenv("LONGBOW_AUTO_QUANTIZE") == "true"
+			if config.IndexConfig != nil && config.IndexConfig.AutoQuantize {
+				autoQuantizeEnabled = true
+			}
+
+			if autoQuantizeEnabled && !hasMetadataType {
+				threshold := int64(100000)
+				if config.IndexConfig != nil && config.IndexConfig.AutoQuantizeThreshold > 0 {
+					threshold = config.IndexConfig.AutoQuantizeThreshold
+				}
+				maxRAM := s.maxMemory.Load()
+				if maxRAM <= 0 {
+					maxRAM = lmem.GetPhysicalMemory()
+				}
+				estimatedCount := ds.GetRowCount() + rec.NumRows()
+				if estimatedCount < threshold && maxRAM <= 24*1024*1024*1024 {
+					estimatedCount = threshold
+				}
+				if ShouldAutoQuantize(estimatedCount, dim, dataType, maxRAM, threshold) {
+					dataType = types.VectorTypeTQ
+					ds.SetPreferredVectorType(types.VectorTypeTQ)
+					tqBits := 4
+					if config.IndexConfig != nil && config.IndexConfig.AutoQuantizeBits > 0 {
+						tqBits = config.IndexConfig.AutoQuantizeBits
+					}
+					if v := os.Getenv("LONGBOW_AUTO_QUANTIZE_BITS"); v != "" {
+						if b, err := strconv.Atoi(v); err == nil && (b == 2 || b == 4 || b == 8) {
+							tqBits = b
+						}
+					}
+					ds.SetTurboQuantBits(tqBits)
+					if ds.DiskStore != nil {
+						ds.DiskStore.SetTurboQuant(tqBits)
+					}
+					metrics.AutoQuantizeEngaged.WithLabelValues(name).Inc()
+					s.logger.Info().
+						Str("dataset", name).
+						Int64("estimatedVectors", estimatedCount).
+						Int("dim", dim).
+						Int("tqBits", tqBits).
+						Msg("Standardized on TurboQuant as default storage engine (LONGBOW_AUTO_QUANTIZE threshold crossed)")
+				}
+			}
+
+			if pvt := ds.GetPreferredVectorType(); pvt != types.VectorTypeUnknown {
+				dataType = pvt
+			} else if !hasMetadataType && dataType == types.VectorTypeFloat32 {
+				dataType = types.VectorTypeTQ
+				ds.SetPreferredVectorType(types.VectorTypeTQ)
+			}
+
+			// Ensure automatic spill to disk is engaged if memory projection exceeds threshold
+			if ds.DiskStore == nil && s.ShouldSpillToDisk(ds, rec.Schema()) {
+				s.initDiskStore(ds, name, rec.Schema())
+			}
+
+			s.logger.Info().Str("dataset", name).Str("dataType", dataType.String()).Str("column", vecColName).Msg("Inferred vector data type for new index")
+
+			if config.IndexConfig == nil {
+				hnswCfg := DefaultArrowHNSWConfig()
+				hnswCfg.Metric = ds.Metric
+				hnswCfg.DataType = dataType
+				if ds.DiskStore != nil {
+					hnswCfg.UseDisk = true
+				}
+
+				if dataType == VectorTypeTQ {
+					hnswCfg.TurboQuantEnabled = true
+					if ds.TurboQuantBits() > 0 {
+						hnswCfg.TurboQuantBits = ds.TurboQuantBits()
+					} else if hnswCfg.TurboQuantBits == 0 {
+						hnswCfg.TurboQuantBits = 4
+					}
+				}
+				config.IndexConfig = &hnswCfg
+			} else {
+				// Clone the config to avoid polluting the shared autoShardingConfig
+				clonedCfg := *config.IndexConfig
+
+				// Use preferred type if specified
+				if pvt := ds.GetPreferredVectorType(); pvt != types.VectorTypeUnknown {
+					dataType = pvt
+				}
+				clonedCfg.DataType = dataType
+				if ds.DiskStore != nil {
+					clonedCfg.UseDisk = true
+				}
+
+				if dataType == VectorTypeTQ {
+					clonedCfg.TurboQuantEnabled = true
+					if ds.TurboQuantBits() > 0 {
+						clonedCfg.TurboQuantBits = ds.TurboQuantBits()
+					} else if clonedCfg.TurboQuantBits == 0 {
+						clonedCfg.TurboQuantBits = 4
+					}
+				}
+				config.IndexConfig = &clonedCfg
+			}
+
+			aIdx := NewAutoShardingIndex(ds, config)
+			if vecCol := findVectorColumn(rec); vecCol != nil {
+				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+					dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+					s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("findVectorColumn result")
+					switch dataType {
+					case VectorTypeFloat32:
+						if listType, ok := listArr.DataType().(*arrow.FixedSizeListType); ok {
+							if listType.Elem().ID() == arrow.FLOAT32 && dim%2 == 0 {
+								// Only detect complex if field name suggests it
+								if strings.Contains(strings.ToLower(vecCol.Data().DataType().Name()), "complex") {
+									dataType = VectorTypeComplex64
+									dim /= 2
+									config.IndexConfig.DataType = dataType
+									aIdx = NewAutoShardingIndex(ds, config)
+									s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("Detected complex64 from physical dimension")
+								}
+							}
+						}
+					case VectorTypeComplex64, VectorTypeComplex128:
+						dim /= 2
+					}
+					if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
+						setter.SetInitialDimension(dim)
+					}
+				}
+			} else {
+				s.logger.Error().Str("dataset", name).Msg("findVectorColumn returned nil")
+			}
+			ds.Index = aIdx
+
+			// Pre-warm the index metadata cache with the current schema so the first
+			// AddBatch call doesn't pay lazy-cache population latency.
+			if hnsw, ok := aIdx.(*ArrowHNSW); ok {
+				hnsw.PreWarmMetadata(rec.Schema())
+			} else if asi, ok := aIdx.(*AutoShardingIndex); ok {
+				asi.mu.RLock()
+				if current, ok := asi.current.(*ArrowHNSW); ok {
+					current.PreWarmMetadata(rec.Schema())
+				}
+				asi.mu.RUnlock()
+			}
+		}
+		ds.initMu.Unlock()
+	}
+
+	currentRecords := ds.Records.Read()
+	batchIdx := len(currentRecords)
+	newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
+	copy(newRecords, currentRecords)
+	newRecords[len(currentRecords)] = rec
+	ds.Records.UpdateInPlace(newRecords)
+	rec.Retain()
+
+	// Index text columns for hybrid BM25 search
+	baseRowID := uint32(0)
+	for _, r := range currentRecords {
+		// #nosec G115
+		baseRowID += uint32(r.NumRows())
+	}
+	s.indexTextColumnsForHybridSearch(ds, rec, baseRowID)
+
+	// Index categorical string columns into 16-bit dictionary codes for vectorized SIMD filter evaluation
+	for i, f := range rec.Schema().Fields() {
+		if f.Type.ID() == arrow.STRING {
+			if strCol, ok := rec.Column(i).(*array.String); ok {
+				ds.IndexStringColumn(f.Name, batchIdx, strCol)
+			}
+		}
+	}
+
+	// Mark dataset as ready after first successful ingestion
+	if !ds.IsReady.Load() {
+		ds.IsReady.Store(true)
+		s.logger.Info().Str("dataset", name).Msg("Dataset metadata registration complete (Ready for queries)")
+	}
+
+	currCPU := lmem.GetCurrentCPU()
+	currNode := -1
+	if s.numaTopology != nil {
+		currNode = s.numaTopology.GetNodeForCPU(currCPU)
+	}
+	currentNodes := ds.BatchNodes.Read()
+	newNodes := make([]int, len(currentNodes)+1)
+	copy(newNodes, currentNodes)
+	newNodes[len(currentNodes)] = currNode
+	ds.BatchNodes.UpdateInPlace(newNodes)
+
+	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
+
+	ds.dataMu.Unlock()
+	dataMuLocked = false
+	traceLog("dataMu critical section")
+
+	// Update Primary Index and LWW/Merkle outside the main lock to prevent search-blocking
+	// contention while processing O(N) metadata updates.
+	// metadataMu inside these methods ensures consistency.
+	ds.UpdatePrimaryIndexAsync(batchIdx, idMap)
+	idMap.Release()
+	s.updateLWWAndMerkle(ds, rec, ts)
+
+	// Batch append to DiskStore outside main dataset lock to avoid blocking other workers
+	if diskVecColIdx != -1 {
+		if _, err := ds.DiskStore.BatchAppendArrow(rec, diskVecColIdx); err != nil {
+			s.logger.Error().Err(err).Msg("Failed to batch append to DiskStore (Zero-Copy)")
+		} else {
+			elemSize := 4
+			if ds.GetPreferredVectorType() == types.VectorTypeFloat64 {
+				elemSize = 8
+			}
+			metrics.DiskStoreWriteBytesTotal.WithLabelValues(name).Add(float64(rec.NumRows() * int64(ds.DiskStore.dim) * int64(elemSize)))
+		}
+	}
+
+	// Temporal Index Hook
+	if s.temporalConfig.Enabled && ds.TemporalIndex != nil {
+		idColIdx := -1
+		vecColIdx := -1
+		tsColIdx := -1
+		for i, f := range rec.Schema().Fields() {
+			switch f.Name {
+			case "id":
+				idColIdx = i
+			case "vector", "embedding":
+				vecColIdx = i
+			case "timestamp":
+				tsColIdx = i
+			}
+		}
+
+		if idColIdx != -1 && vecColIdx != -1 {
+			numRows := int(rec.NumRows())
+			ids := make([]uint64, numRows)
+			vectors := make([][]float32, numRows)
+			timestamps := make([]int64, numRows)
+
+			idArr := rec.Column(idColIdx).(*array.String)
+			vecCol := rec.Column(vecColIdx)
+
+			var tsArr arrow.Array
+			if tsColIdx != -1 {
+				tsArr = rec.Column(tsColIdx)
+			}
+
+			// Handle both FixedSizeList and variable-length List
+			var listLen int
+			if fs, ok := vecCol.DataType().(*arrow.FixedSizeListType); ok {
+				listLen = int(fs.Len())
+			}
+
+			// Parallel Extraction
+			pool := internalcore.GetSharedPool()
+			pool.ParallelFor(numRows, 1024, func(start, end int) {
+				for i := start; i < end; i++ {
+					if idArr.IsValid(i) && vecCol.IsValid(i) {
+						idStr := idArr.Value(i)
+						id, _ := strconv.ParseUint(idStr, 10, 64)
+						ids[i] = id
+
+						if tsArr != nil && tsArr.IsValid(i) {
+							switch arr := tsArr.(type) {
+							case *array.Int64:
+								timestamps[i] = arr.Value(i)
+							case *array.Timestamp:
+								timestamps[i] = int64(arr.Value(i))
+							default:
+								timestamps[i] = ts
+							}
+						} else {
+							timestamps[i] = ts
+						}
+
+						var vStart, vEnd int
+						var values arrow.Array
+						if fs, ok := vecCol.(*array.FixedSizeList); ok {
+							vStart = i * listLen
+							vEnd = (i + 1) * listLen
+							values = fs.ListValues()
+						} else if l, ok := vecCol.(*array.List); ok {
+							offsets := l.Offsets()
+							vStart = int(offsets[i])
+							vEnd = int(offsets[i+1])
+							values = l.ListValues()
+						}
+
+						if values != nil {
+							switch valArr := values.(type) {
+							case *array.Float32:
+								if vStart < valArr.Len() && vEnd <= valArr.Len() {
+									src := valArr.Float32Values()[vStart:vEnd]
+									sub := make([]float32, len(src))
+									copy(sub, src)
+									vectors[i] = sub
+								}
+							case *array.Float64:
+								if vStart < valArr.Len() && vEnd <= valArr.Len() {
+									f64Values := valArr.Float64Values()[vStart:vEnd]
+									sub := make([]float32, len(f64Values))
+									for j, v := range f64Values {
+										sub[j] = float32(v)
+									}
+									vectors[i] = sub
+								}
+							}
+						}
+					}
+				}
+			})
+
+			// Batch Add
+			_ = ds.TemporalIndex.AddBatch(ids, vectors, timestamps, nil)
+		}
+	}
+	traceLog("temporal index")
+
+	// Geospatial Index Hook
+	geoPointIdx := -1
+	for i, f := range rec.Schema().Fields() {
+		if f.Name == "geo_point" {
+			geoPointIdx = i
+			break
+		}
+	}
+
+	if geoPointIdx != -1 {
+		ds.dataMu.Lock()
+		dataMuLocked = true
+		if ds.GeoIndex == nil {
+			// Initialize with default config if missing
+			geoCfg := &GeoSearchConfig{
+				DistanceType: GeoDistanceHaversine,
+				EarthRadius:  6371.0,
+			}
+			// Use dimension from vector column if possible, otherwise default to 128
+			dim := 128
+			if vecCol := findVectorColumn(rec); vecCol != nil {
+				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+					dim = int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+				}
+			}
+			ds.GeoIndex = NewGeoIndex(ds.Name, dim, geoCfg)
+			ds.GeoIndex.ds = ds
+			s.logger.Info().Str("dataset", ds.Name).Int("dim", dim).Msg("Lazily initialized GeoIndex")
+		}
+		ds.dataMu.Unlock()
+		dataMuLocked = false
+
+		idColIdx := -1
+		vecColIdx := -1
+		for i, f := range rec.Schema().Fields() {
+			switch f.Name {
+			case "id":
+				idColIdx = i
+			case "vector", "embedding":
+				vecColIdx = i
+			}
+		}
+
+		if idColIdx != -1 && vecColIdx != -1 {
+			numRows := int(rec.NumRows())
+			ids := make([]uint64, numRows)
+			vectors := make([][]float32, numRows)
+			points := make([]types.GeoPoint, numRows)
+			valid := make([]bool, numRows)
+
+			idArr := rec.Column(idColIdx).(*array.String)
+			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
+			geoArr := rec.Column(geoPointIdx).(*array.FixedSizeList)
+			geoValues := geoArr.ListValues().(*array.Float64).Float64Values()
+			listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
+
+			// Parallel Extraction
+			pool := internalcore.GetSharedPool()
+			pool.ParallelFor(numRows, 1024, func(start, end int) {
+				for i := start; i < end; i++ {
+					if idArr.IsValid(i) && vecArr.IsValid(i) && geoArr.IsValid(i) {
+						idStr := idArr.Value(i)
+						id, _ := strconv.ParseUint(idStr, 10, 64)
+						ids[i] = id
+
+						vStart := i * listLen
+						vEnd := (i + 1) * listLen
+						listValues := vecArr.ListValues()
+
+						switch values := listValues.(type) {
+						case *array.Float32:
+							src := values.Float32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							copy(sub, src)
+							vectors[i] = sub
+						case *array.Float64:
+							f64Values := values.Float64Values()[vStart:vEnd]
+							sub := make([]float32, len(f64Values))
+							for j, v := range f64Values {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						case *array.Int8:
+							src := values.Int8Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						case *array.Int16:
+							src := values.Int16Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						case *array.Int32:
+							src := values.Int32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						case *array.Int64:
+							src := values.Int64Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						case *array.Uint8:
+							src := values.Uint8Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						case *array.Uint16:
+							src := values.Uint16Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						case *array.Uint32:
+							src := values.Uint32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						case *array.Uint64:
+							src := values.Uint64Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						case *array.Float16:
+							src := values.Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src {
+								sub[j] = v.Float32()
+							}
+							vectors[i] = sub
+						}
+
+						if vectors[i] != nil {
+							points[i] = types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]}
+							valid[i] = true
+						}
+					}
+				}
+			})
+
+			// Filter valid and Batch Add
+			validIds := make([]uint64, 0, numRows)
+			validVectors := make([][]float32, 0, numRows)
+			validPoints := make([]types.GeoPoint, 0, numRows)
+			for i := 0; i < numRows; i++ {
+				if valid[i] {
+					validIds = append(validIds, ids[i])
+					validVectors = append(validVectors, vectors[i])
+					validPoints = append(validPoints, points[i])
+				}
+			}
+
+			_ = ds.GeoIndex.AddBatch(validIds, validVectors, validPoints, nil)
+		}
+	}
+
+	// Dispatch batch-level indexing job asynchronously to avoid blocking DoPut
+	rec.Retain() // IndexJob holds ref
+	job := IndexJob{
+		DatasetName: name,
+		Record:      rec,
+		BatchIdx:    batchIdx,
+		CreatedAt:   time.Now(),
+	}
+
+	ds.PendingIndexJobs.Add(rec.NumRows())
+	if !s.indexQueue.Send(job) {
+		metrics.IndexJobsOverflowTotal.Inc()
+		s.pendingOverflowJobs.Add(1)
+		go func() {
+			defer s.pendingOverflowJobs.Add(-1)
+			if !s.indexQueue.Block(job, 5*time.Second) {
+				ds.PendingIndexJobs.Add(-rec.NumRows())
+				rec.Release()
+				s.logger.Warn().Str("dataset", name).Msg("Index job dropped after blocking timeout")
+			}
+		}()
+	}
+
+	return nil
+}

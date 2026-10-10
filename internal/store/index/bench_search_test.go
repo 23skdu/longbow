@@ -422,5 +422,3 @@ func BenchmarkTurboQuantSearch_250k(b *testing.B) {
 		}
 	}
 }
-
-

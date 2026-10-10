@@ -567,7 +567,6 @@ var InboundEdgeGuardEnabled = func() bool {
 	return true
 }()
 
-
 // protectLastInboundEdges enforces the R26 invariant on the layer-0 neighbour set
 // that is about to be committed: a neighbour whose only inbound edge is the one
 // being dropped must not lose it.

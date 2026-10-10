@@ -1,8 +1,8 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/metrics"
 	"fmt"
+	"github.com/23skdu/longbow/internal/metrics"
 	"math"
 	"sort"
 	"sync"

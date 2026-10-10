@@ -53,7 +53,7 @@ func TestReproShardedSearchRace(t *testing.T) {
 	// Concurrent search
 	numConcurrent := 50
 	numIterations := 100
-	
+
 	// Under race detector, this test takes >10 minutes if we do 5000 searches.
 	// Reduce to 5x10 to finish quickly while still catching obvious races.
 	// There is a runtime.RaceDetector flag available in standard library? No, but we can just use testing.Short() logic or similar.

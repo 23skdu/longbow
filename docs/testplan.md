@@ -22,7 +22,7 @@ The primary goals are:
 | **GPU** | NVIDIA GeForce RTX 4060 Laptop (8 GB VRAM, sm_89) |
 | **CUDA Toolkit** | CUDA 12.4 (`nvcc` V12.4.131) |
 | **Host Operating System** | Linux (Ubuntu / Debian x86_64 kernel 6.8) |
-| **Go Runtime** | Go 1.24+ / 1.27 with CGO enabled |
+| **Go Runtime** | Go 1.27.2 with CGO enabled |
 | **Benchmark Script** | [scripts/unified_benchmark.py](file:///home/rsd/REPOS/longbow/scripts/unified_benchmark.py) |
 | **Benchmark Harness** | [cmd/bench-tool](file:///home/rsd/REPOS/longbow/cmd/bench-tool) (`bin/bench-tool`) |
 

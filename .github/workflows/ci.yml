@@ -26,7 +26,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache: true
 
       - name: Run golangci-lint
@@ -88,7 +88,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache: true
 
       - name: Run SIMD Tests under ARM64 Emulation
@@ -106,7 +106,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache: true
 
       - name: Run the emulated SIMD lanes
@@ -148,7 +148,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache: true
 
       - name: Build benchmark binaries

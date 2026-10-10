@@ -284,7 +284,7 @@ def main():
     w("| CPU | Intel Core i7-12650H (16 vCPUs, AVX2, x86_64) |")
     w("| RAM | 23 GB |")
     w("| GPU | NVIDIA GeForce RTX 4060 Laptop (8 GB VRAM, sm_89, CUDA 12.4) |")
-    w("| Go Runtime | Go 1.24+ / 1.27 (CGO enabled) |")
+    w("| Go Runtime | Go 1.27.2 (CGO enabled) |")
     w("")
     w("| Binary | Description |")
     w("|---|---|")

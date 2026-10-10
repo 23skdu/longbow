@@ -10,7 +10,7 @@
 # -------------------------------------------------------------------
 # Stage 1: Build
 # -------------------------------------------------------------------
-FROM golang:1.27.1-bookworm AS builder
+FROM golang:1.27.2-bookworm AS builder
 
 WORKDIR /app
 
@@ -51,5 +51,5 @@ ENV GOGC=75
 
 EXPOSE 3000 3001 9090
 
-USER nobody:nobody
+USER 65534:65534
 ENTRYPOINT ["/longbow"]

@@ -67,7 +67,7 @@ These differ from the 2026-09-26 rows in ways that matter when comparing them:
 | Concurrency Workers | 4 Workers (`--workers 4`) |
 | Host RAM | 23 GB System Memory |
 | GPU | NVIDIA GeForce RTX 4060 Laptop (8 GB VRAM, sm_89, CUDA 12.4) |
-| Go Runtime | Go 1.27 (CGO enabled) |
+| Go Runtime | Go 1.27.2 (CGO enabled) |
 
 ### Engine Variants Evaluated
 

@@ -62,7 +62,7 @@ def generate_performance_doc(records):
     md.append("| Concurrency Workers | 4 Workers (`--workers 4`) |")
     md.append("| Host RAM | 23 GB System Memory |")
     md.append("| GPU | NVIDIA GeForce RTX 4060 Laptop (8 GB VRAM, sm_89, CUDA 12.4) |")
-    md.append("| Go Runtime | Go 1.27 (CGO enabled) |")
+    md.append("| Go Runtime | Go 1.27.2 (CGO enabled) |")
     md.append("")
     md.append("### Engine Variants Evaluated")
     md.append("")

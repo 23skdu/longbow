@@ -31,7 +31,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.2"
           cache: true
 
       - name: Install govulncheck
@@ -56,8 +56,7 @@ jobs:
           severity: HIGH,CRITICAL
           format: table
           exit-code: "1"
-          ignorefile: .trivyignore
-          trivy-config: .
+          trivyignores: .trivyignore
           skip-dirs: vendor,data,bin
 
   trivy-config:
@@ -75,5 +74,5 @@ jobs:
           severity: HIGH,CRITICAL
           format: table
           exit-code: "1"
-          ignorefile: .trivyignore
+          trivyignores: .trivyignore
           skip-dirs: vendor,data,bin

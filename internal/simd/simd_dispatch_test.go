@@ -31,6 +31,12 @@ func TestDispatchInitialization(t *testing.T) {
 			t.Error("euclideanDistanceBatchImpl should be initialized at startup")
 		}
 	})
+
+	t.Run("turboquant_batch_dispatch_initialized", func(t *testing.T) {
+		if turboQuantDistanceBatchImpl == nil {
+			t.Error("turboQuantDistanceBatchImpl should be initialized at startup")
+		}
+	})
 }
 
 // TestDispatchSelection verifies correct implementation is selected based on CPU
@@ -38,7 +44,11 @@ func TestDispatchSelection(t *testing.T) {
 	impl := GetImplementation()
 
 	// Verify implementation string matches one of the expected values
+	// emerald and granite are the AMX tiers detectCPU selects on Sapphire
+	// Rapids and later; see the note on the same set in dispatch_test.go.
 	validImpls := map[string]bool{
+		"emerald": true,
+		"granite": true,
 		"avx512":  true,
 		"avx2":    true,
 		"neon":    true,

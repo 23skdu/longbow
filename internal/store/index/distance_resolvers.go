@@ -236,11 +236,17 @@ func (h *ArrowHNSW) resolveAllDistanceFuncs() {
 	h.distFuncUint8Squared = resolveL2SquaredKernel[uint8](dims, nil)
 	h.distFuncInt16 = resolveDistanceKernel(sm, dims, distanceFallbacks[int16]{
 		cosine: simd.CosineDistanceInt16, dot: simd.DotProductInt16,
-		euclidean: simd.EuclideanDistanceInt16,
+		// simd.EuclideanDistanceInt16 dispatches to the registered kernel, so
+		// using it as the reference would compare the kernel against itself and
+		// the parity gate below could never fail. The widening implementation in
+		// this package accumulates in float64 and is independent of it.
+		euclidean: func(a, b []int16) (float32, error) { return euclideanDistanceInt16(a, b), nil },
 	}, "int16")
 	h.distFuncUint16 = resolveDistanceKernel(sm, dims, distanceFallbacks[uint16]{
 		cosine: simd.CosineDistanceUint16, dot: simd.DotProductUint16,
-		euclidean: simd.EuclideanDistanceUint16,
+		// The unsigned reference differences in its own width, which wraps
+		// around; use the widening implementation in this package.
+		euclidean: func(a, b []uint16) (float32, error) { return euclideanDistanceUint16(a, b), nil },
 	}, "uint16")
 	h.distFuncInt32 = resolveDistanceKernel(sm, dims, distanceFallbacks[int32]{
 		cosine: simd.CosineDistanceInt32, dot: simd.DotProductInt32,

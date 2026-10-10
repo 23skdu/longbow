@@ -95,6 +95,47 @@ jobs:
         run: |
           GOARCH=arm64 go test -v ./internal/simd/...
 
+  test-avx512-sde:
+    name: AVX-512 / VBMI / AMX under Intel SDE
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.0"
+          cache: true
+
+      - name: Run the emulated SIMD lanes
+        # The widest kernels in the tree are the only ones CI never executed:
+        # every test that guards on GetCPUFeatures() skips on a standard runner.
+        # Intel SDE answers CPUID for the emulated model, so the guards pass and
+        # the kernels run for real. The script fails the job if a test whose
+        # feature the emulated model advertises was skipped anyway, which is how
+        # a wrong CPUID bit, a bad build tag or a renamed test gets caught.
+        #
+        # It paid for itself on the first run: it found that the VBMI TQ2 pack
+        # and unpack kernels disagreed with the generic reference and had never
+        # been executed anywhere.
+        #
+        # See docs/roadmap.md item 5.
+        env:
+          # A path inside the workspace so the artifact step below can reach it.
+          LONGBOW_SDE_WORK: /tmp/sde-simd-out
+        run: ./scripts/check_avx512_coverage.sh
+
+      - name: Upload emulated test output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sde-simd-output
+          path: /tmp/sde-simd-out/out-*.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
   benchmark-regression:
     name: Benchmark Regression (--ci)
     needs: validate

@@ -1,0 +1,105 @@
+name: Benchmark A/B (Interleaved)
+
+# The only benchmark gate in this repository that is allowed to block, and only
+# where it has two binaries to compare. See docs/testplan.md §5.1.
+#
+# The PR gate (unified_benchmark.py --compare-baseline, in ci.yml) compares one
+# run against a stored baseline. Measured against itself it fires falsely 77-89%
+# of the time at a 10% threshold, so it is advisory there. This harness
+# interleaves both arms inside one invocation, in ABBA order, which drives its
+# own false-positive rate below 1.5%.
+
+on:
+  schedule:
+    # Off the hour and off :00, which is where every other scheduled workflow
+    # in this repository lands.
+    - cron: "37 6 * * *"
+  workflow_dispatch:
+    inputs:
+      counts:
+        description: "Comma-separated vector counts"
+        required: false
+        default: "50000"
+      dtypes:
+        description: "Comma-separated dtypes"
+        required: false
+        default: "float32,int8"
+      reps:
+        description: "Interleaved reps (minimum 3)"
+        required: false
+        default: "6"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark-ab:
+    name: Interleaved A/B Qualification
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          path: main-branch
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.0"
+          cache: true
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+
+      - name: Build both arms
+        run: |
+          go build -o "$RUNNER_TEMP/baseline-longbow" ./cmd/longbow
+          go build -o "$RUNNER_TEMP/candidate-longbow" ./cmd/longbow
+          go build -o "$RUNNER_TEMP/baseline-bench-tool" ./cmd/bench-tool
+          go build -o "$RUNNER_TEMP/candidate-bench-tool" ./cmd/bench-tool
+
+      - name: Run interleaved A/B
+        id: ab
+        # The harness needs a server binary per arm; it passes --server-binary
+        # through to unified_benchmark.py, and the paired bench-tool binary is
+        # taken from alongside it.
+        run: |
+          set +e
+          python3 scripts/ab_benchmark.py \
+            --baseline-binary  "$RUNNER_TEMP/baseline-longbow" \
+            --candidate-binary "$RUNNER_TEMP/candidate-longbow" \
+            --baseline-bench-tool  "$RUNNER_TEMP/baseline-bench-tool" \
+            --candidate-bench-tool "$RUNNER_TEMP/candidate-bench-tool" \
+            --counts "${{ inputs.counts || '50000' }}" \
+            --dtypes "${{ inputs.dtypes || 'float32,int8' }}" \
+            --search-modes dense \
+            --queries 500 --reps "${{ inputs.reps || '6' }}" \
+            --threshold 5 \
+            --out data/perf_logs/ab_verdict.json
+          rc=$?
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          # 2 is "too few usable pairs" or a setup error. It is not a pass, and
+          # it is not a regression either; surfacing it as a distinct failure is
+          # the point, because the alternative is a silent green build.
+          if [ "$rc" -eq 2 ]; then
+            echo "::error::A/B harness could not reach a verdict (exit 2). Raise --reps or narrow the matrix."
+          elif [ "$rc" -ne 0 ]; then
+            echo "::error::Interleaved A/B reported a regression."
+          fi
+          exit "$rc"
+
+      - name: Upload A/B artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ab-results
+          path: data/perf_logs/
+          retention-days: 30

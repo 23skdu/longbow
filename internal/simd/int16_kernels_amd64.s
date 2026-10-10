@@ -27,65 +27,120 @@
     VMOVSHDUP xdst, xtmp2;                  \
     VADDSS xtmp2, xdst, xdst
 
+// REDUCE_ACC4 collapses four independent float32 accumulators into X0.
+//
+// The four-way split exists because the previous single-accumulator form was
+// bound by the VADDPS dependency chain rather than by throughput: two VADDPS per
+// 16 elements, each 4 cycles of latency and both reading the same register, is
+// 8 cycles per iteration regardless of how much work the other ports had left.
+// Four independent accumulators take that chain to 4 cycles per 32 elements.
+//
+// Clobbers: X1, X2, X3, X4.
+#define REDUCE_ACC4(a0, a1, a2, a3) \
+    VADDPS a1, a0, a0;  \
+    VADDPS a3, a2, a2;  \
+    VADDPS a2, a0, a0;  \
+    REDUCE_YMM(a0, X0, X1, X2)
+
 // ============================================================================
 // euclideanInt16AVX2Kernel(a, b uintptr, n int) float32
 //
 // Computes sqrt(sum((a[i]-b[i])^2)) over n int16 elements.
-// Processes 16 elements per main loop iteration (2x 8-wide VPMOVSXWD).
+// Processes 32 elements per main loop iteration (4x 8-wide VPMOVSXWD into four
+// independent float32 accumulators).
+//
+// The difference is formed in int32 and squared in float32, not in int32. Two
+// int16 operands can differ by up to 65535, whose square is 4294836225, which
+// does not fit in an int32 and silently wrapped: the previous VPMULLD form
+// returned 214317.9 where the exact answer is 275675.4, a 22% error, on any
+// corpus that uses more than half the type's range. Converting to float32 first
+// costs one VCVTDQ2PS per group either way - the old form also converted before
+// accumulating - so it is free, and VFMADD231PS folds the multiply into the
+// accumulate for one instruction fewer than VPMULLD+VADDPS.
 // ============================================================================
 TEXT ·euclideanInt16AVX2Kernel(SB),NOSPLIT,$0-28
     MOVQ a+0(FP), SI
     MOVQ b+8(FP), DI
     MOVQ n+16(FP), CX
 
-    VXORPS Y0, Y0, Y0   // accumulator (float32 x8)
+    VXORPS Y0, Y0, Y0   // accumulators, float32 x8 each
+    VXORPS Y1, Y1, Y1
+    VXORPS Y2, Y2, Y2
+    VXORPS Y3, Y3, Y3
 
-loop16:
+loop32:
+    CMPQ CX, $32
+    JL   tail16
+
+    // a[0..7] and b[0..7] -> acc0, a[8..15]/b[8..15] -> acc1, and so on. Each
+    // accumulator is written once per iteration, so none of them serialise.
+    VPMOVSXWD 0(SI), Y4
+    VPMOVSXWD 0(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y0
+
+    VPMOVSXWD 16(SI), Y4
+    VPMOVSXWD 16(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y1
+
+    VPMOVSXWD 32(SI), Y4
+    VPMOVSXWD 32(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y2
+
+    VPMOVSXWD 48(SI), Y4
+    VPMOVSXWD 48(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y3
+
+    ADDQ $64, SI
+    ADDQ $64, DI
+    SUBQ $32, CX
+    JMP  loop32
+
+tail16:
     CMPQ CX, $16
     JL   tail8
 
-    // Load 16 int16 from a and b (32 bytes each)
-    // Use two VPMOVSXWD to sign-extend 8 int16 → 8 int32 each
-    VPMOVSXWD 0(SI), Y1      // a[0..7]  → int32 x8
-    VPMOVSXWD 16(SI), Y2     // a[8..15] → int32 x8
-    VPMOVSXWD 0(DI), Y3      // b[0..7]  → int32 x8
-    VPMOVSXWD 16(DI), Y4     // b[8..15] → int32 x8
+    // The remaining groups fold into Y0, which the reduction reads first.
+    VPMOVSXWD 0(SI), Y4
+    VPMOVSXWD 0(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y0
 
-    VPSUBD Y3, Y1, Y1        // diff0 = a[0..7] - b[0..7]
-    VPSUBD Y4, Y2, Y2        // diff1 = a[8..15] - b[8..15]
-
-    VPMULLD Y1, Y1, Y1       // diff0^2 (int32)
-    VPMULLD Y2, Y2, Y2       // diff1^2 (int32)
-
-    VCVTDQ2PS Y1, Y1         // → float32 x8
-    VCVTDQ2PS Y2, Y2         // → float32 x8
-
-    VADDPS Y1, Y0, Y0        // accumulate
-    VADDPS Y2, Y0, Y0
+    VPMOVSXWD 16(SI), Y4
+    VPMOVSXWD 16(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y1
 
     ADDQ $32, SI
     ADDQ $32, DI
     SUBQ $16, CX
-    JMP  loop16
 
 tail8:
     CMPQ CX, $8
     JL   tail_scalar
 
-    VPMOVSXWD 0(SI), Y1
-    VPMOVSXWD 0(DI), Y3
-    VPSUBD Y3, Y1, Y1
-    VPMULLD Y1, Y1, Y1
-    VCVTDQ2PS Y1, Y1
-    VADDPS Y1, Y0, Y0
+    VPMOVSXWD 0(SI), Y4
+    VPMOVSXWD 0(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y1
 
     ADDQ $16, SI
     ADDQ $16, DI
     SUBQ $8, CX
 
 tail_scalar:
-    // Horizontal reduction of Y0 → X0
-    REDUCE_YMM(Y0, X0, X1, X2)
+    // Horizontal reduction of Y0..Y3 -> X0
+    REDUCE_ACC4(Y0, Y1, Y2, Y3)
     VZEROUPPER
 
     // Scalar tail
@@ -93,11 +148,11 @@ tail_scalar:
     JZ    done_eucl_int16
 
 scalar_loop_eucl_int16:
-    MOVWLSX 0(SI), AX        // sign-extend int16 → int32
+    MOVWLSX 0(SI), AX        // sign-extend int16 -> int32
     MOVWLSX 0(DI), BX
-    SUBL BX, AX              // diff
-    IMULL AX, AX             // diff^2
-    CVTSL2SS AX, X1          // int32 → float32
+    SUBL BX, AX              // diff, at most 65535 in magnitude, exact in int32
+    CVTSL2SS AX, X1          // int32 -> float32, exact up to 2^24 and so for every diff here
+    MULSS X1, X1             // diff^2 in float32; squaring in int32 would overflow past 46340
     VADDSS X1, X0, X0
 
     ADDQ $2, SI
@@ -113,7 +168,9 @@ done_eucl_int16:
 // ============================================================================
 // euclideanUint16AVX2Kernel(a, b uintptr, n int) float32
 //
-// Same as above but uses VPMOVZXWD (zero-extend) for uint16.
+// Same as above but uses VPMOVZXWD (zero-extend) for uint16. The uint16 form
+// has the same 65535 range and therefore the same int32 overflow in the old
+// VPMULLD form.
 // ============================================================================
 TEXT ·euclideanUint16AVX2Kernel(SB),NOSPLIT,$0-28
     MOVQ a+0(FP), SI
@@ -121,61 +178,90 @@ TEXT ·euclideanUint16AVX2Kernel(SB),NOSPLIT,$0-28
     MOVQ n+16(FP), CX
 
     VXORPS Y0, Y0, Y0
+    VXORPS Y1, Y1, Y1
+    VXORPS Y2, Y2, Y2
+    VXORPS Y3, Y3, Y3
 
-loop16_u16:
+loop32_u16:
+    CMPQ CX, $32
+    JL   tail16_u16
+
+    VPMOVZXWD 0(SI), Y4
+    VPMOVZXWD 0(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y0
+
+    VPMOVZXWD 16(SI), Y4
+    VPMOVZXWD 16(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y1
+
+    VPMOVZXWD 32(SI), Y4
+    VPMOVZXWD 32(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y2
+
+    VPMOVZXWD 48(SI), Y4
+    VPMOVZXWD 48(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y3
+
+    ADDQ $64, SI
+    ADDQ $64, DI
+    SUBQ $32, CX
+    JMP  loop32_u16
+
+tail16_u16:
     CMPQ CX, $16
     JL   tail8_u16
 
-    VPMOVZXWD 0(SI), Y1      // zero-extend uint16 → uint32 (treated as int32 for diff)
-    VPMOVZXWD 16(SI), Y2
-    VPMOVZXWD 0(DI), Y3
-    VPMOVZXWD 16(DI), Y4
+    VPMOVZXWD 0(SI), Y4
+    VPMOVZXWD 0(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y0
 
-    VPSUBD Y3, Y1, Y1
-    VPSUBD Y4, Y2, Y2
-
-    VPMULLD Y1, Y1, Y1
-    VPMULLD Y2, Y2, Y2
-
-    VCVTDQ2PS Y1, Y1
-    VCVTDQ2PS Y2, Y2
-
-    VADDPS Y1, Y0, Y0
-    VADDPS Y2, Y0, Y0
+    VPMOVZXWD 16(SI), Y4
+    VPMOVZXWD 16(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y1
 
     ADDQ $32, SI
     ADDQ $32, DI
     SUBQ $16, CX
-    JMP  loop16_u16
 
 tail8_u16:
     CMPQ CX, $8
     JL   tail_scalar_u16
 
-    VPMOVZXWD 0(SI), Y1
-    VPMOVZXWD 0(DI), Y3
-    VPSUBD Y3, Y1, Y1
-    VPMULLD Y1, Y1, Y1
-    VCVTDQ2PS Y1, Y1
-    VADDPS Y1, Y0, Y0
+    VPMOVZXWD 0(SI), Y4
+    VPMOVZXWD 0(DI), Y5
+    VPSUBD Y5, Y4, Y4
+    VCVTDQ2PS Y4, Y4
+    VFMADD231PS Y4, Y4, Y1
 
     ADDQ $16, SI
     ADDQ $16, DI
     SUBQ $8, CX
 
 tail_scalar_u16:
-    REDUCE_YMM(Y0, X0, X1, X2)
+    REDUCE_ACC4(Y0, Y1, Y2, Y3)
     VZEROUPPER
 
     TESTQ CX, CX
     JZ    done_eucl_uint16
 
 scalar_loop_eucl_uint16:
-    MOVWLZX 0(SI), AX        // zero-extend uint16 → uint32
+    MOVWLZX 0(SI), AX        // zero-extend uint16 -> uint32
     MOVWLZX 0(DI), BX
-    SUBL BX, AX
-    IMULL AX, AX
+    SUBL BX, AX              // diff, at most 65535 in magnitude, exact in int32
     CVTSL2SS AX, X1
+    MULSS X1, X1             // diff^2 in float32; squaring in int32 would overflow past 46340
     VADDSS X1, X0, X0
 
     ADDQ $2, SI

@@ -48,7 +48,9 @@ func TestCPUFeatureDetection(t *testing.T) {
 
 func TestSelectedImplementation(t *testing.T) {
 	impl := GetImplementation()
-	validImpls := []string{"avx512", "avx2", "neon", "generic"}
+	// emerald and granite are the AMX tiers, reachable on Sapphire Rapids and
+	// later; see the same set in dispatch_test.go.
+	validImpls := []string{"emerald", "granite", "avx512", "avx2", "neon", "generic"}
 
 	valid := false
 	for _, v := range validImpls {

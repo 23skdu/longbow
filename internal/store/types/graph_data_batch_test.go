@@ -241,9 +241,15 @@ func TestChunkBatch_StaleOnFree(t *testing.T) {
 	assert.Nil(t, batch.Vector(0, 0, 64))
 }
 
-// TestChunkBatch_OffsetZero pins that the accessors which treat a zero chunk
-// offset as "not resident" behave the same in the batch, and that the int8
-// accessor - which forwards a zero offset to the arena - keeps doing so.
+// TestChunkBatch_OffsetZero pins that a zero chunk offset means "not resident"
+// everywhere: in the reference accessor, in the fast accessor, and in the batch.
+// It used to be the one exception - GetVectorsInt8ChunkWithGen forwarded the
+// zero offset into the arena and returned whatever bytes live at the start of
+// the first slab as if they were the chunk's vectors, while
+// GetVectorsInt8ChunkFast and the batch both returned nil for the same chunk.
+// That made ComputeSingle and ComputeBatch disagree about the contents of the
+// same id depending on whether the caller had a generation filter, and fed
+// plausible distances computed against unrelated data into neighbour selection.
 func TestChunkBatch_OffsetZero(t *testing.T) {
 	g := NewGraphData(ChunkSize, 64, false, false, -1, false, false, false,
 		VectorTypeFloat32, false, false, false, 8, "batch-zero", nil, false)
@@ -257,8 +263,6 @@ func TestChunkBatch_OffsetZero(t *testing.T) {
 	assert.Nil(t, batch.Chunk(1))
 	assert.Nil(t, batch.Vector(1, 0, 64))
 
-	// int8 forwards a zero offset to the arena instead of rejecting it, so the
-	// int8 batch must return the same bytes the reference accessor does.
 	slab := memory.NewSlabArena(1 << 20)
 	ta := memory.NewTypedArena[int8](slab)
 	ref, err := ta.AllocSlice(ChunkSize * 64)
@@ -272,17 +276,18 @@ func TestChunkBatch_OffsetZero(t *testing.T) {
 		Vectors:       nil,
 		GlobalVersion: 0,
 	}
+
+	// Chunk 1 holds a zero offset, which means it was never allocated.
+	assert.Nil(t, i8.GetVectorsInt8ChunkWithGen(1, math.MaxUint64))
+	assert.Nil(t, i8.GetVectorsInt8ChunkFast(1))
 	i8Batch := i8.BeginInt8ChunkBatch(math.MaxUint64)
-	want := i8.GetVectorsInt8ChunkWithGen(1, math.MaxUint64)
-	got := i8Batch.Chunk(1)
-	if want == nil {
-		assert.Nil(t, got)
-	} else {
-		require.NotNil(t, got)
-		assert.Equal(t, len(want), len(got))
-		assert.Equal(t, want, got)
-	}
-	assert.Equal(t, i8.GetVectorsInt8ChunkWithGen(0, math.MaxUint64), i8Batch.Chunk(0))
+	assert.Nil(t, i8Batch.Chunk(1))
+
+	// Chunk 0 is resident, and all three views of it agree byte for byte.
+	want := i8.GetVectorsInt8ChunkWithGen(0, math.MaxUint64)
+	require.NotNil(t, want)
+	assert.Equal(t, want, i8.GetVectorsInt8ChunkFast(0))
+	assert.Equal(t, want, i8Batch.Chunk(0))
 }
 
 // TestChunkBatch_UsesArenaNotGlobal keeps the accessor honest about which arena

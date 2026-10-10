@@ -40,7 +40,11 @@ type (
 	distanceBatchFlatFunc func(query []float32, flatVectors []float32, numVectors, dims int, results []float32) error
 	distanceSQ8BatchFunc  func(query []byte, vectors [][]byte, results []float32) error
 	distanceF16BatchFunc  func(query []float16.Num, vectors [][]float16.Num, results []float32) error
+	distanceTQBatchFunc   func(query []float32, codes [][]byte, dst []float32, dim, pow2, bitsPerAngle int) error
 	adcDistanceBatchFunc  func(table []float32, flatCodes []byte, m int, results []float32) error
+
+	// TurboQuantDistanceBatchFunc is the function signature for batched TurboQuant distance.
+	TurboQuantDistanceBatchFunc = distanceTQBatchFunc
 
 	// DistanceKernel is a generic distance function type for cached kernels.
 	DistanceKernel[T any] func(a, b []T) (float32, error)
@@ -112,6 +116,7 @@ var (
 	euclideanDistanceVerticalBatchImpl distanceBatchFunc
 	euclideanDistanceSQ8BatchImpl      distanceSQ8BatchFunc
 	euclideanDistanceF16BatchImpl      distanceF16BatchFunc
+	turboQuantDistanceBatchImpl        distanceTQBatchFunc
 
 	// Bitwise operations
 	andBytesImpl   func(dst, src []byte)

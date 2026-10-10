@@ -16,7 +16,6 @@ type int16Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
-	batchVecs [][]int16
 }
 
 func (c *int16Computer) Compute(ids []uint32, dists []float32) error {
@@ -34,9 +33,9 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []int16
 	if c.maxGen == math.MaxUint64 {
-		chunk = c.data.GetVectorsInt16ChunkFast(int(cID))
+		chunk = c.data.GetVectorsInt16ChunkFast(cID)
 	} else {
-		chunk = c.data.GetVectorsInt16ChunkWithGen(int(cID), c.maxGen)
+		chunk = c.data.GetVectorsInt16ChunkWithGen(cID, c.maxGen)
 	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
@@ -58,7 +57,7 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *int16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt16ChunkFast(int(cID))
+	chunk := c.data.GetVectorsInt16ChunkFast(cID)
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt16)
@@ -122,16 +121,15 @@ type uint16Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
-	batchVecs [][]uint16
 }
 
 func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []uint16
 	if c.maxGen == math.MaxUint64 {
-		chunk = c.data.GetVectorsUint16ChunkFast(int(cID))
+		chunk = c.data.GetVectorsUint16ChunkFast(cID)
 	} else {
-		chunk = c.data.GetVectorsUint16ChunkWithGen(int(cID), c.maxGen)
+		chunk = c.data.GetVectorsUint16ChunkWithGen(cID, c.maxGen)
 	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
@@ -198,7 +196,7 @@ func (c *uint16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, e
 
 func (c *uint16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint16ChunkFast(int(cID))
+	chunk := c.data.GetVectorsUint16ChunkFast(cID)
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint16)
@@ -217,7 +215,6 @@ type int32Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
-	batchVecs [][]int32
 }
 
 func (c *int32Computer) Compute(ids []uint32, dists []float32) error {
@@ -235,9 +232,9 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []int32
 	if c.maxGen == math.MaxUint64 {
-		chunk = c.data.GetVectorsInt32ChunkFast(int(cID))
+		chunk = c.data.GetVectorsInt32ChunkFast(cID)
 	} else {
-		chunk = c.data.GetVectorsInt32ChunkWithGen(int(cID), c.maxGen)
+		chunk = c.data.GetVectorsInt32ChunkWithGen(cID, c.maxGen)
 	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
@@ -259,7 +256,7 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *int32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt32ChunkFast(int(cID))
+	chunk := c.data.GetVectorsInt32ChunkFast(cID)
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt32)
@@ -323,16 +320,15 @@ type uint32Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
-	batchVecs [][]uint32
 }
 
 func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []uint32
 	if c.maxGen == math.MaxUint64 {
-		chunk = c.data.GetVectorsUint32ChunkFast(int(cID))
+		chunk = c.data.GetVectorsUint32ChunkFast(cID)
 	} else {
-		chunk = c.data.GetVectorsUint32ChunkWithGen(int(cID), c.maxGen)
+		chunk = c.data.GetVectorsUint32ChunkWithGen(cID, c.maxGen)
 	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
@@ -399,7 +395,7 @@ func (c *uint32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, e
 
 func (c *uint32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint32ChunkFast(int(cID))
+	chunk := c.data.GetVectorsUint32ChunkFast(cID)
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint32)
@@ -418,7 +414,6 @@ type int64Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
-	batchVecs [][]int64
 }
 
 func (c *int64Computer) Compute(ids []uint32, dists []float32) error {
@@ -436,9 +431,9 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []int64
 	if c.maxGen == math.MaxUint64 {
-		chunk = c.data.GetVectorsInt64ChunkFast(int(cID))
+		chunk = c.data.GetVectorsInt64ChunkFast(cID)
 	} else {
-		chunk = c.data.GetVectorsInt64ChunkWithGen(int(cID), c.maxGen)
+		chunk = c.data.GetVectorsInt64ChunkWithGen(cID, c.maxGen)
 	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
@@ -462,9 +457,9 @@ func (c *int64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	var chunk []int64
 	if c.maxGen == math.MaxUint64 {
-		chunk = c.data.GetVectorsInt64ChunkFast(int(cID))
+		chunk = c.data.GetVectorsInt64ChunkFast(cID)
 	} else {
-		chunk = c.data.GetVectorsInt64ChunkWithGen(int(cID), c.maxGen)
+		chunk = c.data.GetVectorsInt64ChunkWithGen(cID, c.maxGen)
 	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
@@ -533,16 +528,15 @@ type uint64Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
-	batchVecs [][]uint64
 }
 
 func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []uint64
 	if c.maxGen == math.MaxUint64 {
-		chunk = c.data.GetVectorsUint64ChunkFast(int(cID))
+		chunk = c.data.GetVectorsUint64ChunkFast(cID)
 	} else {
-		chunk = c.data.GetVectorsUint64ChunkWithGen(int(cID), c.maxGen)
+		chunk = c.data.GetVectorsUint64ChunkWithGen(cID, c.maxGen)
 	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
@@ -611,9 +605,9 @@ func (c *uint64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	var chunk []uint64
 	if c.maxGen == math.MaxUint64 {
-		chunk = c.data.GetVectorsUint64ChunkFast(int(cID))
+		chunk = c.data.GetVectorsUint64ChunkFast(cID)
 	} else {
-		chunk = c.data.GetVectorsUint64ChunkWithGen(int(cID), c.maxGen)
+		chunk = c.data.GetVectorsUint64ChunkWithGen(cID, c.maxGen)
 	}
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)

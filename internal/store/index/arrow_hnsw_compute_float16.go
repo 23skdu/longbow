@@ -16,7 +16,6 @@ type float16Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
-	batchVecs [][]float16.Num
 }
 
 func (c *float16Computer) Compute(ids []uint32, dists []float32) error {

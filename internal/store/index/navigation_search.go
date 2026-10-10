@@ -888,16 +888,12 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		if data.Type == types.VectorTypeInt8 {
 			var qInt8 []int8
 			if searchCtx != nil {
-				searchCtx.queryInt8 = searchCtx.queryInt8[:0]
-				for _, val := range q {
-					searchCtx.queryInt8 = append(searchCtx.queryInt8, int8(val))
-				}
+				searchCtx.queryInt8 = resizeInt8(searchCtx.queryInt8, len(q))
+				narrowFloatsToInt8(q, searchCtx.queryInt8)
 				qInt8 = searchCtx.queryInt8
 			} else {
 				qInt8 = make([]int8, len(q))
-				for i, val := range q {
-					qInt8[i] = int8(val)
-				}
+				narrowFloatsToInt8(q, qInt8)
 			}
 			qUint8 := *(*[]uint8)(unsafe.Pointer(&qInt8)) // #nosec G103
 			return &int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: false}
@@ -905,63 +901,93 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		if data.Type == types.VectorTypeUint8 {
 			var qUint8 []uint8
 			if searchCtx != nil {
-				searchCtx.queryUint8 = searchCtx.queryUint8[:0]
-				for _, val := range q {
-					searchCtx.queryUint8 = append(searchCtx.queryUint8, uint8(val))
-				}
+				searchCtx.queryUint8 = resizeUint8(searchCtx.queryUint8, len(q))
+				narrowFloatsToUint8(q, searchCtx.queryUint8)
 				qUint8 = searchCtx.queryUint8
 			} else {
 				qUint8 = make([]uint8, len(q))
-				for i, val := range q {
-					qUint8[i] = uint8(val)
-				}
+				narrowFloatsToUint8(q, qUint8)
 			}
 			qInt8 := *(*[]int8)(unsafe.Pointer(&qUint8)) // #nosec G103
 			return &int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: true}
 		}
+		if data.Type == types.VectorTypeInt16 {
+			if searchCtx == nil {
+				qInt16 := make([]int16, len(q))
+				narrowFloatsToInt16(q, qInt16)
+				return &int16Computer{data: data, q: qInt16, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			}
+			searchCtx.queryInt16 = resizeInt16(searchCtx.queryInt16, len(q))
+			narrowFloatsToInt16(q, searchCtx.queryInt16)
+			return &int16Computer{data: data, q: searchCtx.queryInt16, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+		}
+		if data.Type == types.VectorTypeUint16 {
+			if searchCtx == nil {
+				qUint16 := make([]uint16, len(q))
+				narrowFloatsToUint16(q, qUint16)
+				return &uint16Computer{data: data, q: qUint16, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			}
+			searchCtx.queryUint16 = resizeUint16(searchCtx.queryUint16, len(q))
+			narrowFloatsToUint16(q, searchCtx.queryUint16)
+			return &uint16Computer{data: data, q: searchCtx.queryUint16, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+		}
+		if data.Type == types.VectorTypeInt32 {
+			if searchCtx == nil {
+				qInt32 := make([]int32, len(q))
+				narrowFloatsToInt32(q, qInt32)
+				return &int32Computer{data: data, q: qInt32, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			}
+			searchCtx.queryInt32 = resizeInt32(searchCtx.queryInt32, len(q))
+			narrowFloatsToInt32(q, searchCtx.queryInt32)
+			return &int32Computer{data: data, q: searchCtx.queryInt32, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+		}
+		if data.Type == types.VectorTypeUint32 {
+			if searchCtx == nil {
+				qUint32 := make([]uint32, len(q))
+				narrowFloatsToUint32(q, qUint32)
+				return &uint32Computer{data: data, q: qUint32, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			}
+			searchCtx.queryUint32 = resizeUint32(searchCtx.queryUint32, len(q))
+			narrowFloatsToUint32(q, searchCtx.queryUint32)
+			return &uint32Computer{data: data, q: searchCtx.queryUint32, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+		}
+		if data.Type == types.VectorTypeInt64 {
+			if searchCtx == nil {
+				qInt64 := make([]int64, len(q))
+				for i, val := range q {
+					qInt64[i] = int64(val) // #nosec G115 -- the corpus is int64, and float32 is exactly representable as int64 for |v| < 2^53
+				}
+				return &int64Computer{data: data, q: qInt64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			}
+			searchCtx.queryInt64 = searchCtx.queryInt64[:0]
+			for _, val := range q {
+				searchCtx.queryInt64 = append(searchCtx.queryInt64, int64(val)) // #nosec G115 -- the corpus is int64
+			}
+			return &int64Computer{data: data, q: searchCtx.queryInt64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+		}
+		if data.Type == types.VectorTypeUint64 {
+			if searchCtx == nil {
+				qUint64 := make([]uint64, len(q))
+				for i, val := range q {
+					if val < 0 {
+						qUint64[i] = 0
+					} else {
+						qUint64[i] = uint64(val) // #nosec G115 -- non-negative float32
+					}
+				}
+				return &uint64Computer{data: data, q: qUint64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			}
+			searchCtx.queryUint64 = searchCtx.queryUint64[:0]
+			for _, val := range q {
+				if val < 0 {
+					searchCtx.queryUint64 = append(searchCtx.queryUint64, 0)
+				} else {
+					searchCtx.queryUint64 = append(searchCtx.queryUint64, uint64(val)) // #nosec G115 -- non-negative float32
+				}
+			}
+			return &uint64Computer{data: data, q: searchCtx.queryUint64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+		}
 		if searchCtx != nil {
-			if data.Type == types.VectorTypeInt16 {
-				searchCtx.queryInt16 = searchCtx.queryInt16[:0]
-				for _, val := range q {
-					searchCtx.queryInt16 = append(searchCtx.queryInt16, int16(val))
-				}
-				return &int16Computer{data: data, q: searchCtx.queryInt16, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
-			}
-			if data.Type == types.VectorTypeUint16 {
-				searchCtx.queryUint16 = searchCtx.queryUint16[:0]
-				for _, val := range q {
-					searchCtx.queryUint16 = append(searchCtx.queryUint16, uint16(val))
-				}
-				return &uint16Computer{data: data, q: searchCtx.queryUint16, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
-			}
-			if data.Type == types.VectorTypeInt32 {
-				searchCtx.queryInt32 = searchCtx.queryInt32[:0]
-				for _, val := range q {
-					searchCtx.queryInt32 = append(searchCtx.queryInt32, int32(val))
-				}
-				return &int32Computer{data: data, q: searchCtx.queryInt32, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
-			}
-			if data.Type == types.VectorTypeUint32 {
-				searchCtx.queryUint32 = searchCtx.queryUint32[:0]
-				for _, val := range q {
-					searchCtx.queryUint32 = append(searchCtx.queryUint32, uint32(val))
-				}
-				return &uint32Computer{data: data, q: searchCtx.queryUint32, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
-			}
-			if data.Type == types.VectorTypeInt64 {
-				searchCtx.queryInt64 = searchCtx.queryInt64[:0]
-				for _, val := range q {
-					searchCtx.queryInt64 = append(searchCtx.queryInt64, int64(val))
-				}
-				return &int64Computer{data: data, q: searchCtx.queryInt64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
-			}
-			if data.Type == types.VectorTypeUint64 {
-				searchCtx.queryUint64 = searchCtx.queryUint64[:0]
-				for _, val := range q {
-					searchCtx.queryUint64 = append(searchCtx.queryUint64, uint64(val))
-				}
-				return &uint64Computer{data: data, q: searchCtx.queryUint64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
-			}
 			if data.Type == types.VectorTypeComplex64 {
 				physDims := len(q)
 				logDims := physDims / 2

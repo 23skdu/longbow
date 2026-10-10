@@ -438,8 +438,11 @@ type VectorChunkBatch[T any] struct {
 
 // newVectorChunkBatch builds a batch over offsets, falling back to legacy for
 // chunk ids the offset table does not cover. rejectZero mirrors the reference
-// accessor: accessors that treat a zero offset as "not resident" set it, while
-// accessors that forward a zero offset straight to the arena (int8) do not.
+// accessor: every GetXChunkWithGen / GetXChunkFast treats a zero offset as "not
+// resident" and returns nil, so a batch that forwarded a zero offset into the
+// arena would hand back whatever happens to live at the start of the first slab
+// as if it were the chunk's contents. Every accessor rejects zero, so every
+// batch does too.
 func newVectorChunkBatch[T any](arena *memory.TypedArena[T], offsets []uint64, legacy [][]T, pd int, maxGen uint64, rejectZero bool) VectorChunkBatch[T] {
 	b := VectorChunkBatch[T]{
 		arena:      arena,
@@ -524,7 +527,7 @@ func (g *GraphData) BeginInt8ChunkBatch(maxGen uint64) VectorChunkBatch[int8] {
 		return VectorChunkBatch[int8]{}
 	}
 	return newVectorChunkBatch(g.Int8Arena, g.VectorsInt8, nil,
-		g.GetPaddedDimsForType(VectorTypeInt8), maxGen, false)
+		g.GetPaddedDimsForType(VectorTypeInt8), maxGen, true)
 }
 
 // BeginInt16ChunkBatch opens a batch-scoped view over the int16 chunk table,
@@ -1305,7 +1308,11 @@ func (g *GraphData) GetVectorsInt8Chunk(chunkID int) []int8 {
 func (g *GraphData) GetVectorsInt8ChunkWithGen(chunkID int, maxGen uint64) []int8 {
 	if chunkID < len(g.VectorsInt8) && g.Int8Arena != nil {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeInt8)
-		return g.Int8Arena.GetWithGeneration(memory.SliceRef{Offset: g.VectorsInt8[chunkID], Len: uint32(ChunkSize * paddedDims), Cap: uint32(ChunkSize * paddedDims)}, maxGen) // #nosec G115
+		offset := atomic.LoadUint64(&g.VectorsInt8[chunkID])
+		if offset == 0 {
+			return nil
+		}
+		return g.Int8Arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * paddedDims), Cap: uint32(ChunkSize * paddedDims)}, maxGen) // #nosec G115
 	}
 	return nil
 }
@@ -1330,7 +1337,11 @@ func (g *GraphData) GetVectorsInt16Chunk(chunkID int) []int16 {
 func (g *GraphData) GetVectorsInt16ChunkWithGen(chunkID int, maxGen uint64) []int16 {
 	if chunkID < len(g.VectorsInt16) && g.Int16Arena != nil {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
-		return g.Int16Arena.GetWithGeneration(memory.SliceRef{Offset: g.VectorsInt16[chunkID], Len: uint32(ChunkSize * paddedDims), Cap: uint32(ChunkSize * paddedDims)}, maxGen) // #nosec G115
+		offset := atomic.LoadUint64(&g.VectorsInt16[chunkID])
+		if offset == 0 {
+			return nil
+		}
+		return g.Int16Arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * paddedDims), Cap: uint32(ChunkSize * paddedDims)}, maxGen) // #nosec G115
 	}
 	return nil
 }
@@ -1964,7 +1975,11 @@ func (g *GraphData) GetVectorsF16Chunk(chunkID int) []float16.Num {
 func (g *GraphData) GetVectorsF16ChunkWithGen(chunkID int, maxGen uint64) []float16.Num {
 	if chunkID < len(g.VectorsF16) && g.Float16Arena != nil {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
-		return g.Float16Arena.GetWithGeneration(memory.SliceRef{Offset: g.VectorsF16[chunkID], Len: uint32(ChunkSize * paddedDims), Cap: uint32(ChunkSize * paddedDims)}, maxGen) // #nosec G115
+		offset := atomic.LoadUint64(&g.VectorsF16[chunkID])
+		if offset == 0 {
+			return nil
+		}
+		return g.Float16Arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * paddedDims), Cap: uint32(ChunkSize * paddedDims)}, maxGen) // #nosec G115
 	}
 	return nil
 }

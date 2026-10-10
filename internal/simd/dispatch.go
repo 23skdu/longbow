@@ -29,6 +29,7 @@ type ImplementationDispatch struct {
 	DotProductBatch            distanceBatchFunc
 	EuclideanDistanceBatchFlat distanceBatchFlatFunc
 	L2SquaredDistanceBatch     distanceBatchFunc
+	TurboQuantDistanceBatch    distanceTQBatchFunc
 
 	// Specialized functions for fixed dimensions
 	EuclideanDistance128  distanceFunc
@@ -126,6 +127,7 @@ func initDispatchTable() {
 			CosineDistanceBatch:        cosineBatchAVX512,
 			DotProductBatch:            dotBatchAVX512,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
+			TurboQuantDistanceBatch:    turboQuantDistanceBatchAVX512,
 			EuclideanDistanceF16:       euclideanF16AVX512,
 			CosineDistanceF16:          cosineF16AVX512,
 			DotProductF16:              dotF16AVX512,
@@ -197,6 +199,7 @@ func initDispatchTable() {
 			CosineDistanceBatch:        cosineBatchAVX512,
 			DotProductBatch:            dotBatchAMX,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
+			TurboQuantDistanceBatch:    turboQuantDistanceBatchAVX512,
 			EuclideanDistanceF16:       euclideanF16AVX512,
 			CosineDistanceF16:          cosineF16AVX512,
 			DotProductF16:              dotF16AVX512,
@@ -268,6 +271,7 @@ func initDispatchTable() {
 			CosineDistanceBatch:        cosineBatchAVX512,
 			DotProductBatch:            dotBatchAMX,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
+			TurboQuantDistanceBatch:    turboQuantDistanceBatchAVX512,
 			EuclideanDistanceF16:       euclideanF16AMX,
 			CosineDistanceF16:          cosineF16AVX512,
 			DotProductF16:              dotF16AMX,
@@ -345,6 +349,7 @@ func initDispatchTable() {
 			L2SquaredDistance1024:      l2Squared1024AVX2,
 			L2SquaredDistance3072:      l2Squared3072AVX2,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX2,
+			TurboQuantDistanceBatch:    turboQuantDistanceBatchAVX2,
 			EuclideanDistanceF16:       euclideanF16AVX2,
 			CosineDistanceF16:          cosineF16AVX2,
 			DotProductF16:              dotF16AVX2,
@@ -415,6 +420,7 @@ func initDispatchTable() {
 			CosineDistanceBatch:        cosineBatchNEON,
 			DotProductBatch:            dotBatchNEON,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
+			TurboQuantDistanceBatch:    turboQuantDistanceBatchNEON,
 			EuclideanDistanceF16:       euclideanF16NEON,
 			CosineDistanceF16:          cosineF16NEON,
 			DotProductF16:              dotF16NEON,
@@ -491,6 +497,7 @@ func initDispatchTable() {
 			CosineDistanceBatch:        cosineBatchGeneric,
 			DotProductBatch:            dotBatchGeneric,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
+			TurboQuantDistanceBatch:    turboQuantDistanceBatchGeneric,
 			EuclideanDistanceF16:       euclideanF16Unrolled4x,
 			CosineDistanceF16:          cosineF16Unrolled4x,
 			DotProductF16:              dotF16Unrolled4x,
@@ -686,6 +693,7 @@ func initializeDispatch() {
 		packTQ2Impl = dispatch.PackTQ2
 		packTQ4Impl = dispatch.PackTQ4
 		packTQ8Impl = dispatch.PackTQ8
+		turboQuantDistanceBatchImpl = dispatch.TurboQuantDistanceBatch
 	case "granite":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -809,6 +817,7 @@ func initializeDispatch() {
 		packTQ2Impl = dispatch.PackTQ2
 		packTQ4Impl = dispatch.PackTQ4
 		packTQ8Impl = dispatch.PackTQ8
+		turboQuantDistanceBatchImpl = dispatch.TurboQuantDistanceBatch
 	case "avx512":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -933,6 +942,7 @@ func initializeDispatch() {
 		packTQ2Impl = dispatch.PackTQ2
 		packTQ4Impl = dispatch.PackTQ4
 		packTQ8Impl = dispatch.PackTQ8
+		turboQuantDistanceBatchImpl = dispatch.TurboQuantDistanceBatch
 	case "avx2":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -1057,6 +1067,7 @@ func initializeDispatch() {
 		packTQ2Impl = dispatch.PackTQ2
 		packTQ4Impl = dispatch.PackTQ4
 		packTQ8Impl = dispatch.PackTQ8
+		turboQuantDistanceBatchImpl = dispatch.TurboQuantDistanceBatch
 	case "neon":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -1182,6 +1193,7 @@ func initializeDispatch() {
 		packTQ2Impl = dispatch.PackTQ2
 		packTQ4Impl = dispatch.PackTQ4
 		packTQ8Impl = dispatch.PackTQ8
+		turboQuantDistanceBatchImpl = dispatch.TurboQuantDistanceBatch
 	case "generic":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance128Impl = dispatch.EuclideanDistance128
@@ -1292,6 +1304,7 @@ func initializeDispatch() {
 		packTQ2Impl = dispatch.PackTQ2
 		packTQ4Impl = dispatch.PackTQ4
 		packTQ8Impl = dispatch.PackTQ8
+		turboQuantDistanceBatchImpl = dispatch.TurboQuantDistanceBatch
 	}
 
 	// Register current implementations into the new dynamic registry.

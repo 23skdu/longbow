@@ -825,6 +825,39 @@ func NewReusableSearchState(maxDim int) *ReusableSearchState {
 	}
 }
 
+// corpusValueRange is the half-open interval the generated corpus occupies for a
+// given dtype. It is the single source of truth for that interval: the corpus
+// generator draws from it and BuildSearchTicket draws its queries from it too.
+//
+// The two must agree because a query has to live in the same numeric domain as
+// the vectors it is compared against. The server narrows a float32 query into
+// the dataset's integer type with a rounding cast that clamps at the type's
+// limits, so a query drawn from [0,1) against an int8 corpus spanning [0,127)
+// arrives as 128 zeros and the search degenerates into "nearest node to the
+// origin" - the same answer for every query, measured as if it were a search.
+// That is what made the 100k matrix report int8 at 1162 QPS and uint8 at 3974
+// QPS while both are one byte wide; see docs/roadmap.md item 1 (R32).
+func corpusValueRange(dtype string) (lo, hi float32) {
+	switch dtype {
+	case "int8":
+		return 0, 127
+	case "uint8":
+		return 0, 255
+	case "int16", "uint16", "int32", "uint32", "int64", "uint64":
+		return 0, 1000
+	default:
+		// float16, float32, float64, complex64, complex128, turboquant.
+		return 0, 1
+	}
+}
+
+// corpusValueBound is the exclusive upper bound of corpusValueRange, as an int,
+// for the integer element types whose corpus is drawn with rng.Intn.
+func corpusValueBound(dtype string) int {
+	_, hi := corpusValueRange(dtype)
+	return int(hi)
+}
+
 // BuildSearchTicket builds a search ticket for one query.
 //
 // queryIdx makes the query vector a deterministic function of (mode, query
@@ -846,9 +879,11 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 	// Randomize vector in-place
 	// One stream per (mode, query index): reproducible, and independent enough
 	// that neighbouring queries are not near-duplicates.
+	qLo, qHi := corpusValueRange(dtype)
 	qRng := rand.New(rand.NewSource(RunSeed + int64(queryIdx)*2654435761 + int64(len(mode))*97)) // #nosec G404 -- benchmark data
+	span := float64(qHi - qLo)
 	for i := 0; i < queryLen; i++ {
-		s.vector[i] = qRng.Float32()
+		s.vector[i] = qLo + float32(qRng.Float64()*span) // #nosec G404 -- benchmark data
 	}
 
 	switch mode {
@@ -1219,7 +1254,7 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 		vb.Reserve(count * dim)
 		vals := make([]int32, count*dim)
 		for i := range vals {
-			vals[i] = int32(rng.Intn(1000)) // #nosec G115,G404
+			vals[i] = int32(rng.Intn(corpusValueBound("int32"))) // #nosec G115,G404 -- bound comes from corpusValueRange
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1230,7 +1265,7 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 		vb.Reserve(count * dim)
 		vals := make([]int16, count*dim)
 		for i := range vals {
-			vals[i] = int16(rng.Intn(1000)) // #nosec G115,G404
+			vals[i] = int16(rng.Intn(corpusValueBound("int16"))) // #nosec G115,G404 -- bound comes from corpusValueRange
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1241,7 +1276,7 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 		vb.Reserve(count * dim)
 		vals := make([]int8, count*dim)
 		for i := range vals {
-			vals[i] = int8(rng.Intn(127)) // #nosec G115,G404
+			vals[i] = int8(rng.Intn(corpusValueBound("int8"))) // #nosec G115,G404 -- bound comes from corpusValueRange
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1252,7 +1287,7 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 		vb.Reserve(count * dim)
 		vals := make([]uint32, count*dim)
 		for i := range vals {
-			vals[i] = uint32(rng.Intn(1000)) // #nosec G115,G404
+			vals[i] = uint32(rng.Intn(corpusValueBound("uint32"))) // #nosec G115,G404 -- bound comes from corpusValueRange
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1263,7 +1298,7 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 		vb.Reserve(count * dim)
 		vals := make([]uint16, count*dim)
 		for i := range vals {
-			vals[i] = uint16(rng.Intn(1000)) // #nosec G115,G404
+			vals[i] = uint16(rng.Intn(corpusValueBound("uint16"))) // #nosec G115,G404 -- bound comes from corpusValueRange
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1274,7 +1309,7 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 		vb.Reserve(count * dim)
 		vals := make([]uint8, count*dim)
 		for i := range vals {
-			vals[i] = uint8(rng.Intn(255)) // #nosec G115,G404
+			vals[i] = uint8(rng.Intn(corpusValueBound("uint8"))) // #nosec G115,G404 -- bound comes from corpusValueRange
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1285,7 +1320,7 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 		vb.Reserve(count * dim)
 		vals := make([]int64, count*dim)
 		for i := range vals {
-			vals[i] = int64(rng.Intn(1000)) // #nosec G404
+			vals[i] = int64(rng.Intn(corpusValueBound("int64"))) // #nosec G404 -- bound comes from corpusValueRange
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)
@@ -1296,7 +1331,7 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 		vb.Reserve(count * dim)
 		vals := make([]uint64, count*dim)
 		for i := range vals {
-			vals[i] = uint64(rng.Intn(1000)) // #nosec G115,G404
+			vals[i] = uint64(rng.Intn(corpusValueBound("uint64"))) // #nosec G115,G404 -- bound comes from corpusValueRange
 		}
 		for i := 0; i < count; i++ {
 			listBldr.Append(true)

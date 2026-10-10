@@ -67,10 +67,17 @@ func TestSimdParity_FloatingPoint(t *testing.T) {
 			expected := refEuclidean(a, b)
 			assert.InDelta(t, expected, got, 1e-4, "Euclidean parity mismatch at dims %d", d)
 
-			// Dot Product
+			// Dot Product.
+			//
+			// Tolerance is relative, not absolute. At d=512 the sum is around
+			// 1.4e4, where a float32 ULP is already ~1e-3, so a fixed 5e-3
+			// window is only five ULPs wide and fails on summation order alone:
+			// a 16-wide AVX-512 tree and a scalar accumulation are both correct
+			// and they disagree by more than that. 1e-5 relative is ~10 ULPs of
+			// headroom over the worst float32 accumulation error at this width.
 			got, _ = DispatchDistance(MetricDotProduct, a, b)
 			expected = refDot(a, b)
-			assert.InDelta(t, expected, got, 5e-3, "Dot parity mismatch at dims %d", d)
+			assert.InEpsilon(t, expected, got, 1e-5, "Dot parity mismatch at dims %d", d)
 
 			// Cosine
 			got, _ = DispatchDistance(MetricCosine, a, b)
@@ -93,10 +100,17 @@ func TestSimdParity_FloatingPoint(t *testing.T) {
 			expected := refEuclidean(a, b)
 			assert.InDelta(t, expected, got, 1e-4, "Euclidean parity mismatch at dims %d", d)
 
-			// Dot Product
+			// Dot Product.
+			//
+			// Tolerance is relative, not absolute. At d=512 the sum is around
+			// 1.4e4, where a float32 ULP is already ~1e-3, so a fixed 5e-3
+			// window is only five ULPs wide and fails on summation order alone:
+			// a 16-wide AVX-512 tree and a scalar accumulation are both correct
+			// and they disagree by more than that. 1e-5 relative is ~10 ULPs of
+			// headroom over the worst float32 accumulation error at this width.
 			got, _ = DispatchDistance(MetricDotProduct, a, b)
 			expected = refDot(a, b)
-			assert.InDelta(t, expected, got, 5e-3, "Dot parity mismatch at dims %d", d)
+			assert.InEpsilon(t, expected, got, 1e-5, "Dot parity mismatch at dims %d", d)
 
 			// Cosine
 			got, _ = DispatchDistance(MetricCosine, a, b)

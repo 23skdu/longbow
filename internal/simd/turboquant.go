@@ -186,10 +186,23 @@ func TurboQuantDistanceNEON(query []float32, tqData []byte, dim int, pow2 int, b
 }
 
 func turboQuantDistanceNEONScratch(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int, recon []float32, qIndices []byte) (float32, error) {
-	radius := math.Float32frombits(uint32(tqData[0]) | uint32(tqData[1])<<8 | uint32(tqData[2])<<16 | uint32(tqData[3])<<24)
+	// Length guard. TurboQuantDistanceGeneric has always had one and returns a
+	// zero distance for a payload too short to hold the geometry the caller
+	// declared; the SIMD paths indexed tqData[0:4] and sliced the angle payload
+	// without checking, so a truncated vector panicked instead of degrading.
+	// A caller that hands over a short slice gets the same answer from every
+	// implementation now.
+	if len(tqData) < 4 {
+		return 0, nil
+	}
 
 	angleCount := pow2 - 1
 	angleBytes := (angleCount*bitsPerAngle + 7) / 8
+	if len(tqData) < 4+angleBytes {
+		return 0, nil
+	}
+	radius := math.Float32frombits(uint32(tqData[0]) | uint32(tqData[1])<<8 | uint32(tqData[2])<<16 | uint32(tqData[3])<<24)
+
 	packedAngles := tqData[4 : 4+angleBytes]
 	qjlBits := tqData[4+angleBytes:]
 
@@ -328,10 +341,23 @@ func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, b
 // turboQuantDistanceAVX2Scratch is the allocation-free variant that uses caller-provided scratch buffers.
 // Pass nil for scratch buffers to allocate on first call (buffers are grown as needed).
 func turboQuantDistanceAVX2Scratch(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int, recon []float32, qIndices []byte) (float32, error) {
-	radius := math.Float32frombits(uint32(tqData[0]) | uint32(tqData[1])<<8 | uint32(tqData[2])<<16 | uint32(tqData[3])<<24)
+	// Length guard. TurboQuantDistanceGeneric has always had one and returns a
+	// zero distance for a payload too short to hold the geometry the caller
+	// declared; the SIMD paths indexed tqData[0:4] and sliced the angle payload
+	// without checking, so a truncated vector panicked instead of degrading.
+	// A caller that hands over a short slice gets the same answer from every
+	// implementation now.
+	if len(tqData) < 4 {
+		return 0, nil
+	}
 
 	angleCount := pow2 - 1
 	angleBytes := (angleCount*bitsPerAngle + 7) / 8
+	if len(tqData) < 4+angleBytes {
+		return 0, nil
+	}
+	radius := math.Float32frombits(uint32(tqData[0]) | uint32(tqData[1])<<8 | uint32(tqData[2])<<16 | uint32(tqData[3])<<24)
+
 	packedAngles := tqData[4 : 4+angleBytes]
 	qjlBits := tqData[4+angleBytes:]
 
@@ -438,17 +464,24 @@ func turboQuantDistanceAVX2Scratch(query []float32, tqData []byte, dim int, pow2
 // identical value, so every element receives the same float32 it received from
 // the `if/else` this replaced. Only the control flow changed.
 func tqApplyQJLCorrection(recon []float32, qjlBits []byte, correction float32) {
+	if len(qjlBits) == 0 {
+		return
+	}
+	maxI := len(qjlBits) * 8
+	if maxI > len(recon) {
+		maxI = len(recon)
+	}
 	i := 0
-	for ; i+8 <= len(recon); i += 8 {
+	for ; i+8 <= maxI; i += 8 {
 		bits := qjlBits[i>>3]
 		for j := 0; j < 8; j++ {
 			b := (bits >> uint(j)) & 1
 			recon[i+j] += correction * (1 - 2*float32(b))
 		}
 	}
-	if i < len(recon) {
+	if i < maxI {
 		bits := qjlBits[i>>3]
-		for ; i < len(recon); i++ {
+		for ; i < maxI; i++ {
 			b := (bits >> (uint(i) & 7)) & 1
 			recon[i] += correction * (1 - 2*float32(b))
 		}

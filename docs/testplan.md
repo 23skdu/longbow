@@ -131,6 +131,66 @@ For each test configuration:
 - **Stability**: Zero OOM panics, zero unhandled SIGSEGV faults, and zero gRPC/Arrow Flight connection leaks over the entire matrix.
 - **Memory Consistency**: RSS consumption must remain bounded by the 60% auto-spill ceiling when `use_disk=yes`.
 - **Accuracy Parity**: Top-K search recall between standard and EMLGo SIMD backends must remain $\ge 0.99$.
+- **Bit-Identity Parity for Batched Kernels**: All batched SIMD kernels (`TurboQuantDistanceBatch`, integer batch kernels, float kernels) must evaluate bit-identically to their corresponding single-vector kernels across all bit depths and supported architectures (`TestTurboQuantDistanceBatchIsBitIdentical`, `TestTurboQuantBatchKernelsCrossArchitectureParity`, `TestTQComputeBatchMatchesPerCandidate`). Dispatched batch evaluation must never alter traversal order or tie-breaking in graph search.
+
+### 5.1 Which Gate Applies Where (R30, R39)
+
+There are two benchmark gates and they answer different questions. Using the
+wrong one is worse than having none: `docs/roadmap.md` records that the
+single-run-versus-baseline gate fires falsely **77-89%** of the time at a 10%
+threshold, and that interleaving two separate invocations makes it *worse*
+(R35/R36), because inter-invocation variation is systematic rather than
+zero-mean. Measured against itself, the gate's false-positive rate is under
+1.5% only in the interleaved form.
+
+| Gate | Where it runs | Question it answers | Exit codes |
+|:---|:---|:---|:---|
+| `unified_benchmark.py --compare-baseline` | `ci.yml` → `benchmark-regression`, every push and PR, **advisory only** | "Is today's run far from a recorded baseline?" | 0 = within threshold, 1 = outside, 2 = setup error |
+| `scripts/ab_benchmark.py` | `benchmark-ab.yml`, **scheduled only**, and locally before landing a change to a hot path | "Does this specific change make this specific workload worse?" | 0 = no regression, 1 = regression, 2 = too few pairs |
+
+**Policy.**
+
+1. **A pull request is not blocked on a benchmark.** The `benchmark-regression`
+   job runs and uploads its artifacts, but a failed `--compare-baseline` is a
+   signal to investigate, not a red build. A gate that fires falsely 77-89% of
+   the time trains people to re-run it until it goes green, which is worse than
+   no gate at all.
+2. **The interleaved A/B harness is the only gate that may block**, and only
+   where both arms exist: two built binaries, an explicit baseline, and at least
+   3 usable reps (it exits 2 otherwise rather than reporting a verdict it cannot
+   support).
+3. **Scheduled A/B is the qualification run.** It runs the full dtype matrix on
+   a schedule, where it has the time budget the interleaved harness needs.
+4. **Both search QPS and index time are gated together.** `unified_benchmark.py`
+   emits `indexing_duration_seconds` per configuration and `--compare-baseline`
+   already fails on an increase. A change that buys QPS by building a cheaper
+   graph shows up as an index-time regression, and vice versa; looking at either
+   number alone is how a recall regression reaches main.
+5. **Recall is not a benchmark output.** Graph-quality gates live in Go tests
+   (`internal/store/index/*_quality_test.go`), which are exact and free. If a
+   benchmark delta needs explaining, the first move is to run the quality tests
+   at the same configuration, not to re-run the benchmark.
+
+### 5.2 Running the A/B Harness
+
+```bash
+# Build both arms first; the harness runs them, it does not build them.
+go build -o /tmp/baseline/longbow  ./cmd/longbow
+go build -o /tmp/candidate/longbow ./cmd/longbow
+
+python3 scripts/ab_benchmark.py \
+    --baseline-binary  /tmp/baseline/longbow \
+    --candidate-binary /tmp/candidate/longbow \
+    --counts 50000 --dtypes float32 --search-modes dense \
+    --queries 500 --reps 6 --threshold 5 --cpu-affinity 12-15
+```
+
+`--reps` must be at least 3 or the harness exits 2. It reports one of three
+verdicts - `regression`, `improvement`, `inconclusive` - and `inconclusive` is
+a real answer, not a pass: it distinguishes "consistently below threshold but
+too small to call" from "inconsistent, so the noise floor is above the effect".
+An `inconclusive` result on a change you believe matters means the harness was
+not given enough reps, not that the change is safe.
 
 ---
 

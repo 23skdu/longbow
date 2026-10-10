@@ -209,17 +209,23 @@ func PackTQ8Generic(src []float32, dst []byte) {
 
 func l2SquaredTQCorrectionGeneric(query, recon []float32, qjlBits []byte, correction float32, n int) float32 {
 	var sum float32
+	maxQJL := len(qjlBits) * 8
 	i := 0
 	// 8x unrolling
 	for ; i <= n-8; i += 8 {
-		bits := qjlBits[i/8]
+		var bits byte
+		if (i / 8) < len(qjlBits) {
+			bits = qjlBits[i/8]
+		}
 		for j := 0; j < 8; j++ {
 			idx := i + j
 			val := recon[idx]
-			if (bits>>uint(j))&1 != 0 {
-				val += correction
-			} else {
-				val -= correction
+			if idx < maxQJL {
+				if (bits>>uint(j))&1 != 0 {
+					val += correction
+				} else {
+					val -= correction
+				}
 			}
 			diff := query[idx] - val
 			sum += diff * diff
@@ -228,10 +234,12 @@ func l2SquaredTQCorrectionGeneric(query, recon []float32, qjlBits []byte, correc
 	// Remainder
 	for ; i < n; i++ {
 		val := recon[i]
-		if (qjlBits[i/8]>>(i%8))&1 != 0 {
-			val += correction
-		} else {
-			val -= correction
+		if i < maxQJL {
+			if (qjlBits[i/8]>>(i%8))&1 != 0 {
+				val += correction
+			} else {
+				val -= correction
+			}
 		}
 		diff := query[i] - val
 		sum += diff * diff

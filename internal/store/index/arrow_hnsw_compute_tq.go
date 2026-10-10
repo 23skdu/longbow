@@ -127,6 +127,15 @@ func (c *TurboQuantCompute) DistanceDirectCodes(rotatedQuery []float32, tqCode [
 	return fn(rotatedQuery, tqCode, c.encoder.dims, c.encoder.pow2, c.encoder.params.BitsPerAngle)
 }
 
+// DistanceDirectCodesBatch computes distances directly from multiple TQ code slices using the rotated query.
+func (c *TurboQuantCompute) DistanceDirectCodesBatch(rotatedQuery []float32, codes [][]byte, dst []float32) error {
+	fn := simd.GetTurboQuantDistanceBatchFunc()
+	if fn == nil {
+		fn = simd.TurboQuantDistanceBatch
+	}
+	return fn(rotatedQuery, codes, dst, c.encoder.dims, c.encoder.pow2, c.encoder.params.BitsPerAngle)
+}
+
 // PrefetchChunk issues a read hint for the bytes a TurboQuant chunk starts at.
 // Callers that already hold a batch-scoped view should slice it themselves;
 // this exists for callers that only have an id.

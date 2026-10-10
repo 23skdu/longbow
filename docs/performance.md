@@ -38,6 +38,12 @@
 > - **Ingestion & Index Time**:
 >   At 50k scale, TurboQuant Flight streaming ingestion achieves 356,729.8 vec/s (21.77 MB/s) with paired index construction time of 497.0s (100.6 vec/s construction throughput) and 1,479.5 MB peak RSS under active R8 quality gating.
 >
+> - **Batched TurboQuant SIMD Kernel Dispatch**:
+>   Batched distance evaluation is unified with all other dtypes via `TurboQuantDistanceBatch` / `GetTurboQuantDistanceBatchFunc()`. Dispatched to `AVX-512`, `AVX2`, `NEON`, and `Generic` implementations:
+>   - **4-way interleaved polar reconstruction**: Evaluates 4 candidate trees concurrently to overlap independent reconstruction chains and hide scalar load latencies.
+>   - **Zero-allocation chunk buffer gathering**: `tqComputer.ComputeBatch` gathers resident chunk codes into pre-allocated `codesBuf` slices and delegates to `DistanceDirectCodesBatch`.
+>   - **Exact bit-identity**: Every batched SIMD kernel produces bit-identical distance values to its corresponding single-vector kernel, preserving graph connectivity and search tie-breaking.
+>
 > - The old 2026-09-26 rows also lacked provenance; older configurations routed complex128 and TurboQuant to EMLGo for 50k ≤ N < 500k, whereas current rows reflect the native engine with EMLGo disabled.
 
 ### Methodology changes in the 2026-10-09 rows

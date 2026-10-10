@@ -95,6 +95,8 @@ func TestInitializeDispatch(t *testing.T) {
 			require.NotNil(t, cosineDistanceImpl, "cosineDistanceImpl should be initialized")
 			require.NotNil(t, dotProductImpl, "dotProductImpl should be initialized")
 			require.NotNil(t, euclideanDistanceBatchImpl, "euclideanDistanceBatchImpl should be initialized")
+			require.NotNil(t, turboQuantDistanceBatchImpl, "turboQuantDistanceBatchImpl should be initialized")
+			require.NotNil(t, GetTurboQuantDistanceBatchFunc(), "GetTurboQuantDistanceBatchFunc should return non-nil")
 			require.NotNil(t, l2SquaredImpl, "l2SquaredImpl should be initialized")
 
 			// Verify registry has entries
@@ -175,8 +177,12 @@ func TestCPUFeatureDetectionComprehensive(t *testing.T) {
 	// Basic validation
 	assert.NotEmpty(t, features.Vendor, "CPU vendor should be detected")
 
-	// Implementation should be one of the supported types
-	validImpls := []string{"avx512", "avx2", "neon", "generic"}
+	// Implementation should be one of the supported types. The AMX tiers
+	// (emerald, granite) are reachable on Sapphire Rapids and later, which no
+	// ordinary runner has - scripts/check_avx512_coverage.sh emulates one, and
+	// without them here the detector's own output is reported as invalid on
+	// exactly the hardware it was written for.
+	validImpls := []string{"emerald", "granite", "avx512", "avx2", "neon", "generic"}
 	found := false
 	for _, valid := range validImpls {
 		if impl == valid {

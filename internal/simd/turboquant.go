@@ -329,18 +329,25 @@ func TurboQuantDistanceGeneric(query []float32, tqData []byte, dim int, pow2 int
 func TurboQuantDistanceAVX512(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
 	buf := tqScratchPool.Get().(*tqScratchBuf)
 	defer tqScratchPool.Put(buf)
-	return turboQuantDistanceAVX2Scratch(query, tqData, dim, pow2, bitsPerAngle, buf.recon, buf.indices)
+	return turboQuantDistanceWithL2Scratch(query, tqData, dim, pow2, bitsPerAngle, buf.recon, buf.indices, l2SquaredAVX512)
 }
 
 func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
 	buf := tqScratchPool.Get().(*tqScratchBuf)
 	defer tqScratchPool.Put(buf)
-	return turboQuantDistanceAVX2Scratch(query, tqData, dim, pow2, bitsPerAngle, buf.recon, buf.indices)
+	return turboQuantDistanceWithL2Scratch(query, tqData, dim, pow2, bitsPerAngle, buf.recon, buf.indices, l2SquaredAVX2)
 }
 
 // turboQuantDistanceAVX2Scratch is the allocation-free variant that uses caller-provided scratch buffers.
 // Pass nil for scratch buffers to allocate on first call (buffers are grown as needed).
 func turboQuantDistanceAVX2Scratch(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int, recon []float32, qIndices []byte) (float32, error) {
+	if features.HasAVX512 {
+		return turboQuantDistanceWithL2Scratch(query, tqData, dim, pow2, bitsPerAngle, recon, qIndices, l2SquaredAVX512)
+	}
+	return turboQuantDistanceWithL2Scratch(query, tqData, dim, pow2, bitsPerAngle, recon, qIndices, l2SquaredAVX2)
+}
+
+func turboQuantDistanceWithL2Scratch(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int, recon []float32, qIndices []byte, l2 distanceFunc) (float32, error) {
 	// Length guard. TurboQuantDistanceGeneric has always had one and returns a
 	// zero distance for a payload too short to hold the geometry the caller
 	// declared; the SIMD paths indexed tqData[0:4] and sliced the angle payload
@@ -442,10 +449,12 @@ func turboQuantDistanceAVX2Scratch(query []float32, tqData []byte, dim int, pow2
 	correction := radius / float32(math.Sqrt(float64(pow2))) * 0.1
 	tqApplyQJLCorrection(recon, qjlBits, correction)
 
-	// Use AVX-512 / AVX2 float32 L2 kernel on the corrected reconstruction
+	// Use provided L2 kernel, or fallback to AVX-512 / AVX2 float32 L2 kernel
 	var sum float32
 	var err error
-	if features.HasAVX512 {
+	if l2 != nil {
+		sum, err = l2(query[:dim], recon[:dim])
+	} else if features.HasAVX512 {
 		sum, err = l2SquaredAVX512(query[:dim], recon[:dim])
 	} else {
 		sum, err = l2SquaredAVX2(query[:dim], recon[:dim])

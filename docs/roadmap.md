@@ -1,6 +1,6 @@
 # Longbow Roadmap
 
-**Last updated**: 2026-10-10  
+**Last updated**: 2026-10-11  
 **Status**: Canonical list of **open** work. Completed work is validated, committed, and tracked in git history.
 
 ---
@@ -10,19 +10,47 @@
 | Pri | # | Item | Area | Depends on |
 |:---|:---|:---|:---|:---|
 | **P1** | 1 | Locate complex128 GPU bottleneck & verify uint16 GPU path | GPU | — |
+| **P1** | 4 | BM25 Inverted Index Copy-on-Write Elimination (Allocations) | Storage | — |
+| **P1** | 5 | Native L2-Squared Integer SIMD Kernels without VSQRT | SIMD | — |
+| **P1** | 6 | Wire AVX-512 VNNI (`VPDPBUSD`) and Saturated Int8/Uint8 into Dispatch | SIMD | — |
+| **P1** | 7 | Direct Base Pointer Caching in SearchContext for SlabArena | Memory | — |
 | **P2** | 2 | ARM NEON dequant kernel & remaining scalar SQ8 fallbacks | SIMD | — |
 | **P2** | 3 | Pooled row buffers in `DiskVectorStore` | Storage | — |
+| **P2** | 8 | Lock-Free Adjacency Updates & NUMA-Local Index Queueing | Concurrency | — |
+| **P2** | 9 | Inlined 4-Ary Candidate Heap & Branchless Struct Swapping | Search | — |
+| **P2** | 10 | Iterative Stack Traversal for Geospatial Quadtree Queries | Storage | — |
+| **P2** | 11 | Dynamic Hardware-Aware EMLGo Dispatch Threshold Calibration | Engine | — |
+| **P2** | 12 | Lock-Free Concurrent Map for Metadata & ID Translation | Storage | — |
+| **P2** | 13 | SIMD Fused BM25 Term Scoring & Posting List Intersection | Search | Item 4 |
 
 ```mermaid
 graph TD
-    subgraph P1["P1: GPU Infrastructure"]
+    subgraph P1["P1: Core SIMD, Memory & Allocations"]
         I1["1: complex128 GPU Bottleneck & uint16 path"]
+        I4["4: BM25 Inverted Index COW Elimination"]
+        I5["5: Native L2-Squared Integer SIMD Kernels"]
+        I6["6: Wire AVX-512 VNNI & Saturated Kernels"]
+        I7["7: Direct Base Pointer Caching in SearchContext"]
     end
-    subgraph P2["P2: Optimizations & Hygiene"]
+    subgraph P2["P2: Optimizations & Concurrency"]
         I2["2: NEON Dequant Kernel"]
         I3["3: Pooled Disk Row Buffers"]
+        I8["8: Lock-Free Adjacency & NUMA Queueing"]
+        I9["9: Inlined 4-Ary Candidate Heap"]
+        I10["10: Iterative Quadtree Stack Traversal"]
+        I11["11: Dynamic EMLGo Threshold Calibration"]
+        I12["12: Lock-Free Concurrent Map for Metadata"]
+        I13["13: SIMD Fused BM25 Term Scoring"]
     end
 ```
+
+**Recently Completed (2026-10-11)**:
+- **AVX-512 + FMA SIMD Kernel Validation & Architecture Parity on Intel Xeon Reference Testbed (`tf-testbed-70b436`)**:
+  - Validated all 24 AVX-512 kernels, transcendental routines (`expAVX512`, `logAVX512`, `sinAVX512`, `cosAVX512`, `tanAVX512`), VNNI (`dotInt8AVX512VNNI`), and FMA kernels in `emlgo` on physical Intel Xeon Cascade Lake CPU @ 2.80GHz with 100% test pass.
+  - Validated native AVX-512, FMA, and store engine tests in `longbow/internal/simd` and `longbow/internal/store/...`.
+  - Diagnosed and resolved latent architecture parity defect in `internal/simd/turboquant.go`: `TurboQuantDistanceAVX2` had an internal `if features.HasAVX512` override dispatching `l2SquaredAVX512`, causing bit divergence against `turboQuantDistanceBatchAVX2` on AVX-512 hardware. Refactored `turboQuantDistanceWithL2Scratch` to strictly bind to architecture-matched L2 kernels, restoring exact bit-identity across all architectures and bit depths.
+  - Executed benchmark matrix and gathered runtime `pprof` profile suites (CPU hotspots, mutex delays, heap allocations, block profiles) across 100k, 500k, and 1M scale for Standard and EMLGo versions on Intel Xeon AVX-512 reference hardware. Observed +81.2% speedup in `float64` dense search (2,085.1 QPS vs 1,150.9 QPS) and +130%–186% speedups in integer and quantized vector types.
+
 
 **Recently Completed (2026-10-10)**:
 - **Context-Window Hygiene & Codebase De-Monolithization (P0 Items 1–8)**:
@@ -80,12 +108,33 @@ graph TD
 
 ## 2. P1 — GPU Infrastructure
 
-### Item 1: Locate complex128 GPU Bottleneck & Verify uint16 GPU Path
+### Item 4: BM25 Inverted Index Copy-on-Write Elimination (Allocations)
 
-- **Files**: `internal/gpu/cuda/cuda_index_dtypes.go`
-- **State**: `complex128` is the slowest GPU dtype (471 dense QPS at 100k, ~5x slower than CPU). In contrast, `uint16` reports 3,934 QPS.
-- **Plan**: Eliminate per-query GPU memory allocations and host CPU sort; use device-side top-k kernel or pooled distance buffers; document actual `uint16` kernel dispatch path.
-- **Success**: Eliminate GPU bottleneck for `complex128` and document actual kernel dispatch path for `uint16`.
+- **Files**: `internal/store/index/bm25_inverted_index.go`, `internal/store/index/bm25_arena_index.go`
+- **State**: Runtime profiling (`allocs.pprof`) shows `(*BM25InvertedIndex).Add` consumed 12,813.22 MB (60.04% of total heap allocation across the entire process). On every document insert, `Add` executes Copy-on-Write cloning of the shard term map (`MapRCU[string, *BM25PostingList]`) and slice reallocation for every term posting list (`newDocIDs = make([]VectorID, n+1)`). For 100k documents with ~5 terms each, this triggers >500,000 map clones and slice allocations.
+- **Plan**: Migrate `BM25InvertedIndex` to use chunked/arena-allocated postings or batched ingestion (`AddBatch`) backed by `BM25ArenaIndex` with preallocated contiguous posting arrays, eliminating per-document map copying.
+- **Success**: Heap allocations during ingest drop by >12 GB; GC pause times reduced during concurrent ingest.
+
+### Item 5: Native L2-Squared Integer SIMD Kernels without VSQRT Latency
+
+- **Files**: `internal/simd/dispatch.go`, `internal/simd/all_kernels_avo_amd64.s`
+- **State**: In `internal/simd/dispatch.go` lines 622-628, `l2SquaredInt8Impl` is implemented by invoking `euclideanInt8AVX512(a, b)` and then squaring the result (`return d * d, nil`). Evaluating `VSQRTPS` in the innermost distance evaluation loop only to immediately square it back in Go adds redundant square-root latency on every candidate distance evaluation in HNSW search.
+- **Plan**: Implement native `l2SquaredInt8AVX512Kernel` and `l2SquaredUint8AVX512Kernel` computing the horizontal sum of squared differences directly without `VSQRTPS`/`VSQRTSS`.
+- **Success**: Zero square-root instructions executed on integer HNSW distance comparisons; integer search QPS improves by 10-15%.
+
+### Item 6: Wire AVX-512 VNNI (`VPDPBUSD`) and Saturated Int8/Uint8 into Primary Dispatch Table
+
+- **Files**: `internal/simd/dispatch.go`, `internal/simd/all_kernels_avo_amd64.s`, `internal/simd/dot_product_amd64.go`
+- **State**: In `dispatch.go` lines 629-631 under the AVX-512 dispatch block, `dotProductInt8Impl`, `dotProductUint8Impl`, and `euclideanDistanceUint8Impl` still fall back to scalar 4x unrolled loops (`dotInt8Unrolled4x`, `dotUint8Unrolled4x`, `euclideanUint8Unrolled4x`), even though `emlgo` implements 64-byte `dotInt8AVX512VNNI` (`VPDPBUSD`) and 64-byte saturated int8 kernels.
+- **Plan**: Expose and wire native 64-byte VNNI dot product and saturated AVX-512 int8/uint8 distance kernels into `internal/simd`'s primary dispatch table when `features.HasAVX512VNNI` is detected.
+- **Success**: Vectorized 64-byte dot product throughput on Cascade Lake/Sapphire Rapids; quantized dot product and angular similarity speedup of 4x-8x.
+
+### Item 7: Direct Base Pointer Caching in SearchContext for SlabArena and TypedArena
+
+- **Files**: `internal/memory/arena.go`, `internal/store/types/graph_data_accessors.go`, `internal/store/index/search_context.go`
+- **State**: Runtime profiling (`profile.pprof`) showed `(*SlabArena).GetWithGeneration` accounts for 11.08% flat CPU time and `(*TypedArena).GetWithGeneration` accounts for 3.00% flat CPU time. Every vector lookup in graph search calls `GetVectorsChunkWithGen`, executing atomic pointer loads, 64-bit integer divisions (`offset / uint64(a.slabCap)`), slice boundary checks, and generation isolation checks.
+- **Plan**: Cache raw chunk base pointers in `ArrowSearchContext`. Since slabs are append-only and readers are pinned via `AcquireReader`, search workers can calculate vector offsets directly via base pointer arithmetic without per-hop slab index division or atomic pointer reloading.
+- **Success**: Eliminate 14% flat CPU time spent in slab dereferencing; search latency across all dtypes drops by 10-18%.
 
 ---
 
@@ -104,6 +153,49 @@ graph TD
 - **State**: Typed row extraction allocates slice headers and temporary row buffers during non-vectorized disk scans.
 - **Plan**: Pool row buffers to eliminate transient allocations during disk traversals.
 - **Success**: Zero-allocation row decoding in `DiskVectorStore`.
+
+### Item 8: Lock-Free Adjacency Updates & NUMA-Local Index Queueing
+
+- **Files**: `internal/store/index/flat_adjacency.go`, `internal/store/index/arrow_hnsw_bulk.go`, `internal/store/vector_store.go`
+- **State**: Runtime lock profiling (`mutex.pprof`) revealed 69.10% flat lock delay in `sync.(*Mutex).Unlock`, with `StartIndexingWorkers` and `runIndexWorker` contributing 53.8% cumulative lock delay during concurrent batch indexing (`AddConnectionsBatch` and `AddConnection`).
+- **Plan**: Transition neighbor list updates to lock-free atomic compare-and-swap (CAS) / generation-stamped adjacency lists, and partition incoming bulk index batches into NUMA-local sharded worker queues.
+- **Success**: Drastic reduction in mutex contention during bulk ingest; index construction throughput scales linearly across 16+ cores.
+
+### Item 9: Inlined 4-Ary Candidate Heap & Branchless Struct Swapping
+
+- **Files**: `internal/store/index/candidate_heap.go`, `internal/store/index/search_float32.go`
+- **State**: Profiling (`profile.pprof`) indicates priority queue maintenance during beam search (`CandidateHeapAdapter.down`, `Less`, and `Swap`) consumes ~15.2% combined flat time. `Less` and `Swap` are value-receiver methods, incurring repeated slice header copies and index bounds checks.
+- **Plan**: Inline distance comparisons (`(*h)[j].Dist < (*h)[best].Dist`) directly into `up` and `down`, implement branchless struct swapping, and pre-allocate power-of-two candidate buffers in `ArrowSearchContext`.
+- **Success**: Priority queue operations eliminate function call overhead; graph search layer traversal accelerates by 8-12%.
+
+### Item 10: Iterative Stack Traversal for Geospatial Quadtree Queries
+
+- **Files**: `internal/store/geo_index.go`
+- **State**: Profiling (`allocs.pprof`) shows `(*Quadtree).queryBoxRecursive` allocated 857.49 MB (4.02% of total heap allocations) and `(*GeoIndex).SearchRadius` accounted for 1,128.16 MB cumulative allocations due to temporary slice allocations at each recursive quadrant subdivision.
+- **Plan**: Replace recursive quadtree bounding box queries with an iterative traversal using a fixed-depth stack and reusable pre-allocated ID buffer in `SearchContext`.
+- **Success**: Zero allocations during geospatial bounding box and radius queries; geo search QPS increases by 25-40%.
+
+### Item 11: Dynamic Hardware-Aware EMLGo Math Dispatch Threshold Calibration
+
+- **Files**: `internal/tensor/math_dispatch_env.go`
+- **State**: In `math_dispatch_env.go`, `ResolveBackend` uses hardcoded static vector count cutoffs (e.g. `complex64EMLMaxCount = 500000`, `complex128 >= 500000` falls back to standard). On AVX-512 Xeon, 8-wide complex vectorization delivers 2,085 QPS (vs 1,150 QPS on AVX2), proving that higher-end server CPUs maintain advantage at scales where AVX2 throttles.
+- **Plan**: Dynamically calibrate EMLGo vs Standard dispatch thresholds based on detected CPU instruction set extensions (`HasAVX512`, `HasAVX512VNNI`, `HasAMX`) and cache topology.
+- **Success**: Optimal math backend selection across consumer AVX2 laptops and server-class AVX-512 architectures.
+
+### Item 12: Lock-Free Concurrent Map for Metadata & ID Translation
+
+- **Files**: `internal/store/types/map_rcu.go`
+- **State**: Profiling (`allocs.pprof`) showed `(*MapRCU).Store` and `BulkStore` across `[uint32, []string]`, `[string, *uint8]`, and `[uint32, int]` accounted for >1,200 MB of heap allocations because every mutation makes a shallow copy of the underlying Go map (`newMap := make(map[K]V, len(oldMap)+1)`).
+- **Plan**: Replace copy-on-write `MapRCU` with a concurrent lock-free hash map or chunked Trie/Radix structure for ID translation and string metadata.
+- **Success**: Eliminate map reallocation on every batch write; lower GC pressure during streaming chunk ingest.
+
+### Item 13: SIMD Fused BM25 Term Scoring & Posting List Intersection
+
+- **Files**: `internal/store/index/bm25_inverted_index.go`, `internal/simd/dispatch.go`
+- **State**: BM25 multi-term scoring currently evaluates posting lists sequentially and gathers document lengths and term frequencies via Go map lookups (`GetDocLengthsBatch`).
+- **Plan**: Wire `BM25ScoreBatch` into vectorized posting list intersection, evaluating 16 documents concurrently using AVX-512 `VFMADD` instructions with vector-aligned document length arrays.
+- **Success**: 3x-5x throughput improvement in sparse and hybrid BM25 ranking.
+
 
 
 

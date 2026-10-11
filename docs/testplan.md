@@ -13,11 +13,15 @@ The primary goals are:
 
 ---
 
-## 2. Test Environment & System Specifications
+## 2. Test Environments & System Specifications
+
+Longbow maintains two primary validation environments:
+
+### 2.1 Local Development Testbed (AVX2 Client)
 
 | Component | Specification |
 |---|---|
-| **CPU** | Intel Core i7-12650H (16 threads, AVX2, x86_64) |
+| **CPU** | Intel Core i7-12650H (16 threads, AVX2, hybrid P/E-cores, x86_64) |
 | **System Memory** | 23 GB RAM |
 | **GPU** | NVIDIA GeForce RTX 4060 Laptop (8 GB VRAM, sm_89) |
 | **CUDA Toolkit** | CUDA 12.4 (`nvcc` V12.4.131) |
@@ -25,6 +29,18 @@ The primary goals are:
 | **Go Runtime** | Go 1.27.2 with CGO enabled |
 | **Benchmark Script** | [scripts/unified_benchmark.py](file:///home/rsd/REPOS/longbow/scripts/unified_benchmark.py) |
 | **Benchmark Harness** | [cmd/bench-tool](file:///home/rsd/REPOS/longbow/cmd/bench-tool) (`bin/bench-tool`) |
+
+### 2.2 Dedicated Remote Testbed (AVX-512 Cloud Server)
+
+| Component | Specification |
+|---|---|
+| **Host / Instance** | Google Cloud Compute Engine (`tf-testbed-70b436`) |
+| **CPU** | Intel(R) Xeon(R) CPU @ 2.80GHz (16 vCPUs, AVX-512F, AVX-512DQ, AVX-512CD, AVX-512BW, AVX-512VL, AVX-512_VNNI, FMA) |
+| **System Memory** | 125 GiB RAM (high-memory envelope, no memory pressure) |
+| **Host Operating System** | Linux 7.0-gcp x86_64 |
+| **Go Runtime** | Go 1.27.1 with CGO enabled |
+| **Role** | Production AVX-512 kernel validation, EMLGo parity, high-concurrency scaling (8+ workers, unpinned) |
+
 
 ---
 
@@ -103,27 +119,64 @@ Longbow engine and harness support 13 distinct search modalities:
 
 ---
 
-## 4. Execution Methodology
+## 4. Execution Methodology & Concurrency Rules
+
+### 4.1 CPU Affinity & Worker Concurrency Guidelines
+
+A critical finding from empirical cross-architecture benchmarking is that **CPU affinity and core pinning requirements depend strictly on the underlying CPU topology**:
+
+1. **Older / Heterogeneous AVX2 Architectures (Client CPUs)**:
+   - **Requirement**: Use explicit CPU pinning (`--cpu-affinity 12-15`) and restrict client workers (`--workers 4`).
+   - **Rationale**: Hybrid client CPUs (e.g., Intel Alder Lake / Raptor Lake i7-12650H) contain asymmetric Performance cores (P-cores) and Efficiency cores (E-cores). Allowing the OS scheduler to migrate threads to E-cores or dynamically frequency-throttle under laptop thermal constraints introduces severe benchmark jitter and false regression signals. Pinning to 4 isolated, high-performance P-cores stabilizes variance.
+
+2. **Modern AVX-512 Server Architectures (Cloud Xeon / EPYC)**:
+   - **Requirement**: **Do NOT pin CPU cores** (omit `--cpu-affinity`). Scale client concurrency to **8 or more workers** (`--workers 8`).
+   - **Rationale**: Modern server instances (e.g. Google Cloud 16-vCPU Xeon @ 2.80GHz) provide dedicated, homogeneous, unthrottled vCPUs with ample thermal headroom and memory bandwidth (125 GiB RAM).
+   - **Observed Benefits**:
+     - **Ingest Throughput (`DoPut`)**: Increases from 249,376 vec/s to **537,085 vec/s (+115% / 2.15x faster)**.
+     - **HNSW Indexing Speed**: Increases from 2,310 vec/s to **5,713 vec/s (2.47x speedup)** as the parallel builder scales from `addbatch_inflight=2` to `addbatch_inflight=8`.
+     - **Query Throughput**: Substantial gains across all 13 search modes without latency degradation (e.g., FilteredString +38.3%, Geo +67.1%, GraphRAG +31.0%).
+
+| Architecture / Platform | CPU Topology | CPU Affinity Flag | Recommended Workers | Memory Ceiling |
+|:---|:---|:---|:---|:---|
+| **Client / AVX2** (i7-12650H) | Hybrid P+E cores, shared desktop load | `--cpu-affinity 12-15` (pinned) | 4 workers | 14 GiB |
+| **Server / AVX-512** (Xeon 16 vCPU) | Homogeneous vCPUs, dedicated cloud host | *Omit* (unpinned) | 8 workers | 75 GiB |
+
+### 4.2 Execution Protocol
 
 For each test configuration:
 
-1. Ensure no rogue processes occupy the target port (kill lingering instances on port 3000/random fallback).
-2. Clean temporary benchmark data in `data/bench/` to prevent cross-run state pollution.
-3. Start the Longbow server instance with appropriate environment variables and memory limits:
-   - Memory ceiling: 14 GiB (`15032385536` bytes, within the safe physical envelope on a 22-23 GiB host).
-   - Concurrency workers: 4 workers (`--workers 4`, pinned to 4 unthrottled cores via `--cpu-affinity 12-15` matching `docs/performance.md`).
-   - Search queries: 500 representative randomized queries per mode.
-4. Execute `scripts/unified_benchmark.py`:
-   - Warm up the server connection via Arrow Flight DoAction health check.
-   - Ingest dataset vectors, recording ingest wall-clock duration and throughput.
-   - Build HNSW graph indexing structure.
-   - Run search passes across all requested search modes sequentially.
+1. **Port Sanitization**: Ensure no rogue processes occupy the target port (kill lingering instances on port 3000/fallback range 3000–3150).
+2. **Scratch Cleansing**: Clean temporary benchmark data in `data/bench/` to prevent cross-run state pollution.
+3. **Server Launch**: Start the Longbow server instance with appropriate memory limits and binary tags:
+   - Client testbed: 14 GiB memory ceiling (`15032385536` bytes), 4 pinned workers (`--workers 4 --cpu-affinity 12-15`).
+   - Server testbed: 75 GiB ceiling, unpinned 8 workers (`--workers 8`), 500 representative randomized queries per mode.
+4. **Execution via `scripts/unified_benchmark.py`**:
+   - Warm up the server connection via gRPC / Arrow Flight readiness polling.
+   - Ingest dataset vectors, recording wall-clock duration and throughput (`vec/s`, `MB/s`).
+   - Construct HNSW graph indexing structure, recording `indexing_duration_seconds`.
+   - Run search passes across all 13 search modes sequentially.
    - Collect latency statistics: P50, P95, P99, and total QPS.
-   - Record memory RSS and disk utilization in MB.
-5. Save raw JSON results to `data/perf_logs/perf_matrix_<mode>_<label>_<timestamp>.json` and markdown report to `data/perf_logs/perf_matrix_<mode>_<label>.md`.
-6. Terminate the server gracefully, releasing port and device memory before the next configuration.
+   - Record peak RSS memory and disk utilization.
+5. **Continuous Profiling Capture**:
+   - Trigger snapshot pprof collections during queries and a final comprehensive snapshot at the completion of each data type before shutdown.
+   - Archive 7 core profile types: `profile` (CPU), `heap`, `allocs`, `goroutine`, `threadcreate`, `block`, and `mutex`.
+6. **Persistence & Tear-down**:
+   - Commit incremental JSON checkpoints to `data/perf_logs/perf_matrix_<mode>_<label>_<timestamp>.json`.
+   - Terminate the server gracefully and enforce a 2-second port cooling period before next test.
+
+### 4.3 Benchmarking Observations & Hardware Hotspot Analysis
+
+Profiling on AVX-512 hardware revealed key architectural hotspots that guide optimization priorities (documented in `docs/roadmap.md`):
+
+1. **BM25 Inverted Index Heap Churn**: `(*BM25InvertedIndex).Add` accounts for ~60% of total heap allocations during bulk ingest due to copy-on-write map cloning (`MapRCU`) and frequent slice resizing.
+2. **Redundant Square Root in L2 Distance**: AVX-512 integer distance kernels in `dispatch.go` previously invoked `euclideanInt8AVX512` (`VSQRTPS`) followed by squaring (`d * d`), adding unnecessary square-root overhead compared to direct accumulator addition.
+3. **Lock Contention in Concurrent Index Linking**: Mutex serialization in `AddConnectionsBatch` accounts for significant lock delay under multi-worker bulk indexing.
+4. **SlabArena / TypedArena Dereferencing**: High-frequency hop traversal in HNSW incurs pointer arithmetic and generation validation overhead on each candidate evaluation.
+5. **Cross-Architecture Batch Kernel Invariant**: Batched SIMD kernels must maintain exact floating-point reduction tree parity with single-vector kernels across both AVX2 and AVX-512 to avoid tie-breaking or routing divergences in HNSW beam search.
 
 ---
+
 
 ## 5. Regression Analysis & Acceptance Criteria
 
@@ -178,11 +231,19 @@ zero-mean. Measured against itself, the gate's false-positive rate is under
 go build -o /tmp/baseline/longbow  ./cmd/longbow
 go build -o /tmp/candidate/longbow ./cmd/longbow
 
+# On local AVX2 client (pinned to 4 P-cores):
 python3 scripts/ab_benchmark.py \
     --baseline-binary  /tmp/baseline/longbow \
     --candidate-binary /tmp/candidate/longbow \
     --counts 50000 --dtypes float32 --search-modes dense \
     --queries 500 --reps 6 --threshold 5 --cpu-affinity 12-15
+
+# On AVX-512 cloud server (unpinned, homogeneous vCPUs):
+python3 scripts/ab_benchmark.py \
+    --baseline-binary  /tmp/baseline/longbow \
+    --candidate-binary /tmp/candidate/longbow \
+    --counts 50000 --dtypes float32 --search-modes dense \
+    --queries 500 --reps 6 --threshold 5
 ```
 
 `--reps` must be at least 3 or the harness exits 2. It reports one of three
@@ -190,7 +251,8 @@ verdicts - `regression`, `improvement`, `inconclusive` - and `inconclusive` is
 a real answer, not a pass: it distinguishes "consistently below threshold but
 too small to call" from "inconsistent, so the noise floor is above the effect".
 An `inconclusive` result on a change you believe matters means the harness was
-not given enough reps, not that the change is safe.
+not given enough reps, not that the change is safe. Note that on server machines with multiple vCPUs, `--cpu-affinity` should be omitted as core pinning is neither necessary nor beneficial.
+
 
 ---
 

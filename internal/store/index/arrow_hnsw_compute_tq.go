@@ -27,6 +27,14 @@ func NewTurboQuantCompute(h *ArrowHNSW) *TurboQuantCompute {
 
 // Distance computes the distance between two vectors by their IDs using TurboQuant.
 func (c *TurboQuantCompute) Distance(id1, id2 uint32) (float32, error) {
+	if arena := c.h.tqArena.Load(); arena != nil && arena.IsEnabled() {
+		dim := int(c.h.dims.Load())
+		if v1, ok1 := arena.Get(id1); ok1 && len(v1) >= dim {
+			if v2, ok2 := arena.Get(id2); ok2 && len(v2) >= dim {
+				return c.h.distFunc(v1[:dim], v2[:dim])
+			}
+		}
+	}
 	if p := c.h.tqDecodeCache.Load(); p != nil {
 		dim := int(c.h.dims.Load())
 		if dim > 0 {
@@ -56,6 +64,13 @@ func (c *TurboQuantCompute) DistanceWithVector(id uint32, vec []float32) (float3
 		return 0, err
 	}
 
+	if arena := c.h.tqArena.Load(); arena != nil && arena.IsEnabled() {
+		dim := int(c.h.dims.Load())
+		if v, ok := arena.Get(id); ok && len(v) >= dim && len(rotatedQuery) >= dim {
+			return c.h.distFunc(v[:dim], rotatedQuery[:dim])
+		}
+	}
+
 	if p := c.h.tqDecodeCache.Load(); p != nil {
 		dim := int(c.h.dims.Load())
 		if dim > 0 && len(rotatedQuery) >= dim {
@@ -80,6 +95,13 @@ func (c *TurboQuantCompute) DistanceWithRotatedQuery(id uint32, rotatedQuery []f
 
 // DistanceWithRotatedQueryAndDisk computes the distance using a pre-rotated query, allowing fallback to a DiskGraph.
 func (c *TurboQuantCompute) DistanceWithRotatedQueryAndDisk(id uint32, rotatedQuery []float32, dg *DiskGraph, maxGen uint64) (float32, error) {
+	if arena := c.h.tqArena.Load(); arena != nil && arena.IsEnabled() {
+		dim := int(c.h.dims.Load())
+		if v, ok := arena.Get(id); ok && len(v) >= dim && len(rotatedQuery) >= dim {
+			return c.h.distFunc(v[:dim], rotatedQuery[:dim])
+		}
+	}
+
 	if p := c.h.tqDecodeCache.Load(); p != nil {
 		dim := int(c.h.dims.Load())
 		if dim > 0 && len(rotatedQuery) >= dim {
@@ -165,6 +187,12 @@ func (c *TurboQuantCompute) getVector(id uint32) ([]float32, error) {
 }
 
 func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph, maxGen uint64) ([]float32, error) {
+	if arena := c.h.tqArena.Load(); arena != nil && arena.IsEnabled() {
+		dim := int(c.h.dims.Load())
+		if v, ok := arena.Get(id); ok && dim > 0 && len(v) >= dim {
+			return v[:dim], nil
+		}
+	}
 	if p := c.h.tqDecodeCache.Load(); p != nil {
 		dim := int(c.h.dims.Load())
 		if dim > 0 {
@@ -209,6 +237,12 @@ func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph, maxGen u
 
 	if tqCode == nil {
 		return nil, fmt.Errorf("tq vector %d not found", id)
+	}
+
+	if arena := c.h.tqArena.Load(); arena != nil && arena.IsEnabled() {
+		return arena.GetOrDecode(id, func(_ uint32, dst []float32) error {
+			return c.encoder.DecodeInto(tqCode, dst)
+		})
 	}
 
 	return c.encoder.Decode(tqCode)

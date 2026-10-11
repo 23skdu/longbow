@@ -571,7 +571,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		// warming a buffer nothing will touch.
 		var tqBatch types.VectorChunkBatch[byte]
 		tqStride := 0
-		if h.tqDecodeCache.Load() == nil {
+		if h.tqDecodeCache.Load() == nil && h.tqArena.Load() == nil {
 			if tqc, ok := computer.(*tqComputer); ok {
 				tqBatch = tqc.chunkBatch()
 				tqStride = tqBatch.Width()

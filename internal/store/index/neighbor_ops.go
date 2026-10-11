@@ -805,6 +805,26 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, neighbors []uint32, dists []float32) {
 	if data.Type == types.VectorTypeTQ {
 		dim := int(h.dims.Load())
+		// 1. Check ephemeral scratch arena
+		if arena := h.tqArena.Load(); arena != nil && arena.IsEnabled() && dim > 0 {
+			if v1, ok1 := arena.Get(nodeID); ok1 && len(v1) >= dim {
+				allFound := true
+				for i, nbID := range neighbors {
+					if v2, ok2 := arena.Get(nbID); ok2 && len(v2) >= dim {
+						if d, err := h.distFunc(v1[:dim], v2[:dim]); err == nil {
+							dists[i] = d
+							continue
+						}
+					}
+					allFound = false
+					break
+				}
+				if allFound {
+					return
+				}
+			}
+		}
+
 		if p := h.tqDecodeCache.Load(); p != nil && dim > 0 {
 			off1 := int(nodeID) * dim
 			if off1+dim <= len(p.data) {

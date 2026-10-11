@@ -381,6 +381,7 @@ func (h *ArrowHNSW) Close() error {
 		data.Release()
 	}
 	h.growMu.Unlock()
+	h.ReleaseTQScratchArena()
 	return nil
 }
 

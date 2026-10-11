@@ -166,6 +166,7 @@ type ArrowHNSW struct {
 	navigator     *GraphNavigator
 	tqCompute     *TurboQuantCompute
 	tqDecodeCache atomic.Pointer[tqDecodeCache] // pre-decoded TQ vectors (non-nil during batch insert for fast construction)
+	tqArena       atomic.Pointer[TQScratchArena] // ephemeral chunked scratch arena for caching reconstructed vectors during indexing
 	gpuTrained    atomic.Bool
 	topo          *memory.NUMATopology
 	efTuner       *PIDTuner
@@ -483,6 +484,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		h.data.Load().TurboQuantEnabled = true
 		h.data.Load().TurboQuantBits = bits
 		h.tqCompute = NewTurboQuantCompute(h)
+		h.EnableTQScratchArena()
 	}
 
 	h.commitCond = sync.NewCond(&h.commitMu)
@@ -588,6 +590,37 @@ func (h *ArrowHNSW) EnableTurboQuant(bits int) {
 }
 
 // GetShardedLocks returns the sharded mutex for concurrent access
+
+// GetTQScratchArena returns the active ephemeral TurboQuant scratch arena, or nil if none.
+func (h *ArrowHNSW) GetTQScratchArena() *TQScratchArena {
+	return h.tqArena.Load()
+}
+
+// EnableTQScratchArena initializes and activates the ephemeral scratch arena for indexing.
+func (h *ArrowHNSW) EnableTQScratchArena() *TQScratchArena {
+	if existing := h.tqArena.Load(); existing != nil && existing.IsEnabled() {
+		return existing
+	}
+	dims := int(h.dims.Load())
+	if dims <= 0 {
+		if gd := h.data.Load(); gd != nil {
+			dims = gd.Dims
+		}
+	}
+	if dims <= 0 {
+		dims = h.config.Dims
+	}
+	arena := NewTQScratchArena(dims)
+	h.tqArena.Store(arena)
+	return arena
+}
+
+// ReleaseTQScratchArena deallocates and releases the ephemeral scratch arena after indexing.
+func (h *ArrowHNSW) ReleaseTQScratchArena() {
+	if arena := h.tqArena.Swap(nil); arena != nil {
+		arena.Release()
+	}
+}
 
 // GetDiskGraph returns the disk graph if enabled
 func (h *ArrowHNSW) GetDiskGraph() *DiskGraph {

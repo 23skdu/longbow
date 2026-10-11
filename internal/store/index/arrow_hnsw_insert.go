@@ -333,7 +333,32 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 			}
 		}
 	case types.VectorTypeTQ:
-		if p := h.tqDecodeCache.Load(); p != nil {
+		if arena := h.tqArena.Load(); arena != nil && arena.IsEnabled() {
+			dim := int(h.dims.Load())
+			for _, cand := range candidates {
+				if len(selected) >= m {
+					break
+				}
+				v1, ok1 := arena.Get(cand.ID)
+				if !ok1 || len(v1) < dim {
+					continue
+				}
+				isDiverse := true
+				for j := range selected {
+					v2, ok2 := arena.Get(selected[j].ID)
+					if ok2 && len(v2) >= dim {
+						d, _ := h.distFunc(v1[:dim], v2[:dim])
+						if d < cand.Dist {
+							isDiverse = false
+							break
+						}
+					}
+				}
+				if isDiverse {
+					selected = append(selected, cand)
+				}
+			}
+		} else if p := h.tqDecodeCache.Load(); p != nil {
 			dim := int(h.dims.Load())
 			for _, cand := range candidates {
 				if len(selected) >= m {

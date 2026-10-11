@@ -194,8 +194,29 @@ type tqChunkCacheEntry struct {
 }
 
 func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
+	dim := int(c.h.dims.Load())
+	// 1. Check ephemeral scratch arena (eliminates redundant dequantization during indexing)
+	if arena := c.h.tqArena.Load(); arena != nil && arena.IsEnabled() {
+		if v, ok := arena.Get(id); ok {
+			if dim > 0 && len(c.rotatedQuery) >= dim && len(v) >= dim {
+				return c.h.distFunc(c.rotatedQuery[:dim], v[:dim])
+			}
+		}
+		// On cache miss, reconstruct into ephemeral scratch arena to eliminate redundant dequantization
+		v, err := arena.GetOrDecode(id, func(_ uint32, dst []float32) error {
+			tqCode, err := c.h.tqCompute.getTQBytes(id, c.diskGraph, c.maxGen)
+			if err != nil {
+				return err
+			}
+			return c.h.tqCompute.encoder.DecodeInto(tqCode, dst)
+		})
+		if err == nil && dim > 0 && len(c.rotatedQuery) >= dim && len(v) >= dim {
+			return c.h.distFunc(c.rotatedQuery[:dim], v[:dim])
+		}
+	}
+
+	// 2. Check legacy decode cache if present
 	if p := c.h.tqDecodeCache.Load(); p != nil {
-		dim := int(c.h.dims.Load())
 		if dim > 0 && len(c.rotatedQuery) >= dim {
 			offset := int(id) * dim
 			if offset+dim <= len(p.data) {
@@ -218,26 +239,7 @@ func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 // preceded, and it is paid once per candidate *and* once per prefetch. Resolving
 // the chunk once per block is what the float32 path already does.
 func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
-	if c.h.tqDecodeCache.Load() != nil {
-		// Batched distance is measurably faster per vector for this workload
-		// - the 4-way kernel runs at 61 ns/vector against 163 ns for the
-		// single-vector path at dim=128 - but routing here through it made a
-		// 250k TurboQuant build about 25% SLOWER, consistently and with
-		// identical allocation counts. Do not "fix" this without redoing that
-		// measurement. Two reasons it loses here:
-		//
-		//   - Blocks are small. searchLayer hands over one node's neighbour
-		//     list per hop, and those peak at 5-6 candidates (2.55e9 candidates
-		//     over 3.55e8 calls, mean 7.2). The 4-way kernel cannot amortise
-		//     its own setup at that size.
-		//   - The working set is cold and random. The microbenchmark that shows
-		//     the 2.7x win runs over a 32 KB corpus that stays in L2, while the
-		//     decode cache is 128 MB touched in node-id order, so the gather
-		//     pass adds a dependent load chain without buying back misses.
-		//
-		// The decode cache also bypasses the chunk table entirely, which is why
-		// the batched chunk view below is not the lever here. See
-		// docs/roadmap.md section 9.5 for the full experiment.
+	if c.h.tqArena.Load() != nil || c.h.tqDecodeCache.Load() != nil {
 		return c.computeBatchSingle(ids, dst)
 	}
 	if cap(dst) < len(ids) {
@@ -320,7 +322,7 @@ func (c *tqComputer) computeBatchSingle(ids []uint32, dst []float32) ([]float32,
 // the chunk resolution and the prefetch itself were 22% and 13% of CPU while the
 // distance they were warming accounted for 2%.
 func (c *tqComputer) Prefetch(id uint32) {
-	if c.h.tqDecodeCache.Load() != nil {
+	if c.h.tqArena.Load() != nil || c.h.tqDecodeCache.Load() != nil {
 		return
 	}
 	chunkID := int(id) / types.ChunkSize

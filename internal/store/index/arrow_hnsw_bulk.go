@@ -629,11 +629,10 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		topL = batchMaxLevel
 	}
 
-	// Pre-decode TQ vectors to float32 for fast construction across all cores
-	if h.config.DataType == types.VectorTypeTQ && h.tqCompute != nil {
-		dim := int(h.dims.Load())
-		totalIDs := int(startID + uint32(n))
-		cache := make([]float32, totalIDs*dim)
+	// Populate ephemeral TQScratchArena with reconstructed float32 vectors for fast construction across all cores.
+	// This eliminates redundant dequantization during HNSW graph linkage across all batches.
+	if (h.config.DataType == types.VectorTypeTQ || h.config.TurboQuantEnabled) && h.tqCompute != nil {
+		arena := h.EnableTQScratchArena()
 		numNodes := len(activeNodes)
 		chunkSize := (numNodes + runtime.NumCPU() - 1) / runtime.NumCPU()
 		if chunkSize < 64 {
@@ -644,14 +643,12 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 				node := activeNodes[idx]
 				tqCode, err := h.tqCompute.getTQBytes(node.id, nil, math.MaxUint64)
 				if err == nil && len(tqCode) > 0 {
-					startOffset := int(node.id) * dim
-					target := cache[startOffset : startOffset+dim]
-					_ = h.tqCompute.encoder.DecodeInto(tqCode, target)
+					_, _ = arena.GetOrDecode(node.id, func(_ uint32, dst []float32) error {
+						return h.tqCompute.encoder.DecodeInto(tqCode, dst)
+					})
 				}
 			}
 		})
-		h.tqDecodeCache.Store(&tqDecodeCache{data: cache})
-		defer func() { h.tqDecodeCache.Store(nil) }()
 	}
 
 	// Current entry points for remaining active nodes. Initially global EP.

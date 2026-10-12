@@ -23,3 +23,23 @@ test-adbc-so: build-adbc
 
 clean:
 	rm -f liblongbow_adbc.so liblongbow_adbc.h
+
+
+# Observability conformance (docs/roadmap.md Items 18-20, 24).
+# Regenerates the metric inventory the conformance gate checks against. Run this
+# after adding, renaming or removing a Prometheus metric, and commit the result
+# alongside the change - the gate fails if the two disagree.
+observability-inventory:
+	go run ./tools/metrics-inventory > internal/observability/testdata/registered_metrics.tsv
+
+# Fails if an alert, dashboard panel or docs/metrics.md entry references a
+# metric family that is not registered. This is the check that catches alerts
+# wired to metrics that do not exist, which are permanently silent because an
+# expression over an unknown series is empty rather than an error.
+observability-check: observability-inventory
+	go test ./internal/observability/ -count=1
+
+# Parse-checks rules.yml and runs the promtool unit tests. Needs promtool on
+# PATH, or PROMTOOL=/path/to/promtool. Install from a Prometheus release archive.
+observability-rules:
+	grafana/tests/test-rules.sh

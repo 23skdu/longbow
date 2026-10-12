@@ -268,7 +268,7 @@ func (d *Dataset) EvictExpiredRecords() []arrow.RecordBatch {
 		}
 	}
 
-	d.Records.UpdateInPlace(newRecords)
+	d.replaceRecords(newRecords)
 
 	return evicted
 }

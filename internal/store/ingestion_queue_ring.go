@@ -13,6 +13,14 @@ type IngestionRingBuffer struct {
 	mask   uint64
 	head   atomic.Uint64 // Consumer index
 	tail   atomic.Uint64 // Producer index
+
+	// notify carries a coalesced "there is work" signal to consumers.
+	//
+	// The capacity is 1 and sends are non-blocking: the channel is a hint, not
+	// a counter. A consumer drains the ring until Pop reports empty, so a
+	// single pending token is enough - anything more would only queue up
+	// wakeups for work that is already gone.
+	notify chan struct{}
 }
 
 type ringSlot struct {
@@ -40,6 +48,7 @@ func NewIngestionRingBuffer(size uint64) *IngestionRingBuffer {
 	rb := &IngestionRingBuffer{
 		buffer: make([]ringSlot, size),
 		mask:   size - 1,
+		notify: make(chan struct{}, 1),
 	}
 
 	// Initialize sequence numbers
@@ -48,6 +57,28 @@ func NewIngestionRingBuffer(size uint64) *IngestionRingBuffer {
 	}
 
 	return rb
+}
+
+// Notify returns a channel that receives a token whenever a job is published.
+//
+// Consumers block on it instead of polling with a timer. An idle worker pool
+// used to wake every millisecond per goroutine - at 16 workers that is 16,000
+// runtime timer operations per second for a queue with nothing in it, and
+// profiling attributed 1,498 s (24.93%) of cumulative block delay in
+// runtime.selectgo to exactly that churn.
+func (rb *IngestionRingBuffer) Notify() <-chan struct{} {
+	return rb.notify
+}
+
+// signal publishes a wakeup token without blocking.
+func (rb *IngestionRingBuffer) signal() {
+	if rb.notify == nil {
+		return
+	}
+	select {
+	case rb.notify <- struct{}{}:
+	default:
+	}
 }
 
 // Push adds an item to the queue. Returns false if the queue is full.
@@ -75,6 +106,7 @@ func (rb *IngestionRingBuffer) Push(job IngestionJob) bool {
 				slot.data = job
 				// Mark as available for consumption (seq = tail + 1)
 				slot.sequence.Store(tail + 1)
+				rb.signal()
 				return true
 			}
 		} else {

@@ -21,22 +21,38 @@ groups:
   - name: longbow_hybrid_search_alerts
     rules:
       - alert: LongbowHybridSearchStalled
-        expr: longbow_hybrid_search_enabled == 1 AND rate(longbow_hybrid_search_vector_total[5m]) == 0 AND rate(longbow_hybrid_search_keyword_total[5m]) == 0
+        # There is no `longbow_hybrid_search_enabled` gauge. Whether hybrid
+        # search is actually in use is expressed by the per-dataset duration
+        # histogram, which only exists for datasets that serve hybrid queries.
+        # Gating on it keeps the alert from firing on every cluster that simply
+        # does not use hybrid search.
+        # `ignoring(dataset)` is required: the gate is labelled by dataset and
+        # the activity counters carry none, so a default match on equal label
+        # sets would never pair them up.
+        expr: |
+          max_over_time(longbow_hybrid_search_duration_seconds_count{dataset=~".+"}[24h]) > 0
+            and ignoring(dataset) rate(longbow_hybrid_search_vector_total[5m]) == 0
+            and ignoring(dataset) rate(longbow_hybrid_search_keyword_total[5m]) == 0
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: "Hybrid search stalled"
-          description: "Hybrid search is enabled but no vector or keyword searches have been processed for 5 minutes."
+          description: "Datasets served hybrid searches within the last 24h have processed no vector or keyword search for 5 minutes. Check that the hybrid search path is still scheduled."
 
       - alert: LongbowBM25IndexStalled
-        expr: longbow_hybrid_search_enabled == 1 AND rate(longbow_bm25_documents_indexed_total[5m]) == 0
+        # `or vector(0)` covers the case where the BM25 counter has never been
+        # incremented at all, which otherwise yields no series and no alert at
+        # all - the opposite of the intent.
+        expr: |
+          rate(longbow_hybrid_search_keyword_total[5m]) > 0
+            and (rate(longbow_bm25_documents_indexed_total[5m]) or vector(0)) == 0
         for: 15m
         labels:
           severity: info
         annotations:
           summary: "BM25 indexing activity low"
-          description: "Hybrid search is enabled but no documents have been indexed to BM25 for 15 minutes."
+          description: "Keyword searches are being served but no documents have been indexed to BM25 for 15 minutes. Hybrid results will be keyword-only."
 
   - name: longbow_wal_alerts
     rules:
@@ -88,7 +104,7 @@ groups:
           description: "P95 index job latency exceeds 10 seconds."
 
       - alert: LongbowIndexBuildFailures
-        expr: rate(longbow_index_creation_failures_total[5m]) > 0
+        expr: sum by (type) (rate(longbow_index_creations_total{status="error"}[5m])) > 0
         for: 2m
         labels:
           severity: critical
@@ -164,7 +180,7 @@ groups:
           description: "Quorum writes failing at {{ $value }} per second for {{ $labels.consistency }}."
 
       - alert: LongbowReplicationStalled
-        expr: rate(longbow_replication_success_total[10m]) == 0 AND rate(longbow_replication_failure_total[10m]) == 0
+        expr: rate(longbow_replication_success_total[10m]) == 0 and rate(longbow_replication_failures_total[10m]) == 0
         for: 5m
         labels:
           severity: warning
@@ -213,7 +229,7 @@ groups:
   - name: longbow_performance_alerts
     rules:
       - alert: LongbowHighIpcErrors
-        expr: rate(longbow_ipc_decode_errors_total[5m]) > 1
+        expr: sum by (type, error) (rate(longbow_hnsw_arrow_extraction_errors_total[5m])) > 1
         for: 1m
         labels:
           severity: warning
@@ -240,13 +256,13 @@ groups:
           description: "P99 GPU search latency exceeds 500ms."
 
       - alert: LongbowGPUFailure
-        expr: rate(longbow_vector_search_gpu_operations_total[5m]) == 0 AND longbow_gpu_enabled == 1
+        expr: sum(rate(longbow_vector_search_gpu_operations_total{status="error"}[5m])) > 0
         for: 5m
         labels:
           severity: critical
         annotations:
           summary: "GPU acceleration failure"
-          description: "GPU is enabled but no operations are being processed, may indicate driver or hang issue."
+          description: 'GPU-backed vector searches are reporting errors: {{ $value | humanize }} per second. Search falls back to CPU. Check longbow_gpu_fallback_total and longbow_gpu_device_temperature_celsius.'
 
       - alert: LongbowHighLockContention
         expr: histogram_quantile(0.95, sum(rate(longbow_dataset_lock_wait_duration_seconds_bucket[5m])) by (le, operation)) > 0.1
@@ -283,10 +299,10 @@ groups:
         expr: sum(rate(longbow_vector_search_latency_seconds_count[5m]))
 
       - record: job:longbow_put_qps:rate5m
-        expr: sum(rate(longbow_flight_rows_processed_total{method="put"}[5m]))
+        expr: sum(rate(longbow_flight_rows_processed_total{operation="put"}[5m]))
 
       - record: job:longbow_zero_copy_ratio:rate5m
-        expr: sum(rate(longbow_doget_zero_copy_total{type="zero_copy_retain"}[5m])) / (sum(rate(longbow_doget_zero_copy_total[5m])) + 1)
+        expr: sum(rate(longbow_do_get_zero_copy_total{type="zero_copy_retain"}[5m])) / (sum(rate(longbow_do_get_zero_copy_total[5m])) + 1)
 
       - record: job:longbow_quorum_success_rate:rate5m
         expr: sum(rate(longbow_quorum_success_total[5m])) / (sum(rate(longbow_quorum_success_total[5m])) + sum(rate(longbow_quorum_failure_total[5m])) + 1)
@@ -426,7 +442,7 @@ groups:
   - name: longbow_gpu_alerts
     rules:
       - alert: LongbowGPUMemoryPressure
-        expr: longbow_gpu_memory_used_bytes / longbow_gpu_memory_total_bytes > 0.9
+        expr: sum by (device) (longbow_gpu_memory_bytes{type="allocated"}) / sum by (device) (longbow_gpu_memory_bytes{type="capacity"}) > 0.9
         for: 2m
         labels:
           severity: warning
@@ -475,16 +491,16 @@ groups:
   - name: longbow_storage_alerts
     rules:
       - alert: LongbowIOUringNotAvailable
-        expr: longbow_storage_iouring_available == 0 AND ONGBOW_STORAGE_USE_IOURING == 1
+        expr: longbow_iouring_ring_active == 0
         for: 1m
         labels:
           severity: warning
         annotations:
           summary: "io_uring not available"
-          description: "io_uring storage is enabled but not available on this system."
+          description: "The io_uring ring is closed while io_uring storage is configured. WAL writes are falling back to a slower path. Check longbow_iouring_errors_total."
 
       - alert: LongbowHighIOWait
-        expr: rate(longbow_storage_io_wait_seconds_total[5m]) > 1
+        expr: histogram_quantile(0.99, sum(rate(longbow_io_write_latency_seconds_bucket[5m])) by (le, backend)) > 1
         for: 5m
         labels:
           severity: warning
@@ -693,7 +709,7 @@ groups:
   - name: longbow_bulk_insert_alerts
     # Construction cost of HNSW bulk insert. These exist because bulk-insert
     # latency was charted but never alerted: a 250k turboquant build could run
-    # for 45 minutes with nothing firing. See docs/roadmap.md section 9.2.
+    # for 45 minutes with nothing firing. See grafana/README.md.
     rules:
       # Thresholded at 300s, which is above the healthy band and below the point
       # where a build looks stuck. This only became expressible once the Go

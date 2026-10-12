@@ -786,30 +786,26 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		ds.initMu.Unlock()
 	}
 
-	currentRecords := ds.Records.Read()
-	batchIdx := len(currentRecords)
-	newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
-	copy(newRecords, currentRecords)
-	newRecords[len(currentRecords)] = rec
-	ds.Records.UpdateInPlace(newRecords)
+	currCPU := lmem.GetCurrentCPU()
+	currNode := -1
+	if s.numaTopology != nil {
+		currNode = s.numaTopology.GetNodeForCPU(currCPU)
+	}
+
+	// Global row offset of this batch, read from the running counter rather
+	// than summed over every historical batch. The old O(N) loop sat inside
+	// the dataset write lock, so ingestion latency grew super-linearly with
+	// dataset size.
+	baseRowID := ds.TotalIngestedRows.Load()
+
+	// Amortised O(1) append: Records and BatchNodes grow geometrically and the
+	// row counter is advanced in place, replacing three O(N) passes (two
+	// reallocations plus the row sum) under the same lock.
+	batchIdx := ds.appendRecordLocked(rec, currNode)
 	rec.Retain()
 
-	// Index text columns for hybrid BM25 search
-	baseRowID := uint32(0)
-	for _, r := range currentRecords {
-		// #nosec G115
-		baseRowID += uint32(r.NumRows())
-	}
-	s.indexTextColumnsForHybridSearch(ds, rec, baseRowID)
-
 	// Index categorical string columns into 16-bit dictionary codes for vectorized SIMD filter evaluation
-	for i, f := range rec.Schema().Fields() {
-		if f.Type.ID() == arrow.STRING {
-			if strCol, ok := rec.Column(i).(*array.String); ok {
-				ds.IndexStringColumn(f.Name, batchIdx, strCol)
-			}
-		}
-	}
+	ds.indexCategoricalColumns(rec, batchIdx)
 
 	// Mark dataset as ready after first successful ingestion
 	if !ds.IsReady.Load() {
@@ -817,22 +813,17 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		s.logger.Info().Str("dataset", name).Msg("Dataset metadata registration complete (Ready for queries)")
 	}
 
-	currCPU := lmem.GetCurrentCPU()
-	currNode := -1
-	if s.numaTopology != nil {
-		currNode = s.numaTopology.GetNodeForCPU(currCPU)
-	}
-	currentNodes := ds.BatchNodes.Read()
-	newNodes := make([]int, len(currentNodes)+1)
-	copy(newNodes, currentNodes)
-	newNodes[len(currentNodes)] = currNode
-	ds.BatchNodes.UpdateInPlace(newNodes)
-
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
 
 	ds.dataMu.Unlock()
 	dataMuLocked = false
 	traceLog("dataMu critical section")
+
+	// Hybrid text indexing runs on the background text indexer. Tokenising
+	// every text cell and rewriting the BM25 dictionaries is orders of
+	// magnitude more expensive than publishing the record, and it used to run
+	// inline here, stalling every other ingestion worker on the dataset lock.
+	s.enqueueTextIndexing(ds, rec, uint32(baseRowID)) // #nosec G115 -- batches cannot exceed 4B rows
 
 	// Update Primary Index and LWW/Merkle outside the main lock to prevent search-blocking
 	// contention while processing O(N) metadata updates.

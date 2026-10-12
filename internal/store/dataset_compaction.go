@@ -140,7 +140,7 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 	}
 
 	finalRecords := append(newRecords, addedDuring...)
-	d.Records.UpdateInPlace(finalRecords)
+	d.replaceRecords(finalRecords)
 	d.Tombstones = newTombstones
 
 	// Update PrimaryIndex for remapped IDs

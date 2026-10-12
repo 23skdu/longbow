@@ -165,7 +165,7 @@ type ArrowHNSW struct {
 	// Graph Navigation
 	navigator     *GraphNavigator
 	tqCompute     *TurboQuantCompute
-	tqDecodeCache atomic.Pointer[tqDecodeCache] // pre-decoded TQ vectors (non-nil during batch insert for fast construction)
+	tqDecodeCache atomic.Pointer[tqDecodeCache]  // pre-decoded TQ vectors (non-nil during batch insert for fast construction)
 	tqArena       atomic.Pointer[TQScratchArena] // ephemeral chunked scratch arena for caching reconstructed vectors during indexing
 	gpuTrained    atomic.Bool
 	topo          *memory.NUMATopology
@@ -501,6 +501,19 @@ func (h *ArrowHNSW) getCandidateSlice(capacity int) []types.Candidate {
 		s = s[:0]
 	}
 	return s
+}
+
+// putCandidateSlice returns a slice obtained from getCandidateSlice to the pool.
+//
+// searchLayerForInsert hands out a pooled slice, and bulk linkage used to
+// copy it into a second, untracked slice per node per layer - so every node in
+// a build leaked one candidate slice to the GC. Callers must not use s after
+// returning it here.
+func (h *ArrowHNSW) putCandidateSlice(s []types.Candidate) {
+	if s == nil {
+		return
+	}
+	h.candidatePool.Put(&s)
 }
 
 // SetDisableNodeCountMetric prevents this ArrowHNSW from reporting HNSWNodeCount.

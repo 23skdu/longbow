@@ -123,6 +123,33 @@ type ArrowSearchContext struct {
 
 	scratchDists []float32
 
+	// Bulk-linkage scratch.
+	//
+	// addBatchBulkInternal links one node at a time and each node performs a
+	// forward AddConnectionsBatch plus one reverse AddConnectionsBatch per
+	// selected neighbour. Without these buffers that is ~3 heap slices per
+	// neighbour per node per layer: across a 1M-node build the profile showed
+	// 39.4 GB allocated by the CAS retry loop in UpdateNeighbors, 32.3 GB by
+	// computePrunedNeighbors and 28.9 GB by AddConnectionsBatch. The buffers
+	// below are owned exclusively by the linkage path for the lifetime of one
+	// node's linkage, which is what makes them safe to reuse - they are never
+	// handed to the reader-facing search path.
+	bulkCandidates []types.Candidate // filtered candidate list before selectNeighbors
+	bulkSources    []uint32          // forward neighbour IDs
+	bulkDists      []float32         // forward neighbour distances
+	linkSrc        []uint32          // single-element reverse-link source list
+	linkDist       []float32         // single-element reverse-link distance list
+	batchSrc       []uint32          // not-yet-present sources of a batch add
+	batchNext      []uint32          // merged neighbour list of a batch add
+	diffOld        []uint32          // pre-update neighbour list for the in-degree diff
+	diffNew        []uint32          // post-update neighbour list for the in-degree diff
+	// diff records the committed old/next pair for the call in flight. It
+	// lives here rather than in AddConnectionsBatch locals because the
+	// UpdateNeighbors closure assigns through it, which would otherwise force
+	// two slice headers - and the closure environment - onto the heap on every
+	// one of the ~33 calls a single bulk-inserted node makes.
+	diff neighborDiff
+
 	scratchExtractedF32    [][]float32
 	scratchSelectedVecsF32 [][]float32
 	scratchPool            []uint32
@@ -176,6 +203,15 @@ type ArrowSearchContext struct {
 	MaxGeneration    uint64
 }
 
+// neighborDiff records the pre- and post-update neighbour lists a single
+// AddConnection/AddConnectionsBatch call committed, so the layer-0 in-degree
+// delta can be applied after UpdateNeighbors returns.
+type neighborDiff struct {
+	old   []uint32
+	next  []uint32
+	valid bool
+}
+
 // ArrowSearchContextPool manages reusable ArrowSearchContext objects.
 type ArrowSearchContextPool struct {
 	ring *LockFreeRingBuffer[*ArrowSearchContext]
@@ -198,6 +234,15 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		scratchSelectedVecsF32: make([][]float32, 0, 100),
 		scratchPool:            make([]uint32, 0, 128),
 		scratchPruned:          make([]uint32, 0, 128),
+		bulkCandidates:         make([]types.Candidate, 0, 256),
+		bulkSources:            make([]uint32, 0, 64),
+		bulkDists:              make([]float32, 0, 64),
+		linkSrc:                make([]uint32, 0, 1),
+		linkDist:               make([]float32, 0, 1),
+		batchSrc:               make([]uint32, 0, 64),
+		batchNext:              make([]uint32, 0, 64),
+		diffOld:                make([]uint32, 0, 64),
+		diffNew:                make([]uint32, 0, 64),
 		queryBQ:                make([]uint64, 0, 256),
 		querySQ8:               make([]uint8, 0, 1536),
 		queryTQ:                make([]byte, 0, 512),
@@ -282,6 +327,15 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.scratchSelectedVecsF32 = ctx.scratchSelectedVecsF32[:0]
 	ctx.scratchPool = ctx.scratchPool[:0]
 	ctx.scratchPruned = ctx.scratchPruned[:0]
+	ctx.bulkCandidates = ctx.bulkCandidates[:0]
+	ctx.bulkSources = ctx.bulkSources[:0]
+	ctx.bulkDists = ctx.bulkDists[:0]
+	ctx.linkSrc = ctx.linkSrc[:0]
+	ctx.linkDist = ctx.linkDist[:0]
+	ctx.batchSrc = ctx.batchSrc[:0]
+	ctx.batchNext = ctx.batchNext[:0]
+	ctx.diffOld = ctx.diffOld[:0]
+	ctx.diffNew = ctx.diffNew[:0]
 	ctx.queryBQ = ctx.queryBQ[:0]
 	ctx.querySQ8 = ctx.querySQ8[:0]
 	ctx.queryTQ = ctx.queryTQ[:0]

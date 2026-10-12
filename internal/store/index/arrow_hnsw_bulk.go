@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -82,6 +83,78 @@ var bulkChainLinksEnabled = func() bool {
 	}
 	return true
 }()
+
+// resolveArrowBatchLayout flattens an []arrow.RecordBatch into a per-row index
+// so that the parallel preparation loop can locate the owning batch of a row
+// with a binary search and reuse a pre-resolved vector column index.
+//
+// recRowStart[k] is the first global row index of batch k (recRowStart[0] == 0);
+// batches are laid out back to back in slice order. recVecCol[k] caches the
+// vector column index, or -1 when it could not be resolved and the caller
+// should fall back to the metadata lookup.
+//
+// For any other vector representation both results are nil, which makes the
+// caller skip the lookup entirely.
+func resolveArrowBatchLayout(vecs any) (recRowStart []int, recVecCol []int) {
+	vs, ok := vecs.([]arrow.RecordBatch)
+	if !ok || len(vs) == 0 {
+		return nil, nil
+	}
+
+	recRowStart = make([]int, len(vs)+1)
+	recVecCol = make([]int, len(vs))
+	for i, rec := range vs {
+		if rec != nil {
+			recRowStart[i+1] = recRowStart[i] + int(rec.NumRows())
+		} else {
+			recRowStart[i+1] = recRowStart[i]
+		}
+	}
+	return recRowStart, recVecCol
+}
+
+// bulkEfConstruction returns the ef to use for a bulk sub-batch insertion.
+//
+// Every candidate in the beam costs a full TurboQuant polar reconstruction plus
+// L2 when the data type is TQ - roughly an order of magnitude more work than the
+// float32 kernel - so a fixed ef that is affordable for float32 turns the build
+// super-linear as the graph grows. The beam is narrowed as the graph passes the
+// scale at which full-quality search stopped being affordable.
+//
+// The clamp floor is the layer-0 degree cap: a beam narrower than the number of
+// links a node may hold cannot fill them, and an under-filled layer 0 is what
+// makes a graph unreachable rather than merely inaccurate.
+func (h *ArrowHNSW) bulkEfConstruction(nodeCount int) int {
+	ef := int(h.efConstruction.Load())
+	if h.config.AdaptiveEf {
+		ef = h.getAdaptiveEf(nodeCount)
+	}
+
+	if h.config.DataType != types.VectorTypeTQ && !h.config.TurboQuantEnabled {
+		return ef
+	}
+
+	switch {
+	case nodeCount >= turboQuantEfFullGraph:
+		ef = ef / 4
+	case nodeCount >= turboQuantEfRampMid:
+		ef = ef / 2
+	}
+
+	if floor := int(h.mMax0.Load()); floor > 0 && ef < floor {
+		ef = floor
+	}
+	if ef < 1 {
+		ef = 1
+	}
+	return ef
+}
+
+// Graph sizes at which the TurboQuant construction beam is stepped down.
+const (
+	turboQuantEfRampMid   = 250_000
+	turboQuantEfFullGraph = 1_000_000
+)
 
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
@@ -297,6 +370,21 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		parallelFor = pool.ParallelForHighPriority
 	}
 
+	// Resolve the Arrow batch layout once, before dispatching workers.
+	//
+	// The old per-row path walked the record slice linearly to find which batch
+	// owns row j, then re-asked the schema for the vector column on every
+	// iteration. With B batches that is O(n*B) record probes and n schema
+	// lookups for a batch whose shape is fixed at entry.
+	recRowStart, recVecCol := resolveArrowBatchLayout(vecs)
+	if recVecCol != nil {
+		for i, rec := range vecs.([]arrow.RecordBatch) {
+			if rec != nil {
+				recVecCol[i] = h.getVectorColumnIndex(rec)
+			}
+		}
+	}
+
 	parallelFor(n, chunkSize, func(start, end int) {
 		errMu.Lock()
 		if errPrep != nil || ctx.Err() != nil {
@@ -340,27 +428,21 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					v = vs[j]
 				}
 			case []arrow.RecordBatch:
-				// Discover vector within the batch of records
-				// Assuming standard sequential mapping, skipping any nil batches
-				row := j
-				recIdx := 0
-				for recIdx < len(vs) {
-					if vs[recIdx] == nil {
-						recIdx++
-						continue
-					}
-					numRows := int(vs[recIdx].NumRows())
-					if row < numRows {
-						break
-					}
-					row -= numRows
-					recIdx++
-				}
-				if recIdx < len(vs) && vs[recIdx] != nil {
+				// recRowStart is the prefix sum of the batch row counts,
+				// so locating the owning batch is a binary search instead
+				// of a scan, and the vector column index was resolved
+				// once for the whole batch instead of per row.
+				recIdx := sort.Search(len(recRowStart), func(k int) bool {
+					return recRowStart[k] > j
+				}) - 1
+				if recIdx >= 0 && recIdx < len(vs) && vs[recIdx] != nil {
 					rec := vs[recIdx]
-					idx := h.getVectorColumnIndex(rec)
+					idx := recVecCol[recIdx]
+					if idx == -1 {
+						idx = h.getVectorColumnIndex(rec)
+					}
 					if idx != -1 {
-						v = h.extractVector(rec, idx, row)
+						v = h.extractVector(rec, idx, j-recRowStart[recIdx])
 					}
 				}
 			case [][]uint32:
@@ -704,6 +786,17 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			}
 		}
 
+		// Candidate lists produced by the graph search of the current sub-batch,
+		// indexed by position within remainingNodes.
+		//
+		// Allocated once for the whole batch rather than once per sub-batch per
+		// layer. At 1M vectors the per-sub-batch shape allocated and zeroed an
+		// 8 MB pointer array ~244 times per layer, which is several GB of pure
+		// memset for a structure that only ever holds subBatchSize live
+		// entries. Entries outside the current sub-batch are stale and are
+		// cleared as the sub-batch is dispatched.
+		graphCandidates := make([]*[]types.Candidate, numRemaining)
+
 		for i := 0; i < len(activeIndices); i += subBatchSize {
 			// Sub-batches are the unit of work between two graph clones, so
 			// this is the natural place to bail out without leaving a
@@ -718,13 +811,25 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			subIndices := activeIndices[i:endBatch]
 
 			// 3a. Search against Graph (Parallel for Sub-Batch)
-			graphCandidates := make([]*[]types.Candidate, numRemaining)
 			var errLayer error
 			var layerMu sync.Mutex
 
 			layerChunkSize := (len(subIndices) + runtime.NumCPU() - 1) / runtime.NumCPU()
 			if layerChunkSize < 32 {
 				layerChunkSize = 32
+			}
+
+			// releaseCandidateLists returns this sub-batch's search results to the
+			// candidate pool and clears the slots so the next sub-batch repopulates
+			// them. searchLayerForInsert hands out pooled slices, so without this
+			// every node of every layer leaked one to the GC.
+			releaseCandidateLists := func() {
+				for _, idx := range subIndices {
+					if prev := graphCandidates[idx]; prev != nil {
+						h.putCandidateSlice(*prev)
+						graphCandidates[idx] = nil
+					}
+				}
 			}
 
 			pool.ParallelFor(len(subIndices), layerChunkSize, func(start, end int) {
@@ -774,10 +879,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 						}
 					} else {
 						// Insertion phase
-						ef := int(h.efConstruction.Load())
-						if h.config.AdaptiveEf {
-							ef = h.getAdaptiveEf(int(h.nodeCount.Load()))
-						}
+						ef := h.bulkEfConstruction(int(h.nodeCount.Load()))
 
 						res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, ef, lc, workerData)
 						if err != nil {
@@ -786,10 +888,11 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 							layerMu.Unlock()
 							return
 						}
-						pBuf := new([]types.Candidate)
-						*pBuf = make([]types.Candidate, 0, len(res))
-						*pBuf = append(*pBuf, res...)
-						graphCandidates[idx] = pBuf
+						// searchLayerForInsert already returns a pooled slice; the old
+						// code copied it into a second, unpooled slice per node per
+						// layer, which meant one candidate slice leaked to the GC
+						// for every node in every layer of every bulk build.
+						graphCandidates[idx] = &res
 
 						if len(res) > 0 {
 							currentEps[idx] = res[0].ID
@@ -856,12 +959,16 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					}
 
 					allCandidates := *candidatesBuf
-					var candidates []types.Candidate
+					// Filter out the node itself into a pooled buffer. The old
+					// `var candidates []types.Candidate` + append grew from nil,
+					// costing log2(len) reallocations per node per layer.
+					candidates := append(ctxLink.bulkCandidates[:0], allCandidates[:0:0]...)
 					for _, c := range allCandidates {
 						if c.ID != node.id {
 							candidates = append(candidates, c)
 						}
 					}
+					ctxLink.bulkCandidates = candidates[:0]
 
 					if len(candidates) == 0 {
 						h.searchPool.PutWithMetrics(ctxLink, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
@@ -881,13 +988,22 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					// R5: Gate chain link on proximity (chainDist <= median(candidates)),
 					// avoiding artificial long-range edges on shuffled data while preserving
 					// connectivity on collinear/ordered data.
+					//
+					// The single-element source/distance slices are pooled: this
+					// used to allocate two of them per node on top of the two
+					// more it allocated per reverse link below.
+					linkSrc := append(ctxLink.linkSrc[:0], node.id)
+					ctxLink.linkSrc = linkSrc[:0]
+					linkDist := append(ctxLink.linkDist[:0], float32(0))
+					ctxLink.linkDist = linkDist[:0]
 					if lc == 0 && node.id > 0 && bulkChainLinksEnabled {
-						var chainDist [1]float32
-						h.computeDistances(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:])
+						h.computeDistances(ctxLink, data, node.id-1, linkSrc, linkDist)
 						medianDist := candidates[len(candidates)/2].Dist
-						if chainDist[0] <= medianDist {
-							_ = h.AddConnectionsBatch(ctxLink, data, node.id-1, []uint32{node.id}, chainDist[:], lc, int(h.mMax0.Load()))
-							_ = h.AddConnectionsBatch(ctxLink, data, node.id, []uint32{node.id - 1}, chainDist[:], lc, int(h.mMax0.Load()))
+						if linkDist[0] <= medianDist {
+							_ = h.AddConnectionsBatch(ctxLink, data, node.id-1, linkSrc, linkDist, lc, int(h.mMax0.Load()))
+							backSrc := append(ctxLink.linkSrc[:0], node.id-1)
+							ctxLink.linkSrc = backSrc[:0]
+							_ = h.AddConnectionsBatch(ctxLink, data, node.id, backSrc, linkDist, lc, int(h.mMax0.Load()))
 						}
 					}
 
@@ -909,12 +1025,16 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 						continue
 					}
 
-					fSources := make([]uint32, 0, len(neighbors))
-					fDists := make([]float32, 0, len(neighbors))
+					fSources := ctxLink.bulkSources[:0]
 					for _, n := range neighbors {
 						fSources = append(fSources, n.ID)
+					}
+					fDists := ctxLink.bulkDists[:0]
+					for _, n := range neighbors {
 						fDists = append(fDists, n.Dist)
 					}
+					ctxLink.bulkSources = fSources[:0]
+					ctxLink.bulkDists = fDists[:0]
 
 					_ = h.AddConnectionsBatch(ctxLink, data, node.id, fSources, fDists, lc, int(maxConn))
 
@@ -922,8 +1042,16 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					// neighbour selection (to prune an over-capacity target),
 					// which overwrites the shared scratch buffer that
 					// selectNeighbors returned.
+					//
+					// The reverse link is rebuilt into the pooled single-element
+					// buffers on every iteration instead of allocating a fresh
+					// []uint32 and []float32 per neighbour.
 					for i, nID := range fSources {
-						_ = h.AddConnectionsBatch(ctxLink, data, nID, []uint32{node.id}, []float32{fDists[i]}, lc, int(maxConn))
+						revSrc := append(ctxLink.linkSrc[:0], node.id)
+						ctxLink.linkSrc = revSrc[:0]
+						revDist := append(ctxLink.linkDist[:0], fDists[i])
+						ctxLink.linkDist = revDist[:0]
+						_ = h.AddConnectionsBatch(ctxLink, data, nID, revSrc, revDist, lc, int(maxConn))
 					}
 
 					// R26: Guarantee that node.id has at least one inbound edge in layer 0.
@@ -943,6 +1071,10 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			})
 
 			runtime.KeepAlive(data) // Keep GraphData alive during blocking parallel linkage
+
+			// The sub-batch is linked; its search results are dead. Return them
+			// before the next sub-batch repopulates the same slots.
+			releaseCandidateLists()
 
 			// Surface an abort raised by the linkage workers before the
 			// snapshot clone below, which would otherwise publish a

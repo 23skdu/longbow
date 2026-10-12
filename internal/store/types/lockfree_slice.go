@@ -37,6 +37,64 @@ func (l *LockFreeSlice[T]) Read() []T {
 	return *ptr
 }
 
+// Append adds an element to the end of the slice and returns the new length.
+//
+// Growth is geometric, so appending N elements costs O(N) in total instead of
+// the O(N^2) an external `make`/`copy` on every append costs. When the backing
+// array already has spare capacity the element is written past the *published*
+// length: a reader that already loaded the old slice header can only observe
+// [0:len], so an in-flight append is invisible to it and the array needs no
+// copy at all.
+func (l *LockFreeSlice[T]) Append(item T) int {
+	l.writeMu.Lock()
+	defer l.writeMu.Unlock()
+
+	var old []T
+	if cur := l.data.Load(); cur != nil {
+		old = *cur
+	}
+
+	n := len(old) + 1
+	if n <= cap(old) {
+		grown := old[:n]
+		grown[n-1] = item
+		l.data.Store(&grown)
+		l.currentEpoch.Add(1)
+		return n
+	}
+
+	next := make([]T, n, appendGrowth(n))
+	copy(next, old)
+	next[n-1] = item
+	l.data.Store(&next)
+	l.currentEpoch.Add(1)
+	return n
+}
+
+// appendGrowth returns the capacity to reserve for an append that reaches
+// length n. Batches accumulate one entry at a time for the lifetime of a
+// dataset, so the reserve is deliberately generous: the amortised copy cost of
+// doubling is negligible next to the number of ingest batches it removes.
+func appendGrowth(n int) int {
+	const maxInt = int(^uint(0) >> 1)
+
+	c := 32
+	for c < n && c < maxInt/2 {
+		c *= 2
+	}
+	return c
+}
+
+// Len returns the current number of elements. It is a single atomic load, so
+// unlike summing a caller-maintained counter it cannot drift.
+func (l *LockFreeSlice[T]) Len() int {
+	ptr := l.data.Load()
+	if ptr == nil {
+		return 0
+	}
+	return len(*ptr)
+}
+
 // Update performs a copy-on-write update.
 func (l *LockFreeSlice[T]) Update(newSlice []T) {
 	l.writeMu.Lock()

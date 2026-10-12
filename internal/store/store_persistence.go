@@ -128,12 +128,7 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 	defer ds.dataMu.Unlock()
 
 	rec.Retain() // Dataset takes ownership
-	currentRecords := ds.Records.Read()
-	batchIdx := len(currentRecords)
-	newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
-	copy(newRecords, currentRecords)
-	newRecords[len(currentRecords)] = rec
-	ds.Records.UpdateInPlace(newRecords)
+	batchIdx := ds.appendRecordLocked(rec, -1)
 
 	// Update Primary Index and natively process RowLocation tombstones for Upserts
 	ds.UpdatePrimaryIndex(batchIdx, ds.ExtractIDs(rec))
@@ -242,11 +237,7 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 	defer ds.dataMu.Unlock()
 
 	for _, rec := range item.Records {
-		currentRecords := ds.Records.Read()
-		newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
-		copy(newRecords, currentRecords)
-		newRecords[len(currentRecords)] = rec
-		ds.Records.UpdateInPlace(newRecords)
+		ds.appendRecordLocked(rec, -1)
 
 		size := estimateBatchSize(rec)
 		ds.SizeBytes.Add(size)

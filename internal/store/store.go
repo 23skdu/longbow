@@ -54,6 +54,15 @@ type VectorStore struct {
 	persistenceQueue    chan persistenceJob    // Async persistence queue
 	pendingOverflowJobs atomic.Int64           // Jobs spinning in applyBatchToMemory
 
+	// Background hybrid text/BM25 indexing (lazily started, see text_index_worker.go).
+	textQueueOnce sync.Once
+	textQueue     *textIndexQueue
+	// textIndexDrainBudget bounds how long shutdown waits for the text queue
+	// to empty before giving up and releasing what is left. Zero disables the
+	// wait entirely, which is what tests want when they hold a queue with no
+	// workers attached.
+	textIndexDrainBudget atomic.Int64 // time.Duration; zero means "do not wait"
+
 	// Lifecycle
 	stopChan           chan struct{}
 	stopOnce           sync.Once      // Protects stopChan closure
@@ -240,6 +249,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	vs.datasets.Store(&emptyMap)
 
 	vs.maxMemory.Store(maxMemoryBytes)
+	vs.textIndexDrainBudget.Store(int64(defaultTextIndexDrainBudget))
 	vs.indexQueue = NewIndexJobQueueLockFree(DefaultIndexJobQueueConfig())
 	vs.ingestionQueue = NewIngestionRingBuffer(4096)    // Absorbs burst traffic without blocking DoPut
 	vs.persistenceQueue = make(chan persistenceJob, 64) // Reduced from 10000 to prevent OOM

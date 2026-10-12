@@ -68,9 +68,19 @@ func (idx *BM25InvertedIndex) docShardIndex(id VectorID) int {
 	return int(uint64(id) % invertedIndexShards)
 }
 
-// DocCount returns the total number of documents in the index
+// DocCount returns the total number of documents in the index.
+//
+// This counts distinct documents, not insertions: re-indexing a document
+// updates it in place. ScorerDocs exposes the scorer's own corpus count,
+// which is what the IDF of every term is computed against - the two must
+// agree, and a divergence between them is a scoring bug.
 func (idx *BM25InvertedIndex) DocCount() int {
 	return int(idx.docCount.Load())
+}
+
+// ScorerDocs returns the document count the BM25 scorer derives IDF from.
+func (idx *BM25InvertedIndex) ScorerDocs() int {
+	return idx.scorer.TotalDocs()
 }
 
 // GetDocLength returns the length (term count) of a document
@@ -109,108 +119,184 @@ func (idx *BM25InvertedIndex) GetDocLengthsBatch(ids []VectorID, dst map[VectorI
 	}
 }
 
-// Add indexes a document with the given text
+// BM25Document is a pre-tokenised document ready for bulk insertion.
+//
+// Callers that already have the token slice - the ingestion pipeline, which
+// tokenises every text cell exactly once and feeds both the legacy and the
+// arena index - use this to avoid re-tokenising inside Add.
+type BM25Document struct {
+	ID     VectorID
+	Tokens []string
+}
+
+// Add indexes a document with the given text.
 func (idx *BM25InvertedIndex) Add(id VectorID, text string) {
 	terms := Tokenize(text)
 	if len(terms) == 0 {
 		return
 	}
+	idx.AddBatch([]BM25Document{{ID: id, Tokens: terms}})
+}
 
-	docLen := len(terms)
-
-	// Calculate term frequencies
-	termFreq := make(map[string]int)
-	for _, term := range terms {
-		termFreq[term]++
+// AddBatch indexes a group of documents, coalescing every write into one
+// copy-on-write per shard.
+//
+// Add rewrites a whole shard map and every touched posting list once per
+// document. Doing that for a batch of D documents costs O(S * |shard| * D) map
+// clones plus O(D) posting-list reallocations, and profiling a pure-vector
+// benchmark attributed ~943 GB of process allocation and ~120 s of mutex
+// delay to exactly this path. Grouping by shard first collapses the whole
+// batch into a single BulkStore per shard and one posting-list rebuild per
+// touched term, so the same work costs O(S) map clones regardless of D.
+//
+// Callers must not retain or mutate Tokens after the call returns.
+func (idx *BM25InvertedIndex) AddBatch(docs []BM25Document) {
+	if len(docs) == 0 {
+		return
 	}
 
-	// Store document metadata - COW update for the shard
-	docShardIdx := idx.docShardIndex(id)
-	docShard := &idx.docShards[docShardIdx]
-
-	// Atomic update of length and terms
-	oldLen, existed := docShard.length.Get(id)
-
-	docShard.terms.Store(id, terms)
-	docShard.length.Store(id, docLen)
-
-	// Update doc count and total length
-	if !existed {
-		idx.docCount.Add(1)
-		idx.totalLen.Add(int64(docLen))
-	} else {
-		idx.totalLen.Add(int64(docLen - oldLen))
+	// shardTerms[shard][term] collects every (docID, tf) contributed by this
+	// batch. A term can legitimately be touched by many documents in the same
+	// batch, and all of them must land in a single rebuilt posting list.
+	type posting struct {
+		id VectorID
+		tf int
 	}
+	shardTerms := make(map[int]map[string][]posting)
 
-	// Update scorer corpus stats
-	idx.scorer.AddDocument(docLen)
+	// docShardWrites groups the per-document metadata by doc shard so the
+	// length/terms maps are also rewritten once per shard, not once per doc.
+	docShardTerms := make(map[int]map[VectorID][]string)
+	docShardLengths := make(map[int]map[VectorID]int)
 
-	// Group terms by shard
-	shardTerms := make(map[int]map[string]int)
-	for term, freq := range termFreq {
-		sIdx := idx.termShardIndex(term)
-		if shardTerms[sIdx] == nil {
-			shardTerms[sIdx] = make(map[string]int)
+	for _, doc := range docs {
+		if len(doc.Tokens) == 0 {
+			continue
 		}
-		shardTerms[sIdx][term] = freq
+		docLen := len(doc.Tokens)
+
+		docShardIdx := idx.docShardIndex(doc.ID)
+		docShard := &idx.docShards[docShardIdx]
+		oldLen, existed := docShard.length.Get(doc.ID)
+
+		if docShardTerms[docShardIdx] == nil {
+			docShardTerms[docShardIdx] = make(map[VectorID][]string)
+			docShardLengths[docShardIdx] = make(map[VectorID]int)
+		}
+		docShardTerms[docShardIdx][doc.ID] = doc.Tokens
+		docShardLengths[docShardIdx][doc.ID] = docLen
+
+		if !existed {
+			idx.docCount.Add(1)
+			idx.totalLen.Add(int64(docLen))
+			// Only genuinely new documents belong in the scorer corpus: the
+			// previous per-document path called AddDocument unconditionally,
+			// so re-indexing a document inflated totalDocs and with it the
+			// IDF of every term.
+			idx.scorer.AddDocument(docLen)
+		} else {
+			idx.totalLen.Add(int64(docLen - oldLen))
+		}
+
+		// Term frequencies for this document.
+		for _, term := range doc.Tokens {
+			sIdx := idx.termShardIndex(term)
+			if shardTerms[sIdx] == nil {
+				shardTerms[sIdx] = make(map[string][]posting)
+			}
+			shardTerms[sIdx][term] = append(shardTerms[sIdx][term], posting{id: doc.ID, tf: 1})
+		}
 	}
 
-	// Apply updates per shard
-	for sIdx, terms := range shardTerms {
+	// Fold the repeated (term, docID) pairs Add emitted one at a time into a
+	// single posting entry per term per document.
+	for _, byTerm := range shardTerms {
+		for term, ps := range byTerm {
+			if len(ps) < 2 {
+				continue
+			}
+			// Documents within one batch arrive in ascending order for the
+			// ingestion pipeline but AddBatch is a public API, so sort by doc
+			// ID before collapsing duplicates.
+			sort.Slice(ps, func(a, b int) bool { return ps[a].id < ps[b].id })
+			merged := ps[:1]
+			for _, p := range ps[1:] {
+				last := &merged[len(merged)-1]
+				if last.id == p.id {
+					last.tf += p.tf
+					continue
+				}
+				merged = append(merged, p)
+			}
+			byTerm[term] = merged
+		}
+	}
+
+	for sIdx, byTerm := range shardTerms {
 		shard := &idx.termShards[sIdx]
-		updates := make(map[string]*BM25PostingList)
-
-		// Load the current map for this shard once
 		currIndex := shard.index.Load()
+		updates := make(map[string]*BM25PostingList, len(byTerm))
 
-		for term, freq := range terms {
+		for term, ps := range byTerm {
 			shard.bloom.Add(term)
 
 			oldPL := currIndex[term]
-			var newPL *BM25PostingList
+			var newDocIDs []VectorID
+			var newTFs []int
 
 			if oldPL == nil {
-				newPL = &BM25PostingList{
-					DocIDs: []VectorID{id},
-					TFs:    []int{freq},
+				newDocIDs = make([]VectorID, len(ps))
+				newTFs = make([]int, len(ps))
+				for k, p := range ps {
+					newDocIDs[k] = p.id
+					newTFs[k] = p.tf
 				}
 			} else {
-				// Clone and update (COW for the posting list itself)
-				n := len(oldPL.DocIDs)
-				insertIdx := sort.Search(n, func(i int) bool {
-					return oldPL.DocIDs[i] >= id
-				})
+				// A sorted merge of the existing posting list and the batch's
+				// contributions: one pass over each, instead of reallocating
+				// and re-copying the whole list once per document.
+				newDocIDs = make([]VectorID, 0, len(oldPL.DocIDs)+len(ps))
+				newTFs = make([]int, 0, len(oldPL.DocIDs)+len(ps))
 
-				var newDocIDs []VectorID
-				var newTFs []int
-
-				if insertIdx < n && oldPL.DocIDs[insertIdx] == id {
-					// Update existing - reuse same length
-					newDocIDs = make([]VectorID, n)
-					newTFs = make([]int, n)
-					copy(newDocIDs, oldPL.DocIDs)
-					copy(newTFs, oldPL.TFs)
-					newTFs[insertIdx] = freq
-				} else {
-					// Insert new
-					newDocIDs = make([]VectorID, n+1)
-					newTFs = make([]int, n+1)
-					copy(newDocIDs[:insertIdx], oldPL.DocIDs[:insertIdx])
-					newDocIDs[insertIdx] = id
-					copy(newDocIDs[insertIdx+1:], oldPL.DocIDs[insertIdx:])
-
-					copy(newTFs[:insertIdx], oldPL.TFs[:insertIdx])
-					newTFs[insertIdx] = freq
-					copy(newTFs[insertIdx+1:], oldPL.TFs[insertIdx:])
+				i, j := 0, 0
+				for i < len(oldPL.DocIDs) && j < len(ps) {
+					switch {
+					case oldPL.DocIDs[i] < ps[j].id:
+						newDocIDs = append(newDocIDs, oldPL.DocIDs[i])
+						newTFs = append(newTFs, oldPL.TFs[i])
+						i++
+					case oldPL.DocIDs[i] > ps[j].id:
+						newDocIDs = append(newDocIDs, ps[j].id)
+						newTFs = append(newTFs, ps[j].tf)
+						j++
+					default:
+						// Document already indexed: the batch wins.
+						newDocIDs = append(newDocIDs, ps[j].id)
+						newTFs = append(newTFs, ps[j].tf)
+						i++
+						j++
+					}
 				}
-				newPL = &BM25PostingList{
-					DocIDs: newDocIDs,
-					TFs:    newTFs,
+				for ; i < len(oldPL.DocIDs); i++ {
+					newDocIDs = append(newDocIDs, oldPL.DocIDs[i])
+					newTFs = append(newTFs, oldPL.TFs[i])
+				}
+				for ; j < len(ps); j++ {
+					newDocIDs = append(newDocIDs, ps[j].id)
+					newTFs = append(newTFs, ps[j].tf)
 				}
 			}
-			updates[term] = newPL
+
+			updates[term] = &BM25PostingList{DocIDs: newDocIDs, TFs: newTFs}
 		}
+
 		shard.index.BulkStore(updates)
+	}
+
+	for sIdx, termsByDoc := range docShardTerms {
+		docShard := &idx.docShards[sIdx]
+		docShard.terms.BulkStore(termsByDoc)
+		docShard.length.BulkStore(docShardLengths[sIdx])
 	}
 }
 

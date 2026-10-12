@@ -30,33 +30,54 @@ cp "$here"/*_alerts_test.yml "$work/"
 # that the extraction drops, so it is re-added. Grafana template functions are
 # rewritten to their Prometheus equivalents because promtool only knows the latter.
 #
+# The end of a group is detected structurally - the next "  - name: " line -
+# rather than by naming the following group. Naming the neighbour meant every
+# insertion or reordering in rules.yml silently turned an existing test into a
+# no-op that still passed.
+#
 # This uses a single awk rather than `awk | awk` with an early exit in the second
 # stage. When the second stage exits early the first receives SIGPIPE, and under
 # `set -o pipefail` that aborts the script - but only when the timings happen to
 # line up, so it passes interactively and fails in a redirect.
 extract_group() {
-  local start="$1" stop="$2" out="$3"
-  awk -v s="  - name: $start" -v e="  - name: $stop" '
-    $0 == s { f = 1 }
-    f && $0 == e { exit }
+  local start="$1" out="$2"
+  awk -v s="  - name: $start" '
+    $0 == s { f = 1; print; next }
+    f && /^  - name: / { exit }
     f { print }
   ' "$work/rules.yml" \
     | sed 's/{{ \$value | humanizeDuration }}/V/; s/{{ \$value | humanizePercentage }}/V/; s/{{ \$value | humanize }}/V/' \
     > "$work/group.yml"
   { echo "groups:"; cat "$work/group.yml"; } > "$work/$out"
+  # A group that did not match would extract nothing and promtool would report
+  # a file with no rules, which passes for an empty test. Fail loudly instead.
+  if ! grep -q '^  - name: ' "$work/group.yml"; then
+    echo "extract_group: no rule group named '$start' in rules.yml" >&2
+    exit 1
+  fi
 }
 
-extract_group longbow_bulk_insert_alerts longbow_hnsw_contention_alerts bulk_insert_rules.yml
-extract_group longbow_temporal_alerts longbow_layer_eviction_alerts temporal_rules.yml
+# Every group with a matching <name>_alerts_test.yml gets a unit test.
+# Adding a group without a test is reported by the conformance gate
+# (TestRuleGroupsHaveUnitTests) rather than failing here, because parse-checking
+# an untested group is still worth doing.
+for testfile in "$here"/*_alerts_test.yml; do
+  [ -e "$testfile" ] || continue
+  name="$(basename "$testfile" .yml)"
+  group="longbow_${name%_test}"
+  echo "==> extracting $group for $name"
+  extract_group "$group" "${name%_test}.rules.yml"
+done
 
 echo "==> checking all rules parse"
 "$PROMTOOL" check rules "$work/rules.yml"
 
-# Each group's unit test lives in a file named after the group. The assertions
-# exercise that an alert fires when it should and stays silent when it should not,
-# so a broken expression that merely never fires is still a failure.
+# Each group's unit test asserts that an alert fires when it should and stays
+# silent when it should not, so an expression that merely never fires is a
+# failure rather than a silent pass.
 status=0
-for testfile in "$work"/*_alerts_test.yml; do
+for testfile in "$here"/*_alerts_test.yml; do
+  [ -e "$testfile" ] || continue
   name="$(basename "$testfile" .yml)"
   echo "==> running $name"
   ( cd "$work" && "$PROMTOOL" test rules "$name.yml" ) || status=1

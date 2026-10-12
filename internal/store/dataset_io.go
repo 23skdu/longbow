@@ -502,18 +502,7 @@ func (d *DatasetIO) ImportFromArrowIPC(ctx context.Context, name string, backend
 			break
 		}
 		totalRows += rec.NumRows()
-		currentRecords := ds.Records.Read()
-		batchIdx := len(currentRecords)
-		newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
-		copy(newRecords, currentRecords)
-		newRecords[len(currentRecords)] = rec
-		ds.Records.UpdateInPlace(newRecords)
-
-		currentNodes := ds.BatchNodes.Read()
-		newNodes := make([]int, len(currentNodes)+1)
-		copy(newNodes, currentNodes)
-		newNodes[len(currentNodes)] = -1
-		ds.BatchNodes.UpdateInPlace(newNodes)
+		batchIdx := ds.appendRecordLocked(rec, -1)
 
 		if d.vs.indexQueue != nil {
 			job := IndexJob{

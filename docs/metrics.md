@@ -5,7 +5,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 > [!NOTE]
 > **Default listen address.** The metrics listener reads `LONGBOW_METRICS_ADDR` directly and falls back to `:6000` when it is unset, so the bare binary serves metrics on port 6000. The `envconfig` default of `0.0.0.0:9090` is only logged and validated, never bound; the 9090 that most users see comes from the Helm chart and `docker-compose.yml`, which both set `LONGBOW_METRICS_ADDR=0.0.0.0:9090` explicitly.
 >
-> **Coverage.** This list covers all **783** `longbow_*` metric families the binary registers. The count is derived by enumerating every `Name: "longbow_..."` literal in non-vendor, non-`_test.go` Go sources, plus the one family composed from `Namespace: "longbow"` + `Name:` (`longbow_filter_execution_duration_seconds`, `internal/metrics/storage_metrics.go`). A handful of `longbow_test_*` families registered only inside `_test.go` files are deliberately excluded. Families declared without the `longbow_` namespace (the `graph_navigator_*` set in `internal/store/index/graph_navigator.go` and the `health_check_*` / `component_health_status` set in `internal/health/health_manager.go`) are not exported: the former is only registered when a `prometheus.Registerer` is supplied, which production code never does, and the latter goes into a private registry rather than the default one.
+> **Coverage.** This list covers all **789** `longbow_*` metric families the binary registers. The count is derived by enumerating every `Name: "longbow_..."` literal in non-vendor, non-`_test.go` Go sources, plus the one family composed from `Namespace: "longbow"` + `Name:` (`longbow_filter_execution_duration_seconds`, `internal/metrics/storage_metrics.go`). A handful of `longbow_test_*` families registered only inside `_test.go` files are deliberately excluded. The list was last reconciled against the source on 2026-10-11, during the observability audit recorded in `docs/roadmap.md` §4; seven families (`longbow_hnsw_simd_kernel_*`, `longbow_temporal_cache_*`) had been added by new alert groups without being added here, and `longbow_temporal_tree_cache_hit_ratio` was still listed after being deliberately removed. This inventory is enforced in CI via `make observability-check` and `internal/observability/metrics_conformance_test.go`, which fail on any drift between the metric registry, alert rules, and docs. Families declared without the `longbow_` namespace (the `graph_navigator_*` set in `internal/store/index/graph_navigator.go` and the `health_check_*` / `component_health_status` set in `internal/health/health_manager.go`) are not exported: the former is only registered when a `prometheus.Registerer` is supplied, which production code never does, and the latter goes into a private registry rather than the default one.
 
 | Metric Name | Description |
 | ------------- | ------------- |
@@ -305,12 +305,16 @@ construction cost is:
 TurboQuant building slower than float32 is the expected, correct outcome. It was
 faster before `a955a0c1` only because the graph was left partly disconnected. A ratio
 below 1.0 is therefore a signal worth investigating as a possible *correctness*
-problem, not as good news: check that the layer-0 graph is fully connected. See
-`docs/roadmap.md` §9.2.
+problem, not as good news: check that the layer-0 graph is fully connected. The
+measured numbers and the reasoning are in `grafana/README.md`.
 
-Two alerts cover this: `LongbowSlowBulkInsertByType` fires on a per-type p99, and
+Two alerts cover this: `LongbowSlowBulkInsertByType` fires on a per-type p95, and
 `LongbowBulkInsertFasterThanFloat32` fires when TurboQuant construction is
-implausibly cheaper than float32, which is the signature of the stranding bug.
+implausibly cheaper than float32, which is the signature of the stranding bug. See
+`grafana/README.md` for the full alert inventory.
+
+## Metric table
+
 | `longbow_hnsw_bulk_vectors_processed_total` | Total number of vectors processed in bulk operations |
 | `longbow_hnsw_complex_ops_total` | Total number of complex number distance calculations |
 | `longbow_hnsw_context_check_cancelled_total` | Total number of times context check detected cancellation |
@@ -393,6 +397,8 @@ implausibly cheaper than float32, which is the signature of the stranding bug.
 | `longbow_hnsw_serial_fallback_total` | Total number of serial fallback decisions |
 | `longbow_hnsw_sharding_migrations_total` | Total number of HNSW index migrations to sharded format |
 | `longbow_hnsw_simd_dispatch_latency_seconds` | Latency of dynamic SIMD kernel dispatch by data type |
+| `longbow_hnsw_simd_kernel_fallbacks_total` | SIMD distance kernel fallbacks, labelled by `element_type`, `metric` and `reason` (`mismatch` = kernel disagreed with its scalar reference and was rejected; `unavailable` = no kernel registered) |
+| `longbow_hnsw_simd_kernel_resolved_total` | SIMD distance kernel resolutions, labelled by `element_type`, `metric` and `outcome` (`simd`/`scalar`) |
 | `longbow_hnsw_traversal_iterations_total` | Total number of iterations during HNSW graph traversal |
 | `longbow_hnsw_update_contention_seconds` | Time spent under update lock contention in HNSW graph |
 | `longbow_hnsw_vector_allocated_bytes_total` | Total bytes allocated for HNSW vector storage |
@@ -724,8 +730,13 @@ implausibly cheaper than float32, which is the signature of the stranding bug.
 | `longbow_system_disk_write_bytes_per_second` | System-wide disk write throughput (from /proc/diskstats) |
 | `longbow_tcp_nodelay_connections_total` | Total number of TCP connections with NoDelay set |
 | `longbow_temporal_query_scanned_nodes_total` | Total number of scanned nodes in temporal queries |
+| `longbow_temporal_cache_entries` | Number of entries currently held in the temporal as-of cache |
+| `longbow_temporal_cache_evictions_total` | Total entries evicted from the temporal as-of cache by LRU capacity |
+| `longbow_temporal_cache_expiries_total` | Total entries dropped from the temporal as-of cache because their TTL passed |
+| `longbow_temporal_cache_hits_total` | Total temporal as-of cache hits |
+| `longbow_temporal_cache_misses_total` | Total temporal as-of cache misses |
 | `longbow_temporal_tree_allocated_bytes_total` | Total bytes allocated in temporal trees |
-| `longbow_temporal_tree_cache_hit_ratio` | Cache hit ratio for temporal tree nodes |
+@@REMOVED@@ Cache hit ratio for temporal tree nodes |
 | `longbow_temporal_tree_nodes_total` | Total number of nodes in temporal trees |
 | `longbow_tensor_bytes_processed_total` | Total bytes processed during tensor operations |
 | `longbow_tensor_operation_duration_seconds` | Execution duration of tensor calculus operations in seconds |

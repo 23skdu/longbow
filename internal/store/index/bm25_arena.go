@@ -58,61 +58,92 @@ func NewBM25ArenaIndex(arena *memory.SlabArena, initialCapacity int) *BM25ArenaI
 	}
 }
 
+// BM25ArenaDocument is a pre-tokenised document ready for bulk insertion.
+type BM25ArenaDocument struct {
+	ID     uint32
+	Tokens []string
+}
+
 // IndexDocument indexes a document with its tokens
 func (idx *BM25ArenaIndex) IndexDocument(docID uint32, tokens []string) error {
+	return idx.IndexDocuments([]BM25ArenaDocument{{ID: docID, Tokens: tokens}})
+}
+
+// IndexDocuments indexes a group of documents under a single lock acquisition.
+//
+// IndexDocument takes idx.mu and re-enters the global write lock for every
+// document, so a batch of D documents serialised D times against every reader
+// of the index. Batching collapses that to one acquisition, and the posting
+// list updates for the whole group are then visible together - which also
+// means a reader can never observe a half-applied batch.
+func (idx *BM25ArenaIndex) IndexDocuments(docs []BM25ArenaDocument) error {
+	if len(docs) == 0 {
+		return nil
+	}
+
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
-	// Ensure docLengths array is large enough
-	for uint32(len(idx.docLengths)) <= docID { // #nosec G115
-		idx.docLengths = append(idx.docLengths, 0)
-	}
+	var tokenTotal float64
 
-	// Count term frequencies for this document
-	localTF := make(map[uint32]uint32)
-	for _, token := range tokens {
-		tokenID := idx.getOrCreateTokenID(token)
-		localTF[tokenID]++
-	}
-
-	// Update document length
-	idx.docLengths[docID] = uint32(len(tokens)) // #nosec G115
-	idx.totalDocs++
-	idx.avgDocLength = (idx.avgDocLength*float64(idx.totalDocs-1) + float64(len(tokens))) / float64(idx.totalDocs)
-
-	// Update term frequencies and posting lists
-	for tokenID, freq := range localTF {
-		// Store term frequency
-		key := (uint64(docID) << 32) | uint64(tokenID)
-		idx.termFreqs[key] = freq
-
-		// Update posting list
-		postings, exists := idx.postings.GetNeighbors(tokenID)
-		if !exists {
-			postings = []uint32{}
+	for _, doc := range docs {
+		if len(doc.Tokens) == 0 {
+			continue
 		}
 
-		// Add docID if not already in posting list
-		found := false
-		for _, id := range postings {
-			if id == docID {
-				found = true
-				break
+		// Ensure docLengths array is large enough
+		for uint32(len(idx.docLengths)) <= doc.ID { // #nosec G115
+			idx.docLengths = append(idx.docLengths, 0)
+		}
+
+		// Count term frequencies for this document
+		localTF := make(map[uint32]uint32, len(doc.Tokens))
+		for _, token := range doc.Tokens {
+			tokenID := idx.getOrCreateTokenID(token)
+			localTF[tokenID]++
+		}
+
+		// Update document length
+		idx.docLengths[doc.ID] = uint32(len(doc.Tokens)) // #nosec G115
+		idx.totalDocs++
+		idx.avgDocLength = (idx.avgDocLength*float64(idx.totalDocs-1) + float64(len(doc.Tokens))) / float64(idx.totalDocs)
+
+		// Update term frequencies and posting lists
+		for tokenID, freq := range localTF {
+			// Store term frequency
+			key := (uint64(doc.ID) << 32) | uint64(tokenID)
+			idx.termFreqs[key] = freq
+
+			// Update posting list
+			postings, exists := idx.postings.GetNeighbors(tokenID)
+			if !exists {
+				postings = []uint32{}
+			}
+
+			// Add docID if not already in posting list
+			found := false
+			for _, id := range postings {
+				if id == doc.ID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				postings = append(postings, doc.ID)
+				idx.postings.EnsureCapacity(tokenID)
+				_ = idx.postings.SetNeighbors(tokenID, postings)
+
+				// Update document frequency
+				idx.ensureDocFreqCapacity(tokenID)
+				idx.docFreqs[tokenID]++
 			}
 		}
-		if !found {
-			postings = append(postings, docID)
-			idx.postings.EnsureCapacity(tokenID)
-			_ = idx.postings.SetNeighbors(tokenID, postings)
 
-			// Update document frequency
-			idx.ensureDocFreqCapacity(tokenID)
-			idx.docFreqs[tokenID]++
-		}
+		tokenTotal += float64(len(doc.Tokens))
 	}
 
 	// Update metrics
-	metrics.HybridBM25TokensTotal.WithLabelValues("default").Add(float64(len(tokens)))
+	metrics.HybridBM25TokensTotal.WithLabelValues("default").Add(tokenTotal)
 	// Note: arena size tracking would need arena.Size() method
 
 	return nil

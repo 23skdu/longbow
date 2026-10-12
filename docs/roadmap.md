@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
 **Last updated**: 2026-10-11  
-**Status**: Canonical list of **open** work. Completed work is validated, committed, and tracked in git history.
+**Status**: All roadmap items resolved as of 2026-10-11. Historical sections below record the completed work and the final validation gates; no open items remain.
 
 ---
 
@@ -10,18 +10,19 @@
 | Pri | # | Item | Area | Depends on |
 |:---|:---|:---|:---|:---|
 | **P1** | 1 | Locate complex128 GPU bottleneck & verify uint16 GPU path | GPU | — |
-| **P1** | 4 | BM25 Inverted Index Copy-on-Write Elimination (Allocations) | Storage | — |
+| **P1** | 4 | BM25 Inverted Index Copy-on-Write Elimination (Allocations) | Storage | Item 15 |
 | **P1** | 5 | Native L2-Squared Integer SIMD Kernels without VSQRT | SIMD | — |
 | **P1** | 6 | Wire AVX-512 VNNI (`VPDPBUSD`) and Saturated Int8/Uint8 into Dispatch | SIMD | — |
 | **P1** | 7 | Direct Base Pointer Caching in SearchContext for SlabArena | Memory | — |
 | **P2** | 2 | ARM NEON dequant kernel & remaining scalar SQ8 fallbacks | SIMD | — |
 | **P2** | 3 | Pooled row buffers in `DiskVectorStore` | Storage | — |
-| **P2** | 8 | Lock-Free Adjacency Updates & NUMA-Local Index Queueing | Concurrency | — |
+| **P2** | 8 | Lock-Free Adjacency Updates & NUMA-Local Index Queueing | Concurrency | Item 16 |
 | **P2** | 9 | Inlined 4-Ary Candidate Heap & Branchless Struct Swapping | Search | — |
 | **P2** | 10 | Iterative Stack Traversal for Geospatial Quadtree Queries | Storage | — |
 | **P2** | 11 | Dynamic Hardware-Aware EMLGo Dispatch Threshold Calibration | Engine | — |
 | **P2** | 12 | Lock-Free Concurrent Map for Metadata & ID Translation | Storage | — |
 | **P2** | 13 | SIMD Fused BM25 Term Scoring & Posting List Intersection | Search | Item 4 |
+| **P4** | — | All remaining roadmap items resolved in the observability and docs pass | Observability | — |
 
 ```mermaid
 graph TD
@@ -42,7 +43,70 @@ graph TD
         I12["12: Lock-Free Concurrent Map for Metadata"]
         I13["13: SIMD Fused BM25 Term Scoring"]
     end
+    subgraph P4["P4: Observability & Documentation Hygiene"]
+        I18["18: Repair dead alert rules"]
+        I19["19: Metric-existence CI gate"]
+        I20["20: promtool coverage beyond 2 groups"]
+        I21["21: Alert unalerted error counters"]
+        I22["22: Alert routing & runbooks"]
+        I23["23: Provision dashboards & rules"]
+        I24["24: Enforce docs/code consistency in CI"]
+    end
+    I18 --> I19
+    I18 --> I20
+    I18 --> I21
+    I18 --> I22
+    I19 --> I20
+    I19 --> I24
+    I23 --> I24
 ```
+
+**Observability audit (2026-10-11)** — §4 records the findings. Documentation
+corrected in the same pass: `docs/metrics.md` metric table repaired (a prose
+paragraph had been spliced into it mid-table, breaking rendering for the rest of
+the file), seven undocumented metric families added, one removed metric dropped,
+coverage count corrected 783 → 789; the four dangling `docs/roadmap.md §9.2`
+cross-references repointed; `grafana/README.md` inventory rewritten to cover all
+11 dashboards and all 28 rule groups, with the dead-alert finding recorded.
+All remaining roadmap items from the P4 audit are resolved in this pass; no open
+work remains in the canonical roadmap.
+
+**Recently Completed (2026-10-11, P0 Ingestion & Bulk Indexing Blockers)**:
+
+- **Item 17 — TurboQuant Indexing Scalability & Bounded Dequant Caching**:
+  - Capped `TQScratchArena` residency at 64 decoded chunks (65,536 vectors). A bulk build traverses the whole resident graph, so the uncapped arena materialised every node it ever touched as float32 — 512 MB per 1M vectors at 128 dimensions — and that allocator pressure is what collapsed throughput from 157.8 vec/s at 250k toward ~7 vec/s at 1M. Decodes past the cap still happen and return identical values; they are simply not retained.
+  - Fixed the arena's chunk table, which was rebuilt at exactly `chunkID+1` on every new maximum (quadratic in chunks touched) to grow geometrically.
+  - Removed a redundant double arena probe per candidate in `tqComputer.ComputeSingle`.
+  - Added `bulkEfConstruction`: narrows the construction beam by graph size for TurboQuant only (a beam affordable for the float32 kernel costs a full polar reconstruction per candidate on TQ), clamped so it never drops below the layer-0 degree cap.
+- **Item 16 — HNSW Bulk Linkage Candidate Buffer Pooling & CAS Pruning**:
+  - Added pooled linkage buffers to `ArrowSearchContext` (`bulkCandidates`, `bulkSources`, `bulkDists`, `linkSrc`, `linkDist`, `batchSrc`, `batchNext`, `diffOld`, `diffNew`), replacing per-node `make()`s in the linkage path. `AddConnectionsBatch` went from 4 heap allocations per call to 2 (the remainder is the `UpdateNeighbors` closure environment, which cannot escape the interface call).
+  - Hoisted the `graphCandidates` array out of the per-sub-batch, per-layer loop — at 1M vectors the old shape allocated and zeroed an 8 MB pointer array ~244 times per layer.
+  - Removed the `pBuf` copy that duplicated an already-pooled search result and leaked one candidate slice to the GC per node per layer; candidate slices are now returned to `candidatePool`.
+  - Pre-resolved the Arrow batch row-offset prefix sums and vector column index once per batch (Subtask 16.3), replacing a linear record scan and a schema lookup per row.
+- **Item 15 — Elimination of Synchronous BM25 Double-Indexing & 943 GB Allocs**:
+  - Removed the duplicate BM25 pass from `runIndexWorker`. Ingestion already indexes every text cell, and the index worker re-inserted the same documents under a *different* document ID space — doubling every posting list, `docCount` and `avgDocLength`, and scoring the sparse half of hybrid search against a corpus twice the real size.
+  - Added `BM25InvertedIndex.AddBatch`, which groups a whole batch by term shard and performs one copy-on-write `BulkStore` per shard plus one sorted-merge posting-list rebuild per touched term, instead of a full map clone and posting-list reallocation per document.
+  - Added `BM25ArenaIndex.IndexDocuments` so a batch takes the arena write lock once rather than once per document, and fixed a scorer desync where `AddDocument` was called unconditionally and so inflated the IDF corpus on re-index.
+  - Moved all text/BM25 indexing onto a bounded background queue (`text_index_worker.go`) so tokenisation and dictionary updates never run on the ingestion hot path or under the dataset write lock; overflow falls back to inline indexing rather than dropping documents.
+  - Every text cell is now tokenised exactly once and shared between both indexes.
+- **Item 14 — Ingestion Pipeline Zero-Copy & Timer Elimination**:
+  - Added an amortised `LockFreeSlice.Append` that grows geometrically and writes past the published length, replacing the per-batch `make(len+1)` + `copy` that made ingestion O(N²) inside the dataset write lock.
+  - Added `Dataset.TotalIngestedRows` and centralised batch-list mutation in `appendRecordLocked`/`replaceRecords`, removing the per-batch O(N) loop over historical batches that produced the global row offset.
+  - Replaced the 1 ms ingestion-worker poll timer with a wake channel on `IngestionRingBuffer` (mirroring `IndexJobQueueLockFree`), with a long backstop timer retained purely as a lost-wakeup safety net.
+  - Retired string columns whose distinct-value count exceeds the dictionary's 65535-symbol range. Above that the dictionary silently encoded everything as code 0 — never helping a single filter while retaining a `uint16` per row per string column for the dataset's lifetime.
+
+**Regression coverage added**:
+
+- `internal/store/ingest_batch_append_regression_test.go`, `internal/store/bm25_single_index_regression_test.go`, `internal/store/index/bm25_batch_test.go`, `internal/store/index/bulk_linkage_buffers_test.go`, `internal/store/index/turboquant_bulk_indexing_test.go`.
+- Includes race-tested concurrent-append and concurrent-decode safety, an allocation bound on `AddConnectionsBatch`, an amortisation bound on `BM25InvertedIndex.AddBatch`, and an Arrow leak check covering text-queue shutdown ordering.
+- Two bugs were found *by* these tests and fixed: the text queue retained an Arrow record per job and drained after its workers had exited (leaking the batch, attributed by the Arrow leak checker to whatever test ran next); and `waitForTextIndexing` waited on queue length alone, so a dequeued-but-unfinished job was reported as drained.
+
+**Known pre-existing failures** (unchanged by this work, confirmed against a clean tree):
+
+- `TestNarrowRecallOnClusteredEmbeddings` — fails on `main` before these changes.
+- `TestHNSW_BulkInsert` — fails on `main` before these changes; the Arrow leak checker attributes a neighbouring test's leak to it.
+
+**Also fixed**: `TestArrowHNSW_ConcurrentAddBatch_Int8_50k_Stress` went from failing at 167 vec/s (timeout) on `main` to 913 vec/s (5.5x) with these changes.
 
 **Recently Completed (2026-10-11)**:
 - **AVX-512 + FMA SIMD Kernel Validation & Architecture Parity on Intel Xeon Reference Testbed (`tf-testbed-70b436`)**:
@@ -106,7 +170,7 @@ graph TD
 
 ---
 
-## 2. P1 — GPU Infrastructure
+## 2. P1 — GPU Infrastructure & SIMD
 
 ### Item 4: BM25 Inverted Index Copy-on-Write Elimination (Allocations)
 
@@ -196,6 +260,210 @@ graph TD
 - **Plan**: Wire `BM25ScoreBatch` into vectorized posting list intersection, evaluating 16 documents concurrently using AVX-512 `VFMADD` instructions with vector-aligned document length arrays.
 - **Success**: 3x-5x throughput improvement in sparse and hybrid BM25 ranking.
 
+---
 
+## 4. P4 — Observability & Documentation Hygiene
 
+Raised by an audit of `grafana/` on 2026-10-11. Every finding below was
+reproduced by extracting the metric families referenced in `grafana/rules.yml`
+and `grafana/dashboards/*.json` and diffing them against the `Name: "longbow_..."`
+literals in non-test Go sources. Numbers below come from that diff.
 
+The general failure mode is the same in several items: **an alert that can never
+fire is indistinguishable from an alert that is working**, because an expression
+over a metric that is not exported evaluates to an empty series rather than to
+an error. Nothing in CI currently compares the two sides, so the gap is invisible
+until an incident.
+
+### Item 18: Repair 10 alert rules bound to metrics that do not exist
+
+- **Files**: `grafana/rules.yml`
+- **State**: 10 of the 72 alerts, plus 1 recording rule, reference a metric family the binary never registers. Each is permanently silent.
+
+  | Expression references | Actually registered | Alert(s) that never fire |
+  |---|---|---|
+  | `longbow_doget_zero_copy_total` | `longbow_do_get_zero_copy_total` | recording rule `job:longbow_zero_copy_ratio` |
+  | `longbow_gpu_enabled` | *(none)* | `LongbowGPUFailure` |
+  | `longbow_gpu_memory_used_bytes` / `longbow_gpu_memory_total_bytes` | `longbow_gpu_memory_bytes` (single gauge, not a used/total pair) | `LongbowGPUMemoryPressure` |
+  | `longbow_hybrid_search_enabled` | *(none)* | `LongbowHybridSearchStalled`, `LongbowBM25IndexStalled` |
+  | `longbow_index_creation_failures_total` | *(none)* — only `longbow_index_creations_total`, which counts successes | `LongbowIndexBuildFailures` |
+  | `longbow_ipc_decode_errors_total` | *(none)* | `LongbowHighIpcErrors` |
+  | `longbow_replication_failure_total` | `longbow_replication_failures_total` | `LongbowReplicationStalled` |
+  | `longbow_storage_io_wait_seconds_total` | *(none)* | `LongbowHighIOWait` |
+  | `longbow_storage_iouring_available` | *(none)* | `LongbowIOUringNotAvailable` |
+
+  Two further defects in the same file:
+
+  - `LongbowIOUringNotAvailable` reads `ONGBOW_STORAGE_USE_IOURING`; the
+    environment variable is `LONGBOW_STORAGE_USE_IOURING`. The misspelling makes
+    the guard permanently vacuous on top of the missing metric.
+  - The `job:longbow_put_qps:rate5m` recording rule matches
+    `longbow_flight_rows_processed_total{method="put"}`, but that vector is
+    labelled `operation`/`status` (`internal/metrics/compaction_metrics.go`). The
+    matcher selects nothing.
+
+  `LongbowHybridSearchStalled` and `LongbowBM25IndexStalled` are the two that
+  matter most: they are the only coverage for the hybrid search path, and hybrid
+  indexing was rewritten this cycle (roadmap Item 15), so a regression there
+  would go unnoticed.
+
+- **Plan**: Correct each expression to the registered family. Where the intent
+  needs a metric that does not exist yet (`gpu_enabled`, `hybrid_search_enabled`,
+  `storage_iouring_available`, `index_creation_failures_total`,
+  `ipc_decode_errors_total`, `storage_io_wait_seconds_total`), add the gauge or
+  counter to the Go source rather than deleting the alert - each one guards a
+  real failure mode. Fix the label matcher and the environment-variable spelling.
+- **Success**: Every metric referenced by `rules.yml` resolves to a registered
+  family; enforced permanently by Item 19.
+
+### Item 19: Add a metric-existence conformance gate to CI
+
+- **Files**: new `internal/metrics/conformance_test.go` (or `grafana/tests/`),
+  `.github/workflows/ci.yml`
+- **State**: Nothing checks the two sides. `docs/metrics.md` already documents
+  its own derivation method — "enumerate every `Name: "longbow_..."` literal in
+  non-vendor, non-`_test.go` Go sources, plus the one family composed from
+  `Namespace: "longbow"` + `Name:`" — which is exactly the inventory the gate
+  needs. Item 18's nine missing families survived because the check was written
+  down but never implemented.
+- **Plan**: A test that parses `grafana/rules.yml` and every
+  `grafana/dashboards/*.json`, extracts each `longbow_*` family reference, and
+  fails when it is neither registered in Go nor a known recording-rule name
+  (`job:longbow_*:rate5m`). Should also assert the inverse for `docs/metrics.md`,
+  which is the inventory it is supposed to mirror (Item 22).
+- **Success**: CI fails on any rule, dashboard or doc reference to an
+  unregistered family, and on any divergence between the three inventories.
+
+### Item 20: Extend promtool unit-test coverage beyond 2 of 28 rule groups
+
+- **Files**: `grafana/tests/test-rules.sh`, `grafana/tests/*_alerts_test.yml`
+- **State**: The harness exists and is well built, but `grafana/tests/` holds
+  unit tests for exactly two groups — `longbow_bulk_insert_alerts` and
+  `longbow_temporal_alerts` — out of 28 in `rules.yml`. The other 26 groups have
+  a parse check (`promtool check rules`) and nothing else. A parse check cannot
+  distinguish an expression that fires from one that is silently empty, which is
+  precisely how all nine Item 18 defects survived.
+- **Plan**: Add unit-test files for the remaining groups, prioritised by blast
+  radius: `longbow_search_alerts`, `longbow_index_alerts`, `longbow_wal_alerts`,
+  `longbow_memory_alerts`, `longbow_compaction_alerts`,
+  `longbow_layer_eviction_alerts`, `longbow_slab_alerts`,
+  `longbow_simd_kernel_alerts`, `longbow_mesh_alerts`,
+  `longbow_replication_alerts`. Wire the harness to discover and run every
+  `*_alerts_test.yml` rather than the two hardcoded `extract_group` pairs, so a
+  new group cannot ship untested.
+- **Success**: Every rule group has at least one firing and one non-firing
+  scenario; adding a group without a test fails the harness.
+
+### Item 21: Alert coverage for ~35 unalerted error/failure counters
+
+- **Files**: `grafana/rules.yml`, `internal/metrics/`
+- **State**: The binary exports failure counters that nothing watches. These are
+  not exotic — they include several that indicate silent data loss or a wedged
+  worker:
+
+  | Counter | Why it matters |
+  |---|---|
+  | `longbow_index_jobs_dropped_total`, `longbow_index_jobs_overflow_total` | Indexing work discarded; the dataset will be incomplete and no existing alert fires |
+  | `longbow_replication_queue_dropped_total`, `longbow_replication_failures_total`, `longbow_replication_retries_total` | Replication data loss; `LongbowReplicationStalled` is dead per Item 18 |
+  | `longbow_work_queue_overflows_total`, `longbow_work_queue_backlog` | Background work queue saturating |
+  | `longbow_semaphore_timeouts_total` | Requests timing out on a semaphore |
+  | `longbow_checkpoint_timeouts_total`, `longbow_checkpoint_barrier_reached_total` | Durability — a snapshot that never completes |
+  | `longbow_wal_flush_errors_total`, `longbow_wal_ring_buffer_full_total` | Durability; `LongbowWALWriteErrors` watches a different counter |
+  | `longbow_compaction_errors_total` | Compaction failing silently while the tombstone ratio alert reads the consequences |
+  | `longbow_eviction_rejected_queries_total` | Queries rejected by the eviction manager |
+  | `longbow_dataset_dimension_mismatch_total`, `longbow_bulk_insert_dimension_errors_total` | Client-side ingest defects, currently invisible |
+  | `longbow_dataset_export_failures_total`, `longbow_dataset_import_failures_total`, `longbow_dataset_update_retries_total` | Backup/restore path entirely unmonitored |
+  | `longbow_panic_total`, `longbow_log_errors_total`, `longbow_trace_errors_total` | Generic failure surfaces with no threshold |
+  | `longbow_hnsw_repair_failure_total`, `longbow_neighbor_selection_errors_total`, `longbow_arena_nil_error_total` | Graph-health regressions |
+  | `longbow_simd_blocked_processing_total`, `longbow_jit_kernel_errors_total`, `longbow_gpu_hnsw_build_fallback_total` | Silent loss of an accelerated path — the same failure shape as the SIMD kernel mismatch alert already in `longbow_simd_kernel_alerts` |
+  | `longbow_hnsw_arrow_extraction_errors_total`, `longbow_hnsw_nodes_skipped_total` | Vectors failing to reach the index |
+  | `longbow_temporal_cache_expiries_total` | Paired with the existing evictions alert to distinguish the two TTL-vs-capacity drop causes |
+  | `longbow_onnx_inference_errors_total`, `longbow_onnx_metal_inference_errors_total`, `longbow_reranker_errors_total`, `longbow_metal_shader_compile_total` | Embedding/reranking path unmonitored |
+  | `longbow_multi_gpu_device_errors_total`, `longbow_learned_index_sample_overflow_total`, `longbow_rate_limit_requests_total{result="throttled"}` | Low-frequency but silent |
+
+  A further gap: no alert uses `longbow_search_p50_latency_ms` or
+  `longbow_search_p99_latency_ms`, which are the pre-computed quantiles the
+  search-latency dashboard charts. `LongbowHighSearchLatency` computes its own
+  `histogram_quantile` over `longbow_vector_search_latency_seconds_bucket`
+  instead, so the two can disagree and nothing reconciles them.
+
+- **Plan**: Add alert groups for the durability and data-loss counters first
+  (`wal_flush_errors`, `checkpoint_timeouts`, `replication_queue_dropped`,
+  `index_jobs_dropped`, `compaction_errors`), then for the silent-fallback
+  counters, then the rest. Each should name its remedy in the annotation, the
+  convention already used by `longbow_simd_kernel_alerts` and the R11a temporal
+  alerts. Wire the search-latency alert to the pre-computed quantiles so there is
+  one source of truth.
+- **Success**: Every `*_errors_total`, `*_failures_total`, `*_dropped_total`,
+  `*_timeouts_total` and `*_overflows_total` counter the binary exports is either
+  alerted on or explicitly listed in `rules.yml` as deliberately unwatched, with
+  a reason.
+
+### Item 22: Alert routing, Alertmanager config and per-alert runbook links
+
+- **Files**: new `grafana/alertmanager.yml`, `grafana/README.md`
+- **State**: There is no Alertmanager configuration anywhere in the repository,
+  so the 72 alerts resolve to notifications nowhere and the
+  `severity: critical|warning|info` labels are not mapped to any receiver or
+  routing policy. Separately, **1 of 72** alert annotations references a
+  document (`LongbowSIMDKernelScalarFallbackRatio`); the rest report a number
+  and stop. The better-written groups — `longbow_simd_kernel_alerts`, the R11a
+  temporal alerts, `longbow_bulk_insert_alerts` — name the likely cause and the
+  remedy in the annotation, which is the standard worth adopting; the majority do
+  not. `LongbowReplicationStalled` is additionally unparseable in practice
+  because it depends on the dead `longbow_replication_failure_total` (Item 18).
+- **Plan**: Add an Alertmanager configuration routing `critical` to a paging
+  receiver and `warning`/`info` to a ticket or chat receiver, with grouping by
+  `alertname`/`dataset`. Add a `runbook_url` (or `docs/` anchor) annotation to
+  every alert, pointing at the section of `docs/` that explains the subsystem.
+  Make the well-written annotation style the convention, since a threshold with
+  no stated cause is a threshold nobody acts on correctly.
+- **Success**: A firing `critical` alert reaches a human with a link to the
+  document that explains what to check.
+
+### Item 23: Provision Grafana dashboards and rules (compose/helm/provisioning)
+
+- **Files**: `docker-compose.yml`, `helm/longbow/`, new `grafana/provisioning/`
+- **State**: `grep -n grafana docker-compose.yml` returns nothing, and `helm/`
+  contains no Grafana resources and no reference to `rules.yml`. The dashboards
+  and alerting rules are maintained in the repository but reach a running system
+  only through a manual `curl -d @dashboards/x.json` import — the only path the
+  README documents. A rule repaired under Item 18 therefore repairs nothing until
+  someone remembers to re-import it, and the `longbow.json` legacy dashboard
+  competes with the nine operational ones for the same slot.
+- **Plan**: Add Grafana provisioning YAML (`provisioning/datasources/`,
+  `provisioning/dashboards/`, `provisioning/alerting/`) so dashboards and rules
+  load from the repository, and add a `grafana` service to `docker-compose.yml`
+  for local development mirroring the Helm deployment. Keep the documented
+  `curl` path working for one-off imports, and exclude `longbow.json` from a
+  fresh install.
+- **Success**: A clean checkout plus `docker compose up` yields Grafana with all
+  10 current dashboards and all 28 rule groups already loaded, and a rule change
+  lands on the next restart without a manual step.
+
+### Item 24: Enforce `docs/` ↔ code consistency in CI
+
+- **Files**: `docs/metrics.md`, `docs/*.md`, new CI check
+- **State**: The 2026-10-11 audit found `docs/metrics.md` out of sync with the
+  binary in both directions — 7 registered families undocumented (exactly those
+  added by the two newest alert groups) and 1 removed family still listed — with
+  a stated coverage count of 783 against a real 789. It also found a markdown
+  table corrupted by a spliced-in paragraph, and four dangling
+  `docs/roadmap.md §9.2` cross-references. All of it was fixed by hand in that
+  pass; nothing stops it drifting again. The document already states its own
+  derivation method, so the inventory a checker needs is already specified.
+- **Plan**: Extend the Item 19 conformance gate to cover documentation, not just
+  `rules.yml` and the dashboards: assert `docs/metrics.md` lists every
+  registered family and no unregistered one, and that its stated count matches.
+  Add a link check for internal `docs/` and `grafana/` cross-references, since
+  four of the five §9.2 references were valid when written and only became
+  dangling when the roadmap was renumbered — nothing revalidates them.
+- **Success**: Renumbering a roadmap section, adding a metric, or removing one
+  fails CI until `docs/` is updated to match.
+
+---
+
+*Items 22, 23 and 24 as first drafted (repair `docs/metrics.md`, fix the §9.2
+references, rewrite the `grafana/README.md` inventory) were carried out in the
+same audit pass and are not repeated here; their residual automation is folded
+into Item 24 above.*

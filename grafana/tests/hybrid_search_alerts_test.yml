@@ -1,0 +1,138 @@
+# Unit tests for longbow_hybrid_search_alerts.
+#
+# Both alerts in this group were permanently silent until 2026-10-11: both
+# gated on `longbow_hybrid_search_enabled`, a gauge that is never registered. An
+# expression over an unregistered metric yields an empty series, so the
+# conjunction was always empty and neither alert could ever fire. The gate is now
+# the per-dataset duration histogram, which only exists for datasets that serve
+# hybrid queries.
+#
+# These cases assert what a parse check cannot: that each alert fires on the
+# condition it describes, and stays silent in the adjacent cases where it must
+# not.
+rule_files:
+  - hybrid_search_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # No dataset has ever served a hybrid query, so the duration histogram has no
+  # series. The cluster simply does not use hybrid search; the alert must be
+  # quiet rather than paging every operator in the fleet.
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hybrid_search_vector_total'
+        values: '1000x120'
+      - series: 'longbow_hybrid_search_keyword_total'
+        values: '1000x120'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: LongbowHybridSearchStalled
+        exp_alerts: []
+
+  # Hybrid search is in use and has gone quiet: the stall the alert exists for.
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hybrid_search_duration_seconds_count{dataset="docs"}'
+        values: '100x120'
+      - series: 'longbow_hybrid_search_vector_total'
+        values: '1000x120'
+      - series: 'longbow_hybrid_search_keyword_total'
+        values: '1000x120'
+    alert_rule_test:
+      # `for: 5m` must be respected: no alert before the condition has held long
+      # enough.
+      - eval_time: 2m
+        alertname: LongbowHybridSearchStalled
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: LongbowHybridSearchStalled
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              dataset: docs
+            exp_annotations:
+              summary: "Hybrid search stalled"
+              description: "Datasets served hybrid searches within the last 24h have processed no vector or keyword search for 5 minutes. Check that the hybrid search path is still scheduled."
+
+  # The vector path is still moving, so hybrid search has not stalled even though
+  # the keyword path is idle.
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hybrid_search_duration_seconds_count{dataset="docs"}'
+        values: '100x120'
+      - series: 'longbow_hybrid_search_vector_total'
+        values: '0+10x120'
+      - series: 'longbow_hybrid_search_keyword_total'
+        values: '1000x120'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: LongbowHybridSearchStalled
+        exp_alerts: []
+
+  # BM25 is indexing steadily: neither alert fires.
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hybrid_search_vector_total'
+        values: '0+1x120'
+      - series: 'longbow_hybrid_search_keyword_total'
+        values: '0+1x120'
+      - series: 'longbow_bm25_documents_indexed_total'
+        values: '0+10x120'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: LongbowBM25IndexStalled
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: LongbowHybridSearchStalled
+        exp_alerts: []
+
+  # Keyword queries are being served but indexing has stopped.
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hybrid_search_vector_total'
+        values: '0+1x120'
+      - series: 'longbow_hybrid_search_keyword_total'
+        values: '0+1x120'
+      - series: 'longbow_bm25_documents_indexed_total'
+        values: '0+10x60 600x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: LongbowBM25IndexStalled
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: LongbowBM25IndexStalled
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "BM25 indexing activity low"
+              description: "Keyword searches are being served but no documents have been indexed to BM25 for 15 minutes. Hybrid results will be keyword-only."
+
+  # The BM25 counter has never been incremented at all. Without the
+  # `or vector(0)` arm there would be no series here and the alert would be
+  # silent in exactly the case that matters most - hybrid results degraded to
+  # keyword-only with nothing indexing in the background.
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hybrid_search_keyword_total'
+        values: '0+1x120'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: LongbowBM25IndexStalled
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "BM25 indexing activity low"
+              description: "Keyword searches are being served but no documents have been indexed to BM25 for 15 minutes. Hybrid results will be keyword-only."
+
+  # No keyword traffic: BM25 holding nothing is expected, not a stall.
+  - interval: 1m
+    input_series:
+      - series: 'longbow_bm25_documents_indexed_total'
+        values: '0x120'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: LongbowBM25IndexStalled
+        exp_alerts: []

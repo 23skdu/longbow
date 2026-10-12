@@ -46,15 +46,17 @@ func safeProcessBatch(s *VectorStore, job IngestionJob, start time.Time) {
 func (s *VectorStore) runIngestionWorkerWithCtx(ctx context.Context) {
 	// workerWg is handled by the caller (StartIngestionWorkers)
 
-	// Create reusable timer for backoff (stopped initially)
-	timer := time.NewTimer(0)
-	if !timer.Stop() {
+	// idleBackoff is only armed while the queue is empty. Its period is a
+	// safety net for a missed notification, not the primary wakeup: the
+	// queue signals consumers directly (see IngestionRingBuffer.Notify).
+	idleBackoff := time.NewTimer(time.Hour)
+	if !idleBackoff.Stop() {
 		select {
-		case <-timer.C:
+		case <-idleBackoff.C:
 		default:
 		}
 	}
-	defer timer.Stop()
+	defer idleBackoff.Stop()
 
 	for {
 		select {
@@ -73,13 +75,19 @@ func (s *VectorStore) runIngestionWorkerWithCtx(ctx context.Context) {
 						s.logger.Warn().Msg("High memory pressure detected, throttling ingestion worker")
 					}
 				}
-				timer.Reset(200 * time.Millisecond)
+				if !idleBackoff.Stop() {
+					select {
+					case <-idleBackoff.C:
+					default:
+					}
+				}
+				idleBackoff.Reset(200 * time.Millisecond)
 				select {
 				case <-s.stopChan:
 					return
 				case <-ctx.Done():
 					return
-				case <-timer.C:
+				case <-idleBackoff.C:
 					// Wait and continue
 				}
 			}
@@ -87,23 +95,28 @@ func (s *VectorStore) runIngestionWorkerWithCtx(ctx context.Context) {
 
 		job, ok := s.ingestionQueue.Pop()
 		if !ok {
-			// Backoff if empty
-			if !timer.Stop() {
+			// Queue is empty: sleep until a producer publishes something.
+			// The long backoff only fires if the notification was lost, which
+			// keeps the worker from parking forever at the cost of one timer
+			// per idle period instead of one per 1 ms poll.
+			if !idleBackoff.Stop() {
 				select {
-				case <-timer.C:
+				case <-idleBackoff.C:
 				default:
 				}
 			}
-			timer.Reset(1 * time.Millisecond)
+			idleBackoff.Reset(time.Hour)
 
 			select {
 			case <-s.stopChan:
 				return
 			case <-ctx.Done():
 				return
-			case <-timer.C:
+			case <-s.ingestionQueue.Notify():
+				continue
+			case <-idleBackoff.C:
+				continue
 			}
-			continue
 		}
 
 		// Found job

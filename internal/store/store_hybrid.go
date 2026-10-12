@@ -57,14 +57,34 @@ func NewVectorStoreWithHybridConfig(mem memory.Allocator, logger zerolog.Logger,
 }
 
 // indexTextColumnsForHybridSearch indexes text columns in a RecordBatch for BM25 search.
-// Uses the arena-based BM25 index when available for reduced GC pressure.
+//
+// Every text cell of the batch is tokenised exactly once and the resulting
+// token slice is handed to both the legacy inverted index and the arena index.
+// The previous shape tokenised the same cell twice (once inside
+// BM25InvertedIndex.Add and once again for the arena index) and then ran the
+// two writes under the dataset write lock on the ingestion hot path; callers
+// now hand this work to the background text indexer instead.
 func (s *VectorStore) indexTextColumnsForHybridSearch(ds *Dataset, batch arrow.RecordBatch, baseRowID uint32) {
 	if !s.hybridSearchConfig.Enabled || (ds.BM25Index == nil && ds.BM25ArenaIndex == nil) {
 		return
 	}
 
 	schema := batch.Schema()
-	numRows := batch.NumRows()
+	numRows := int(batch.NumRows())
+
+	var legacyDocs []BM25Document
+	var arenaDocs []BM25ArenaDocument
+	defer func() {
+		if len(legacyDocs) > 0 {
+			ds.BM25Index.AddBatch(legacyDocs)
+		}
+		if len(arenaDocs) > 0 {
+			if err := ds.BM25ArenaIndex.IndexDocuments(arenaDocs); err != nil {
+				s.logger.Error().Err(err).Msg("hybrid search: arena index failed")
+			}
+		}
+		metrics.BM25DocumentsIndexedTotal.Add(float64(len(legacyDocs)))
+	}()
 
 	// For each configured text column
 	for _, colName := range s.hybridSearchConfig.TextColumns {
@@ -95,7 +115,7 @@ func (s *VectorStore) indexTextColumnsForHybridSearch(ds *Dataset, batch arrow.R
 		}
 
 		// Index each row
-		for row := 0; row < int(numRows); row++ {
+		for row := 0; row < numRows; row++ {
 			if strArr.IsNull(row) {
 				continue
 			}
@@ -108,16 +128,17 @@ func (s *VectorStore) indexTextColumnsForHybridSearch(ds *Dataset, batch arrow.R
 			// Use baseRowID + row as the VectorID
 			docID := uint32(baseRowID + uint32(row)) //nolint:gosec
 
+			tokens := index.Tokenize(text)
+			if len(tokens) == 0 {
+				continue
+			}
+
 			if ds.BM25Index != nil {
-				ds.BM25Index.Add(VectorID(docID), text)
+				legacyDocs = append(legacyDocs, BM25Document{ID: VectorID(docID), Tokens: tokens})
 			}
 			if ds.BM25ArenaIndex != nil {
-				tokens := index.Tokenize(text)
-				if err := ds.BM25ArenaIndex.IndexDocument(docID, tokens); err != nil {
-					s.logger.Error().Err(err).Uint32("doc_id", docID).Msg("hybrid search: arena index failed")
-				}
+				arenaDocs = append(arenaDocs, BM25ArenaDocument{ID: docID, Tokens: tokens})
 			}
-			metrics.BM25DocumentsIndexedTotal.Inc()
 		}
 	}
 }

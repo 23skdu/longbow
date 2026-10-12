@@ -18,7 +18,7 @@
 > | `a955a0c1` (post-fix) | 628,013 | 15.70 | **39,251 / 40,000 (98.1%)** |
 >
 > So a quarter of the corpus was unreachable at any `ef` when the older numbers were
-> taken. See `docs/roadmap.md` §9.2 for the bisection.
+> taken. See `grafana/README.md` for the bisection and the alerts built on it.
 >
 > **What profiling & re-measuring found (roadmap R9/R19/R27, Item 1):**
 >

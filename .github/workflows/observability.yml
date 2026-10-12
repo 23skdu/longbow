@@ -1,0 +1,80 @@
+name: Observability Conformance
+
+# Guards the gap documented in docs/roadmap.md §4: an alert that references a
+# metric family the binary never registers evaluates to an empty series rather
+# than to an error, so it is permanently silent and indistinguishable from
+# healthy. Ten such alerts shipped before this check existed.
+#
+# This job fails when grafana/rules.yml, a dashboard panel, or docs/metrics.md
+# references a metric that is not registered.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "grafana/**"
+      - "docs/metrics.md"
+      - "internal/**"
+      - "tools/metrics-inventory/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "grafana/**"
+      - "docs/metrics.md"
+      - "internal/**"
+      - "tools/metrics-inventory/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: Metric and alert conformance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.2"
+          cache: true
+
+      - name: Check the committed metric inventory is current
+        run: |
+          make observability-inventory
+          if ! git diff --quiet -- internal/observability/testdata/registered_metrics.tsv; then
+            echo "::error::internal/observability/testdata/registered_metrics.tsv is stale."
+            echo "A metric was added, renamed or removed without running 'make observability-inventory'."
+            git diff -- internal/observability/testdata/registered_metrics.tsv
+            exit 1
+          fi
+
+      - name: Alerts, dashboards and docs reference only registered metrics
+        run: make observability-check
+
+  promtool:
+    name: Prometheus rule unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install promtool
+        run: |
+          version=3.5.0
+          curl -fsSL -o promtool.tgz \
+            "https://github.com/prometheus/prometheus/releases/download/v${version}/prometheus-${version}.linux-amd64.tar.gz"
+          tar -xzf promtool.tgz
+          sudo mv "prometheus-${version}.linux-amd64/promtool" /usr/local/bin/promtool
+          promtool --version
+
+      - name: Parse-check every rule and run the unit tests
+        run: grafana/tests/test-rules.sh

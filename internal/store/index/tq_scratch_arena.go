@@ -12,7 +12,7 @@ const tqArenaChunkSize = types.ChunkSize // 1024 vectors per chunk
 
 // arenaChunk represents an ephemeral chunk of reconstructed float32 vectors.
 type arenaChunk struct {
-	data  []float32      // tqArenaChunkSize * dims
+	data  []float32       // tqArenaChunkSize * dims
 	valid []atomic.Uint64 // bitmask tracking valid vector slots: (tqArenaChunkSize + 63) / 64 = 16 uint64s
 	mu    sync.Mutex      // per-chunk lock for decode and populate
 }
@@ -56,12 +56,19 @@ func (c *arenaChunk) setValid(offset int) {
 // hops, causing the same vector to be dequantized hundreds of times.
 //
 // TQScratchArena eliminates redundant dequantization:
-// 1. Decoded float32 vectors are cached chunk-by-chunk on demand or in batches.
-// 2. Chunks align with types.ChunkSize (1024), allocated lazily as vectors are accessed.
-// 3. Thread-safe lock-free bitmask tracking ensures concurrent worker goroutines
-//    (e.g., 8 workers in AddConnectionsBatch) share decoded vectors without race conditions.
-// 4. Once indexing completes, the arena is released via Release(), reclaiming the float32
-//    working set and preserving TurboQuant's small memory footprint during query serving.
+//  1. Decoded float32 vectors are cached chunk-by-chunk on demand or in batches.
+//  2. Chunks align with types.ChunkSize (1024), allocated lazily as vectors are accessed.
+//  3. Thread-safe lock-free bitmask tracking ensures concurrent worker goroutines
+//     (e.g., 8 workers in AddConnectionsBatch) share decoded vectors without race conditions.
+//  4. Once indexing completes, the arena is released via Release(), reclaiming the float32
+//     working set and preserving TurboQuant's small memory footprint during query serving.
+//
+// The arena is deliberately capped (see maxResidentChunks). A bulk build traverses
+// the whole resident graph, so an uncapped arena materialises every node it ever
+// touches as float32 - at 128 dimensions that is 512 MB per 1M nodes, and the
+// resulting allocator pressure is what turned a 250k TurboQuant build at ~158
+// vec/s into a 1M build at ~7 vec/s. Past the cap, decodes still happen and still
+// return the same values, they are simply not retained.
 type TQScratchArena struct {
 	dims        int
 	chunksMu    sync.RWMutex
@@ -70,17 +77,65 @@ type TQScratchArena struct {
 	hitCount    atomic.Int64
 	missCount   atomic.Int64
 	decodeCount atomic.Int64
+	evictCount  atomic.Int64
 	enabled     atomic.Bool
+
+	// maxChunks caps how many decoded chunks are retained at once. Zero means
+	// unlimited (used by tests and by callers that knowingly bound the graph).
+	maxChunks int
 }
+
+// maxResidentChunks bounds the decoded working set of the scratch arena.
+//
+// 64 chunks is 65536 vectors: large enough that the active batch and the inner
+// neighbourhood any worker is exploring stay resident across hops, small enough
+// that the arena never approaches the size of the compressed graph it shadows.
+const maxResidentChunks = 64
 
 // NewTQScratchArena creates a new scratch arena for the specified vector dimension.
 func NewTQScratchArena(dims int) *TQScratchArena {
 	a := &TQScratchArena{
-		dims:   dims,
-		chunks: make([]*arenaChunk, 0, 64),
+		dims:      dims,
+		chunks:    make([]*arenaChunk, 0, 64),
+		maxChunks: maxResidentChunks,
 	}
 	a.enabled.Store(true)
 	return a
+}
+
+// SetMaxResidentChunks overrides the residency cap. A value <= 0 means unlimited.
+func (a *TQScratchArena) SetMaxResidentChunks(n int) {
+	if a == nil {
+		return
+	}
+	a.chunksMu.Lock()
+	defer a.chunksMu.Unlock()
+	a.maxChunks = n
+}
+
+// ResidentChunks returns the number of decoded chunks currently retained.
+func (a *TQScratchArena) ResidentChunks() int {
+	if a == nil {
+		return 0
+	}
+	a.chunksMu.RLock()
+	defer a.chunksMu.RUnlock()
+	n := 0
+	for _, c := range a.chunks {
+		if c != nil {
+			n++
+		}
+	}
+	return n
+}
+
+// Evictions returns how many decodes completed without being retained because
+// the arena was at its residency cap.
+func (a *TQScratchArena) Evictions() int64 {
+	if a == nil {
+		return 0
+	}
+	return a.evictCount.Load()
 }
 
 // IsEnabled returns true if the scratch arena is active.
@@ -104,7 +159,17 @@ func (a *TQScratchArena) ensureChunk(chunkID int) *arenaChunk {
 		return a.chunks[chunkID]
 	}
 	if chunkID >= len(a.chunks) {
-		newChunks := make([]*arenaChunk, chunkID+1)
+		// Grow geometrically. The previous shape allocated exactly
+		// chunkID+1 pointers and copied, which is quadratic in the number of
+		// chunks a large build ends up touching.
+		newLen := len(a.chunks) * 2
+		if newLen < 64 {
+			newLen = 64
+		}
+		for newLen <= chunkID {
+			newLen *= 2
+		}
+		newChunks := make([]*arenaChunk, newLen)
 		copy(newChunks, a.chunks)
 		a.chunks = newChunks
 	}
@@ -112,6 +177,23 @@ func (a *TQScratchArena) ensureChunk(chunkID int) *arenaChunk {
 	a.chunks[chunkID] = c
 	a.chunkCount.Add(1)
 	return c
+}
+
+// atCapacity reports whether a new chunk for chunkID would exceed the residency
+// cap. A chunk that already exists is never "at capacity": evicting a resident
+// chunk while other workers hold pointers into it would be unsafe, so the arena
+// admits monotonically until it is released and rebuilt.
+func (a *TQScratchArena) atCapacity(chunkID int) bool {
+	a.chunksMu.RLock()
+	defer a.chunksMu.RUnlock()
+
+	if a.maxChunks <= 0 {
+		return false
+	}
+	if chunkID < len(a.chunks) && a.chunks[chunkID] != nil {
+		return false
+	}
+	return a.chunkCount.Load() >= int64(a.maxChunks)
 }
 
 // Get returns the cached reconstructed float32 vector for id if present.
@@ -168,6 +250,11 @@ func (a *TQScratchArena) PutBatch(startID uint32, vecs [][]float32) {
 }
 
 // GetOrDecode retrieves the vector from cache or decodes it into the arena using decodeFn.
+//
+// The returned slice is only valid until the arena is released or Reset; callers must
+// not retain it past that. When the arena is at its residency cap the decode still
+// happens and returns the same values, but into pooled scratch memory that is not
+// retained - see TQScratchArena for why the cap exists.
 func (a *TQScratchArena) GetOrDecode(id uint32, decodeFn func(id uint32, dst []float32) error) ([]float32, error) {
 	if a == nil {
 		return nil, fmt.Errorf("scratch arena is nil")
@@ -184,6 +271,22 @@ func (a *TQScratchArena) GetOrDecode(id uint32, decodeFn func(id uint32, dst []f
 
 	chunkID := int(id) / tqArenaChunkSize
 	offset := int(id) % tqArenaChunkSize
+
+	if a.atCapacity(chunkID) {
+		a.evictCount.Add(1)
+		a.decodeCount.Add(1)
+		// Not retained: hand back a private buffer rather than pooled scratch.
+		// Callers hold the returned slice across the distance computation, so a
+		// pooled buffer that a concurrent worker could recycle underneath them
+		// would be a data race. dims floats is small next to the polar
+		// reconstruction this call is about to do anyway.
+		dst := make([]float32, a.dims)
+		if err := decodeFn(id, dst); err != nil {
+			return nil, err
+		}
+		return dst, nil
+	}
+
 	c := a.ensureChunk(chunkID)
 
 	c.mu.Lock()

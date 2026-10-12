@@ -81,6 +81,14 @@ func (s *VectorStore) Shutdown(ctx context.Context) error {
 	start := time.Now()
 	var shutdownErr error
 
+	// Step 0: Drain hybrid text indexing while its workers are still running.
+	//
+	// This has to happen before stopWorkers, which closes stopChan and cancels the
+	// store context: after that the text indexers exit and anything still queued
+	// would never release the Arrow record it retained.
+	s.logger.Info().Msg("Draining hybrid text index queue...")
+	s.drainTextIndexing()
+
 	// Step 1: Signal background workers to stop
 	s.logger.Info().Msg("Signaling background workers to stop")
 	s.stopWorkers()

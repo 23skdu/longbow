@@ -632,6 +632,17 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 				}
 
 				// Update Inverted Indexes (Hybrid Search)
+				//
+				// BM25 indexing is deliberately NOT done here. Ingestion
+				// already hands every text column to the background text
+				// indexer (see enqueueTextIndexing), and doing it again here
+				// tokenised and inserted each document twice - under two
+				// different document ID spaces - which doubled the postings,
+				// inflated docCount/avgDocLength, and made the sparse half of
+				// hybrid search score against a corpus half the size of the
+				// real one. This loop is now solely responsible for the plain
+				// inverted index, which is keyed by the internal VectorID that
+				// only AddBatch knows.
 				if len(docIDs) == totalRowsInGroup {
 					docIDIdx := 0
 					for _, j := range dsGroup {
@@ -650,7 +661,6 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 							// 1. Prepare Inverted Indexes (Batch Lock)
 							// Map from colIdx -> *InvertedIndex
 							invIndexes := make(map[int]*InvertedIndex)
-							var bm25 *BM25InvertedIndex
 
 							ds.dataMu.Lock()
 							if ds.InvertedIndexes == nil {
@@ -665,7 +675,6 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 								}
 								invIndexes[colIdx] = invIdx
 							}
-							bm25 = ds.BM25Index
 							ds.dataMu.Unlock()
 
 							// 2. Add Documents (No Lock on DS)
@@ -685,19 +694,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 									colI := j.Record.Column(colIdx)
 									if col, ok := colI.(*array.String); ok {
 										if r < col.Len() && col.IsValid(r) {
-											text := col.Value(r)
-											invIdx.Add(text, docID)
-											if s.hybridSearchConfig.Enabled {
-												bm25Arena := ds.BM25ArenaIndex
-												if bm25Arena != nil {
-													tokens := index.Tokenize(text)
-													_ = bm25Arena.IndexDocument(docID, tokens)
-												}
-												if bm25 != nil {
-													bm25.Add(VectorID(docID), text)
-												}
-												metrics.BM25DocumentsIndexedTotal.Inc()
-											}
+											invIdx.Add(col.Value(r), docID)
 										}
 									}
 								}

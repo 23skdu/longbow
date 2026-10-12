@@ -97,6 +97,13 @@ type Dataset struct {
 	// BatchNodes tracks which NUMA node each RecordBatch is allocated on
 	BatchNodes *LockFreeSlice[int]
 
+	// TotalIngestedRows is the running sum of NumRows over Records. It is
+	// maintained by appendRecordLocked/replaceRecords and exists so that the
+	// global row offset of a newly arriving batch - the base ID hybrid search
+	// and text indexing derive from it - can be read without walking every
+	// historical batch on every ingest.
+	TotalIngestedRows atomic.Int64
+
 	// PrimaryIndex maps ID -> Physical Location (O(1) lookup)
 	PrimaryIndex        map[string]RowLocation
 	NumericPrimaryIndex map[int64]RowLocation
@@ -164,6 +171,9 @@ type Dataset struct {
 	stringDictMu     sync.RWMutex
 	StringDicts      map[string]*qry.StringDictionary
 	BatchStringCodes map[string]map[int][]uint16
+	// nonCategoricalCols records string columns whose distinct-value count
+	// exceeded the dictionary's useful range; they are skipped from then on.
+	nonCategoricalCols map[string]bool
 
 	TemporalIndex *TemporalIndex
 
@@ -463,14 +473,44 @@ func (d *Dataset) GetRowCount() int64 {
 	if d == nil || d.Records == nil {
 		return 0
 	}
-	records := d.Records.Read()
-	var total int64
-	for _, rec := range records {
-		if rec != nil {
-			total += rec.NumRows()
+	return d.TotalIngestedRows.Load()
+}
+
+// appendRecordLocked publishes a new record batch and returns its batch index.
+//
+// It is the single place that grows Dataset.Records / Dataset.BatchNodes, so
+// the O(1) row counter cannot drift away from the batch list. Callers must
+// hold d.dataMu (write) or otherwise guarantee that no other append is in
+// flight; the counter itself is atomic so readers never observe a torn value.
+//
+// The append is amortised O(1): LockFreeSlice.Append grows geometrically and
+// writes past the published length rather than reallocating the whole slice.
+// The previous "make(len+1) + copy" shape cost O(N) per batch, which is
+// O(N^2) over a dataset's lifetime and held the dataset lock for the duration.
+func (d *Dataset) appendRecordLocked(rec arrow.RecordBatch, numaNode int) int {
+	batchIdx := d.Records.Append(rec) - 1
+	d.BatchNodes.Append(numaNode)
+	if rec != nil {
+		d.TotalIngestedRows.Add(rec.NumRows())
+	}
+	return batchIdx
+}
+
+// replaceRecords installs a wholly new batch list (compaction, eviction,
+// restore) and recomputes the row counter from it.
+//
+// This is the O(N) counterpart to appendRecordLocked and is only correct
+// because it runs under d.dataMu, which serialises it against appends.
+func (d *Dataset) replaceRecords(records []arrow.RecordBatch) {
+	d.Records.UpdateInPlace(records)
+
+	var rows int64
+	for _, r := range records {
+		if r != nil {
+			rows += r.NumRows()
 		}
 	}
-	return total
+	d.TotalIngestedRows.Store(rows)
 }
 
 // SetLastAccess updates the time of the last access to the dataset.
@@ -766,6 +806,7 @@ func (d *Dataset) Close() {
 		}
 	}
 	d.Records.UpdateInPlace(nil)
+	d.TotalIngestedRows.Store(0)
 
 	d.PrimaryIndex = nil
 	d.NumericPrimaryIndex = nil
@@ -1053,19 +1094,7 @@ func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 
 	rec := b.NewRecord()
 
-	records := d.Records.Read()
-	newRecords := make([]arrow.RecordBatch, len(records)+1)
-	copy(newRecords, records)
-	newRecords[len(records)] = rec
-	d.Records.UpdateInPlace(newRecords)
-
-	batchNodes := d.BatchNodes.Read()
-	newNodes := make([]int, len(batchNodes)+1)
-	copy(newNodes, batchNodes)
-	newNodes[len(batchNodes)] = -1
-	d.BatchNodes.UpdateInPlace(newNodes)
-
-	batchIdx := len(records)
+	batchIdx := d.appendRecordLocked(rec, -1)
 
 	// Update primary index and handle tombstones
 	idMap := d.ExtractIDs(rec)
@@ -1227,6 +1256,98 @@ func (d *Dataset) IndexStringColumn(colName string, batchIdx int, col *array.Str
 		d.BatchStringCodes[colName] = make(map[int][]uint16)
 	}
 	d.BatchStringCodes[colName][batchIdx] = codes
+}
+
+// maxCategoricalDistinct bounds how many distinct values a string column may
+// have before the dataset stops building 16-bit dictionary codes for it.
+//
+// The codes exist purely to accelerate categorical equality filters with SIMD.
+// A column with more distinct values than this is not categorical (it is free
+// text or a unique key), and for those the dictionary was already useless:
+// StringDictionary saturates at 65535 symbols and silently returns code 0 for
+// everything past it, so a high-cardinality column produced a full-width array
+// of zeros that was retained for the dataset's lifetime and never helped a
+// single filter.
+var maxCategoricalDistinct = 65535
+
+// indexCategoricalColumns records 16-bit dictionary codes for every string
+// column of a freshly ingested batch.
+//
+// A column that has ever been seen to exceed maxCategoricalDistinct in any
+// batch is permanently retired: its codes are dropped and the evaluator falls
+// back to comparing strings directly, which is what it already did for every
+// value past the dictionary's saturation point.
+func (d *Dataset) indexCategoricalColumns(rec arrow.RecordBatch, batchIdx int) {
+	if d == nil || rec == nil {
+		return
+	}
+	for i, f := range rec.Schema().Fields() {
+		if f.Type.ID() != arrow.STRING {
+			continue
+		}
+		if d.isHighCardinality(f.Name) {
+			continue
+		}
+		strCol, ok := rec.Column(i).(*array.String)
+		if !ok {
+			continue
+		}
+		if d.countDistinctStringValues(strCol) > maxCategoricalDistinct {
+			d.retireCategoricalColumn(f.Name)
+			continue
+		}
+		d.IndexStringColumn(f.Name, batchIdx, strCol)
+	}
+}
+
+// countDistinctStringValues counts the distinct non-null values in col without
+// retaining them. Callers use it only to decide whether a column is
+// categorical; the dictionary itself is built later, only if the answer is
+// yes.
+func (d *Dataset) countDistinctStringValues(col *array.String) int {
+	if col == nil {
+		return 0
+	}
+	n := col.Len()
+	if n <= maxCategoricalDistinct {
+		return n
+	}
+	seen := make(map[string]struct{}, 256)
+	for i := 0; i < n; i++ {
+		if !col.IsValid(i) {
+			continue
+		}
+		seen[col.Value(i)] = struct{}{}
+		if len(seen) > maxCategoricalDistinct {
+			return len(seen)
+		}
+	}
+	return len(seen)
+}
+
+// retireCategoricalColumn marks a column as non-categorical and releases the
+// codes already retained for it.
+func (d *Dataset) retireCategoricalColumn(colName string) {
+	d.stringDictMu.Lock()
+	defer d.stringDictMu.Unlock()
+
+	if d.nonCategoricalCols == nil {
+		d.nonCategoricalCols = make(map[string]bool)
+	}
+	d.nonCategoricalCols[colName] = true
+
+	if d.BatchStringCodes != nil {
+		delete(d.BatchStringCodes, colName)
+	}
+	if d.StringDicts != nil {
+		delete(d.StringDicts, colName)
+	}
+}
+
+func (d *Dataset) isHighCardinality(colName string) bool {
+	d.stringDictMu.RLock()
+	defer d.stringDictMu.RUnlock()
+	return d.nonCategoricalCols[colName]
 }
 
 // GetStringCodes returns precomputed 16-bit dictionary codes for a string column in a batch.

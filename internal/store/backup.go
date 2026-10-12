@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 )
 
@@ -358,11 +357,7 @@ func (vs *VectorStore) RestoreFromBackup(backupID, datasetName string) error {
 		rec := r.RecordBatch()
 		rec.Retain()
 		ds.dataMu.Lock()
-		currentRecords := ds.Records.Read()
-		newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
-		copy(newRecords, currentRecords)
-		newRecords[len(currentRecords)] = rec
-		ds.Records.UpdateInPlace(newRecords)
+		ds.appendRecordLocked(rec, -1)
 		ds.SizeBytes.Add(estimateBatchSize(rec))
 		ds.dataMu.Unlock()
 	}

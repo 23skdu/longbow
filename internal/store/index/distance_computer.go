@@ -195,14 +195,12 @@ type tqChunkCacheEntry struct {
 
 func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 	dim := int(c.h.dims.Load())
-	// 1. Check ephemeral scratch arena (eliminates redundant dequantization during indexing)
+	// 1. Ephemeral scratch arena (eliminates redundant dequantization during
+	// indexing).
+	//
+	// GetOrDecode already probes the arena first, so this used to do the same
+	// lookup twice per candidate - once via arena.Get and again inside.
 	if arena := c.h.tqArena.Load(); arena != nil && arena.IsEnabled() {
-		if v, ok := arena.Get(id); ok {
-			if dim > 0 && len(c.rotatedQuery) >= dim && len(v) >= dim {
-				return c.h.distFunc(c.rotatedQuery[:dim], v[:dim])
-			}
-		}
-		// On cache miss, reconstruct into ephemeral scratch arena to eliminate redundant dequantization
 		v, err := arena.GetOrDecode(id, func(_ uint32, dst []float32) error {
 			tqCode, err := c.h.tqCompute.getTQBytes(id, c.diskGraph, c.maxGen)
 			if err != nil {
@@ -212,6 +210,9 @@ func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 		})
 		if err == nil && dim > 0 && len(c.rotatedQuery) >= dim && len(v) >= dim {
 			return c.h.distFunc(c.rotatedQuery[:dim], v[:dim])
+		}
+		if err != nil {
+			return 0, err
 		}
 	}
 

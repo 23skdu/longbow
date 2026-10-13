@@ -328,6 +328,11 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	if err != nil {
 		return err
 	}
+	// EnsureChunks is what gives the graph data its dimension, which is what
+	// the TurboQuant encoder binds to. Until this runs, an index constructed
+	// without a configured dimension measures every TurboQuant distance
+	// against a one-element rotated query and evaluates every candidate to 0.
+	h.ensureTQComponents(dims)
 	// Pin the original data across the Clone() call so a concurrent
 	// compareAndSwapData-driven Release() cannot nil out the typed-
 	// arenas before we read them via g.Int8Arena.Slab(). The pin
@@ -557,11 +562,12 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			}
 
 			// 5. TQ Ingestion
-			if h.tqEncoder != nil {
+			tqEnc := tqEncoderOf(h)
+			if tqEnc != nil {
 				tqChunk := data.GetVectorsTQChunk(cID)
 				if tqChunk != nil {
 					if vf32, ok := v.([]float32); ok {
-						code, err := h.tqEncoder.Encode(vf32)
+						code, err := tqEnc.Encode(vf32)
 						if err == nil {
 							stride := data.PackedSize()
 							dest := tqChunk[int(cOff)*stride : (int(cOff)+1)*stride]
@@ -713,7 +719,8 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 
 	// Populate ephemeral TQScratchArena with reconstructed float32 vectors for fast construction across all cores.
 	// This eliminates redundant dequantization during HNSW graph linkage across all batches.
-	if (h.config.DataType == types.VectorTypeTQ || h.config.TurboQuantEnabled) && h.tqCompute != nil {
+	tq := h.tq()
+	if (h.config.DataType == types.VectorTypeTQ || h.config.TurboQuantEnabled) && tq != nil && tq.compute != nil {
 		arena := h.EnableTQScratchArena()
 		numNodes := len(activeNodes)
 		chunkSize := (numNodes + runtime.NumCPU() - 1) / runtime.NumCPU()
@@ -723,10 +730,10 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		pool.ParallelFor(numNodes, chunkSize, func(start, end int) {
 			for idx := start; idx < end; idx++ {
 				node := activeNodes[idx]
-				tqCode, err := h.tqCompute.getTQBytes(node.id, nil, math.MaxUint64)
+				tqCode, err := tq.compute.getTQBytes(node.id, nil, math.MaxUint64)
 				if err == nil && len(tqCode) > 0 {
 					_, _ = arena.GetOrDecode(node.id, func(_ uint32, dst []float32) error {
-						return h.tqCompute.encoder.DecodeInto(tqCode, dst)
+						return tq.compute.encoder.DecodeInto(tqCode, dst)
 					})
 				}
 			}
@@ -1230,6 +1237,37 @@ var BulkGraphMaxHopDepth = func() float64 {
 	return 1.5
 }()
 
+// bulkHopFloor is the smallest hop budget the gate will apply, in mean layer-0
+// descent hops.
+//
+// The budget is log(N)/log(MMax0) times BulkGraphMaxHopDepth, and that estimate
+// degenerates on small graphs: at 2,000 nodes with MMax0=64 it is 1.8 hops, so
+// the gate rejects anything past 2.7 - including a perfectly navigable graph
+// measured at 3.0, which is what it did to TestArrowHNSW_ConcurrentAddBatch_-
+// Int8_2Batches. The gate's remedy is a sequential rebuild of the whole batch,
+// and sequential insertion with MMax0=64 runs the O(m^2) diversity heuristic per
+// node, so a 0.3-hop overshoot on a 2,000-node batch turned a sub-second build
+// into one that did not finish inside a five-minute deadline under -race. That
+// is the same trade BulkGraphQualityMinDegreeRatio documents and the reason it
+// is off by default.
+//
+// A floor does not weaken the gate where it matters: at 100k with MMax0=16 the
+// estimate is 4.1 hops and the budget stays above the floor, and the graphs this
+// gate was built to catch are caught by the reachability floor, not by hop
+// depth. Measured on the pre-a955a0c1 TurboQuant graph - the defect the gate
+// exists for - the hop check passed (2.6 against a 6.0 budget) and only
+// reachability (8.2% against an 80% floor) fired.
+const bulkHopFloor = 4.0
+
+// bulkHopBudget is the mean descent depth a batch of this size is allowed.
+func bulkHopBudget(idealHops float64) float64 {
+	budget := idealHops * BulkGraphMaxHopDepth
+	if budget < bulkHopFloor {
+		return bulkHopFloor
+	}
+	return budget
+}
+
 // bulkGraphQuality is what measureBulkGraphQuality measured, so the caller can
 // report it whether or not the floor was met.
 type bulkGraphQuality struct {
@@ -1342,7 +1380,7 @@ func (h *ArrowHNSW) checkBulkGraphQuality(ctx context.Context, startID uint32, n
 	}
 	enforce := bulkGraphQualityGuardEnabled && h.inAddBatch.Load() <= 1
 	minDegree := float64(h.mMax0.Load()) * BulkGraphQualityMinDegreeRatio
-	maxHops := q.IdealHops * BulkGraphMaxHopDepth
+	maxHops := bulkHopBudget(q.IdealHops)
 	degradedHops := enforce && BulkGraphMaxHopDepth > 0 && q.MeanHops > maxHops
 	degradedDegree := enforce && minDegree > 0 && q.MeanDegree < minDegree
 	degradedReach := enforce && q.Reachability < BulkGraphQualityFloor
@@ -1368,13 +1406,26 @@ func (h *ArrowHNSW) checkBulkGraphQuality(ctx context.Context, startID uint32, n
 // look at all of it; the sample of batch nodes is what gets turned into a
 // verdict.
 func (h *ArrowHNSW) measureBulkGraphQuality(ctx context.Context, startID uint32, n int) bulkGraphQuality {
-	out := bulkGraphQuality{Nodes: int(startID) + n}
+	// The walk is bounded by how many nodes the graph has, not by where this
+	// batch ends. Concurrent AddBatch calls reserve their ids before the bulk
+	// link releases bulkMu, so by the time a batch is measured another one may
+	// already have published thousands of nodes past startID+n; bounding by the
+	// batch end then stops the BFS part-way through the graph and reports the
+	// nodes it happened to reach first as if they were all of them. That is how
+	// a healthy int8 build reported "reachable=5024/5000 sampled=30.0%" and
+	// tripped the gate into a full sequential rebuild.
+	graphNodes := int(h.nodeCount.Load())
+	batchEnd := int(startID) + n
+	if graphNodes < batchEnd {
+		graphNodes = batchEnd
+	}
+	out := bulkGraphQuality{Nodes: graphNodes}
 	ep := h.entryPoint.Load()
 	if ep == math.MaxUint32 {
 		return out
 	}
 
-	seen := make(map[uint32]struct{}, out.Nodes)
+	seen := make(map[uint32]struct{}, graphNodes)
 	queue := make([]uint32, 0, 1024)
 	seen[ep] = struct{}{}
 	queue = append(queue, ep)
@@ -1400,6 +1451,13 @@ func (h *ArrowHNSW) measureBulkGraphQuality(ctx context.Context, startID uint32,
 		}
 	}
 	out.Reachable = len(seen)
+	if out.Reachable > out.Nodes {
+		// The walk stops on a bound check, so the last node processed can still
+		// enqueue neighbours past it. Never report more reachable nodes than
+		// the graph is said to have: a ratio over 100% is the kind of number
+		// that stops anyone reading the line that follows it.
+		out.Nodes = out.Reachable
+	}
 	if out.Reachable > 0 {
 		out.MeanDegree = float64(degreeSum) / float64(out.Reachable)
 	}

@@ -170,10 +170,10 @@ func TestTurboQuantIndexIsEngaged(t *testing.T) {
 	cfg.Workers = 1
 	idx := NewArrowHNSW(c.dataset, &cfg, nil)
 
-	if idx.tqCompute == nil {
-		t.Fatal("tqCompute is nil: TurboQuant was not engaged")
+	if idx.tq() == nil || idx.tq().compute == nil {
+		t.Fatal("TurboQuant runtime is nil: TurboQuant was not engaged")
 	}
-	if got := idx.tqCompute.encoder.params.BitsPerAngle; got != bits {
+	if got := idx.tq().compute.encoder.params.BitsPerAngle; got != bits {
 		t.Fatalf("encoder bit depth = %d, want %d", got, bits)
 	}
 	if _, err := idx.AddBatch(context.Background(),
@@ -208,6 +208,55 @@ func TestTurboQuantIndexIsEngaged(t *testing.T) {
 // Thresholds are relative to MMax0=16 and to a single 10,000-row batch, which is
 // what this uses: mean degree must be at least half the degree budget, and at
 // least 95% of nodes must be reachable from the entry point.
+// TestTurboQuantGraphIsConnectedWithoutConfiguredDimension is
+// TestTurboQuantGraphIsConnected for the shape the store actually builds.
+//
+// The store constructs ArrowHNSWConfig without Dims and lets the first ingested
+// record establish the dimension, so the index - and everything sized from it,
+// including the TurboQuant encoder - is created against dimension 0 and has to
+// be re-bound afterwards. A zero-dimension encoder rounds its pow2 up to 1, so
+// the rotated query every TurboQuant distance is measured against is truncated
+// to one element, every candidate evaluates to distance 0, and neighbour
+// selection stops discriminating on distance at all. Layer 0 still fills to the
+// full degree budget, from an unordered candidate list, which is why the graph
+// looks healthy to every structural check that counts edges and none to one that
+// asks whether the corpus can be reached.
+//
+// Measured here before the fix: 19.0% reachable at n=20,000 with mean degree
+// 3.0, against 99.6% and 15.9 for the same corpus with a configured dimension.
+func TestTurboQuantGraphIsConnectedWithoutConfiguredDimension(t *testing.T) {
+	n, dims, batch := 20_000, 128, 10_000
+	if testing.Short() {
+		n, batch = 2_000, 1_000
+	}
+	c := newTQCorpus(t, n, dims)
+
+	for _, bits := range []int{4, 8} {
+		t.Run("bits"+string(rune('0'+bits)), func(t *testing.T) {
+			cfg := tqConfig(dims, bits)
+			cfg.Dims = 0 // the store's shape: dimension discovered from the record
+			idx := buildInBatches(t, c, n, batch, cfg)
+
+			if got := idx.tq().compute.encoder.dims; got != dims {
+				t.Fatalf("TurboQuant encoder is bound to dimension %d, want %d; every "+
+					"distance is measured against a rotated query of the wrong length", got, dims)
+			}
+			if arena := idx.GetTQScratchArena(); arena != nil && arena.Dims() != dims {
+				t.Errorf("scratch arena is bound to dimension %d, want %d", arena.Dims(), dims)
+			}
+
+			s := measureLayer0(t, idx, n)
+			t.Logf("GRAPH-NODIMS bits=%d n=%d edges=%d mean_degree=%.2f reachable_from_ep=%d (%.1f%%)",
+				bits, n, s.edges, s.meanDegree(), s.reachable, 100*float64(s.reachable)/float64(n))
+			if frac := float64(s.reachable) / float64(n); frac < 0.95 {
+				t.Errorf("only %.1f%% of nodes are reachable from the entry point with a "+
+					"discovered dimension; %.1f%% and mean degree %.2f is the distance-blind "+
+					"selection this guards against", 100*frac, 100*float64(s.reachable)/float64(n), s.meanDegree())
+			}
+		})
+	}
+}
+
 func TestTurboQuantGraphIsConnected(t *testing.T) {
 	n, dims, batch := 20_000, 128, 10_000
 	if testing.Short() {
@@ -389,10 +438,10 @@ func TestTQComputeBatchMatchesPerCandidate(t *testing.T) {
 			comp := &tqComputer{
 				data:         idx.data.Load(),
 				h:            idx,
-				rotatedQuery: make([]float32, idx.tqCompute.encoder.pow2),
+				rotatedQuery: make([]float32, idx.tq().compute.encoder.pow2),
 				maxGen:       ^uint64(0),
 			}
-			if err := comp.h.tqCompute.PrecomputeRotatedQuery(c.queries[0], comp.rotatedQuery); err != nil {
+			if err := comp.h.tq().compute.PrecomputeRotatedQuery(c.queries[0], comp.rotatedQuery); err != nil {
 				t.Fatal(err)
 			}
 
@@ -433,7 +482,7 @@ func TestTQDistanceDirectCodesMatchesDistanceDirect(t *testing.T) {
 			cfg := tqConfig(dims, bits)
 			cfg.Workers = 1
 			idx := buildInBatches(t, c, n, n, cfg)
-			tqc := idx.tqCompute
+			tqc := idx.tq().compute
 
 			rotated := make([]float32, tqc.encoder.pow2)
 			if err := tqc.PrecomputeRotatedQuery(c.queries[0], rotated); err != nil {
@@ -481,7 +530,7 @@ func TestTQPrefetchChunkIsBoundsSafe(t *testing.T) {
 		[]arrow.RecordBatch{c.record}, c.rowIdxs, c.batchIdx); err != nil {
 		t.Fatal(err)
 	}
-	tqc := idx.tqCompute
+	tqc := idx.tq().compute
 	stride := idx.data.Load().PackedSize()
 	chunk := make([]byte, stride*4)
 

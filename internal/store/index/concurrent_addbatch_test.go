@@ -74,10 +74,17 @@ func TestArrowHNSW_ConcurrentAddBatch_Int8_2Batches(t *testing.T) {
 	config.Dims = dims
 	idx := NewArrowHNSW(ds, &config, nil)
 
-	// This deadline is a deadlock guard, not a performance budget: the work
-	// is ~0.85s natively but ~20s under -race. It was never enforced while
-	// AddBatch ignored ctx, and now that cancellation is honoured it has to
-	// leave headroom for race instrumentation so it does not flake.
+	// This deadline is a deadlock guard, not a performance budget. Measured on
+	// the AVX2 client (2026-10-13): 4.7s natively, 61s under -race. It was
+	// never enforced while AddBatch ignored ctx, and now that cancellation is
+	// honoured it has to leave headroom for race instrumentation so it does
+	// not flake.
+	//
+	// It used to fire here: the R8 hop gate computed its budget from
+	// log(N)/log(MMax0), which at 2,000 nodes and MMax0=64 is 1.8 hops, so a
+	// perfectly navigable 3.0-hop graph was rejected and rebuilt sequentially -
+	// O(m^2) diversity pruning per node, at a 700x cost. bulkHopFloor now puts
+	// a floor under that budget. See arrow_hnsw_bulk.go.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 

@@ -1204,7 +1204,7 @@ class BenchmarkRunner(ScenarioMixin):
                         # Log readiness handshake duration in benchmark summaries
                         if connection_refused_retries > 0:
                             print(f"  [readiness] server ready after {handshake_duration:.2f}s "
-                                  f"({connection_refused_retries} transient port-collision retries)")
+                                  f"({connection_refused_retries} polls before /ready answered OK)")
                         else:
                             print(f"  [readiness] server ready in {handshake_duration:.2f}s")
                         return True

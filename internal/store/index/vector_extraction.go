@@ -175,12 +175,12 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 			return v, nil
 		}
 	}
-	if h.tqEncoder != nil {
+	if tqEnc := tqEncoderOf(h); tqEnc != nil {
 		chunk := data.GetVectorsTQChunkWithGen(int(types.ChunkID(id)), math.MaxUint64)
 		if chunk != nil {
 			stride := data.PackedSize()
 			start := int(types.ChunkOffset(id)) * stride // #nosec G115
-			return h.tqEncoder.Decode(chunk[start : start+stride])
+			return tqEnc.Decode(chunk[start : start+stride])
 		}
 	}
 

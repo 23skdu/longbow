@@ -196,6 +196,17 @@ func (a *TQScratchArena) atCapacity(chunkID int) bool {
 	return a.chunkCount.Load() >= int64(a.maxChunks)
 }
 
+// Dims returns the dimension every chunk in the arena is sized for. It is
+// immutable after construction: the arena is published to readers only once
+// NewTQScratchArena has returned, so an unsynchronised read is safe and an
+// arena bound to the wrong dimension has to be replaced rather than resized.
+func (a *TQScratchArena) Dims() int {
+	if a == nil {
+		return 0
+	}
+	return a.dims
+}
+
 // Get returns the cached reconstructed float32 vector for id if present.
 func (a *TQScratchArena) Get(id uint32) ([]float32, bool) {
 	if a == nil || !a.enabled.Load() {

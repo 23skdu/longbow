@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
-**Last updated**: 2026-10-11  
-**Status**: All roadmap items resolved as of 2026-10-11. Historical sections below record the completed work and the final validation gates; no open items remain.
+**Last updated**: 2026-10-12  
+**Status**: All roadmap items resolved as of 2026-10-12. Historical sections below record the completed work and the final validation gates; no open items remain.
 
 ---
 
@@ -70,6 +70,75 @@ cross-references repointed; `grafana/README.md` inventory rewritten to cover all
 11 dashboards and all 28 rule groups, with the dead-alert finding recorded.
 All remaining roadmap items from the P4 audit are resolved in this pass; no open
 work remains in the canonical roadmap.
+
+**Recently Completed (2026-10-12, AVX2 CPU validation — TurboQuant distance-blind graph build)**:
+
+- **TurboQuant graph built on distances that were all zero.** The store constructs
+  `ArrowHNSWConfig` without `Dims` and lets the first ingested record establish the
+  dimension. The index, the TurboQuant encoder, the TurboQuant distance computer and
+  the TQ scratch arena were all therefore created against dimension 0, and nothing
+  re-bound them when the real dimension arrived. A zero-dimension encoder rounds
+  `pow2` up to 1, so the rotated query every TurboQuant distance is measured against
+  was truncated to one element and every candidate evaluated to distance 0.
+  Neighbour selection stopped discriminating on distance entirely, and layer 0
+  filled to its full degree budget from an unordered candidate list: at 100,000
+  vectors, dim 128, every node kept its 16 links and only **8,192 of 100,000 (8.2%)**
+  were reachable from the entry point. `float32`, `int8` and `complex128` reached
+  98–99% in the same runs.
+  - Fixed by binding all four to the dimension at the point it is established
+    (`ensureTQComponents`, called once `EnsureChunks`/`Grow` has sized the graph
+    data), and by making the scratch arena rebind rather than stay bound to its
+    construction-time dimension.
+  - Second defect on the same path: `selectNeighbors` treated a scratch-arena miss
+    as "no vector" and **dropped** the candidate, so a cache miss silently disabled
+    the diversity heuristic and pruned a full degree budget out of an unordered
+    list. It now decodes on demand (`tqVectorAt`) and only a vector that cannot be
+    reconstructed at all falls through to "accept". A cache miss must cost a
+    decode, never a candidate.
+  - Measured after the fix, same configuration: reachability **99,206 / 100,000
+    (99.2%)** at `turboquant4` and **99,272 / 100,000 (99.3%)** at `turboquant8`,
+    mean degree 16.00, no bulk-quality-guard fallback, and index time down from
+    175.0s to 96.0s (`turboquant4`) and 118.5s to 98.0s (`turboquant8`) — the
+    fallback's full sequential rebuild was the cost. Dense search rises from 380.7
+    to 1,493.8 QPS, which is the *correct* direction: a graph with 8% reachability
+    terminates the beam almost immediately, so the broken index was fast.
+  - `TestTurboQuantGraphIsConnected` passed throughout, because every in-process
+    test sets `cfg.Dims`. Added
+    `TestTurboQuantGraphIsConnectedWithoutConfiguredDimension`, which builds in the
+    store's shape and asserts both the encoder binding and ≥95% reachability; it
+    fails on the pre-fix tree with `encoder is bound to dimension 0, want 128`.
+  - Every TurboQuant row in `docs/performance.md` was measured on the broken graph
+    and is superseded by §3a. The historical "~300–420 QPS is the honest number on
+    a fully connected graph" reading is an artefact of the same defect.
+
+- **Benchmark harness configuration fidelity**:
+  - `LONGBOW_MAX_M0`, set by `unified_benchmark.py` at every scale, is not read by
+    `types.DefaultArrowHNSWConfig`; it is a cap applied later by `insertion_core.go`
+    during adaptive-M growth. Documented in `docs/testplan.md` §4.2a.
+  - The readiness poll reported its retries as "transient port-collision retries".
+    They are the number of one-second polls before `/ready` answered — a 6-second
+    startup reads as six port collisions. Relabelled.
+  - `docs/testplan.md` §4.2 required a 2-second port cooling period; the harness
+    sleeps 1 second and retries `bind` with backoff, so the doc now matches the
+    behaviour and says why the fixed sleep is not load-bearing.
+
+- **Noise floor on the AVX2 client**: self-versus-self interleaved A/B (identical
+  binary both arms, 3 pairs, `float32`/`int32`/`uint64` × 6 modes) put every median
+  within ±3.9% with per-pair spread as wide as −31%…+41%. All 18 rows came back
+  `inconclusive`. Recorded in `docs/testplan.md` §5.3 and `docs/performance.md` §3,
+  together with the finding that 16 of 195 rows in the existing CPU table are >10%
+  below it — which this spread does not distinguish from noise, so the table needs
+  re-baselining with `--runs 3 --save-baseline` rather than remediation.
+
+- **Validation status**: `go test ./internal/simd/...`, `./internal/store/`,
+  `./internal/store/index/...` pass under both the default and `emlgo` build tags,
+  with two pre-existing failures unchanged and confirmed against a clean tree —
+  `TestHNSW_BulkInsert` (the Arrow leak checker attributes a neighbouring test's
+  leak to it; passes in isolation) and `TestNarrowRecallOnClusteredEmbeddings`
+  (`uint8` clustered recall 0.833). Full 100k CPU sweep, 15 dtypes × 13 search
+  modes, standard and EMLGo: zero failed configs, zero exhausted configs, no
+  OOM/panic/SIGSEGV in any server log, and the report self-validation
+  (`qps × mean_latency` implies 75–102% of recorded workers) clean on every row.
 
 **Recently Completed (2026-10-11, P0 Ingestion & Bulk Indexing Blockers)**:
 

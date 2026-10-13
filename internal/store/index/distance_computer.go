@@ -200,13 +200,14 @@ func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 	//
 	// GetOrDecode already probes the arena first, so this used to do the same
 	// lookup twice per candidate - once via arena.Get and again inside.
-	if arena := c.h.tqArena.Load(); arena != nil && arena.IsEnabled() {
+	tq := c.h.tq()
+	if arena := c.h.tqArena.Load(); tq != nil && tq.compute != nil && arena != nil && arena.IsEnabled() {
 		v, err := arena.GetOrDecode(id, func(_ uint32, dst []float32) error {
-			tqCode, err := c.h.tqCompute.getTQBytes(id, c.diskGraph, c.maxGen)
+			tqCode, err := tq.compute.getTQBytes(id, c.diskGraph, c.maxGen)
 			if err != nil {
 				return err
 			}
-			return c.h.tqCompute.encoder.DecodeInto(tqCode, dst)
+			return tq.compute.encoder.DecodeInto(tqCode, dst)
 		})
 		if err == nil && dim > 0 && len(c.rotatedQuery) >= dim && len(v) >= dim {
 			return c.h.distFunc(c.rotatedQuery[:dim], v[:dim])
@@ -225,9 +226,9 @@ func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 				return c.h.distFunc(c.rotatedQuery[:dim], v)
 			}
 		}
-		return c.h.tqCompute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
+		return tq.compute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
 	}
-	return c.h.tqCompute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
+	return tq.compute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
 }
 
 // ComputeBatch evaluates a whole block of candidates against one batch-scoped
@@ -267,7 +268,7 @@ func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error
 	}
 
 	if !hasFallback {
-		if err := c.h.tqCompute.DistanceDirectCodesBatch(c.rotatedQuery, codes, dst); err != nil {
+		if err := c.h.tq().compute.DistanceDirectCodesBatch(c.rotatedQuery, codes, dst); err != nil {
 			return nil, err
 		}
 		return dst, nil
@@ -278,7 +279,7 @@ func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error
 	for i, code := range codes {
 		if code == nil {
 			if segStart >= 0 {
-				if err := c.h.tqCompute.DistanceDirectCodesBatch(c.rotatedQuery, codes[segStart:i], dst[segStart:i]); err != nil {
+				if err := c.h.tq().compute.DistanceDirectCodesBatch(c.rotatedQuery, codes[segStart:i], dst[segStart:i]); err != nil {
 					return nil, err
 				}
 				segStart = -1
@@ -295,7 +296,7 @@ func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error
 		}
 	}
 	if segStart >= 0 {
-		if err := c.h.tqCompute.DistanceDirectCodesBatch(c.rotatedQuery, codes[segStart:], dst[segStart:]); err != nil {
+		if err := c.h.tq().compute.DistanceDirectCodesBatch(c.rotatedQuery, codes[segStart:], dst[segStart:]); err != nil {
 			return nil, err
 		}
 	}

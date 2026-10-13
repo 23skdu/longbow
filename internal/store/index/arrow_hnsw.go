@@ -82,8 +82,8 @@ type ArrowHNSW struct {
 	pqTrained        atomic.Bool
 	pqTrainingBuffer [][]float32
 	bqEncoder        *types.BQEncoder
-	oopqEncoder      any // Accepts *pq.PQEncoder or *pq.OPQEncoder (Issue 4: Use new OPQ)
-	tqEncoder        *TurboQuantEncoder
+	oopqEncoder      any                       // Accepts *pq.PQEncoder or *pq.OPQEncoder (Issue 4: Use new OPQ)
+	tqRuntime        atomic.Pointer[tqRuntime] // TurboQuant encoder + computer, published as one unit
 	searchPool       *ArrowSearchContextPool
 	candidatePool    sync.Pool
 
@@ -164,7 +164,6 @@ type ArrowHNSW struct {
 
 	// Graph Navigation
 	navigator     *GraphNavigator
-	tqCompute     *TurboQuantCompute
 	tqDecodeCache atomic.Pointer[tqDecodeCache]  // pre-decoded TQ vectors (non-nil during batch insert for fast construction)
 	tqArena       atomic.Pointer[TQScratchArena] // ephemeral chunked scratch arena for caching reconstructed vectors during indexing
 	gpuTrained    atomic.Bool
@@ -480,10 +479,13 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		}
 		h.config.TurboQuantEnabled = true
 		h.config.TurboQuantBits = bits
-		h.tqEncoder = NewTurboQuantEncoder(config.Dims, bits, 42)
 		h.data.Load().TurboQuantEnabled = true
 		h.data.Load().TurboQuantBits = bits
-		h.tqCompute = NewTurboQuantCompute(h)
+		// Bound to whatever dimension the config carried. When that is zero -
+		// the store's shape, which discovers the dimension from the first
+		// ingested record - ensureTQComponents replaces this the moment the
+		// real dimension is known.
+		h.publishTQ(config.Dims, bits)
 		h.EnableTQScratchArena()
 	}
 
@@ -554,8 +556,7 @@ func (h *ArrowHNSW) EnableTurboQuant(bits int) {
 	}
 	gd.TurboQuantEnabled = true
 	gd.TurboQuantBits = bits
-	h.tqEncoder = NewTurboQuantEncoder(int(h.dims.Load()), bits, 42)
-	h.tqCompute = NewTurboQuantCompute(h)
+	h.publishTQ(int(h.dims.Load()), bits)
 
 	// Allocate and compress existing in-memory float32 vectors!
 	stride := gd.PackedSize()
@@ -588,7 +589,7 @@ func (h *ArrowHNSW) EnableTurboQuant(bits int) {
 		// Compress each vector in the chunk
 		for i := 0; i < types.ChunkSize; i++ {
 			vF32 := f32Chunk[i*paddedDims : i*paddedDims+gd.Dims]
-			code, err := h.tqEncoder.Encode(vF32)
+			code, err := h.tq().encoder.Encode(vF32)
 			if err == nil {
 				dest := tqChunk[i*stride : (i+1)*stride]
 				copy(dest, code)
@@ -604,16 +605,169 @@ func (h *ArrowHNSW) EnableTurboQuant(bits int) {
 
 // GetShardedLocks returns the sharded mutex for concurrent access
 
+// tqRuntime is the TurboQuant encoder and its distance computer, published as
+// one immutable unit.
+//
+// They are always replaced together and are only ever replaced when the
+// dimension they are bound to changes, which happens while the index is still
+// empty. Publishing them as a pair rather than as two independent pointers means
+// a concurrent reader cannot observe a new encoder beside a stale computer, and
+// one atomic load per use replaces two unsynchronised field reads on a path that
+// runs once per candidate.
+type tqRuntime struct {
+	encoder *TurboQuantEncoder
+	compute *TurboQuantCompute
+}
+
+// tq returns the current TurboQuant runtime, or nil when TurboQuant is not
+// engaged. The result is a consistent snapshot; it is never mutated in place.
+func (h *ArrowHNSW) tq() *tqRuntime {
+	return h.tqRuntime.Load()
+}
+
+// tqEncoderOf returns the TurboQuant encoder, or nil when TurboQuant is not
+// engaged, for call sites that only encode or decode and never compute a
+// distance.
+func tqEncoderOf(h *ArrowHNSW) *TurboQuantEncoder {
+	if tq := h.tq(); tq != nil {
+		return tq.encoder
+	}
+	return nil
+}
+
+// ensureTQComponents binds the TurboQuant encoder, the TurboQuant distance
+// computer and the scratch arena to dims, creating whatever is missing.
+//
+// All three are sized from the dimension and are routinely created before it is
+// known: the store builds ArrowHNSWConfig without Dims and lets the first
+// ingested record establish it, so the index is constructed with a zero
+// dimension and these are built against it. Nothing rebuilt them when the real
+// dimension arrived, and a zero-dimension encoder is not merely wasteful - its
+// pow2 rounds up to 1, so the rotated query that every TurboQuant distance is
+// measured against is truncated to a single element. Every candidate then
+// evaluates to distance 0, neighbour selection becomes distance-blind, and layer
+// 0 saturates at full degree from an unordered candidate list: nodes keep 16
+// links each, none of them geometric, and the component reachable from the
+// entry point collapses to a few hundred nodes out of the whole corpus.
+//
+// The symptom is invisible in every timing-based check, because the graph builds
+// faster than a good one. It is only visible as reachability or recall.
+func (h *ArrowHNSW) ensureTQComponents(dims int) {
+	if dims <= 0 {
+		return
+	}
+	if h.config.DataType != types.VectorTypeTQ && !h.config.TurboQuantEnabled {
+		return
+	}
+	// The graph data must already carry the dimension: NewTurboQuantCompute
+	// derives its own encoder from it, so publishing before the data is sized
+	// binds the pair to a dimension that is about to change.
+	//
+	// TurboQuantEnabled/TurboQuantBits are deliberately not written here. They
+	// are set once in the constructor and preserved by GraphData.Clone, and
+	// Clone drops the TurboQuant chunk table when the flag is false - so a
+	// write from here would race with every reader of the published data to
+	// change a flag that is already correct.
+	if gd := h.data.Load(); gd == nil || gd.Dims != dims {
+		return
+	}
+	cur := h.tq()
+	if cur == nil || cur.encoder.dims != dims {
+		// TurboQuantBits is read, not written back: the constructor has already
+		// defaulted it, and ArrowHNSWConfig is read unsynchronised by the bulk
+		// and search paths.
+		bits := h.config.TurboQuantBits
+		if bits <= 0 || bits > 8 {
+			bits = 8
+		}
+		h.publishTQ(dims, bits)
+	} else if cur.compute == nil || cur.compute.encoder.dims != dims {
+		// The computer derives its own encoder from the graph data dimension,
+		// so it can disagree with the index encoder; re-derive it.
+		h.tqRuntime.Store(&tqRuntime{encoder: cur.encoder, compute: NewTurboQuantCompute(h)})
+	}
+	h.EnableTQScratchArena()
+}
+
+// publishTQ builds and publishes the TurboQuant runtime for dims. The caller
+// must have sized the graph data first: NewTurboQuantCompute derives its encoder
+// from that dimension, so publishing before the data is sized binds the pair to
+// a dimension that is about to change.
+func (h *ArrowHNSW) publishTQ(dims, bits int) {
+	if bits <= 0 || bits > 8 {
+		bits = 4
+	}
+	enc := NewTurboQuantEncoder(dims, bits, 42)
+	h.tqRuntime.Store(&tqRuntime{encoder: enc, compute: NewTurboQuantCompute(h)})
+}
+
 // GetTQScratchArena returns the active ephemeral TurboQuant scratch arena, or nil if none.
 func (h *ArrowHNSW) GetTQScratchArena() *TQScratchArena {
 	return h.tqArena.Load()
 }
 
+// tqVectorAt returns the reconstructed float32 vector for id, preferring the
+// scratch arena and reconstructing it on a miss.
+//
+// Get alone is not usable at these call sites. The arena retains a bounded
+// working set and is also created before the index dimension is known in the
+// common server path - the store builds ArrowHNSWConfig without Dims and lets
+// the first ingested record establish it - so Get misses for vectors that were
+// decoded perfectly well. A caller that treats a miss as "no vector" silently
+// loses the geometric information it needed: neighbour pruning, which drops a
+// candidate it cannot measure, then rebuilds a full degree budget from an
+// unordered list, and the resulting layer 0 is a forward-only structure that a
+// large fraction of the corpus cannot be reached through. Decoding on miss
+// costs what the cache was meant to save and keeps the decision correct.
+func (h *ArrowHNSW) tqVectorAt(arena *TQScratchArena, id uint32, dim int) ([]float32, bool) {
+	tq := h.tq()
+	if arena == nil || dim <= 0 || tq == nil || tq.compute == nil {
+		return nil, false
+	}
+	if v, ok := arena.Get(id); ok && len(v) >= dim {
+		return v, true
+	}
+	v, err := arena.GetOrDecode(id, func(_ uint32, dst []float32) error {
+		code, err := tq.compute.getTQBytes(id, nil, math.MaxUint64)
+		if err != nil {
+			return err
+		}
+		return tq.compute.encoder.DecodeInto(code, dst)
+	})
+	if err != nil || len(v) < dim {
+		return nil, false
+	}
+	return v, true
+}
+
 // EnableTQScratchArena initializes and activates the ephemeral scratch arena for indexing.
+//
+// An arena is bound to the dimension it was created with, because every chunk
+// it allocates is sized from it. The index is frequently constructed before its
+// dimension is known, so an arena created then is bound to 0 and can never
+// return a usable vector; recreating it on a dimension change is what keeps the
+// cache live instead of silently absent.
 func (h *ArrowHNSW) EnableTQScratchArena() *TQScratchArena {
 	if existing := h.tqArena.Load(); existing != nil && existing.IsEnabled() {
-		return existing
+		if existing.Dims() == h.arenaDims() {
+			return existing
+		}
+		// The superseded arena is dropped, not Released. Release clears the
+		// chunk table that in-flight bulk workers and searches may still be
+		// reading through a pointer they already hold; letting the collector
+		// reclaim it once the last reader drops it cannot, and the working set
+		// is bounded by maxResidentChunks, so there is nothing to gain by being
+		// prompt about it.
 	}
+	arena := NewTQScratchArena(h.arenaDims())
+	h.tqArena.Store(arena)
+	return arena
+}
+
+// arenaDims is the dimension the scratch arena should be bound to: the live
+// index dimension, falling back to the configured one before the dimension has
+// been discovered from the first ingested record.
+func (h *ArrowHNSW) arenaDims() int {
 	dims := int(h.dims.Load())
 	if dims <= 0 {
 		if gd := h.data.Load(); gd != nil {
@@ -623,9 +777,10 @@ func (h *ArrowHNSW) EnableTQScratchArena() *TQScratchArena {
 	if dims <= 0 {
 		dims = h.config.Dims
 	}
-	arena := NewTQScratchArena(dims)
-	h.tqArena.Store(arena)
-	return arena
+	if dims <= 0 {
+		return 0
+	}
+	return dims
 }
 
 // ReleaseTQScratchArena deallocates and releases the ephemeral scratch arena after indexing.
@@ -751,15 +906,6 @@ func (h *ArrowHNSW) SetDimension(dim int) error {
 	h.initMu.Lock()
 	defer h.initMu.Unlock()
 	h.resolveAllDistanceFuncs()
-
-	if h.config.DataType == types.VectorTypeTQ || h.config.TurboQuantEnabled {
-		bits := h.config.TurboQuantBits
-		if bits == 0 {
-			bits = 8
-		}
-		h.tqEncoder = NewTurboQuantEncoder(dim, bits, 42)
-		h.tqCompute = NewTurboQuantCompute(h)
-	}
 
 	data := h.data.Load()
 	if data != nil {

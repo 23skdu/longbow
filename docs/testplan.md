@@ -163,7 +163,34 @@ For each test configuration:
    - Archive 7 core profile types: `profile` (CPU), `heap`, `allocs`, `goroutine`, `threadcreate`, `block`, and `mutex`.
 6. **Persistence & Tear-down**:
    - Commit incremental JSON checkpoints to `data/perf_logs/perf_matrix_<mode>_<label>_<timestamp>.json`.
-   - Terminate the server gracefully and enforce a 2-second port cooling period before next test.
+   - Terminate the server gracefully and wait 1 second before the next test. A longer
+     fixed sleep buys nothing: `start_server` already retries each port with an
+     exponential backoff until `bind` succeeds, so what it is actually waiting out
+     is `TIME_WAIT`, not a fixed cooldown.
+
+### 4.2a Configuration Fidelity: the harness must exercise the server's own code path
+
+Two configuration gaps have produced benchmark rows that are wrong rather than
+merely stale. Both are the same shape — a harness default that quietly differs
+from what the server does — and both are checkable.
+
+1. **Index dimension.** The store builds `ArrowHNSWConfig` without `Dims` and lets
+   the first ingested record establish it (`internal/store/store_ingest.go`). Every
+   in-process index test sets `cfg.Dims` explicitly, so a dimension-sensitive
+   defect is invisible to the whole Go suite and only appears in a server run.
+   Any new configuration the store derives at runtime rather than from the config
+   needs an in-process test that reproduces the store's shape. For TurboQuant this
+   was worth 8.2% → 99.2% reachability (§ `docs/performance.md`).
+2. **Effective HNSW parameters.** The harness sets both `LONGBOW_MAX_M0` and
+   `LONGBOW_HNSW_MMAX0`. Only the latter is read by
+   `types.DefaultArrowHNSWConfig`; `LONGBOW_MAX_M0` is a cap applied by
+   `insertion_core.go` during *adaptive M* growth and does nothing on its own.
+   Read the value back from the server (`/metrics`, or the startup log) before
+   assuming a parameter took effect.
+
+A benchmark row is a claim about a configuration. If the configuration under
+which it was taken cannot be reconstructed from the row, the row cannot gate
+anything, and a `>10%` delta against it is not evidence of a regression.
 
 ### 4.3 Benchmarking Observations & Hardware Hotspot Analysis
 
@@ -253,6 +280,31 @@ too small to call" from "inconsistent, so the noise floor is above the effect".
 An `inconclusive` result on a change you believe matters means the harness was
 not given enough reps, not that the change is safe. Note that on server machines with multiple vCPUs, `--cpu-affinity` should be omitted as core pinning is neither necessary nor beneficial.
 
+### 5.3 Measuring the noise floor before believing a delta
+
+Pass the *same* binary as both arms. That answers a question `--compare-baseline`
+cannot: how large a swing this host produces with no change at all, which is the
+yardstick every other delta has to be read against.
+
+```bash
+python3 scripts/ab_benchmark.py \
+    --baseline-binary bin/longbow_main --candidate-binary bin/longbow_main \
+    --counts 100000 --dtypes int32,uint64,float32 \
+    --search-modes dense,byid,temporal,sparse,filteredstring,geo \
+    --queries 500 --workers 4 --reps 3 --threshold 10 --cpu-affinity 12-15 --seed 42
+```
+
+Measured on the AVX2 client (2026-10-12, 3 pairs, 18 rows): every median landed
+within ±3.9%, and every row came back `inconclusive` — but individual pairs
+ranged from −31% to +41%. The median is not the noise floor; the spread is. A
+single-run comparison against a recorded baseline that shows a 10–30% drop is
+consistent with this spread and is not evidence of anything on its own.
+
+Note what this does *not* excuse: it excuses a delta whose magnitude is inside
+the spread. A TurboQuant QPS row that was 4× too high while the graph was 92%
+unreachable is not noise, and no number of reps would have hidden it. Reachability
+and recall are the checks that catch a fast-but-wrong build, and they are exact.
+
 
 ---
 
@@ -261,3 +313,15 @@ not given enough reps, not that the change is safe. Note that on server machines
 - Temporary profiling `.pprof` files and graph dumps (`.bin`) must not be committed to version control.
 - Only summary performance metrics, consolidated logs, and documentation (`docs/performance.md`, `docs/roadmap.md`) shall be tracked in git.
 - Test artifacts and binaries must be periodically cleared using the project clean guidelines.
+- `data/perf_logs/`, `data/bench/` and `scratch/perfruns/` are run output, not
+  baselines. Clear them between runs: `unified_benchmark.py` keys its result files
+  on `<mode>_<dtype>_<dim>_<count>` and *not* on the variant, so a standard run
+  and an EMLGo run at the same configuration overwrite each other's server logs and
+  per-dtype result files. The `perf_matrix_<label>_<timestamp>.json` reports survive
+  only because `--label` differs between the two runs; archive them explicitly if
+  they matter.
+- `benchmarks/baseline_matrix.json` is the consolidated multi-variant baseline
+  written by `analyze_benchmark_matrix.py`. It records the `perf_matrix_*` files it
+  was built from in `source_files`, and it is worthless once those files are gone
+  — it does not fail, it just stops describing anything reproducible. Regenerate it
+  in the same pass that produces `docs/performance.md`, or delete it.

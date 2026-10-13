@@ -339,14 +339,20 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 				if len(selected) >= m {
 					break
 				}
-				v1, ok1 := arena.Get(cand.ID)
-				if !ok1 || len(v1) < dim {
+				// A cache miss must cost a decode, never the candidate.
+				// tqVectorAt decodes on demand, and only a vector that cannot
+				// be reconstructed at all falls through to "accept", because
+				// dropping it here prunes a neighbour list with no geometric
+				// information in it. See tqVectorAt.
+				v1, ok1 := h.tqVectorAt(arena, cand.ID, dim)
+				if !ok1 {
+					selected = append(selected, cand)
 					continue
 				}
 				isDiverse := true
 				for j := range selected {
-					v2, ok2 := arena.Get(selected[j].ID)
-					if ok2 && len(v2) >= dim {
+					v2, ok2 := h.tqVectorAt(arena, selected[j].ID, dim)
+					if ok2 {
 						d, _ := h.distFunc(v1[:dim], v2[:dim])
 						if d < cand.Dist {
 							isDiverse = false

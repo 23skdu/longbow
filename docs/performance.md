@@ -1,7 +1,43 @@
 # Longbow Performance Benchmarks
 
-**Date:** 2026-10-09 (50k TurboQuant & 100k CPU + CUDA rows re-measured; 10k / 250k / 500k rows still 2026-09-26)  
-**Baseline Release Candidate:** `v0.2.5-rc1`  
+**Date:** 2026-10-12 (CPU AVX2 rows re-measured at 100k, 15 dtypes × 13 search modes, standard and EMLGo; TurboQuant rows corrected — see the warning below)  
+**Baseline Release Candidate:** `v0.2.5-rc1`
+
+> [!WARNING]
+> **Every TurboQuant row in §2 and §3 was measured on a broken graph and has been
+> superseded.** They are kept below only so the change is legible; do not use them.
+>
+> The store builds `ArrowHNSWConfig` without `Dims` and lets the first ingested
+> record establish the dimension (`internal/store/store_ingest.go`). The index, and
+> every component sized from the dimension — including the TurboQuant encoder — was
+> therefore created against dimension 0, and nothing re-bound it when the real
+> dimension arrived. A zero-dimension encoder rounds `pow2` up to 1, so the rotated
+> query that every TurboQuant distance is measured against was truncated to a single
+> element. Every candidate evaluated to distance 0, neighbour selection stopped
+> discriminating on distance, and layer 0 filled to its full degree budget from an
+> unordered candidate list.
+>
+> The graph looks healthy to any check that counts edges — every node keeps its 16
+> links — and broken to any check that asks whether the corpus is reachable:
+>
+> | 100,000 vectors, dim 128 | reachable from entry point | mean degree | bulk guard |
+> |---|---|---|---|
+> | `turboquant4`, before | **8,192 / 100,000 (8.2%)** | 15.98 | tripped, fell back to sequential |
+> | `turboquant8`, before | **8,192 / 100,000 (8.2%)** | 15.98 | tripped, fell back to sequential |
+> | `turboquant4`, after | **99,206 / 100,000 (99.2%)** | 16.00 | clean |
+> | `turboquant8`, after | **99,272 / 100,000 (99.3%)** | 15.85 | clean |
+>
+> `float32`, `int8` and `complex128` reached 98–99% in the same runs, so this was
+> never a bulk-insertion defect: it is specific to the dimension-bound TurboQuant
+> path. `TestTurboQuantGraphIsConnected` passed throughout, because every in-process
+> test sets `cfg.Dims` explicitly — the store does not. That is the gap the new
+> `TestTurboQuantGraphIsConnectedWithoutConfiguredDimension` closes.
+>
+> The 2026-10-09 note below, attributing ~300–420 QPS to "the honest number on a
+> fully connected graph", is itself an artefact of the same defect: a graph with
+> 8% reachability terminates the beam almost immediately, so a broken index
+> reports *fast*. Corrected 100k figures are in §3a.
+  
 
 > [!WARNING]
 > **The TurboQuant rows at 250k and 500k still predate `a955a0c1`.** The 50k and 100k
@@ -183,7 +219,94 @@ directly in the primary performance matrix (see `docs/roadmap.md` Item 3).
 
 ---
 
+## 3a. TurboQuant @ 100k, dim 128, on a reachable graph (2026-10-12)
+
+Re-measured after the dimension-binding fix, on the same AVX2 client configuration as §3
+(`--workers 4 --cpu-affinity 12-15`, 500 queries, seed 42, all 13 search modes). This is the
+replacement for the TurboQuant rows in §3; it is not comparable with them.
+
+| Engine | Dtype | Ingestion (vec/s) | Index Time (s) | Peak RSS (MB) | Reachability |
+|---|---|---|---|---|---|
+| CPU Standard | turboquant4 | 357,403.5 | 96.0s | 1,590.5 MB | 99.2% |
+| CPU Standard | turboquant8 | 364,851.1 | 98.0s | 1,639.1 MB | 99.3% |
+| CPU EMLGo | turboquant4 | 339,560.4 | 100.5s | 1,661.9 MB | 99.2% |
+| CPU EMLGo | turboquant8 | 344,144.9 | 99.5s | 1,619.6 MB | 99.3% |
+
+| Dtype | Mode | QPS | P50 (ms) | P95 (ms) | P99 (ms) |
+|---|---|---|---|---|---|
+| turboquant4 | **dense** | 1,493.8 | 2.316 | 4.649 | 5.891 |
+| turboquant4 | **hybrid** | 1,615.7 | 2.390 | 3.264 | 3.766 |
+| turboquant4 | **sparse** | 6,005.4 | 0.696 | 0.818 | 0.853 |
+| turboquant4 | **filtered** | 1,331.0 | 2.302 | 3.528 | 4.620 |
+| turboquant4 | **filteredbool** | 978.9 | 3.619 | 5.706 | 13.181 |
+| turboquant4 | **filteredstring** | 628.1 | 5.750 | 8.750 | 13.969 |
+| turboquant4 | **byid** | 1,725.1 | 2.169 | 3.331 | 4.016 |
+| turboquant4 | **graphrag** | 1,037.0 | 3.247 | 6.440 | 9.354 |
+| turboquant4 | **globalgraphrag** | 1,217.7 | 3.165 | 4.353 | 5.163 |
+| turboquant4 | **recommend** | 1,478.5 | 2.342 | 4.683 | 5.786 |
+| turboquant4 | **geo** | 237.1 | 14.704 | 38.971 | 52.543 |
+| turboquant4 | **temporal** | 5,518.5 | 0.599 | 0.889 | 1.248 |
+| turboquant4 | **learnedindex** | 1,544.7 | 2.433 | 3.600 | 4.442 |
+| turboquant8 | **dense** | 1,411.5 | 2.447 | 4.710 | 8.150 |
+| turboquant8 | **hybrid** | 1,586.1 | 2.367 | 3.601 | 4.407 |
+| turboquant8 | **sparse** | 5,873.5 | 0.700 | 0.873 | 1.127 |
+| turboquant8 | **filtered** | 1,305.0 | 2.362 | 3.332 | 4.213 |
+| turboquant8 | **filteredbool** | 962.9 | 3.655 | 6.426 | 11.684 |
+| turboquant8 | **filteredstring** | 620.8 | 5.920 | 8.893 | 13.490 |
+| turboquant8 | **byid** | 1,690.6 | 2.211 | 3.326 | 4.054 |
+| turboquant8 | **graphrag** | 1,089.4 | 3.341 | 5.882 | 8.263 |
+| turboquant8 | **globalgraphrag** | 1,212.9 | 3.148 | 4.263 | 5.295 |
+| turboquant8 | **recommend** | 1,417.3 | 2.427 | 4.972 | 7.035 |
+| turboquant8 | **geo** | 238.5 | 15.175 | 30.605 | 53.925 |
+| turboquant8 | **temporal** | 5,526.3 | 0.610 | 0.879 | 1.274 |
+| turboquant8 | **learnedindex** | 1,331.9 | 2.582 | 5.834 | 7.970 |
+| turboquant4 (CPU EMLGo) | **dense** | 1,624.2 | 2.295 | 3.503 | 4.190 |
+| turboquant4 (CPU EMLGo) | **hybrid** | 1,429.3 | 2.566 | 4.411 | 5.403 |
+| turboquant4 (CPU EMLGo) | **sparse** | 5,635.6 | 0.698 | 1.028 | 2.251 |
+| turboquant4 (CPU EMLGo) | **filtered** | 1,273.5 | 2.349 | 3.493 | 4.982 |
+| turboquant4 (CPU EMLGo) | **filteredbool** | 976.8 | 3.683 | 5.945 | 8.613 |
+| turboquant4 (CPU EMLGo) | **filteredstring** | 616.0 | 5.865 | 8.859 | 11.472 |
+| turboquant4 (CPU EMLGo) | **byid** | 1,682.8 | 2.216 | 3.362 | 4.173 |
+| turboquant4 (CPU EMLGo) | **graphrag** | 1,208.6 | 3.149 | 4.566 | 5.138 |
+| turboquant4 (CPU EMLGo) | **globalgraphrag** | 1,091.5 | 3.306 | 5.874 | 9.629 |
+| turboquant4 (CPU EMLGo) | **recommend** | 1,728.3 | 2.138 | 3.203 | 3.726 |
+| turboquant4 (CPU EMLGo) | **geo** | 234.0 | 14.948 | 40.587 | 52.644 |
+| turboquant4 (CPU EMLGo) | **temporal** | 5,579.1 | 0.585 | 0.864 | 1.259 |
+| turboquant4 (CPU EMLGo) | **learnedindex** | 1,505.4 | 2.480 | 3.721 | 4.363 |
+| turboquant8 (CPU EMLGo) | **dense** | 1,640.6 | 2.318 | 3.296 | 4.091 |
+| turboquant8 (CPU EMLGo) | **hybrid** | 1,618.3 | 2.359 | 3.184 | 3.787 |
+| turboquant8 (CPU EMLGo) | **sparse** | 5,183.1 | 0.784 | 1.018 | 1.505 |
+| turboquant8 (CPU EMLGo) | **filtered** | 1,064.0 | 2.322 | 3.471 | 4.506 |
+| turboquant8 (CPU EMLGo) | **filteredbool** | 1,059.2 | 3.387 | 4.868 | 5.960 |
+| turboquant8 (CPU EMLGo) | **filteredstring** | 617.2 | 5.900 | 8.837 | 14.140 |
+| turboquant8 (CPU EMLGo) | **byid** | 1,246.2 | 2.839 | 5.258 | 7.490 |
+| turboquant8 (CPU EMLGo) | **graphrag** | 1,152.5 | 3.240 | 4.826 | 5.769 |
+| turboquant8 (CPU EMLGo) | **globalgraphrag** | 1,125.0 | 3.165 | 5.597 | 8.674 |
+| turboquant8 (CPU EMLGo) | **recommend** | 1,640.6 | 2.259 | 3.293 | 3.929 |
+| turboquant8 (CPU EMLGo) | **geo** | 230.7 | 14.935 | 41.249 | 56.796 |
+| turboquant8 (CPU EMLGo) | **temporal** | 5,581.9 | 0.591 | 0.862 | 1.528 |
+| turboquant8 (CPU EMLGo) | **learnedindex** | 1,536.6 | 2.490 | 3.627 | 4.497 |
+
+---
+
 ## 3. Search Modalities Throughput (QPS) & Latencies
+
+> [!NOTE]
+> The TurboQuant rows below are superseded by §3a and are retained only for
+> comparison against older runs. See the warning at the top of this file.
+>
+> **The rest of this table is not a trustworthy regression baseline.** It mixes
+> three provenances (2026-09-26, 2026-10-09, and the 2026-10-12 CPU run) with no
+> seed recorded, and a 2026-10-12 re-run of the CPU arm against it flagged 16 of
+> 195 rows as >10% below these numbers. A self-versus-self interleaved A/B on the
+> same host (`scripts/ab_benchmark.py`, identical binary in both arms, 3 pairs,
+> `float32`/`int32`/`uint64` × 6 modes) puts the median pair-to-pair difference
+> at −3.9% to +3.9% but the per-pair spread as wide as −31% to +41%
+> (`int32`/`byid`: −4%…+41%; `uint64`/`temporal`: −31%…0%; `int32`/`temporal`:
+> −30%…+23%). So a single-run delta of the size seen here is not separable from
+> noise on one sample, exactly as `docs/testplan.md` §5.1 predicts for a 10%
+> single-run gate. Do not remediate code from these rows; re-baseline with
+> `--runs 3 --save-baseline` first.
 
 Measured with 4 concurrent workers pinned to CPUs 12-15. The 2026-10-09 rows at
 100,000 cover all **13** search modalities; the 2026-09-26 rows at 10k, 50k, 250k

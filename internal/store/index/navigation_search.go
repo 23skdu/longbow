@@ -817,11 +817,14 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		if bypassQuantization {
 			// Bypass TurboQuant and Product Quantization to force exact matching fallback
 		} else {
-			if h.tqCompute != nil && data.TurboQuantEnabled && searchCtx != nil {
-				if len(searchCtx.rotatedQueryTQ) < h.tqCompute.encoder.pow2 {
-					searchCtx.rotatedQueryTQ = make([]float32, h.tqCompute.encoder.pow2)
+			// One load: the runtime is replaced as a unit when the dimension is
+			// discovered, and two loads could straddle that replacement.
+			if tq := h.tq(); tq != nil && tq.compute != nil && data.TurboQuantEnabled && searchCtx != nil {
+				pow2 := tq.compute.encoder.pow2
+				if len(searchCtx.rotatedQueryTQ) < pow2 {
+					searchCtx.rotatedQueryTQ = make([]float32, pow2)
 				}
-				_ = h.tqCompute.PrecomputeRotatedQuery(q, searchCtx.rotatedQueryTQ)
+				_ = tq.compute.PrecomputeRotatedQuery(q, searchCtx.rotatedQueryTQ)
 				return &tqComputer{data: data, h: h, rotatedQuery: searchCtx.rotatedQueryTQ, diskGraph: searchCtx.diskGraph, maxGen: searchCtx.MaxGeneration}
 			}
 			if h.config.PQEnabled && h.oopqEncoder != nil {

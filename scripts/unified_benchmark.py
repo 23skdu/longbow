@@ -26,6 +26,7 @@ Disk Spillover Modes:
 
 import argparse
 import atexit
+import hashlib
 import json
 import os
 import platform
@@ -195,6 +196,13 @@ def parse_bench_json(json_file):
                         "truncated": entry.get("queries_truncated", 0),
                     })
                     continue
+
+                # Item 31: every Search_ row carries the digest of the whole
+                # run's search output, so the perf matrix records whether two
+                # runs actually returned the same answers next to the numbers
+                # being compared. Same digest on every row; keep the first.
+                if entry.get("search_results_digest") and "search_results_digest" not in metrics:
+                    metrics["search_results_digest"] = entry["search_results_digest"]
 
                 metrics[f"{prefix}_qps"] = entry.get("throughput", 0)
                 metrics[f"{prefix}_mean_ms"] = entry.get("mean_latency_ms", 0)
@@ -371,6 +379,35 @@ PROVENANCE_ENV_VARS = (
 )
 
 
+def env_seed():
+    """Read LONGBOW_BENCH_SEED, or None when it is unset or not an integer.
+
+    One seed for the whole benchmark: the harness passes it to the client as
+    the per-config corpus/query seed and to the server as the graph level seed.
+    (roadmap Item 31)
+    """
+    v = os.environ.get("LONGBOW_BENCH_SEED")
+    if not v:
+        return None
+    try:
+        return int(v)
+    except ValueError:
+        print(f"Warning: LONGBOW_BENCH_SEED={v!r} is not an integer, ignoring")
+        return None
+
+
+def derive_config_seed(base_seed, label):
+    """Derive the per-config seed from the run seed and the config label.
+
+    A pure function of the two, so a config's corpus depends on what the config
+    is rather than on where it sat in the matrix or which configs ran before it.
+    That is what makes a harness restart mid-run reproduce the same corpus
+    instead of shifting every later config's data. (roadmap Item 31)
+    """
+    digest = hashlib.sha256(f"{base_seed}:{label}".encode()).digest()
+    return int.from_bytes(digest[:8], "big") % (2**62 - 1)
+
+
 def git_revision(repo_dir=None):
     """Return (revision, dirty) for the working tree, or (None, None)."""
     try:
@@ -425,6 +462,7 @@ def collect_provenance(args):
         "search_modes_resolved": getattr(args, "resolved_search_modes", None),
         "runs": getattr(args, "runs", None),
         "seed": getattr(args, "seed", None),
+        "seed_env": os.environ.get("LONGBOW_BENCH_SEED"),
         "shuffle_modes": getattr(args, "shuffle_modes", False),
         "duration": getattr(args, "duration", None),
         "numa_bind": getattr(args, "numa_bind", None),
@@ -1032,6 +1070,13 @@ class BenchmarkRunner(ScenarioMixin):
             print(f"  [MEMORY] Ceiling {format_size_gb(limit_bytes)}"
                   + (f" (available {format_size_gb(available)})" if available else ""))
         env["LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT"] = "true"
+        # Item 31: the seed has to reach the server too. It fixes per-node
+        # level assignment (index.LevelSeed) and, being set at all, pins the
+        # ingestion and index worker pools at one and stops EfConstruction
+        # being resized off queue depth - without those the same corpus builds
+        # a different graph on every run no matter how the client is seeded.
+        if getattr(self.args, "seed", None) is not None:
+            env["LONGBOW_BENCH_SEED"] = str(self.args.seed)
         env["ARROW_DISABLE_LOCKING"] = "1"
         env["LONGBOW_GOGC"] = "200"
         env["LONGBOW_INGESTION_WORKER_COUNT"] = "6"
@@ -1470,7 +1515,15 @@ class BenchmarkRunner(ScenarioMixin):
         # later comparison can tell whether two runs used the same modes in the
         # same order. bench-tool normalises and reorders the list it is given.
         self.args.resolved_search_modes = [m for m in str(search_modes).split(",") if m]
-        seed_arg = f" -seed {self.args.seed}" if getattr(self.args, "seed", None) is not None else ""
+        base_seed = getattr(self.args, "seed", None)
+        if base_seed is not None:
+            config_seed = derive_config_seed(base_seed, label)
+            seed_arg = f" -seed {config_seed}"
+            self.current_config_seed = config_seed
+        else:
+            config_seed = None
+            seed_arg = ""
+            self.current_config_seed = None
         shuffle_arg = " -shuffle-modes" if getattr(self.args, "shuffle_modes", False) else ""
         cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {wire_dtype}{tq_arg}{seed_arg}{shuffle_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
         cpu_affinity = getattr(self.args, "cpu_affinity", None) or os.environ.get("LONGBOW_CPU_AFFINITY")
@@ -1644,6 +1697,10 @@ class BenchmarkRunner(ScenarioMixin):
             "wire_dtype": wire_dtype,
             "tq_bits": tq_bits,
             "seed": self.args.seed if getattr(self.args, "seed", None) is not None else None,
+            # Item 31: the seed actually handed to the client for this config.
+            # Recorded next to the run seed because the two are not equal and a
+            # reproduction needs the one the corpus was drawn from.
+            "config_seed": getattr(self, "current_config_seed", None),
             "timestamp": datetime.now().isoformat(),
         }
         self.results.append(result_entry)
@@ -2632,13 +2689,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seed",
         type=int,
-        default=None,
+        default=env_seed(),
         help=(
-            "Seed for the benchmark client's corpus, queries and ByID ids. "
-            "Repeatability is a precondition for a percentage regression gate "
-            "(roadmap R16). Left unset the client uses its own fixed default, "
-            "which is deterministic; set explicitly to compare against a "
-            "baseline taken with a known seed."
+            "Seed for the benchmark run. It seeds both ends: each config's "
+            "corpus, queries and ByID ids (derived from this and the config "
+            "label, so a restart mid-run reproduces the same data), and the "
+            "server's graph level assignment via LONGBOW_BENCH_SEED, which "
+            "also pins the ingest worker pools so the index itself is "
+            "reproducible (roadmap Item 31). Defaults to $LONGBOW_BENCH_SEED "
+            "when set; otherwise the client uses its own fixed default."
         ),
     )
     parser.add_argument(

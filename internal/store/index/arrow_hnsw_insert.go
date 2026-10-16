@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand/v2"
 	"runtime"
 	"slices"
 	"sync/atomic"
@@ -722,7 +721,7 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 
 	h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 
-	err := h.InsertWithVector(id, vec, h.generateLevel())
+	err := h.InsertWithVector(id, vec, h.levelFor(id))
 	if err != nil {
 		return 0, err
 	}
@@ -755,20 +754,12 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 
 	h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 
-	err := h.InsertWithVector(id, vec, h.generateLevel())
+	err := h.InsertWithVector(id, vec, h.levelFor(id))
 	if err != nil {
 		return 0, err
 	}
 
 	return id, nil
-}
-
-func (h *ArrowHNSW) generateLevel() int {
-	l := int(math.Floor(-math.Log(rand.Float64()) * h.levelMultiplier)) // #nosec G404
-	if l >= types.ArrowMaxLayers {
-		l = types.ArrowMaxLayers - 1
-	}
-	return l
 }
 
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {

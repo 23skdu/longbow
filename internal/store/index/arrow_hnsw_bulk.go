@@ -406,8 +406,10 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			cID := types.ChunkID(id)
 			cOff := types.ChunkOffset(id)
 
-			// Level generation
-			level := h.generateLevel()
+			// Level generation, derived from the node ID so the bulk linker
+			// produces the same levels whatever order the parallel prep loop
+			// reaches the nodes in (roadmap Item 31).
+			level := h.levelFor(id)
 
 			// Vector Ingestion (Zero-Copy from passed batch)
 			var v any
@@ -804,6 +806,16 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		// cleared as the sub-batch is dispatched.
 		graphCandidates := make([]*[]types.Candidate, numRemaining)
 
+		// Counting-sort cursors for the P2 pass below, sized for the widest
+		// node id this batch can produce (nodeCount has not been updated for
+		// the batch yet) and reused by every sub-batch of this layer. P2
+		// leaves them zeroed, so no clearing is needed between sub-batches.
+		linkageCounts := make([]int, int(h.nodeCount.Load())+numRemaining+1)
+		linkageCursors := make([]int, len(linkageCounts))
+		// Backing store for the pruning guard's in-degree snapshot, reused by
+		// every sub-batch of this layer.
+		var linkageInDegree inDegreeSnapshot
+
 		for i := 0; i < len(activeIndices); i += subBatchSize {
 			// Sub-batches are the unit of work between two graph clones, so
 			// this is the natural place to bail out without leaving a
@@ -912,14 +924,61 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 				return errLayer
 			}
 
-			// 3b. Linkage (Parallel for Sub-Batch)
-			linkageChunkSize := (len(subIndices) + runtime.NumCPU() - 1) / runtime.NumCPU()
+			// 3b. Linkage, in three passes (roadmap Item 31).
+			//
+			// This used to be one parallel loop that decided each node's
+			// neighbours and wrote them at the same time. Every node writes
+			// reverse edges into its *neighbours'* lists, so two goroutines
+			// landed on the same list, and a list over its connection limit is
+			// pruned by a heuristic that depends on the order the edges arrived
+			// in. Which edges survived - and so the whole graph, and every
+			// answer read from it - depended on the scheduler: two builds of one
+			// corpus with one seed produced two different graphs.
+			//
+			// The passes give every adjacency list exactly one writer at a time,
+			// in an order that is a function of the sub-batch alone:
+			//
+			//	P1  decide against the frozen graph and write only this node's
+			//	    own list (the back half of a chain link and the forward set).
+			//	    The targets are disjoint, so the pass stays parallel.
+			//	P2  apply the cross-node edges - the forward half of each chain
+			//	    link and every reverse link - counting-sorted by target, so
+			//	    one goroutine owns one list, and in sub-batch order within
+			//	    it. That also removes the CAS contention the interleaved
+			//	    version spent its time on: the measured cost of dropping the
+			//	    parallelism outright was +12% on a 100k bulk build.
+			//	P3  run the inbound guard, which decides from the in-degree P2
+			//	    just wrote, so it runs after P2 and in node order.
+			//
+			// Selection reads only the candidate list and the vectors, which
+			// neither P1 nor P2 touches, so P3 recovers a node's forward set by
+			// selecting again rather than P1 carrying it out of the pooled
+			// buffers.
+			K := len(subIndices)
+			linkageChunkSize := (K + runtime.NumCPU() - 1) / runtime.NumCPU()
 			if linkageChunkSize < 16 {
 				linkageChunkSize = 16
 			}
 
-			pool.ParallelFor(len(subIndices), linkageChunkSize, func(start, end int) {
-				for _, idx := range subIndices[start:end] {
+			// One edge buffer per worker chunk: P1 appends to its own without a
+			// lock, and concatenating the buffers in chunk order gives a total
+			// order that depends on the sub-batch, not on the schedule.
+			type linkOp struct {
+				target  uint32
+				src     uint32
+				dist    float32
+				maxConn int32
+			}
+			numChunks := (K + linkageChunkSize - 1) / linkageChunkSize
+			chunkOps := make([][]linkOp, numChunks)
+
+			// P1: decide, and write this node's own list only.
+			pool.ParallelFor(K, linkageChunkSize, func(start, end int) {
+				chunk := start / linkageChunkSize
+				ops := chunkOps[chunk]
+				defer func() { chunkOps[chunk] = ops }()
+				for pos := start; pos < end; pos++ {
+					idx := subIndices[pos]
 					// Linkage is the expensive half of a layer (neighbour
 					// selection per node), so check cancellation here too.
 					// Checked before ctxLink is taken so there is no pooled
@@ -998,7 +1057,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					//
 					// The single-element source/distance slices are pooled: this
 					// used to allocate two of them per node on top of the two
-					// more it allocated per reverse link below.
+					// more it allocated for every reverse link.
 					linkSrc := append(ctxLink.linkSrc[:0], node.id)
 					ctxLink.linkSrc = linkSrc[:0]
 					linkDist := append(ctxLink.linkDist[:0], float32(0))
@@ -1007,7 +1066,18 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 						h.computeDistances(ctxLink, data, node.id-1, linkSrc, linkDist)
 						medianDist := candidates[len(candidates)/2].Dist
 						if linkDist[0] <= medianDist {
-							_ = h.AddConnectionsBatch(ctxLink, data, node.id-1, linkSrc, linkDist, lc, int(h.mMax0.Load()))
+							// The forward half points at the predecessor's list, which
+							// this node does not own: hand it to P2. The values are
+							// copied out here because backSrc below writes over the
+							// buffer linkSrc shares.
+							ops = append(ops, linkOp{
+								target:  node.id - 1,
+								src:     node.id,
+								dist:    linkDist[0],
+								maxConn: int32(h.mMax0.Load()), // #nosec G115 -- layer connection limit, not a row count
+							})
+							// The back half points at this node's own list, so P1
+							// applies it here, ahead of the forward set, as before.
 							backSrc := append(ctxLink.linkSrc[:0], node.id-1)
 							ctxLink.linkSrc = backSrc[:0]
 							_ = h.AddConnectionsBatch(ctxLink, data, node.id, backSrc, linkDist, lc, int(h.mMax0.Load()))
@@ -1045,37 +1115,200 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 
 					_ = h.AddConnectionsBatch(ctxLink, data, node.id, fSources, fDists, lc, int(maxConn))
 
-					// Iterate the private copy: AddConnectionsBatch re-enters
-					// neighbour selection (to prune an over-capacity target),
-					// which overwrites the shared scratch buffer that
-					// selectNeighbors returned.
-					//
-					// The reverse link is rebuilt into the pooled single-element
-					// buffers on every iteration instead of allocating a fresh
-					// []uint32 and []float32 per neighbour.
+					// Record rather than apply: the reverse edge points at a
+					// neighbour's list, and both which neighbour and in what
+					// order must not depend on who ran first, so P2 applies them.
+					// fSources/fDists are the private copies the comment above
+					// describes, so they survive the AddConnectionsBatch above.
 					for i, nID := range fSources {
-						revSrc := append(ctxLink.linkSrc[:0], node.id)
-						ctxLink.linkSrc = revSrc[:0]
-						revDist := append(ctxLink.linkDist[:0], fDists[i])
-						ctxLink.linkDist = revDist[:0]
-						_ = h.AddConnectionsBatch(ctxLink, data, nID, revSrc, revDist, lc, int(maxConn))
-					}
-
-					// R26: Guarantee that node.id has at least one inbound edge in layer 0.
-					// If all reverse links were pruned away by saturated hosts, link from
-					// the nearest geometric neighbors in fSources.
-					if lc == 0 && len(fSources) > 0 && InboundEdgeGuardEnabled && h.inDegreeL0.Get(node.id) == 0 {
-						for _, src := range fSources {
-							if h.inDegreeL0.Get(node.id) > 0 {
-								break
-							}
-							h.ensureInboundEdge(ctxLink, data, src, node.id, int(maxConn))
-						}
+						ops = append(ops, linkOp{
+							target:  nID,
+							src:     node.id,
+							dist:    fDists[i],
+							maxConn: int32(maxConn), // #nosec G115 -- layer connection limit, not a row count
+						})
 					}
 
 					h.searchPool.PutWithMetrics(ctxLink, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 				}
 			})
+
+			if errLayer != nil {
+				return errLayer
+			}
+
+			// P2: apply the cross-node edges. The scatter below walks the chunks
+			// in order, so a list that receives edges from several nodes
+			// receives them in sub-batch order however P1 was scheduled, and the
+			// runs then hand each list to exactly one goroutine.
+			totalOps := 0
+			maxTarget := uint32(0)
+			for _, chunk := range chunkOps {
+				totalOps += len(chunk)
+				for _, op := range chunk {
+					if op.target > maxTarget {
+						maxTarget = op.target
+					}
+				}
+			}
+			if totalOps > 0 {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if uint64(maxTarget) >= uint64(len(linkageCounts)) {
+					// Only reachable if a target id escapes the sizing above;
+					// grow rather than index past the end.
+					grow := int(maxTarget) + 1 - len(linkageCounts)
+					linkageCounts = append(linkageCounts, make([]int, grow)...)
+					linkageCursors = append(linkageCursors, make([]int, grow)...)
+				}
+				for _, chunk := range chunkOps {
+					for _, op := range chunk {
+						linkageCounts[op.target]++
+					}
+				}
+				prefix := 0
+				for t := range linkageCounts {
+					linkageCursors[t] = prefix
+					prefix += linkageCounts[t]
+				}
+				flat := make([]linkOp, prefix)
+				for _, chunk := range chunkOps {
+					for _, op := range chunk {
+						flat[linkageCursors[op.target]] = op
+						linkageCursors[op.target]++
+						// Leave the counts zeroed for the next sub-batch.
+						linkageCounts[op.target] = 0
+					}
+				}
+
+				type targetRun struct{ start, end int }
+				runs := make([]targetRun, 0, K+1)
+				for i := 0; i < len(flat); {
+					j := i + 1
+					for j < len(flat) && flat[j].target == flat[i].target {
+						j++
+					}
+					runs = append(runs, targetRun{i, j})
+					i = j
+				}
+				runChunk := (len(runs) + runtime.NumCPU() - 1) / runtime.NumCPU()
+				if runChunk < 1 {
+					runChunk = 1
+				}
+				metaApply := h.metadataRegistry.Load()
+				// The pruning guard decides from inbound-edge counts, and P2 is
+				// the one pass that prunes a list P1 has already written to.
+				// Reading the live tracker from these goroutines would make the
+				// survivors depend on how far the other goroutines had got, so
+				// the guard reads the counts as they stood when P1 finished.
+				var inDegreeView inDegreeReader
+				if lc == 0 && InboundEdgeGuardEnabled {
+					snap := h.inDegreeL0.snapshotInto(uint32(len(linkageCounts)), linkageInDegree)
+					linkageInDegree = snap
+					inDegreeView = snap
+				}
+				pool.ParallelFor(len(runs), runChunk, func(start, end int) {
+					ctxApply := h.searchPool.Get()
+					ctxApply.MaxNodeCount = h.nodeCount.Load()
+					ctxApply.MaxGeneration = metaApply.Generation
+					ctxApply.Reset()
+					ctxApply.AllowUncommitted = true
+					ctxApply.inDegreeView = inDegreeView
+					defer h.searchPool.PutWithMetrics(ctxApply, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+					for ri := start; ri < end; ri++ {
+						if err := ctx.Err(); err != nil {
+							layerMu.Lock()
+							if errLayer == nil {
+								errLayer = err
+							}
+							layerMu.Unlock()
+							return
+						}
+						run := runs[ri]
+						for _, op := range flat[run.start:run.end] {
+							opSrc := append(ctxApply.linkSrc[:0], op.src)
+							ctxApply.linkSrc = opSrc[:0]
+							opDist := append(ctxApply.linkDist[:0], op.dist)
+							ctxApply.linkDist = opDist[:0]
+							_ = h.AddConnectionsBatch(ctxApply, data, op.target, opSrc, opDist, lc, int(op.maxConn))
+						}
+					}
+				})
+				if errLayer != nil {
+					return errLayer
+				}
+			}
+
+			// P3: R26 - guarantee that node.id has at least one inbound edge in
+			// layer 0. If all reverse links were pruned away by saturated hosts,
+			// link from the nearest geometric neighbours. It reads the in-degree
+			// P2 just wrote and decides from it, so it runs afterwards and in node
+			// order; running it earlier could add an inbound edge that a later
+			// prune then removed.
+			if lc == 0 && InboundEdgeGuardEnabled {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				ctxGuard := h.searchPool.Get()
+				ctxGuard.MaxNodeCount = h.nodeCount.Load()
+				metaGuard := h.metadataRegistry.Load()
+				ctxGuard.MaxGeneration = metaGuard.Generation
+				ctxGuard.Reset()
+				ctxGuard.AllowUncommitted = true
+				guardMaxConn := int(h.mMax0.Load())
+				guardM := int(h.m.Load()) * 2
+				if guardM > guardMaxConn {
+					guardM = guardMaxConn
+				}
+				for pos := 0; pos < K; pos++ {
+					idx := subIndices[pos]
+					nodeID := remainingNodes[idx].id
+					if h.inDegreeL0.Get(nodeID) > 0 {
+						continue
+					}
+					candidatesBuf := graphCandidates[idx]
+					if candidatesBuf == nil {
+						continue
+					}
+					allCandidates := *candidatesBuf
+					candidates := append(ctxGuard.bulkCandidates[:0], allCandidates[:0:0]...)
+					for _, c := range allCandidates {
+						if c.ID != nodeID {
+							candidates = append(candidates, c)
+						}
+					}
+					ctxGuard.bulkCandidates = candidates[:0]
+					if len(candidates) == 0 {
+						continue
+					}
+					slices.SortFunc(candidates, func(a, b types.Candidate) int {
+						if a.Dist < b.Dist {
+							return -1
+						}
+						if a.Dist > b.Dist {
+							return 1
+						}
+						return 0
+					})
+					neighbors := h.selectNeighbors(ctxGuard, candidates, guardM, data)
+					if len(neighbors) == 0 {
+						continue
+					}
+					guardSources := ctxGuard.bulkSources[:0]
+					for _, n := range neighbors {
+						guardSources = append(guardSources, n.ID)
+					}
+					ctxGuard.bulkSources = guardSources[:0]
+					for _, src := range guardSources {
+						if h.inDegreeL0.Get(nodeID) > 0 {
+							break
+						}
+						h.ensureInboundEdge(ctxGuard, data, src, nodeID, guardMaxConn)
+					}
+				}
+				h.searchPool.PutWithMetrics(ctxGuard, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+			}
 
 			runtime.KeepAlive(data) // Keep GraphData alive during blocking parallel linkage
 

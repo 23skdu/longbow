@@ -150,6 +150,14 @@ type ArrowSearchContext struct {
 	// one of the ~33 calls a single bulk-inserted node makes.
 	diff neighborDiff
 
+	// inDegreeView overrides where the pruning guard reads inbound-edge counts
+	// from. nil means the index's live tracker. Bulk linkage sets it to a
+	// snapshot taken between its passes, because the guard's decision has to be
+	// a function of the sub-batch: reading the live tracker from several
+	// goroutines at once made the surviving edges depend on how far the other
+	// goroutines had got (roadmap Item 31).
+	inDegreeView inDegreeReader
+
 	scratchExtractedF32    [][]float32
 	scratchSelectedVecsF32 [][]float32
 	scratchPool            []uint32

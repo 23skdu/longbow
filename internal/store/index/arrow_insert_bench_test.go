@@ -99,7 +99,7 @@ func BenchmarkArrowHNSWInsert(b *testing.B) {
 
 		index.locationStore.Append(types.Location{BatchIdx: 0, RowIdx: rowIdx})
 
-		level := index.generateLevel()
+		level := index.levelFor(id)
 		_ = index.Insert(id, level)
 	}
 }

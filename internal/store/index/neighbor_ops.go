@@ -623,7 +623,11 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 	// oldest link in the pool.
 	selected := h.selectNeighbors(ctx, candidates, maxConn, data)
 	if layer == 0 && InboundEdgeGuardEnabled {
-		protectLastInboundEdges(&h.inDegreeL0, current, pool, dists, selected, maxConn)
+		inDegree := inDegreeReader(&h.inDegreeL0)
+		if ctx != nil && ctx.inDegreeView != nil {
+			inDegree = ctx.inDegreeView
+		}
+		protectLastInboundEdges(inDegree, current, pool, dists, selected, maxConn)
 	}
 
 	var result []uint32
@@ -703,7 +707,7 @@ var InboundEdgeGuardEnabled = func() bool {
 //     kept link out and an at-risk link in; when every pool member is itself at
 //     risk there is no fixed point to reach, and an unbounded loop oscillates
 //     between two equivalent states forever.
-func protectLastInboundEdges(inDegree *inDegreeTracker, current []uint32, pool []uint32, dists []float32, selected []types.Candidate, maxConn int) {
+func protectLastInboundEdges(inDegree inDegreeReader, current []uint32, pool []uint32, dists []float32, selected []types.Candidate, maxConn int) {
 	room := len(pool) - len(selected)
 	if len(selected) < maxConn || room <= 0 || len(current) == 0 {
 		return

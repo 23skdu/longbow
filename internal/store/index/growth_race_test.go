@@ -71,7 +71,7 @@ func TestHNSW_GrowthRace(t *testing.T) {
 				id := nextID.Add(1) - 1
 
 				// Insert
-				err := h.InsertWithVector(id, dummyVec, h.generateLevel())
+				err := h.InsertWithVector(id, dummyVec, h.levelFor(id))
 				if err != nil {
 					// We might expect some errors if alloc fails, but ideally nil
 					failures.Add(1)

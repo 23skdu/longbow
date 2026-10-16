@@ -334,8 +334,22 @@ func (s *VectorStore) StartMetricsTicker(d time.Duration) {
 // StartEvictionTicker is defined later
 
 // StartIndexingWorkers spawns a specified number of background indexing workers.
+//
+// Under DeterministicIngestEnabled the pool is pinned at exactly one worker: more than
+// one means jobs are popped out of send order, and AddBatch assigns node IDs by
+// position, so the index would depend on which worker won (see
+// store_deterministic.go). The clamp is here rather than at each caller because
+// every path into the pool - the autoscaler, the minimum-worker ticker, the
+// startup path - calls this.
 func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 	s.workerMu.Lock()
+	if DeterministicIngestEnabled() {
+		if len(s.indexingWorkerCancels) > 0 {
+			s.workerMu.Unlock()
+			return
+		}
+		numWorkers = 1
+	}
 	defer s.workerMu.Unlock()
 
 	for i := 0; i < numWorkers; i++ {
@@ -375,11 +389,23 @@ func (s *VectorStore) StopIndexingWorkers(numWorkers int) {
 }
 
 // StartIngestionWorkers spawns a specified number of background ingestion workers.
+//
+// Pinned at one worker under DeterministicIngestEnabled for the same reason as the
+// index pool: ingestion workers publish record batches in pop order from a
+// queue fed by a streaming DoPut, so with more than one a row's global ID - and
+// the batch it lands in - depends on which worker got there first.
 func (s *VectorStore) StartIngestionWorkers(count int) {
 	if count <= 0 {
 		count = runtime.NumCPU()
 	}
 	s.workerMu.Lock()
+	if DeterministicIngestEnabled() {
+		if len(s.ingestionWorkerCancels) > 0 {
+			s.workerMu.Unlock()
+			return
+		}
+		count = 1
+	}
 	defer s.workerMu.Unlock()
 
 	for i := 0; i < count; i++ {
@@ -419,7 +445,13 @@ func (s *VectorStore) StopIngestionWorkers(numWorkers int) {
 }
 
 // AdjustWorkerCounts resizes the indexing and ingestion worker pools to match target counts.
+//
+// A no-op under DeterministicIngestEnabled: this is the autoscaler's entry point, and
+// the pools are pinned there (see StartIndexingWorkers, StartIngestionWorkers).
 func (s *VectorStore) AdjustWorkerCounts(indexing, ingestion int) {
+	if DeterministicIngestEnabled() {
+		return
+	}
 	s.workerMu.Lock()
 	currIndexing := len(s.indexingWorkerCancels)
 	currIngestion := len(s.ingestionWorkerCancels)
@@ -483,6 +515,15 @@ func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
 func (s *VectorStore) runIndexWorker(ctx context.Context) {
 	maxBatch := 16
 	currentBatch := 2
+	if DeterministicIngestEnabled() {
+		// One job per AddBatch. AddBatch assigns internal node IDs by
+		// position and links the rows it is given as one batch, so grouping
+		// by "whatever was in the queue" made the row -> node mapping, and
+		// therefore the graph, depend on scheduling (see
+		// DeterministicIngest).
+		maxBatch = 1
+		currentBatch = 1
+	}
 
 	jobs := make([]IndexJob, 0, maxBatch)
 	var lastLogTime time.Time
@@ -581,8 +622,12 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 				ds.dataMu.RUnlock()
 
 				if idx != nil {
-					// Adaptive EfConstruction based on queue depth
-					if adaptive, ok := idx.(interface{ SetEfConstruction(int) }); ok {
+					// Adaptive EfConstruction based on queue depth. Skipped in
+					// deterministic mode (store_deterministic.go): the target is a function of how far
+					// behind the queue was at this instant, so the same corpus
+					// would otherwise be built with different construction
+					// parameters on every run (see store_deterministic.go).
+					if adaptive, ok := idx.(interface{ SetEfConstruction(int) }); ok && !DeterministicIngestEnabled() {
 						depth := s.indexQueue.Len()
 						var targetEf int
 						switch {
@@ -751,24 +796,30 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 			jobs = jobs[:0]
 		}
 
-		// Adaptive logic based on number of chunk jobs in queue
-		queueDepth := s.indexQueue.Len()
-
-		switch {
-		case queueDepth > 100:
-			if time.Since(lastLogTime) > 2*time.Second {
-				s.logger.Warn().Int("depth", queueDepth).Msg("Indexing queue is BACKPRESSURED")
-				lastLogTime = time.Now()
-			}
-			currentBatch = 4
-		case queueDepth > 20:
-			if time.Since(lastLogTime) > 5*time.Second {
-				s.logger.Info().Int("depth", queueDepth).Msg("Indexing queue is filling up")
-				lastLogTime = time.Now()
-			}
-			currentBatch = 2
-		default:
+		// Adaptive logic based on number of chunk jobs in queue. Deterministic
+		// mode keeps the flush size at one job so the grouping cannot move with
+		// queue depth.
+		if DeterministicIngestEnabled() {
 			currentBatch = 1
+		} else {
+			queueDepth := s.indexQueue.Len()
+
+			switch {
+			case queueDepth > 100:
+				if time.Since(lastLogTime) > 2*time.Second {
+					s.logger.Warn().Int("depth", queueDepth).Msg("Indexing queue is BACKPRESSURED")
+					lastLogTime = time.Now()
+				}
+				currentBatch = 4
+			case queueDepth > 20:
+				if time.Since(lastLogTime) > 5*time.Second {
+					s.logger.Info().Int("depth", queueDepth).Msg("Indexing queue is filling up")
+					lastLogTime = time.Now()
+				}
+				currentBatch = 2
+			default:
+				currentBatch = 1
+			}
 		}
 
 		select {

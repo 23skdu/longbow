@@ -54,7 +54,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, existingData *types.GraphData) (*types.GraphData, error) {
 	meta := h.metadataRegistry.Load()
 	if level < 0 {
-		level = h.generateLevel()
+		level = h.levelFor(id)
 	}
 	data := existingData
 	isPrivate := false

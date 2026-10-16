@@ -1,14 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"hash"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"runtime"
@@ -62,6 +67,40 @@ type BenchmarkResult struct {
 	ModeIndex  int      `json:"mode_index,omitempty"`
 	ModeCount  int      `json:"mode_count,omitempty"`
 	ModeOrders []string `json:"mode_order,omitempty"`
+
+	// Item 31: a digest over every hit this run returned, in query order, with
+	// the score bits rather than the printed value. Two harness invocations
+	// that claim the same seed must produce the same digest; that is the only
+	// form in which "bit-identical search output" is checkable from the
+	// outside. Latencies are deliberately not in it - they are the measurement,
+	// not the output.
+	SearchResultsDigest string `json:"search_results_digest,omitempty"`
+
+	// Item 31: a digest of the vectors this run actually put into the server.
+	// Without it a mismatching search digest is ambiguous - it could be the
+	// corpus or it could be the index - and the corpus is the half that is
+	// supposed to be a pure function of the seed.
+	CorpusDigest string `json:"corpus_digest,omitempty"`
+}
+
+// searchHit is one row of a search response: the "id"/"score" pair the server
+// writes into the DoGet record.
+type searchHit struct {
+	ID    uint64  `json:"id"`
+	Score float32 `json:"score"`
+}
+
+// searchResultsOutput is what -results-out writes: enough to diff two runs by
+// eye when their digests disagree.
+type searchResultsOutput struct {
+	Seed    int64                    `json:"seed"`
+	Dataset string                   `json:"dataset"`
+	Dim     int                      `json:"dim"`
+	Dtype   string                   `json:"dtype"`
+	Queries int                      `json:"queries"`
+	Modes   []string                 `json:"modes"`
+	Digest  string                   `json:"digest"`
+	Results map[string][][]searchHit `json:"results"` // mode -> query index -> hits
 }
 
 func main() {
@@ -83,8 +122,18 @@ func main() {
 	queries := flag.Int("queries", 1000, "Number of search queries")
 	outputJson := flag.String("json", "", "Save stats as JSON file")
 	tqBits := flag.Int("tq-bits", 4, "TurboQuant bit depth (2, 4, 8)")
-	seed := flag.Int64("seed", defaultSeed,
-		"Seed for corpus generation, query vectors and ByID ids. Repeatability is a precondition for a percentage regression gate: with the corpus and the queries both drawn from the clock, two runs of the same binary differ by more than most regressions anyone would gate on. Recorded in the output JSON.")
+	seedFlagDefault := defaultSeed
+	seedSource := "default"
+	if v := os.Getenv("LONGBOW_BENCH_SEED"); v != "" {
+		if s, err := strconv.ParseInt(v, 10, 64); err == nil {
+			seedFlagDefault = s
+			seedSource = "LONGBOW_BENCH_SEED"
+		} else {
+			log.Printf("Warning: LONGBOW_BENCH_SEED=%q is not an integer, using default seed %d\n", v, defaultSeed)
+		}
+	}
+	seed := flag.Int64("seed", seedFlagDefault,
+		fmt.Sprintf("Seed for corpus generation, query vectors and ByID ids. Repeatability is a precondition for a percentage regression gate: with the corpus and the queries both drawn from the clock, two runs of the same binary differ by more than most regressions anyone would gate on. Defaults to $LONGBOW_BENCH_SEED (%s) when it is set. Recorded in the output JSON.", seedSource))
 	workers := flag.Int("workers", 1, "Number of concurrent search workers")
 	drop := flag.Bool("drop", false, "Drop dataset after benchmark")
 	fbin := flag.String("fbin", "", "Read vectors from Arrow IPC binary file or true .fbin instead of generating them")
@@ -98,6 +147,8 @@ func main() {
 		"Fixed as-of timestamp for Temporal searches, in Unix nanoseconds. It must be fixed: the server keys its temporal result cache on (timestamp, k), so a per-query clock reading guarantees 100% miss rate, an LRU insert per query, and a mode that measures the cache-miss path while appearing to measure search.")
 	shuffleModes := flag.Bool("shuffle-modes", false,
 		"Randomize search mode execution order using seed (roadmap R12a) to eliminate mode-order coupling.")
+	resultsOut := flag.String("results-out", "",
+		"Write every search hit (mode -> query -> id/score) to this JSON file. Item 31: two runs with the same seed must agree here bit for bit; this is what the digest in -json is computed over.")
 	reset := flag.Bool("reset", false, "Reset dataset in-place before running the benchmark")
 	flag.Parse()
 
@@ -142,6 +193,10 @@ func main() {
 
 	var totalUploaded int
 	var start time.Time
+
+	// Item 31: hashed in upload order as the records go out, so the run
+	// records which corpus it built rather than only which seed it asked for.
+	var corpusHash = sha256.New()
 
 	if *fbin != "" {
 		f, err := os.Open(*fbin)
@@ -323,18 +378,23 @@ func main() {
 		close(jobs)
 
 		for w := 0; w < numWorkers; w++ {
-			// Derived from the fixed seed and the worker index, not the clock
-			// (R16, H7). Each worker still gets a distinct stream so the chunks
-			// are not identical to one another.
-			workerSeed := *seed + int64(w)*10007
-			go func(seed int64) {
-				rng := rand.New(rand.NewSource(seed)) // #nosec G404 -- non-cryptographic PRNG for benchmark
+			// Item 31: the RNG stream is derived from the chunk index, not
+			// from the worker that drew it. Workers pull from a shared jobs
+			// channel, so with a worker-seeded stream the vectors in chunk N
+			// depended on which worker got there first: two runs of the same
+			// seed produced different corpora, and everything downstream moved
+			// with them. Mixing the chunk index in keeps what (R16, H7) was
+			// after - a distinct stream per slice of the corpus, none of it
+			// from the clock - while making the stream a function of the data
+			// alone.
+			go func() {
 				for job := range jobs {
 					sem <- struct{}{}
+					rng := rand.New(rand.NewSource(*seed + int64(job.index)*10007)) // #nosec G404 -- non-cryptographic PRNG for benchmark
 					rec, schema, err := generateRecordBatch(rng, job.offset, job.count, *dim, *dtype, *tqBits)
 					chunkChans[job.index] <- chunkOutput{index: job.index, rec: rec, schema: schema, err: err}
 				}
-			}(workerSeed)
+			}()
 		}
 
 		// Check for generation-only mode (saving to file) — must pre-generate
@@ -433,6 +493,10 @@ func main() {
 				}
 			}
 
+			if err := hashRecord(corpusHash, rec); err != nil {
+				rec.Release()
+				log.Fatalf("Failed to hash chunk %d: %v", idx, err)
+			}
 			if err := uploader.Write(rec); err != nil {
 				rec.Release()
 				log.Fatalf("DoPut write failed at chunk %d: %v", idx, err)
@@ -480,6 +544,7 @@ func main() {
 
 	results = append(results, BenchmarkResult{
 		Name:            "DoPut",
+		CorpusDigest:    hex.EncodeToString(corpusHash.Sum(nil)),
 		DurationSeconds: duration,
 		Throughput:      float64(*scale) / duration,
 		ThroughputUnit:  "vec/s",
@@ -588,9 +653,17 @@ func main() {
 	// R10: a per-mode budget. The previous single 5-minute context covered all
 	// modes, so each mode inherited what the ones before it left behind and the
 	// last modes silently truncated.
+	//
+	// Item 31: every hit is kept, keyed by mode and by the stable global query
+	// index, so the run can be hashed into one digest and compared against the
+	// digest of another run of the same seed. Queries that failed or were
+	// truncated leave a nil slot, which the digest records as "-" rather than
+	// silently shortening.
+	searchHitsByMode := make(map[string][][]searchHit, len(modes))
 	modeOrders := append([]string(nil), modes...)
 	for modeIdx, mode := range modes {
 		searchCtx, searchCancel := context.WithTimeout(context.Background(), *searchTimeout)
+		searchHitsByMode[mode] = make([][]searchHit, *queries)
 
 		log.Printf("[SEARCH][%s] Running %d queries with %d workers...\n", mode, *queries, *workers)
 		start = time.Now()
@@ -634,7 +707,8 @@ func main() {
 						continue
 					}
 					qStart := time.Now()
-					if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state, globalIdx, corpusN); err != nil {
+					hits, err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state, globalIdx, corpusN)
+					if err != nil {
 						mu.Lock()
 						if errors.Is(searchCtx.Err(), context.DeadlineExceeded) {
 							truncated++
@@ -645,6 +719,11 @@ func main() {
 						logDetailedError(fmt.Sprintf("[%s][Worker %d] Query %d", mode, workerID, i), err, sc)
 						continue
 					}
+					mu.Lock()
+					if globalIdx >= 0 && globalIdx < len(searchHitsByMode[mode]) {
+						searchHitsByMode[mode][globalIdx] = hits
+					}
+					mu.Unlock()
 					localLatencies = append(localLatencies, time.Since(qStart).Seconds()*1000)
 				}
 
@@ -717,7 +796,47 @@ func main() {
 			mode, completed, requested, duration, float64(completed)/duration, mean, p50, p95, p99, note)
 	}
 
-	// 4. Print Summary
+	// 4. Digest the search output and attach it to every Search_ row.
+	resultsDigest := digestSearchResults(searchHitsByMode)
+	totalHits := 0
+	for _, hits := range searchHitsByMode {
+		for _, q := range hits {
+			totalHits += len(q)
+		}
+	}
+	for i := range results {
+		if strings.HasPrefix(results[i].Name, "Search_") {
+			results[i].SearchResultsDigest = resultsDigest
+		}
+	}
+	log.Printf("[SEARCH] results digest %s over %d hits across %d modes (seed %d); two runs with the same seed must agree on it\n",
+		resultsDigest, totalHits, len(searchHitsByMode), *seed)
+
+	if *resultsOut != "" {
+		out := searchResultsOutput{
+			Seed:    *seed,
+			Dataset: *dataset,
+			Dim:     *dim,
+			Dtype:   *dtype,
+			Queries: *queries,
+			Modes:   modes,
+			Digest:  resultsDigest,
+			Results: searchHitsByMode,
+		}
+		f, err := os.Create(*resultsOut)
+		if err != nil {
+			log.Fatalf("Failed to create results file: %v", err)
+		}
+		enc := json.NewEncoder(f)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(out); err != nil {
+			log.Fatalf("Failed to write results file: %v", err)
+		}
+		_ = f.Close()
+		log.Printf("Search results written to %s\n", *resultsOut)
+	}
+
+	// 5. Print Summary
 	fmt.Printf("\n%s\n", "BENCHMARK SUITE SUMMARY")
 	fmt.Printf("%-20s | %-18s | %-18s | %-10s | %-10s | %-10s | %-10s | %-10s\n", "Name", "Throughput (vec/s)", "Throughput (MB/s)", "Rows", "mean(ms)", "P50(ms)", "P95(ms)", "P99(ms)")
 	for _, r := range results {
@@ -1015,7 +1134,7 @@ func (s *ReusableSearchState) BuildSpecialTicket(dataset string, mode string, qu
 }
 
 // executeSearch performs search by setting JSON ticket in DoGet
-func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, dim int, dtype string, mode string, state *ReusableSearchState, queryIdx, corpusSize int) error {
+func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, dim int, dtype string, mode string, state *ReusableSearchState, queryIdx, corpusSize int) ([]searchHit, error) {
 	var ticketBytes []byte
 	if mode == "Recommend" || mode == "Geo" || mode == "Temporal" || mode == "ByID" {
 		ticketBytes = state.BuildSpecialTicket(dataset, mode, queryIdx, corpusSize)
@@ -1030,25 +1149,200 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 	return executeDoGet(ctx, sc, ticketBytes)
 }
 
-// executeDoGet performs the actual Flight DoGet call and drains the stream
-func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) error {
+// executeDoGet performs the actual Flight DoGet call, drains the stream and
+// returns what it contained. It used to discard the record outright, which
+// left no way to tell whether two runs of the same seed had returned the same
+// answers (roadmap Item 31).
+func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) ([]searchHit, error) {
 	stream, err := sc.DoGet(ctx, ticket)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	reader, err := flight.NewRecordReader(stream)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var hits []searchHit
 	// reader does not have Release
 	for reader.Next() {
-		_ = reader.Record()
+		hits = append(hits, collectSearchHits(reader.Record())...)
 	}
-	return reader.Err()
+	return hits, reader.Err()
 }
 
-// waitForIndexingComplete polls until the dataset is indexed.
-// Uses polling approach with check_readiness for reliability.
+// collectSearchHits pulls the (id, score) pair out of one response record.
+// Schemas differ per mode, so the columns are matched by name first and by
+// type second. A record without a recognisable pair contributes nothing: a
+// digest taken over misread columns would look like a reproducibility failure
+// and would be worse than a gap in the digest.
+func collectSearchHits(rec arrow.Record) []searchHit {
+	if rec == nil || rec.NumRows() == 0 {
+		return nil
+	}
+	idCol, scoreCol := -1, -1
+	for i := 0; i < int(rec.NumCols()); i++ {
+		switch strings.ToLower(rec.Schema().Field(i).Name) {
+		case "id", "vector_id", "doc_id", "docid":
+			if idCol == -1 {
+				idCol = i
+			}
+		case "score", "distance", "similarity", "value":
+			if scoreCol == -1 {
+				scoreCol = i
+			}
+		}
+	}
+	if idCol == -1 || scoreCol == -1 {
+		for i := 0; i < int(rec.NumCols()); i++ {
+			if idCol == -1 && isIntegerColumn(rec.Column(i)) {
+				idCol = i
+				continue
+			}
+			if scoreCol == -1 && isFloatColumn(rec.Column(i)) {
+				scoreCol = i
+			}
+		}
+	}
+	if idCol == -1 || scoreCol == -1 || idCol == scoreCol {
+		return nil
+	}
+
+	n := int(rec.NumRows())
+	ids := columnUint64s(rec.Column(idCol))
+	scores := columnFloat32s(rec.Column(scoreCol))
+	if ids == nil || scores == nil || len(ids) < n || len(scores) < n {
+		return nil
+	}
+	hits := make([]searchHit, n)
+	for i := 0; i < n; i++ {
+		hits[i] = searchHit{ID: ids[i], Score: scores[i]}
+	}
+	return hits
+}
+
+func isIntegerColumn(col arrow.Array) bool {
+	switch col.(type) {
+	case *array.Uint8, *array.Uint16, *array.Uint32, *array.Uint64,
+		*array.Int8, *array.Int16, *array.Int32, *array.Int64:
+		return true
+	}
+	return false
+}
+
+func isFloatColumn(col arrow.Array) bool {
+	switch col.(type) {
+	case *array.Float16, *array.Float32, *array.Float64:
+		return true
+	}
+	return false
+}
+
+// columnUint64s and columnFloat32s read a column as the pair of types the
+// digest needs. Anything unrecognised (or any null) returns nil, which drops
+// the record rather than guessing - a digest over substituted values would be
+// worse than a gap.
+func columnUint64s(col arrow.Array) []uint64 {
+	n := int(col.Len())
+	out := make([]uint64, n)
+	switch c := col.(type) {
+	case *array.Uint64:
+		for i := 0; i < n; i++ {
+			if c.IsNull(i) {
+				return nil
+			}
+			out[i] = c.Value(i)
+		}
+	case *array.Uint32:
+		for i := 0; i < n; i++ {
+			if c.IsNull(i) {
+				return nil
+			}
+			out[i] = uint64(c.Value(i))
+		}
+	case *array.Int64:
+		for i := 0; i < n; i++ {
+			if c.IsNull(i) {
+				return nil
+			}
+			out[i] = uint64(c.Value(i)) // #nosec G115 -- negative ids cannot occur here
+		}
+	case *array.Int32:
+		for i := 0; i < n; i++ {
+			if c.IsNull(i) {
+				return nil
+			}
+			out[i] = uint64(c.Value(i)) // #nosec G115
+		}
+	default:
+		return nil
+	}
+	return out
+}
+
+func columnFloat32s(col arrow.Array) []float32 {
+	n := int(col.Len())
+	out := make([]float32, n)
+	switch c := col.(type) {
+	case *array.Float32:
+		for i := 0; i < n; i++ {
+			if c.IsNull(i) {
+				return nil
+			}
+			out[i] = c.Value(i)
+		}
+	case *array.Float64:
+		for i := 0; i < n; i++ {
+			if c.IsNull(i) {
+				return nil
+			}
+			out[i] = float32(c.Value(i)) // #nosec G414 -- narrowing the score for the digest only
+		}
+	case *array.Float16:
+		for i := 0; i < n; i++ {
+			if c.IsNull(i) {
+				return nil
+			}
+			out[i] = c.Value(i).Float32()
+		}
+	default:
+		return nil
+	}
+	return out
+}
+
+// digestSearchResults hashes the search output of a whole run: modes in
+// sorted order, then queries in index order, then hits in the order the server
+// returned them. Scores go in as their IEEE-754 bits, so a difference in the
+// last mantissa bit counts - which is what "bit-identical" means.
+func digestSearchResults(byMode map[string][][]searchHit) string {
+	modes := make([]string, 0, len(byMode))
+	for m := range byMode {
+		modes = append(modes, m)
+	}
+	sort.Strings(modes)
+
+	h := sha256.New()
+	var b strings.Builder
+	for _, m := range modes {
+		b.WriteString(m)
+		b.WriteByte('\n')
+		for q, hits := range byMode[m] {
+			fmt.Fprintf(&b, "%d:", q)
+			if hits == nil {
+				b.WriteString("-\n")
+				continue
+			}
+			for _, hit := range hits {
+				fmt.Fprintf(&b, "%d/%x ", hit.ID, math.Float32bits(hit.Score))
+			}
+			b.WriteByte('\n')
+		}
+		_, _ = io.WriteString(h, b.String())
+		b.Reset()
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, dataset string, timeout time.Duration) string {
 	pollCtx, pollCancel := context.WithTimeout(context.Background(), timeout)
 	defer pollCancel()
@@ -1128,6 +1422,24 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 }
 
 // generateRecordBatch builds an Arrow record batch using an isolated PRNG and base offset for lock-free parallel generation
+// hashRecord appends an Arrow IPC serialisation of rec to h. The serialisation
+// is a function of the schema and the values alone, so two runs that generated
+// the same corpus hash the same, and a corpus that moved with the scheduler
+// shows up as a different digest instead of as a mysterious search difference
+// (roadmap Item 31).
+func hashRecord(h hash.Hash, rec arrow.Record) error {
+	var buf bytes.Buffer
+	w := ipc.NewWriter(&buf, ipc.WithSchema(rec.Schema()))
+	if err := w.Write(rec); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	_, err := h.Write(buf.Bytes())
+	return err
+}
+
 func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype string, tqBits int) (arrow.Record, *arrow.Schema, error) {
 	pool := memory.NewGoAllocator()
 	var dt arrow.DataType
@@ -1343,12 +1655,23 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 	defer vecArr.Release()
 
 	// 3. Build Timestamp
+	//
+	// Item 31: derived from the run's as-of timestamp and the row's position,
+	// not from time.Now(). The wall-clock column was the one part of the corpus
+	// no seed could reproduce - every row differed between two runs before a
+	// single vector was drawn, so "the same seed builds the same corpus" was
+	// false at the schema level - and it made Temporal answers depend on when
+	// the run happened rather than on what was in it. Walking back from as_of
+	// keeps the rows in strictly increasing order of age and every one of them
+	// inside the window the Temporal mode queries (default as_of is
+	// 2100-01-01, which is after all of them, exactly as "now" was).
 	tsBldr := array.NewTimestampBuilder(pool, arrow.FixedWidthTypes.Timestamp_ns.(*arrow.TimestampType))
 	defer tsBldr.Release()
 	tsBldr.Reserve(count)
-	now := arrow.Timestamp(time.Now().UnixNano())
 	for i := 0; i < count; i++ {
-		tsBldr.Append(now)
+		// -1 keeps every row strictly below as_of, so an as_of <= query still
+		// includes the first row whatever comparison the server applies.
+		tsBldr.Append(arrow.Timestamp(TemporalAsOfNanos) - arrow.Timestamp(int64(offset+i)) - 1) // #nosec G115 -- row counts are int
 	}
 	tsArr := tsBldr.NewArray()
 	defer tsArr.Release()

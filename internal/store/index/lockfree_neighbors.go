@@ -319,12 +319,23 @@ func (c *LockFreeNeighborCache) GetNeighbors(nodeID uint32) ([]uint32, bool) {
 }
 
 // SetNeighbors updates the neighbors for a given node ID.
-// For existing nodes: sync.Map.Load (lock-free) + LockFreeNeighborList.Update (copy-on-write).
-// For new nodes: sync.Map.LoadOrStore (internal CAS) to create the list.
+//
+// For a node the cache has not seen, the list is filled *before* it is
+// published. Publishing it empty and filling it afterwards left a window in
+// which a concurrent reader found the node in the map and read an empty
+// adjacency, which a search takes for "this node has no neighbours". Who won
+// that window depended on scheduling, so a concurrent build produced a
+// different graph from run to run (roadmap Item 31) and a concurrent query
+// could skip a hop it should have taken.
 func (c *LockFreeNeighborCache) SetNeighbors(nodeID uint32, neighbors []uint32) {
-	list, loaded := c.lists.LoadOrStore(nodeID, NewLockFreeNeighborList())
-	list.Update(neighbors)
-	_ = loaded
+	fresh := NewLockFreeNeighborList()
+	fresh.Update(neighbors)
+	if existing, loaded := c.lists.LoadOrStore(nodeID, fresh); loaded {
+		// Someone else published first. Both wrote the same list, and
+		// Update swaps the pointer, so a reader sees one whole version or
+		// the other.
+		existing.Update(neighbors)
+	}
 }
 
 // Remove removes a node's neighbor list from the cache.

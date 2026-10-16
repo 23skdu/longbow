@@ -101,3 +101,57 @@ func (t *inDegreeTracker) Clear() {
 	defer t.mu.Unlock()
 	t.dir.Store(nil)
 }
+
+// inDegreeReader is what the pruning guard consults for inbound-edge counts.
+// Both the live tracker and a snapshot satisfy it.
+type inDegreeReader interface {
+	Get(id uint32) int32
+}
+
+// inDegreeSnapshot is a plain copy of the tracker taken at one instant.
+//
+// The pruning guard exists to stop an edge from being the last one pointing at
+// a node, which is a property of the graph rather than of any one writer. Read
+// from the live tracker while several writers apply edges, it answers "has this
+// node got an inbound edge *yet*", which differs run to run - the bulk linker
+// lost its reproducibility to exactly that (roadmap Item 31). Reading a
+// snapshot makes the guard see the graph as of a fixed point in the pass
+// sequence, which is the same thing the sequential code it replaced saw.
+type inDegreeSnapshot []int32
+
+func (s inDegreeSnapshot) Get(id uint32) int32 {
+	if int(id) >= len(s) {
+		return 0
+	}
+	return s[id]
+}
+
+// snapshotInto copies the tracker into buf, growing it if it does not reach
+// limit, and returns the copy. Ids at or past limit read as 0, the same
+// conservative answer Get gives for a node the tracker never saw. Callers
+// keep the returned slice and pass it back to reuse the allocation.
+func (t *inDegreeTracker) snapshotInto(limit uint32, buf inDegreeSnapshot) inDegreeSnapshot {
+	need := int(limit) + 1
+	if cap(buf) < need {
+		buf = make(inDegreeSnapshot, need)
+	} else {
+		buf = buf[:need]
+		clear(buf)
+	}
+	if d := t.dir.Load(); d != nil {
+		for ci, ch := range *d {
+			if ch == nil {
+				continue
+			}
+			base := int(ci) << inDegreeChunkShift
+			if base >= need {
+				break
+			}
+			end := min(base+inDegreeChunkSize, need)
+			for i := base; i < end; i++ {
+				buf[i] = ch[i-base].Load()
+			}
+		}
+	}
+	return buf
+}

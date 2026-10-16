@@ -102,24 +102,59 @@ class TestSeedPlumbing(unittest.TestCase):
         self.assertIn('"--seed"', src)
 
     def test_seed_is_passed_to_the_client_when_set(self):
+        # Item 31: the client is seeded per config, derived from the run seed
+        # and the config label, so a run resumed at config 40 generates the
+        # same corpus for config 40 that the uninterrupted run did.
         src = _read_file(_SCRIPT)
-        self.assertIn("seed_arg = f\" -seed {self.args.seed}\"", src)
+        self.assertIn("def derive_config_seed(", src)
+        self.assertIn("derive_config_seed(base_seed, label)", src)
+        self.assertIn('seed_arg = f" -seed {config_seed}"', src)
         self.assertIn("{seed_arg}", src)
 
     def test_seed_is_recorded_on_the_result_row(self):
         src = _read_file(_SCRIPT)
         self.assertIn('"seed": self.args.seed', src)
 
-    def test_seed_flag_absent_by_default(self):
+    def test_seed_flag_defaults_to_the_shared_env_seed(self):
+        # Item 31: one seed for both ends of the run. --seed defaults from
+        # LONGBOW_BENCH_SEED, which the harness also exports into the server's
+        # environment, so the client and the graph are seeded by one value
+        # rather than by two that can drift apart.
         src = _read_file(_SCRIPT)
         block = src[src.index('"--seed"'):src.index('"--memory-default-fraction"')]
-        self.assertIn("default=None", block)
+        self.assertIn("default=env_seed()", block)
+        self.assertIn("def env_seed(", src)
+        self.assertIn("LONGBOW_BENCH_SEED", src[src.index("def env_seed("):src.index("def derive_config_seed(")])
+
+    def test_server_is_given_the_seed_too(self):
+        # The server seeds its graph levels from the same variable.
+        src = _read_file(_SCRIPT)
+        self.assertIn('"LONGBOW_BENCH_SEED"', src)
+        self.assertIn("config_seed", src)
 
     def test_client_source_has_no_clock_seeded_corpus(self):
         src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
-        # The corpus worker seeds from the fixed run seed now.
-        self.assertIn("workerSeed := *seed + int64(w)*10007", src)
+        # Item 31: chunk N's generator is seeded from the job index, not from
+        # the worker that happened to pick the job up. Seeding per worker while
+        # workers pulled from a shared queue made the corpus a function of the
+        # scheduler: same seed, different vectors.
+        self.assertIn("*seed + int64(job.index)*10007", src)
         self.assertNotIn("workerSeed := time.Now().UnixNano()", src)
+        self.assertNotIn("*seed + int64(w)*10007", src)
+
+    def test_client_corpus_timestamps_are_not_from_the_clock(self):
+        src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
+        # The wall-clock column was the one column no seed could reproduce.
+        self.assertNotIn("time.Now().UnixNano())", src)
+        self.assertIn("TemporalAsOfNanos", src)
+
+    def test_client_digests_the_corpus_and_the_search_output(self):
+        # The two digests are what let a failure be attributed: corpus
+        # identical + search different is the server's graph, and any
+        # difference in corpus is the generator's.
+        src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
+        self.assertIn("func hashRecord(", src)
+        self.assertIn("func digestSearchResults(", src)
 
     def test_client_source_has_no_global_rand_for_queries(self):
         src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))

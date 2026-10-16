@@ -1,0 +1,188 @@
+# Unit tests for longbow_pipeline_alerts.
+rule_files:
+  - pipeline_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy pipeline state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_pipeline_duration_seconds_bucket{stage="transform",le="1"}'
+        values: '100+100x60'
+      - series: 'longbow_pipeline_duration_seconds_bucket{stage="transform",le="5"}'
+        values: '100+100x60'
+      - series: 'longbow_pipeline_duration_seconds_bucket{stage="transform",le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_store_circuit_breaker_failures_total'
+        values: '0x60'
+      - series: 'longbow_do_exchange_errors_total'
+        values: '0x60'
+      - series: 'longbow_stream_termination_errors_total{direction="inbound",error_type="eof"}'
+        values: '0x60'
+      - series: 'longbow_validation_failures_total{component="parser",reason="syntax"}'
+        values: '0x60'
+      - series: 'longbow_vector_search_action_errors_total'
+        values: '0x60'
+      - series: 'longbow_trace_errors_total{component="tracer"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowPipelineHighLatency
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowStoreCircuitBreakerFailures
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowFlightExchangeErrors
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowStreamTerminationErrors
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowValidationFailures
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowVectorSearchActionErrors
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowTraceErrors
+        exp_alerts: []
+
+  # Firing LongbowPipelineHighLatency (>5s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_pipeline_duration_seconds_bucket{stage="transform",le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_pipeline_duration_seconds_bucket{stage="transform",le="5"}'
+        values: '0+0x60'
+      - series: 'longbow_pipeline_duration_seconds_bucket{stage="transform",le="10"}'
+        values: '50+50x60'
+      - series: 'longbow_pipeline_duration_seconds_bucket{stage="transform",le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowPipelineHighLatency
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowPipelineHighLatency
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              stage: transform
+            exp_annotations:
+              summary: "Slow pipeline stage processing"
+              description: "Pipeline stage transform P99 duration exceeds 5 seconds."
+
+  # Firing LongbowStoreCircuitBreakerFailures (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_store_circuit_breaker_failures_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowStoreCircuitBreakerFailures
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowStoreCircuitBreakerFailures
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Store circuit breaker recorded failures"
+              description: "Circuit breaker failure counter incremented at V/sec."
+
+  # Firing LongbowFlightExchangeErrors (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_do_exchange_errors_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowFlightExchangeErrors
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowFlightExchangeErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Arrow Flight DoExchange errors"
+              description: "Arrow Flight stream exchange errors occurring at V/sec."
+
+  # Firing LongbowStreamTerminationErrors (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_stream_termination_errors_total{direction="inbound",error_type="eof"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowStreamTerminationErrors
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowStreamTerminationErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              direction: inbound
+              error_type: eof
+            exp_annotations:
+              summary: "Flight stream unexpected termination"
+              description: "Flight data stream terminated abnormally in direction inbound."
+
+  # Firing LongbowValidationFailures (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_validation_failures_total{component="parser",reason="syntax"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowValidationFailures
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowValidationFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: parser
+              reason: syntax
+            exp_annotations:
+              summary: "Payload validation failure in parser"
+              description: "Validation rejected input in parser due to syntax."
+
+  # Firing LongbowVectorSearchActionErrors (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_vector_search_action_errors_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowVectorSearchActionErrors
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowVectorSearchActionErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Vector search action execution errors"
+              description: "Errors encountered executing vector search action at V/sec."
+
+  # Firing LongbowTraceErrors (>0 for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_trace_errors_total{component="tracer"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowTraceErrors
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowTraceErrors
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              component: tracer
+            exp_annotations:
+              summary: "Telemetry trace export errors in tracer"
+              description: "Telemetry span exports failing in component tracer."

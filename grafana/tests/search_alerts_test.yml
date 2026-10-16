@@ -1,0 +1,78 @@
+# Unit tests for longbow_search_alerts.
+rule_files:
+  - search_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy search latency
+  - interval: 1m
+    input_series:
+      - series: 'longbow_vector_search_latency_seconds_bucket{dataset="ds1",le="0.5"}'
+        values: '100+100x60'
+      - series: 'longbow_vector_search_latency_seconds_bucket{dataset="ds1",le="1.0"}'
+        values: '100+100x60'
+      - series: 'longbow_vector_search_latency_seconds_bucket{dataset="ds1",le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_global_search_duration_seconds_bucket{le="1.0"}'
+        values: '100+100x60'
+      - series: 'longbow_global_search_duration_seconds_bucket{le="2.0"}'
+        values: '100+100x60'
+      - series: 'longbow_global_search_duration_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: LongbowHighSearchLatency
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: LongbowGlobalSearchSlow
+        exp_alerts: []
+
+  # Firing LongbowHighSearchLatency (>1s)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_vector_search_latency_seconds_bucket{dataset="ds1",le="0.5"}'
+        values: '0+0x60'
+      - series: 'longbow_vector_search_latency_seconds_bucket{dataset="ds1",le="1.0"}'
+        values: '0+0x60'
+      - series: 'longbow_vector_search_latency_seconds_bucket{dataset="ds1",le="2.0"}'
+        values: '50+50x60'
+      - series: 'longbow_vector_search_latency_seconds_bucket{dataset="ds1",le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowHighSearchLatency
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: LongbowHighSearchLatency
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              dataset: ds1
+            exp_annotations:
+              summary: "High search latency on ds1"
+              description: "99th percentile search latency is above 1s for more than 2 minutes."
+
+  # Firing LongbowGlobalSearchSlow (>2s)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_global_search_duration_seconds_bucket{le="1.0"}'
+        values: '0+0x60'
+      - series: 'longbow_global_search_duration_seconds_bucket{le="2.0"}'
+        values: '0+0x60'
+      - series: 'longbow_global_search_duration_seconds_bucket{le="5.0"}'
+        values: '100+100x60'
+      - series: 'longbow_global_search_duration_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LongbowGlobalSearchSlow
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: LongbowGlobalSearchSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Slow global search performance"
+              description: "P95 global search latency exceeds 2 seconds."

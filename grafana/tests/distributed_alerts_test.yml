@@ -1,0 +1,103 @@
+# Unit tests for longbow_distributed_alerts.
+rule_files:
+  - distributed_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy distributed state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_store_circuit_breaker_rejections_total'
+        values: '0x60'
+      - series: 'longbow_global_search_partial_failures_total'
+        values: '0x60'
+      - series: 'longbow_vector_clock_conflicts_total'
+        values: '0x60'
+      - series: 'longbow_schema_columns_dropped_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowCircuitBreakerTripped
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowGlobalSearchPartialFailures
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowVectorClockConflicts
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowSchemaColumnsDropped
+        exp_alerts: []
+
+  # Firing LongbowCircuitBreakerTripped (>1/s for 1m)
+  - interval: 30s
+    input_series:
+      - series: 'longbow_store_circuit_breaker_rejections_total'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowCircuitBreakerTripped
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: LongbowCircuitBreakerTripped
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Circuit breaker tripped"
+              description: "Store circuit breaker is rejecting V requests/sec."
+
+  # Firing LongbowGlobalSearchPartialFailures (>0.1/s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_global_search_partial_failures_total'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowGlobalSearchPartialFailures
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowGlobalSearchPartialFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Global search partial failures"
+              description: "Global search is experiencing partial failures at V/sec."
+
+  # Firing LongbowVectorClockConflicts (>10/s for 2m)
+  - interval: 30s
+    input_series:
+      - series: 'longbow_vector_clock_conflicts_total'
+        values: '0+600x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowVectorClockConflicts
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: LongbowVectorClockConflicts
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "High vector clock conflict rate"
+              description: "Vector clock conflicts exceeding 10/sec (V)."
+
+  # Firing LongbowSchemaColumnsDropped (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_schema_columns_dropped_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowSchemaColumnsDropped
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowSchemaColumnsDropped
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Schema evolution dropping columns"
+              description: "Schema column drop operations detected at V/sec."

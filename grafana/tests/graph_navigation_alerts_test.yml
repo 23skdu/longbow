@@ -1,0 +1,67 @@
+# Unit tests for longbow_graph_navigation_alerts.
+rule_files:
+  - graph_navigation_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy graph navigation state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_graph_navigation_latency_seconds_bucket{le="1"}'
+        values: '100+100x60'
+      - series: 'longbow_graph_navigation_latency_seconds_bucket{le="5"}'
+        values: '100+100x60'
+      - series: 'longbow_graph_navigation_latency_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_graph_navigation_operations_total'
+        values: '10x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowGraphNavigationSlow
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowGraphNavigationStalled
+        exp_alerts: []
+
+  # Firing LongbowGraphNavigationSlow (>5s for 3m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_graph_navigation_latency_seconds_bucket{le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_graph_navigation_latency_seconds_bucket{le="5"}'
+        values: '0+0x60'
+      - series: 'longbow_graph_navigation_latency_seconds_bucket{le="10"}'
+        values: '50+50x60'
+      - series: 'longbow_graph_navigation_latency_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LongbowGraphNavigationSlow
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: LongbowGraphNavigationSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Graph navigation slow"
+              description: "Graph path finding P99 taking >5s."
+
+  # Firing LongbowGraphNavigationStalled (==0 for 10m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_graph_navigation_operations_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LongbowGraphNavigationStalled
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: LongbowGraphNavigationStalled
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "Graph navigation stalled"
+              description: "No graph navigation activity for 10 minutes."

@@ -1,0 +1,67 @@
+# Unit tests for longbow_hnsw_contention_alerts.
+rule_files:
+  - hnsw_contention_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy HNSW contention state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_update_contention_seconds_bucket{le="0.05"}'
+        values: '100+100x60'
+      - series: 'longbow_hnsw_update_contention_seconds_bucket{le="0.1"}'
+        values: '100+100x60'
+      - series: 'longbow_hnsw_update_contention_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_hnsw_cow_copy_count'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowHNSWUpdateContentionHigh
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowHNSWCoWCopiesHigh
+        exp_alerts: []
+
+  # Firing LongbowHNSWUpdateContentionHigh (>0.1s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_update_contention_seconds_bucket{le="0.05"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_update_contention_seconds_bucket{le="0.1"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_update_contention_seconds_bucket{le="0.5"}'
+        values: '50+50x60'
+      - series: 'longbow_hnsw_update_contention_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowHNSWUpdateContentionHigh
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowHNSWUpdateContentionHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "High HNSW update contention"
+              description: "P99 update contention is Vs, may impact write throughput."
+
+  # Firing LongbowHNSWCoWCopiesHigh (>100/s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_cow_copy_count'
+        values: '0+12000x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowHNSWCoWCopiesHigh
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowHNSWCoWCopiesHigh
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "High CoW copy rate"
+              description: "HNSW CoW copies at V/sec, index may be growing rapidly."

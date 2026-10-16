@@ -1,0 +1,160 @@
+# Unit tests for longbow_wal_alerts.
+rule_files:
+  - wal_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy WAL operations
+  - interval: 1m
+    input_series:
+      - series: 'longbow_wal_pending_entries'
+        values: '100x60'
+      - series: 'longbow_wal_fsync_duration_seconds_bucket{le="0.1"}'
+        values: '100+100x60'
+      - series: 'longbow_wal_fsync_duration_seconds_bucket{le="0.5"}'
+        values: '100+100x60'
+      - series: 'longbow_wal_fsync_duration_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_wal_writes_total{status="error"}'
+        values: '0x60'
+      - series: 'longbow_wal_flush_errors_total'
+        values: '0x60'
+      - series: 'longbow_wal_write_errors_total'
+        values: '0x60'
+      - series: 'longbow_checkpoint_timeouts_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: LongbowHighWALQueueDepth
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: LongbowSlowWALFsync
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: LongbowWALWriteErrors
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: LongbowWALFlushErrors
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: LongbowWALDirectWriteErrors
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: LongbowCheckpointTimeouts
+        exp_alerts: []
+
+  # Firing LongbowHighWALQueueDepth (>5000 for 3m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_wal_pending_entries'
+        values: '6000x60'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LongbowHighWALQueueDepth
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: LongbowHighWALQueueDepth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "High WAL queue depth"
+              description: "WAL has V pending entries, indicating potential write backlog."
+
+  # Firing LongbowSlowWALFsync (>0.5s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_wal_fsync_duration_seconds_bucket{le="0.1"}'
+        values: '0+0x60'
+      - series: 'longbow_wal_fsync_duration_seconds_bucket{le="0.5"}'
+        values: '0+0x60'
+      - series: 'longbow_wal_fsync_duration_seconds_bucket{le="1.0"}'
+        values: '50+50x60'
+      - series: 'longbow_wal_fsync_duration_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowSlowWALFsync
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowSlowWALFsync
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Slow WAL fsync operations"
+              description: "P99 WAL fsync duration exceeds 500ms, may indicate disk saturation."
+
+  # Firing LongbowWALWriteErrors (>0.1/s for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_wal_writes_total{status="error"}'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowWALWriteErrors
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: LongbowWALWriteErrors
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              status: error
+            exp_annotations:
+              summary: "WAL write errors detected"
+              description: "WAL is encountering write errors at V per second."
+
+  # Firing LongbowWALFlushErrors (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_wal_flush_errors_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowWALFlushErrors
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: LongbowWALFlushErrors
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "WAL flush errors detected"
+              description: "WAL buffer flush errors occurring at V/sec."
+
+  # Firing LongbowWALDirectWriteErrors (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_wal_write_errors_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowWALDirectWriteErrors
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: LongbowWALDirectWriteErrors
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "WAL direct write errors detected"
+              description: "WAL write failures occurring at V/sec."
+
+  # Firing LongbowCheckpointTimeouts (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_checkpoint_timeouts_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowCheckpointTimeouts
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: LongbowCheckpointTimeouts
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "WAL checkpoint timeouts detected"
+              description: "Checkpoint operations are timing out at V/sec."

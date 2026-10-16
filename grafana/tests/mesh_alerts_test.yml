@@ -1,0 +1,81 @@
+# Unit tests for longbow_mesh_alerts.
+rule_files:
+  - mesh_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy mesh state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_gossip_active_members'
+        values: '3x60'
+      - series: 'longbow_split_brain_healthy_peers'
+        values: '2x60'
+      - series: 'longbow_gossip_pings_total{direction="failed"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: LongbowMemberFailure
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: LongbowSplitBrain
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: LongbowHighGossipFailures
+        exp_alerts: []
+
+  # Firing LongbowMemberFailure (<2 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_gossip_active_members'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowMemberFailure
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: LongbowMemberFailure
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Mesh member count low"
+              description: "Only V active members in mesh, expected 3+."
+
+  # Firing LongbowSplitBrain (<1 for 30s)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_split_brain_healthy_peers'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 10s
+        alertname: LongbowSplitBrain
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: LongbowSplitBrain
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Split brain detected"
+              description: "Cluster partition detected - healthy peer count is V."
+
+  # Firing LongbowHighGossipFailures (>1/s for 3m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_gossip_pings_total{direction="failed"}'
+        values: '0+120x60'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LongbowHighGossipFailures
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: LongbowHighGossipFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              direction: failed
+            exp_annotations:
+              summary: "High gossip failure rate"
+              description: "Gossip ping failures at V per second."

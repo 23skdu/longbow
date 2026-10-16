@@ -1,0 +1,130 @@
+# Unit tests for longbow_layer_eviction_alerts.
+rule_files:
+  - layer_eviction_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy layer eviction state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_eviction_errors_total{dataset="ds1"}'
+        values: '0x60'
+      - series: 'longbow_eviction_active_layers{dataset="ds1"}'
+        values: '0x60'
+      - series: 'longbow_eviction_heap_utilization'
+        values: '0.5x60'
+      - series: 'longbow_eviction_layers_restored_total'
+        values: '0+60x60'
+      - series: 'longbow_eviction_rejected_queries_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: LongbowLayerEvictionHighErrorRate
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: LongbowLayerEvictionActiveLayersHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: LongbowLayerEvictionHeapPressure
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: LongbowLayerEvictionRestoreStalled
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: LongbowEvictionRejectedQueries
+        exp_alerts: []
+
+  # Firing LongbowLayerEvictionHighErrorRate (>0.1/s for 3m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_eviction_errors_total{dataset="ds1"}'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LongbowLayerEvictionHighErrorRate
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: LongbowLayerEvictionHighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              dataset: ds1
+            exp_annotations:
+              summary: "High layer eviction error rate"
+              description: "Layer eviction/restore errors at V/sec on ds1."
+
+  # Firing LongbowLayerEvictionActiveLayersHigh (>10 for 10m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_eviction_active_layers{dataset="ds1"}'
+        values: '15x60'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LongbowLayerEvictionActiveLayersHigh
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: LongbowLayerEvictionActiveLayersHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              dataset: ds1
+            exp_annotations:
+              summary: "Many HNSW layers evicted"
+              description: "V layers currently evicted on ds1, may indicate memory pressure."
+
+  # Firing LongbowLayerEvictionHeapPressure (>0.9 for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_eviction_heap_utilization'
+        values: '0.95x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowLayerEvictionHeapPressure
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowLayerEvictionHeapPressure
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "High heap utilization triggering evictions"
+              description: "Heap utilization at V when eviction triggered."
+
+  # Firing LongbowLayerEvictionRestoreStalled (rate==0 and active>0 for 15m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_eviction_layers_restored_total'
+        values: '100x60'
+      - series: 'longbow_eviction_active_layers'
+        values: '5x60'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: LongbowLayerEvictionRestoreStalled
+        exp_alerts: []
+      - eval_time: 27m
+        alertname: LongbowLayerEvictionRestoreStalled
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "Evicted layers not being restored"
+              description: "Layers are evicted but none have been restored for 15 minutes, check for stale data."
+
+  # Firing LongbowEvictionRejectedQueries (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_eviction_rejected_queries_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowEvictionRejectedQueries
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowEvictionRejectedQueries
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Queries rejected during layer eviction"
+              description: "Queries rejected because required graph layers are currently evicted."

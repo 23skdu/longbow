@@ -1,0 +1,58 @@
+# Unit tests for longbow_arena_alerts.
+rule_files:
+  - arena_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy arena state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_arena_nil_error_total{operation="allocate"}'
+        values: '0x60'
+      - series: 'longbow_arena_off_heap_bytes'
+        values: '1000000x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowArenaNilErrors
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowArenaOffHeapHigh
+        exp_alerts: []
+
+  # Firing LongbowArenaNilErrors (>0.05/s for 3m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_arena_nil_error_total{operation="allocate"}'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LongbowArenaNilErrors
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: LongbowArenaNilErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              operation: allocate
+            exp_annotations:
+              summary: "Arena nil pointer errors"
+              description: "Arena nil errors at V/sec for allocate."
+
+  # Firing LongbowArenaOffHeapHigh (>10GB for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_arena_off_heap_bytes'
+        values: '12000000000x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowArenaOffHeapHigh
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowArenaOffHeapHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "High off-heap arena usage"
+              description: "Off-heap arena usage is V."

@@ -1,0 +1,124 @@
+# Unit tests for longbow_memory_alerts.
+rule_files:
+  - memory_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy memory state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_memory_pressure_level'
+        values: '0x60'
+      - series: 'longbow_memory_backpressure_rejects_total'
+        values: '0x60'
+      - series: 'longbow_memory_fragmentation_ratio'
+        values: '1.1x60'
+      - series: 'longbow_memory_limit_rejects_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowMemoryPressure
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowFrequentBackpressure
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowMemoryFragmentation
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowHighBackpressureRejections
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowMemoryLimitRejections
+        exp_alerts: []
+
+  # Firing LongbowMemoryPressure (>1 for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_memory_pressure_level'
+        values: '2x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowMemoryPressure
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowMemoryPressure
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "High memory pressure"
+              description: "Memory pressure level is V, may cause backpressure."
+
+  # Firing LongbowFrequentBackpressure (>1/s for 3m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_memory_backpressure_rejects_total'
+        values: '0+120x60'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LongbowFrequentBackpressure
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: LongbowFrequentBackpressure
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Frequent memory backpressure rejections"
+              description: "Rejecting V requests/sec due to memory pressure."
+
+  # Firing LongbowMemoryFragmentation (>1.5 for 10m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_memory_fragmentation_ratio'
+        values: '2.0x60'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LongbowMemoryFragmentation
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: LongbowMemoryFragmentation
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "High memory fragmentation"
+              description: "Memory fragmentation ratio is V, consider compaction."
+
+  # Firing LongbowHighBackpressureRejections (>5/s for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_memory_backpressure_rejects_total'
+        values: '0+600x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowHighBackpressureRejections
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowHighBackpressureRejections
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Critical memory backpressure"
+              description: "System is rejecting more than 5 requests/sec due to memory exhaustion."
+
+  # Firing LongbowMemoryLimitRejections (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_memory_limit_rejects_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowMemoryLimitRejections
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowMemoryLimitRejections
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Requests rejected due to memory limits"
+              description: "Hard memory limit reached; rejecting requests at V/sec."

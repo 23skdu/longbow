@@ -1,0 +1,80 @@
+# Unit tests for longbow_slab_alerts.
+rule_files:
+  - slab_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy slab state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_slab_pool_buffer_hit_ratio'
+        values: '0.9x60'
+      - series: 'longbow_slab_pool_boundary_violations_total'
+        values: '0x60'
+      - series: 'longbow_slab_leak_probability'
+        values: '0.1x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowSlabPoolBufferHitRatioLow
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowSlabPoolBoundaryViolations
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowSlabLeakProbabilityHigh
+        exp_alerts: []
+
+  # Firing LongbowSlabPoolBufferHitRatioLow (<0.5 for 10m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_slab_pool_buffer_hit_ratio'
+        values: '0.2x60'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LongbowSlabPoolBufferHitRatioLow
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: LongbowSlabPoolBufferHitRatioLow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Low slab pool buffer hit ratio"
+              description: "Slab pool buffer hit ratio is V, pool may be undersized."
+
+  # Firing LongbowSlabPoolBoundaryViolations (>0.1/s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_slab_pool_boundary_violations_total'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowSlabPoolBoundaryViolations
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowSlabPoolBoundaryViolations
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Slab pool boundary violations detected"
+              description: "Boundary violations at V/sec, may indicate memory corruption risk."
+
+  # Firing LongbowSlabLeakProbabilityHigh (>0.5 for 10m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_slab_leak_probability'
+        values: '0.8x60'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LongbowSlabLeakProbabilityHigh
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: LongbowSlabLeakProbabilityHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "High slab leak probability"
+              description: "Slab leak probability is V, investigate arena lifecycle."

@@ -1,0 +1,139 @@
+# Unit tests for longbow_storage_alerts.
+rule_files:
+  - storage_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy storage state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_iouring_ring_active'
+        values: '1x60'
+      - series: 'longbow_io_write_latency_seconds_bucket{backend="mmap",le="0.5"}'
+        values: '100+100x60'
+      - series: 'longbow_io_write_latency_seconds_bucket{backend="mmap",le="1.0"}'
+        values: '100+100x60'
+      - series: 'longbow_io_write_latency_seconds_bucket{backend="mmap",le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_dataset_export_failures_total{dataset="ds1"}'
+        values: '0x60'
+      - series: 'longbow_dataset_import_failures_total{dataset="ds1"}'
+        values: '0x60'
+      - series: 'longbow_store_dropped_datasets_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowIOUringNotAvailable
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowHighIOWait
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowDatasetExportFailures
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowDatasetImportFailures
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowStoreDroppedDatasets
+        exp_alerts: []
+
+  # Firing LongbowIOUringNotAvailable (==0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_iouring_ring_active'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowIOUringNotAvailable
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: LongbowIOUringNotAvailable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "io_uring not available"
+              description: "The io_uring ring is closed while io_uring storage is configured. WAL writes are falling back to a slower path. Check longbow_iouring_errors_total."
+
+  # Firing LongbowHighIOWait (>1s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_io_write_latency_seconds_bucket{backend="mmap",le="0.5"}'
+        values: '0+0x60'
+      - series: 'longbow_io_write_latency_seconds_bucket{backend="mmap",le="1.0"}'
+        values: '0+0x60'
+      - series: 'longbow_io_write_latency_seconds_bucket{backend="mmap",le="2.0"}'
+        values: '50+50x60'
+      - series: 'longbow_io_write_latency_seconds_bucket{backend="mmap",le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowHighIOWait
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowHighIOWait
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              backend: mmap
+            exp_annotations:
+              summary: "High I/O wait time"
+              description: "I/O wait time is V/sec, indicating disk saturation."
+
+  # Firing LongbowDatasetExportFailures (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_dataset_export_failures_total{dataset="ds1"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowDatasetExportFailures
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowDatasetExportFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              dataset: ds1
+            exp_annotations:
+              summary: "Dataset export failure on ds1"
+              description: "Dataset snapshot/export failed for ds1."
+
+  # Firing LongbowDatasetImportFailures (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_dataset_import_failures_total{dataset="ds1"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowDatasetImportFailures
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowDatasetImportFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              dataset: ds1
+            exp_annotations:
+              summary: "Dataset import failure on ds1"
+              description: "Dataset snapshot/import failed for ds1."
+
+  # Firing LongbowStoreDroppedDatasets (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_store_dropped_datasets_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowStoreDroppedDatasets
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowStoreDroppedDatasets
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Dataset dropped in VectorStore"
+              description: "Datasets have been dropped or evicted from store."

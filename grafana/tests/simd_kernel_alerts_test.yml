@@ -1,0 +1,88 @@
+# Unit tests for longbow_simd_kernel_alerts.
+rule_files:
+  - simd_kernel_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy SIMD kernel state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_simd_kernel_fallbacks_total{metric="l2",element_type="float32",reason="mismatch"}'
+        values: '0x60'
+      - series: 'longbow_hnsw_simd_kernel_resolved_total{element_type="float32",outcome="simd"}'
+        values: '0+100x60'
+      - series: 'longbow_hnsw_simd_kernel_resolved_total{element_type="float32",outcome="scalar"}'
+        values: '0x60'
+      - series: 'longbow_jit_kernel_errors_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowSIMDKernelMismatch
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowSIMDKernelScalarFallbackRatio
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowJITKernelErrors
+        exp_alerts: []
+
+  # Firing LongbowSIMDKernelMismatch (>0 for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_simd_kernel_fallbacks_total{metric="l2",element_type="float32",reason="mismatch"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowSIMDKernelMismatch
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: LongbowSIMDKernelMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              metric: l2
+              element_type: float32
+              reason: mismatch
+            exp_annotations:
+              summary: "SIMD distance kernel for float32 rejected as wrong"
+              description: "The l2 kernel for element type float32 disagreed with its scalar reference and was rejected at index construction. The index is using the slower scalar path for this dtype, and the kernel itself is defective - it would otherwise feed wrong distances into neighbour selection and corrupt the graph quietly. The characteristic symptom before this metric existed was one dtype sitting far below its siblings at identical element count."
+
+  # Firing LongbowSIMDKernelScalarFallbackRatio (>0.99 for 1h)
+  - interval: 5m
+    input_series:
+      - series: 'longbow_hnsw_simd_kernel_resolved_total{element_type="float32",outcome="scalar"}'
+        values: '0+1000x50'
+      - series: 'longbow_hnsw_simd_kernel_resolved_total{element_type="float32",outcome="simd"}'
+        values: '0x50'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: LongbowSIMDKernelScalarFallbackRatio
+        exp_alerts: []
+      - eval_time: 150m
+        alertname: LongbowSIMDKernelScalarFallbackRatio
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              element_type: float32
+            exp_annotations:
+              summary: "float32 is running entirely on scalar distance math"
+              description: "More than 99% of distance resolutions for element type float32 fell back to the scalar path over the last hour. If a SIMD kernel is expected for this type, this is a throughput problem with no other symptom. Do not dismiss this for float32: its kernels resolve and this alert firing on float32 means they stopped resolving, which is the exact failure that was silent for months."
+
+  # Firing LongbowJITKernelErrors (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_jit_kernel_errors_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowJITKernelErrors
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowJITKernelErrors
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "SIMD JIT kernel compilation or execution error"
+              description: "JIT vector math kernel failure detected at V/sec."

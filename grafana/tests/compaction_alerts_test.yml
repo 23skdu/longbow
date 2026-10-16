@@ -1,0 +1,80 @@
+# Unit tests for longbow_compaction_alerts.
+rule_files:
+  - compaction_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy compaction state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_compaction_operations_total'
+        values: '0+60x60'
+      - series: 'longbow_compaction_auto_triggers_total'
+        values: '0x60'
+      - series: 'longbow_compaction_errors_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowCompactionStalled
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowFrequentAutoCompaction
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowCompactionErrors
+        exp_alerts: []
+
+  # Firing LongbowCompactionStalled (rate == 0 for 30m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_compaction_operations_total'
+        values: '100x60'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: LongbowCompactionStalled
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: LongbowCompactionStalled
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "Compaction stalled"
+              description: "No compaction activity for 30 minutes."
+
+  # Firing LongbowFrequentAutoCompaction (>0.1/s for 10m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_compaction_auto_triggers_total'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LongbowFrequentAutoCompaction
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: LongbowFrequentAutoCompaction
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "Frequent auto-compaction triggers"
+              description: "Auto-compaction triggering V times per second."
+
+  # Firing LongbowCompactionErrors (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_compaction_errors_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowCompactionErrors
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowCompactionErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Compaction errors detected"
+              description: "Background index/vector compaction errors occurring at V/sec."

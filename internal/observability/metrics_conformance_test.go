@@ -416,7 +416,7 @@ func TestRuleGroupsHaveUnitTests(t *testing.T) {
 		covered[m[1]] = true
 	}
 
-	testFiles, err := filepath.Glob(filepath.Join(testsDir, "*_alerts_test.yml"))
+	testFiles, err := filepath.Glob(filepath.Join(testsDir, "*_test.yml"))
 	if err == nil {
 		for _, f := range testFiles {
 			base := filepath.Base(f)
@@ -450,16 +450,15 @@ func TestRuleGroupsHaveUnitTests(t *testing.T) {
 		t.Errorf("test-rules.sh extracts %s, which is not a rule group in rules.yml", name)
 	}
 
-	if len(uncovered) == 0 {
-		return
+	if len(uncovered) > 0 {
+		var b strings.Builder
+		fmt.Fprintf(&b, "\n%d of %d rule groups have no promtool unit test:\n", len(uncovered), len(groups))
+		for _, g := range uncovered {
+			fmt.Fprintf(&b, "  %s\n", g)
+		}
+		b.WriteString("\nA parse check cannot detect a rule that never fires.\n")
+		b.WriteString("See docs/roadmap.md Item 20.\n")
+		t.Errorf("%s", b.String())
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "\n%d of %d rule groups have no promtool unit test:\n", len(uncovered), len(groups))
-	for _, g := range uncovered {
-		fmt.Fprintf(&b, "  %s\n", g)
-	}
-	b.WriteString("\nA parse check cannot detect a rule that never fires.\n")
-	b.WriteString("See docs/roadmap.md Item 20.\n")
-	t.Log(b.String())
 }
 

@@ -24,7 +24,7 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 sed 's/humanizeBytes/humanize/g' "$grafana_dir/rules.yml" > "$work/rules.yml"
-cp "$here"/*_alerts_test.yml "$work/"
+cp "$here"/*_test.yml "$work/"
 
 # Extract one alert group in isolation. promtool needs the top-level "groups:" key
 # that the extraction drops, so it is re-added. Grafana template functions are
@@ -46,7 +46,7 @@ extract_group() {
     f && /^  - name: / { exit }
     f { print }
   ' "$work/rules.yml" \
-    | sed 's/{{ \$value | humanizeDuration }}/V/; s/{{ \$value | humanizePercentage }}/V/; s/{{ \$value | humanize }}/V/' \
+    | sed '/runbook_url:/d; s/{{ \$value | humanizeDuration }}/V/; s/{{ \$value | humanizePercentage }}/V/; s/{{ \$value | humanize }}/V/; s/{{ \$value }}/V/' \
     > "$work/group.yml"
   { echo "groups:"; cat "$work/group.yml"; } > "$work/$out"
   # A group that did not match would extract nothing and promtool would report
@@ -57,11 +57,11 @@ extract_group() {
   fi
 }
 
-# Every group with a matching <name>_alerts_test.yml gets a unit test.
+# Every group with a matching <name>_test.yml gets a unit test.
 # Adding a group without a test is reported by the conformance gate
 # (TestRuleGroupsHaveUnitTests) rather than failing here, because parse-checking
 # an untested group is still worth doing.
-for testfile in "$here"/*_alerts_test.yml; do
+for testfile in "$here"/*_test.yml; do
   [ -e "$testfile" ] || continue
   name="$(basename "$testfile" .yml)"
   group="longbow_${name%_test}"
@@ -76,7 +76,7 @@ echo "==> checking all rules parse"
 # silent when it should not, so an expression that merely never fires is a
 # failure rather than a silent pass.
 status=0
-for testfile in "$here"/*_alerts_test.yml; do
+for testfile in "$here"/*_test.yml; do
   [ -e "$testfile" ] || continue
   name="$(basename "$testfile" .yml)"
   echo "==> running $name"

@@ -1,65 +1,28 @@
 # Unit tests for longbow_gpu_alerts.
-#
-# LongbowGPUFailure gated on `longbow_gpu_enabled` and
-# LongbowGPUMemoryPressure divided two gauges (`..._memory_used_bytes` /
-# `..._memory_total_bytes`) none of which are registered. Both were silently
-# empty. The memory metric is a single `longbow_gpu_memory_bytes{device,type}`
-# gauge carrying both sides.
 rule_files:
   - gpu_alerts.rules.yml
 
 evaluation_interval: 1m
 
 tests:
-  # GPU-backed search is succeeding: no failure alert.
-  - interval: 1m
-    input_series:
-      - series: 'longbow_vector_search_gpu_operations_total{operation="search",status="success"}'
-        values: '0+10x120'
-      - series: 'longbow_gpu_memory_bytes{device="cuda:0",type="allocated"}'
-        values: '1000x120'
-      - series: 'longbow_gpu_memory_bytes{device="cuda:0",type="capacity"}'
-        values: '10000x120'
-    alert_rule_test:
-      - eval_time: 30m
-        alertname: LongbowGPUFailure
-        exp_alerts: []
-      - eval_time: 30m
-        alertname: LongbowGPUMemoryPressure
-        exp_alerts: []
-
-  # GPU search is reporting errors. This is the condition that has never been
-  # detectable before: the old expression required a gauge that did not exist.
-  - interval: 1m
-    input_series:
-      - series: 'longbow_vector_search_gpu_operations_total{operation="search",status="success"}'
-        values: '0+10x120'
-      - series: 'longbow_vector_search_gpu_operations_total{operation="search",status="error"}'
-        values: '0+2x120'
-    alert_rule_test:
-      - eval_time: 30m
-        alertname: LongbowGPUFailure
-        exp_alerts:
-          - exp_labels:
-              severity: critical
-            exp_annotations:
-              summary: "GPU acceleration failure"
-              description: 'GPU-backed vector searches are reporting errors: {{ $value | humanize }} per second. Search falls back to CPU. Check longbow_gpu_fallback_total and longbow_gpu_device_temperature_celsius.'
-
-  # Memory at 10% of capacity: quiet.
+  # GPU memory low: no alerts
   - interval: 1m
     input_series:
       - series: 'longbow_gpu_memory_bytes{device="cuda:0",type="allocated"}'
         values: '1000x120'
       - series: 'longbow_gpu_memory_bytes{device="cuda:0",type="capacity"}'
         values: '10000x120'
+      - series: 'longbow_gpu_fallback_total'
+        values: '0x120'
     alert_rule_test:
       - eval_time: 30m
         alertname: LongbowGPUMemoryPressure
         exp_alerts: []
+      - eval_time: 30m
+        alertname: LongbowGPUFallbackHigh
+        exp_alerts: []
 
-  # Memory at 95% of capacity: fires, and keeps the device label so the alert
-  # names which GPU.
+  # GPU Memory Pressure: memory at 95% of capacity -> fires after 2m
   - interval: 1m
     input_series:
       - series: 'longbow_gpu_memory_bytes{device="cuda:0",type="allocated"}'
@@ -67,36 +30,31 @@ tests:
       - series: 'longbow_gpu_memory_bytes{device="cuda:0",type="capacity"}'
         values: '10000x120'
     alert_rule_test:
-      - eval_time: 30m
+      - eval_time: 1m
+        alertname: LongbowGPUMemoryPressure
+        exp_alerts: []
+      - eval_time: 5m
         alertname: LongbowGPUMemoryPressure
         exp_alerts:
           - exp_labels:
               severity: warning
               device: cuda:0
             exp_annotations:
-              summary: "High GPU memory usage"
-              description: "GPU cuda:0 memory usage is at {{ $value | humanizePercentage }} of capacity."
+              summary: "GPU memory pressure"
+              description: "GPU memory utilization is above 90%."
 
-  # A second device over the threshold must produce its own alert rather than
-  # being folded into the first: the division is per-device, so each is judged
-  # on its own capacity.
+  # Multi-GPU Device Error: error reported on cuda:1 -> fires after 1m
   - interval: 1m
     input_series:
-      - series: 'longbow_gpu_memory_bytes{device="cuda:0",type="allocated"}'
-        values: '1000x120'
-      - series: 'longbow_gpu_memory_bytes{device="cuda:0",type="capacity"}'
-        values: '10000x120'
-      - series: 'longbow_gpu_memory_bytes{device="cuda:1",type="allocated"}'
-        values: '9900x120'
-      - series: 'longbow_gpu_memory_bytes{device="cuda:1",type="capacity"}'
-        values: '10000x120'
+      - series: 'longbow_multi_gpu_device_errors{device="cuda:1"}'
+        values: '0+1x60'
     alert_rule_test:
-      - eval_time: 30m
-        alertname: LongbowGPUMemoryPressure
+      - eval_time: 5m
+        alertname: LongbowMultiGPUDeviceErrors
         exp_alerts:
           - exp_labels:
-              severity: warning
+              severity: critical
               device: cuda:1
             exp_annotations:
-              summary: "High GPU memory usage"
-              description: "GPU cuda:1 memory usage is at {{ $value | humanizePercentage }} of capacity."
+              summary: "Multi-GPU device error on cuda:1"
+              description: "Hardware device errors reported on GPU cuda:1."

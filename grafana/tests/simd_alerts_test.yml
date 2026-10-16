@@ -1,0 +1,67 @@
+# Unit tests for longbow_simd_alerts.
+rule_files:
+  - simd_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy SIMD state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_simd_dispatch_latency_seconds_bucket{le="0.005"}'
+        values: '100+100x60'
+      - series: 'longbow_hnsw_simd_dispatch_latency_seconds_bucket{le="0.01"}'
+        values: '100+100x60'
+      - series: 'longbow_hnsw_simd_dispatch_latency_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_simd_fallback_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowSIMDDispatchSlow
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowSIMDFallback
+        exp_alerts: []
+
+  # Firing LongbowSIMDDispatchSlow (>0.01s for 3m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_simd_dispatch_latency_seconds_bucket{le="0.005"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_simd_dispatch_latency_seconds_bucket{le="0.01"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_simd_dispatch_latency_seconds_bucket{le="0.05"}'
+        values: '50+50x60'
+      - series: 'longbow_hnsw_simd_dispatch_latency_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LongbowSIMDDispatchSlow
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: LongbowSIMDDispatchSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "SIMD dispatch latency high"
+              description: "SIMD kernel dispatch taking >10ms, may indicate dispatch overhead."
+
+  # Firing LongbowSIMDFallback (>10/s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_simd_fallback_total'
+        values: '0+1200x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowSIMDFallback
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowSIMDFallback
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "High SIMD fallback rate"
+              description: "SIMD falling back to generic V/sec."

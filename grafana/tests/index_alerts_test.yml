@@ -1,0 +1,217 @@
+# Unit tests for longbow_index_alerts.
+rule_files:
+  - index_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy index operations
+  - interval: 1m
+    input_series:
+      - series: 'longbow_index_queue_depth'
+        values: '100x60'
+      - series: 'longbow_index_job_latency_seconds_bucket{le="1"}'
+        values: '100+100x60'
+      - series: 'longbow_index_job_latency_seconds_bucket{le="10"}'
+        values: '100+100x60'
+      - series: 'longbow_index_job_latency_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_index_creations_total{status="error",type="hnsw"}'
+        values: '0x60'
+      - series: 'longbow_hnsw_repair_duration_seconds_bucket{le="1"}'
+        values: '100+100x60'
+      - series: 'longbow_hnsw_repair_duration_seconds_bucket{le="5"}'
+        values: '100+100x60'
+      - series: 'longbow_hnsw_repair_duration_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_hnsw_adaptive_adjustments_total'
+        values: '0x60'
+      - series: 'longbow_index_jobs_dropped_total'
+        values: '0x60'
+      - series: 'longbow_neighbor_selection_errors_total'
+        values: '0x60'
+      - series: 'longbow_graph_f16_conversion_errors_total{dataset="ds1"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowIndexingLag
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowSlowIndexJobs
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowIndexBuildFailures
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowHighHNSWRepairDuration
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowFrequentAdaptiveAdjustments
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowIndexJobsDropped
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowNeighborSelectionErrors
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowGraphF16ConversionErrors
+        exp_alerts: []
+
+  # Firing LongbowIndexingLag (>10000 for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_index_queue_depth'
+        values: '12000x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowIndexingLag
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowIndexingLag
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "High indexing queue depth"
+              description: "The asynchronous indexing queue is growing faster than it can be processed."
+
+  # Firing LongbowSlowIndexJobs (>10s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_index_job_latency_seconds_bucket{le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_index_job_latency_seconds_bucket{le="10"}'
+        values: '0+0x60'
+      - series: 'longbow_index_job_latency_seconds_bucket{le="20"}'
+        values: '50+50x60'
+      - series: 'longbow_index_job_latency_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowSlowIndexJobs
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowSlowIndexJobs
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Slow index job processing"
+              description: "P95 index job latency exceeds 10 seconds."
+
+  # Firing LongbowIndexBuildFailures (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_index_creations_total{status="error",type="hnsw"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowIndexBuildFailures
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: LongbowIndexBuildFailures
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              type: hnsw
+            exp_annotations:
+              summary: "Index build failures detected"
+              description: "Indexes are failing to build at V per second."
+
+  # Firing LongbowHighHNSWRepairDuration (>5s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_repair_duration_seconds_bucket{le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_repair_duration_seconds_bucket{le="5"}'
+        values: '0+0x60'
+      - series: 'longbow_hnsw_repair_duration_seconds_bucket{le="10"}'
+        values: '50+50x60'
+      - series: 'longbow_hnsw_repair_duration_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowHighHNSWRepairDuration
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowHighHNSWRepairDuration
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Slow HNSW repair cycles"
+              description: "P99 HNSW repair duration exceeds 5 seconds."
+
+  # Firing LongbowFrequentAdaptiveAdjustments (>0.5/s for 10m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_adaptive_adjustments_total'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LongbowFrequentAdaptiveAdjustments
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: LongbowFrequentAdaptiveAdjustments
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "High frequency of adaptive HNSW adjustments"
+              description: "Adaptive HNSW parameters are changing frequently (> 0.5/sec)."
+
+  # Firing LongbowIndexJobsDropped (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_index_jobs_dropped_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowIndexJobsDropped
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: LongbowIndexJobsDropped
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Background index jobs dropped"
+              description: "Indexing queue overflow is dropping jobs at V/sec."
+
+  # Firing LongbowNeighborSelectionErrors (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_neighbor_selection_errors_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowNeighborSelectionErrors
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: LongbowNeighborSelectionErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Neighbor selection errors during indexing"
+              description: "Errors encountered selecting graph neighbors at V/sec."
+
+  # Firing LongbowGraphF16ConversionErrors (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_graph_f16_conversion_errors_total{dataset="ds1"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowGraphF16ConversionErrors
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: LongbowGraphF16ConversionErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              dataset: ds1
+            exp_annotations:
+              summary: "Graph float16 conversion errors on ds1"
+              description: "Errors converting graph vectors to float16 occurring on dataset ds1."

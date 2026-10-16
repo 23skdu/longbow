@@ -1,0 +1,57 @@
+# Unit tests for longbow_adaptive_gc_alerts.
+rule_files:
+  - adaptive_gc_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy adaptive GC state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_adaptive_gc_current_gogc'
+        values: '100x60'
+      - series: 'longbow_adaptive_gc_allocation_rate_bytes_per_sec'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowAdaptiveGCHighGOGC
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowAdaptiveGCAllocationSpike
+        exp_alerts: []
+
+  # Firing LongbowAdaptiveGCHighGOGC (>500 for 10m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_adaptive_gc_current_gogc'
+        values: '600x60'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LongbowAdaptiveGCHighGOGC
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: LongbowAdaptiveGCHighGOGC
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "Adaptive GC targeting high GOGC"
+              description: "Adaptive GC has increased GOGC to V, indicating high memory pressure."
+
+  # Firing LongbowAdaptiveGCAllocationSpike (>1e9 for 2m)
+  - interval: 30s
+    input_series:
+      - series: 'longbow_adaptive_gc_allocation_rate_bytes_per_sec'
+        values: '0+60000000000x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowAdaptiveGCAllocationSpike
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: LongbowAdaptiveGCAllocationSpike
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Memory allocation spike"
+              description: "Allocation rate exceeded 1GB/sec in the last minute."

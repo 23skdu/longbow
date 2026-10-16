@@ -1,0 +1,84 @@
+# Unit tests for longbow_rdma_alerts.
+rule_files:
+  - rdma_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy RDMA state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_rdma_errors_total'
+        values: '0x60'
+      - series: 'longbow_rdma_bytes_processed_total'
+        values: '1000x60'
+      - series: 'longbow_tombstones_total'
+        values: '10x60'
+      - series: 'longbow_hnsw_node_count'
+        values: '1000x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: LongbowRDMACriticalErrors
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: LongbowRDMANoActivity
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: LongbowTombstoneSaturation
+        exp_alerts: []
+
+  # Firing LongbowRDMACriticalErrors (>1/s for 1m)
+  - interval: 30s
+    input_series:
+      - series: 'longbow_rdma_errors_total'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowRDMACriticalErrors
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: LongbowRDMACriticalErrors
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "RDMA critical errors"
+              description: "RDMA errors occurring at V/sec."
+
+  # Firing LongbowRDMANoActivity (==0 for 15m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_rdma_bytes_processed_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: LongbowRDMANoActivity
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: LongbowRDMANoActivity
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "RDMA no activity"
+              description: "RDMA enabled but no bytes processed for 15 minutes."
+
+  # Firing LongbowTombstoneSaturation (>0.2 for 10m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_tombstones_total'
+        values: '300x60'
+      - series: 'longbow_hnsw_node_count'
+        values: '1000x60'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LongbowTombstoneSaturation
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: LongbowTombstoneSaturation
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "High tombstone density"
+              description: "Tombstones represent V of the index. Compaction recommended."

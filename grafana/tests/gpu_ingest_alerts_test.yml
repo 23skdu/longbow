@@ -1,0 +1,67 @@
+# Unit tests for longbow_gpu_ingest_alerts.
+rule_files:
+  - gpu_ingest_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy GPU ingest state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_gpu_ingest_kernel_duration_seconds_bucket{le="0.5"}'
+        values: '100+100x60'
+      - series: 'longbow_gpu_ingest_kernel_duration_seconds_bucket{le="1"}'
+        values: '100+100x60'
+      - series: 'longbow_gpu_ingest_kernel_duration_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_gpu_neighbor_prune_ops_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowGPUIngestKernelSlow
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowGPUNeighborPruneHigh
+        exp_alerts: []
+
+  # Firing LongbowGPUIngestKernelSlow (>1s for 3m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_gpu_ingest_kernel_duration_seconds_bucket{le="0.5"}'
+        values: '0+0x60'
+      - series: 'longbow_gpu_ingest_kernel_duration_seconds_bucket{le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_gpu_ingest_kernel_duration_seconds_bucket{le="2"}'
+        values: '50+50x60'
+      - series: 'longbow_gpu_ingest_kernel_duration_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LongbowGPUIngestKernelSlow
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: LongbowGPUIngestKernelSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Slow GPU ingest kernel"
+              description: "P99 GPU ingest kernel latency is Vs."
+
+  # Firing LongbowGPUNeighborPruneHigh (>1000/s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_gpu_neighbor_prune_ops_total'
+        values: '0+120000x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowGPUNeighborPruneHigh
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowGPUNeighborPruneHigh
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "High GPU neighbor prune rate"
+              description: "GPU neighbor prune ops at V/sec, may indicate HNSW index churn."

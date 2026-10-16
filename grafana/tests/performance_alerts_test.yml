@@ -1,0 +1,160 @@
+# Unit tests for longbow_performance_alerts.
+rule_files:
+  - performance_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy performance state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_arrow_extraction_errors_total{type="arrow",error="decode"}'
+        values: '0x60'
+      - series: 'longbow_flight_duration_seconds_bucket{method="DoGet",le="1"}'
+        values: '100+100x60'
+      - series: 'longbow_flight_duration_seconds_bucket{method="DoGet",le="5"}'
+        values: '100+100x60'
+      - series: 'longbow_flight_duration_seconds_bucket{method="DoGet",le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_vector_search_gpu_latency_seconds_bucket{le="0.1"}'
+        values: '100+100x60'
+      - series: 'longbow_vector_search_gpu_latency_seconds_bucket{le="0.5"}'
+        values: '100+100x60'
+      - series: 'longbow_vector_search_gpu_latency_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+      - series: 'longbow_vector_search_gpu_operations_total{status="error"}'
+        values: '0x60'
+      - series: 'longbow_dataset_lock_wait_duration_seconds_bucket{operation="write",le="0.05"}'
+        values: '100+100x60'
+      - series: 'longbow_dataset_lock_wait_duration_seconds_bucket{operation="write",le="0.1"}'
+        values: '100+100x60'
+      - series: 'longbow_dataset_lock_wait_duration_seconds_bucket{operation="write",le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowHighIpcErrors
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowSlowFlightOps
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowGPUSlowSearch
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowGPUFailure
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowHighLockContention
+        exp_alerts: []
+
+  # Firing LongbowHighIpcErrors (>1/s for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_hnsw_arrow_extraction_errors_total{type="arrow",error="decode"}'
+        values: '0+120x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowHighIpcErrors
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowHighIpcErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              type: arrow
+              error: decode
+            exp_annotations:
+              summary: "High IPC decoding error rate"
+              description: "Encountering more than 1 IPC error per second."
+
+  # Firing LongbowSlowFlightOps (>5s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_flight_duration_seconds_bucket{method="DoGet",le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_flight_duration_seconds_bucket{method="DoGet",le="5"}'
+        values: '0+0x60'
+      - series: 'longbow_flight_duration_seconds_bucket{method="DoGet",le="10"}'
+        values: '50+50x60'
+      - series: 'longbow_flight_duration_seconds_bucket{method="DoGet",le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowSlowFlightOps
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowSlowFlightOps
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              method: DoGet
+            exp_annotations:
+              summary: "Slow Flight operations for DoGet"
+              description: "P99 latency exceeds 5 seconds."
+
+  # Firing LongbowGPUSlowSearch (>0.5s for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_vector_search_gpu_latency_seconds_bucket{le="0.1"}'
+        values: '0+0x60'
+      - series: 'longbow_vector_search_gpu_latency_seconds_bucket{le="0.5"}'
+        values: '0+0x60'
+      - series: 'longbow_vector_search_gpu_latency_seconds_bucket{le="1.0"}'
+        values: '50+50x60'
+      - series: 'longbow_vector_search_gpu_latency_seconds_bucket{le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowGPUSlowSearch
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowGPUSlowSearch
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Slow GPU search operations"
+              description: "P99 GPU search latency exceeds 500ms."
+
+  # Firing LongbowGPUFailure (>0 for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_vector_search_gpu_operations_total{status="error"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowGPUFailure
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowGPUFailure
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "GPU acceleration failure"
+              description: "GPU-backed vector searches are reporting errors: V per second. Search falls back to CPU. Check longbow_gpu_fallback_total and longbow_gpu_device_temperature_celsius."
+
+  # Firing LongbowHighLockContention (>0.1s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_dataset_lock_wait_duration_seconds_bucket{operation="write",le="0.05"}'
+        values: '0+0x60'
+      - series: 'longbow_dataset_lock_wait_duration_seconds_bucket{operation="write",le="0.1"}'
+        values: '0+0x60'
+      - series: 'longbow_dataset_lock_wait_duration_seconds_bucket{operation="write",le="0.5"}'
+        values: '50+50x60'
+      - series: 'longbow_dataset_lock_wait_duration_seconds_bucket{operation="write",le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowHighLockContention
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowHighLockContention
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              operation: write
+            exp_annotations:
+              summary: "High lock contention on write"
+              description: "P95 lock wait time exceeds 100ms."

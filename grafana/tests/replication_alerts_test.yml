@@ -1,0 +1,109 @@
+# Unit tests for longbow_replication_alerts.
+rule_files:
+  - replication_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy replication state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_replication_lag_seconds{node="node1"}'
+        values: '5x60'
+      - series: 'longbow_quorum_failure_total{consistency="strong"}'
+        values: '0x60'
+      - series: 'longbow_replication_success_total'
+        values: '0+60x60'
+      - series: 'longbow_replication_failures_total'
+        values: '0x60'
+      - series: 'longbow_replication_queue_dropped_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowHighReplicationLag
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowQuorumFailures
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowReplicationStalled
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowReplicationQueueDropped
+        exp_alerts: []
+
+  # Firing LongbowHighReplicationLag (>30s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_replication_lag_seconds{node="node1"}'
+        values: '45x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowHighReplicationLag
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowHighReplicationLag
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              node: node1
+            exp_annotations:
+              summary: "High replication lag on node1"
+              description: "Replication lag is V seconds behind."
+
+  # Firing LongbowQuorumFailures (>0.1/s for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_quorum_failure_total{consistency="strong"}'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowQuorumFailures
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowQuorumFailures
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              consistency: strong
+            exp_annotations:
+              summary: "Quorum write failures"
+              description: "Quorum writes failing at V per second for strong."
+
+  # Firing LongbowReplicationStalled (both rates 0 for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_replication_success_total'
+        values: '100x60'
+      - series: 'longbow_replication_failures_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowReplicationStalled
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: LongbowReplicationStalled
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Replication stalled"
+              description: "No replication activity detected for 10 minutes."
+
+  # Firing LongbowReplicationQueueDropped (>0 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_replication_queue_dropped_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowReplicationQueueDropped
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: LongbowReplicationQueueDropped
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Replication queue messages dropped"
+              description: "Outbound replication queue is full; dropping messages at V/sec."

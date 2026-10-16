@@ -1,0 +1,37 @@
+# Unit tests for longbow_recording_rules.
+rule_files:
+  - recording_rules.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'longbow_vector_search_latency_seconds_count'
+        values: '0+600x10'
+      - series: 'longbow_flight_rows_processed_total{operation="put"}'
+        values: '0+300x10'
+      - series: 'longbow_do_get_zero_copy_total{type="zero_copy_retain"}'
+        values: '0+60x10'
+      - series: 'longbow_quorum_success_total'
+        values: '0+90x10'
+      - series: 'longbow_quorum_failure_total'
+        values: '0+10x10'
+      - series: 'longbow_index_job_latency_seconds_count'
+        values: '0+120x10'
+    promql_expr_test:
+      - expr: job:longbow_search_qps:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: 'job:longbow_search_qps:rate5m'
+            value: 10
+      - expr: job:longbow_put_qps:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: 'job:longbow_put_qps:rate5m'
+            value: 5
+      - expr: job:longbow_index_throughput:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: 'job:longbow_index_throughput:rate5m'
+            value: 2

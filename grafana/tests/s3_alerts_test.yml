@@ -1,0 +1,69 @@
+# Unit tests for longbow_s3_alerts.
+rule_files:
+  - s3_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy S3 operations
+  - interval: 1m
+    input_series:
+      - series: 'longbow_s3_operations_total{status="error"}'
+        values: '0x60'
+      - series: 'longbow_s3_request_duration_seconds_bucket{operation="get",le="1"}'
+        values: '100+100x60'
+      - series: 'longbow_s3_request_duration_seconds_bucket{operation="get",le="2"}'
+        values: '100+100x60'
+      - series: 'longbow_s3_request_duration_seconds_bucket{operation="get",le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowS3FailureRate
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowS3HighLatency
+        exp_alerts: []
+
+  # Firing LongbowS3FailureRate (>0.05/s for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_s3_operations_total{status="error"}'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowS3FailureRate
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowS3FailureRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              status: error
+            exp_annotations:
+              summary: "High S3 operation failure rate"
+              description: "S3 operations failing at V per second."
+
+  # Firing LongbowS3HighLatency (>2s for 5m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_s3_request_duration_seconds_bucket{operation="get",le="1"}'
+        values: '0+0x60'
+      - series: 'longbow_s3_request_duration_seconds_bucket{operation="get",le="2"}'
+        values: '0+0x60'
+      - series: 'longbow_s3_request_duration_seconds_bucket{operation="get",le="5"}'
+        values: '50+50x60'
+      - series: 'longbow_s3_request_duration_seconds_bucket{operation="get",le="+Inf"}'
+        values: '100+100x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LongbowS3HighLatency
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: LongbowS3HighLatency
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              operation: get
+            exp_annotations:
+              summary: "Slow S3 operations"
+              description: "P99 S3 latency for get is above 2s."

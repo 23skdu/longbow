@@ -1,0 +1,101 @@
+# Unit tests for longbow_system_alerts.
+rule_files:
+  - system_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Healthy system state
+  - interval: 1m
+    input_series:
+      - series: 'longbow_ipc_buffer_pool_utilization'
+        values: '0.5x60'
+      - series: 'longbow_panic_total{component="engine"}'
+        values: '0x60'
+      - series: 'longbow_log_errors_total'
+        values: '0x60'
+      - series: 'longbow_semaphore_timeouts_total'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LongbowBufferPoolSaturation
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowProcessPanics
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowLogErrorsHigh
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LongbowSemaphoreTimeouts
+        exp_alerts: []
+
+  # Firing LongbowBufferPoolSaturation (>0.95 for 1m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_ipc_buffer_pool_utilization'
+        values: '0.98x60'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LongbowBufferPoolSaturation
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: LongbowBufferPoolSaturation
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "IPC Buffer Pool Saturated"
+              description: "IPC buffer pool utilization is at V, risk of allocation failures."
+
+  # Firing LongbowProcessPanics (>0 for 0m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_panic_total{component="engine"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: LongbowProcessPanics
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: engine
+            exp_annotations:
+              summary: "Component panic recovered in engine"
+              description: "Internal panic captured in component engine."
+
+  # Firing LongbowLogErrorsHigh (>1/s for 3m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_log_errors_total'
+        values: '0+120x60'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: LongbowLogErrorsHigh
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: LongbowLogErrorsHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Elevated error log rate"
+              description: "Error-level log entries are being emitted at V/sec."
+
+  # Firing LongbowSemaphoreTimeouts (>0 for 2m)
+  - interval: 1m
+    input_series:
+      - series: 'longbow_semaphore_timeouts_total'
+        values: '0+10x60'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LongbowSemaphoreTimeouts
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LongbowSemaphoreTimeouts
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Concurrency semaphore timeouts"
+              description: "Requests timing out waiting for concurrency semaphores at V/sec."

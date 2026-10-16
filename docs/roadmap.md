@@ -10,7 +10,7 @@
 | Pri | # | Item | Area | Impact / Rationale |
 |:---|:---|:---|:---|:---|
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
-| **P3** | **21** | **Alert Coverage for Critical Failure Counters** | Observability / Alerting | Add Prometheus alerts for unmonitored durability, replication, and data-loss failure counters across `grafana/rules.yml`. |
+| **P3** | **20** | **Extend Promtool Unit-Test Coverage Across 28 Rule Groups** | Observability / Testing | Author unit test fixtures covering firing and recovery states across remaining 24 rule groups. |
 
 ```mermaid
 graph TD
@@ -23,14 +23,10 @@ graph TD
         I30["30: EMLGo 0.7 15-DType Accuracy Gate"]
     end
     subgraph P3["Observability & CI Conformance"]
-        I21["21: Alert Coverage for Critical Failure Counters"]
         I20["20: Promtool Test Coverage across 28 Groups"]
-        I22["22: Alertmanager Routing & Runbook Links"]
-        I23["23: Declarative Compose/Helm Provisioning"]
     end
 
-    I32 --> I21
-    I20 --> I22
+    I32 --> I20
 ```
 
 ---
@@ -81,13 +77,6 @@ graph TD
 
 ## 5. P3 — Observability, Alerting & CI Conformance
 
-### Item 21: Alert Coverage for Critical Failure Counters
-- **Status**: **OPEN**
-- **Files**: `grafana/rules.yml`
-- **State**: Over 35 exported error counters (e.g., `longbow_wal_flush_errors_total`, `longbow_checkpoint_timeouts_total`, `longbow_replication_queue_dropped_total`, `longbow_index_jobs_dropped_total`) currently have no associated alert rules.
-- **Plan**: Add Prometheus alert rules for all unmonitored durability, replication, and data-loss failure counters.
-- **Success Criteria**: All exported failure counters are either actively alerted or explicitly documented in `rules.yml` as intentionally unwatched.
-
 ### Item 20: Extend Promtool Unit-Test Coverage Beyond 4 of 28 Rule Groups
 - **Status**: **OPEN**
 - **Files**: `grafana/tests/*_alerts_test.yml`, `grafana/tests/test-rules.sh`
@@ -95,18 +84,13 @@ graph TD
 - **Plan**: Author unit test scenarios (`*_alerts_test.yml`) for the remaining rule groups covering firing and recovery states.
 - **Success Criteria**: 100% of rule groups validated via automated `promtool test rules`.
 
-### Item 22 & 23: Alertmanager Configuration, Runbook Links & Provisioning
-- **Status**: **OPEN**
-- **Files**: `grafana/alertmanager.yml`, `docker-compose.yml`, `helm/longbow/`, `grafana/provisioning/`
-- **State**: No default Alertmanager configuration is provided; alerts lack runbook links; Grafana dashboards require manual import.
-- **Plan**: Provide production-ready `alertmanager.yml` with severity-based routing; add runbook URLs to all alerts; provide declarative provisioning YAML for Docker Compose and Helm deployments.
-- **Success Criteria**: `docker compose up` brings up Longbow and pre-provisioned Grafana with all active dashboards and alerts loaded.
-
 ---
 
 ## 6. Verified & Removed Completed Items (Changelog)
 
 | # | Item | Verified Completion Date | Key Commit | Verification Evidence |
+| **22/23** | Alertmanager Configuration, Runbook Links & Provisioning | 2026-10-16 | `4c7d2895` | Authored `grafana/alertmanager.yml` with multi-tier severity routing (`critical`, `warning`, `info`) and inhibition rules; created operational triage guide `docs/runbooks.md` with remediation steps across all alert families; wired `runbook_url` annotations across alerts in `grafana/rules.yml`; implemented declarative Grafana datasource (`grafana/provisioning/datasources/prometheus.yml`) and dashboard provisioning (`grafana/provisioning/dashboards/dashboards.yml`); added Prometheus (`prom/prometheus`), Alertmanager (`prom/alertmanager`), and Grafana (`grafana/grafana`) observability stack to `docker-compose.yml`; added Prometheus Operator `ServiceMonitor` and `PrometheusRule` templates and `monitoring` config values to `helm/longbow/`. |
+| **21** | Alert Coverage for Critical Failure Counters | 2026-10-16 | `4c7d2895` | Added Prometheus alert rules covering all 30 previously unmonitored exported failure/error counters across WAL (`longbow_wal_flush_errors_total`, `longbow_wal_write_errors_total`, `longbow_checkpoint_timeouts_total`), replication (`longbow_replication_queue_dropped_total`), index (`longbow_index_jobs_dropped_total`, `longbow_neighbor_selection_errors_total`, `longbow_graph_f16_conversion_errors_total`), memory (`longbow_memory_limit_rejects_total`), compaction (`longbow_compaction_errors_total`), system (`longbow_panic_total`, `longbow_log_errors_total`, `longbow_semaphore_timeouts_total`), storage (`longbow_dataset_export_failures_total`, `longbow_dataset_import_failures_total`, `longbow_store_dropped_datasets_total`), pipeline (`longbow_store_circuit_breaker_failures_total`, `longbow_do_exchange_errors_total`, `longbow_stream_termination_errors_total`, `longbow_validation_failures_total`, `longbow_vector_search_action_errors_total`, `longbow_trace_errors_total`), GPU (`longbow_multi_gpu_device_errors`, `longbow_onnx_inference_errors_total`, `longbow_onnx_metal_inference_errors_total`), SIMD JIT (`longbow_jit_kernel_errors_total`), bulk insert (`longbow_bulk_insert_dimension_errors_total`), and hybrid search (`longbow_reranker_errors_total`, `longbow_graphrag_expansion_errors_total`); verified 38 of 38 failure counters are actively watched (0 unwatched); verified 100% alert conformance in `internal/observability`. |
 | **19/24** | Metric-Existence & Docs-Code Consistency Conformance Gates in CI | 2026-10-16 | `d0fb6876` | Implemented `TestRegisteredMetricsInventoryFreshness` in `internal/observability/metrics_conformance_test.go` ensuring `testdata/registered_metrics.tsv` never drifts from AST-extracted metric declarations in Go source code; verified bidirectional consistency between `docs/metrics.md` and registered families via `TestMetricsDocMatchesRegistry`; wired dedicated `Observability & Metric Conformance Gate` step into `.github/workflows/ci.yml` running `go test -v ./internal/observability/...`; 100% of conformance tests pass. |
 | **18** | Repair Alert Rules Bound to Missing Metrics | 2026-10-16 | `84e36aa8` | Verified all 72 alerts across 28 rule groups in `grafana/rules.yml` resolve to registered Prometheus metrics in the Go binary; enhanced `internal/observability/metrics_conformance_test.go` (`referencedMetrics`) to parse multiline YAML alert rules (`expr: |`) preventing silent skip of multiline expressions; resolved divergence in `grafana/dashboards/index-storage.json` by updating unregistered `longbow_index_creation_failures_total` to `longbow_index_creations_total{status="failure"}`; verified 100% alert conformance in CI gate. |
 | **3** | Pooled Row Buffers in `DiskVectorStore` | 2026-10-16 | `6274299a` | Decomposed `disk_vector_store.go` monolith (1,362 LOC down to 187 LOC) into modular sub-modules: `disk_vector_store_read.go` (575 LOC), `disk_vector_store_write.go` (611 LOC), and `disk_vector_store_block.go` (230 LOC); implemented pooled row buffers via `Float32RowPool` and `ByteRowPool` (`internal/store/index/buffer_pool.go` and `internal/store/disk_buffer_pool.go`); added zero-allocation decoding APIs: `GetVector`, `GetVectorInto`, `GetBatchInto`, `GetVectorAnyInto`, `ScanRows`, and `ScanRowsAny`; precomputed block LRU cache keys (`BlockEntry.HotKey`) eliminating string formatting allocations at read time; benchmark `GetBatchInto` improved from 1,490 ns/op (5,771 B/op, 19 allocs/op) to 370.8 ns/op (0 B/op, 0 allocs/op — 4x throughput, 100% allocation elimination); single vector `GetVectorInto` achieves 38.99 ns/op with 0 B/op and 0 allocs/op; 100% of store, index, and repo short tests pass. |

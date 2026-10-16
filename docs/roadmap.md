@@ -241,7 +241,16 @@ work remains in the canonical roadmap.
 
 ## 2. P1 — GPU Infrastructure & SIMD
 
-### Item 4: BM25 Inverted Index Copy-on-Write Elimination (Allocations)
+### Item 4: BM25 Inverted Index Copy-on-Write Elimination (Allocations) — RESOLVED 2026-10-15
+
+BulkCOW coalescing shipped in `BM25InvertedIndex.AddBatch` (single `BulkStore`
+per shard per batch, merged posting lists instead of per-document re-copy);
+legacy `Add` delegates through `AddBatch`. The arena-based replacement
+(`BM25ArenaIndex.IndexDocuments`) is now the primary in the hybrid ingestion
+path (`store_hybrid.go`) and the hybrid search path (`hybrid_pipeline.go`,
+`hybrid_search_arena.go`); hybrid search falls back gracefully when only one
+side is present. `MapRCU` remains for legacy `Delete`/compat paths but is not
+on critical ingest/search hot paths.
 
 - **Files**: `internal/store/index/bm25_inverted_index.go`, `internal/store/index/bm25_arena_index.go`
 - **State**: Runtime profiling (`allocs.pprof`) shows `(*BM25InvertedIndex).Add` consumed 12,813.22 MB (60.04% of total heap allocation across the entire process). On every document insert, `Add` executes Copy-on-Write cloning of the shard term map (`MapRCU[string, *BM25PostingList]`) and slice reallocation for every term posting list (`newDocIDs = make([]VectorID, n+1)`). For 100k documents with ~5 terms each, this triggers >500,000 map clones and slice allocations.

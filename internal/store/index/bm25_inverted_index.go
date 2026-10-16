@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
@@ -24,8 +25,9 @@ type BM25InvertedIndex struct {
 
 // BM25PostingList stores parallel slices for SIMD-accelerated scoring
 type BM25PostingList struct {
-	DocIDs []VectorID
-	TFs    []int
+	DocIDs  []VectorID
+	TFs     []int
+	DocLens []int
 }
 
 // bm25TermShard holds the inverted index for a subset of terms
@@ -103,18 +105,10 @@ func (idx *BM25InvertedIndex) GetTermDocFreq(term string) int {
 
 // GetDocLengthsBatch returns the lengths for a batch of documents, grouped by shard to minimize lock contention.
 func (idx *BM25InvertedIndex) GetDocLengthsBatch(ids []VectorID, dst map[VectorID]int) {
-	// Group by shard
-	shards := make(map[int][]VectorID)
 	for _, id := range ids {
 		shardIdx := idx.docShardIndex(id)
-		shards[shardIdx] = append(shards[shardIdx], id)
-	}
-
-	for shardIdx, shardIDs := range shards {
-		shard := &idx.docShards[shardIdx]
-		m := shard.length.Load()
-		for _, id := range shardIDs {
-			dst[id] = m[id]
+		if l, ok := idx.docShards[shardIdx].length.Get(id); ok {
+			dst[id] = l
 		}
 	}
 }
@@ -159,8 +153,9 @@ func (idx *BM25InvertedIndex) AddBatch(docs []BM25Document) {
 	// batch. A term can legitimately be touched by many documents in the same
 	// batch, and all of them must land in a single rebuilt posting list.
 	type posting struct {
-		id VectorID
-		tf int
+		id  VectorID
+		tf  int
+		len int
 	}
 	shardTerms := make(map[int]map[string][]posting)
 
@@ -204,7 +199,7 @@ func (idx *BM25InvertedIndex) AddBatch(docs []BM25Document) {
 			if shardTerms[sIdx] == nil {
 				shardTerms[sIdx] = make(map[string][]posting)
 			}
-			shardTerms[sIdx][term] = append(shardTerms[sIdx][term], posting{id: doc.ID, tf: 1})
+			shardTerms[sIdx][term] = append(shardTerms[sIdx][term], posting{id: doc.ID, tf: 1, len: docLen})
 		}
 	}
 
@@ -242,13 +237,16 @@ func (idx *BM25InvertedIndex) AddBatch(docs []BM25Document) {
 			oldPL, _ := shard.index.Get(term)
 			var newDocIDs []VectorID
 			var newTFs []int
+			var newDocLens []int
 
 			if oldPL == nil {
 				newDocIDs = make([]VectorID, len(ps))
 				newTFs = make([]int, len(ps))
+				newDocLens = make([]int, len(ps))
 				for k, p := range ps {
 					newDocIDs[k] = p.id
 					newTFs[k] = p.tf
+					newDocLens[k] = p.len
 				}
 			} else {
 				// A sorted merge of the existing posting list and the batch's
@@ -256,6 +254,7 @@ func (idx *BM25InvertedIndex) AddBatch(docs []BM25Document) {
 				// and re-copying the whole list once per document.
 				newDocIDs = make([]VectorID, 0, len(oldPL.DocIDs)+len(ps))
 				newTFs = make([]int, 0, len(oldPL.DocIDs)+len(ps))
+				newDocLens = make([]int, 0, len(oldPL.DocIDs)+len(ps))
 
 				i, j := 0, 0
 				for i < len(oldPL.DocIDs) && j < len(ps) {
@@ -263,15 +262,22 @@ func (idx *BM25InvertedIndex) AddBatch(docs []BM25Document) {
 					case oldPL.DocIDs[i] < ps[j].id:
 						newDocIDs = append(newDocIDs, oldPL.DocIDs[i])
 						newTFs = append(newTFs, oldPL.TFs[i])
+						if i < len(oldPL.DocLens) {
+							newDocLens = append(newDocLens, oldPL.DocLens[i])
+						} else {
+							newDocLens = append(newDocLens, idx.GetDocLength(oldPL.DocIDs[i]))
+						}
 						i++
 					case oldPL.DocIDs[i] > ps[j].id:
 						newDocIDs = append(newDocIDs, ps[j].id)
 						newTFs = append(newTFs, ps[j].tf)
+						newDocLens = append(newDocLens, ps[j].len)
 						j++
 					default:
 						// Document already indexed: the batch wins.
 						newDocIDs = append(newDocIDs, ps[j].id)
 						newTFs = append(newTFs, ps[j].tf)
+						newDocLens = append(newDocLens, ps[j].len)
 						i++
 						j++
 					}
@@ -279,14 +285,20 @@ func (idx *BM25InvertedIndex) AddBatch(docs []BM25Document) {
 				for ; i < len(oldPL.DocIDs); i++ {
 					newDocIDs = append(newDocIDs, oldPL.DocIDs[i])
 					newTFs = append(newTFs, oldPL.TFs[i])
+					if i < len(oldPL.DocLens) {
+						newDocLens = append(newDocLens, oldPL.DocLens[i])
+					} else {
+						newDocLens = append(newDocLens, idx.GetDocLength(oldPL.DocIDs[i]))
+					}
 				}
 				for ; j < len(ps); j++ {
 					newDocIDs = append(newDocIDs, ps[j].id)
 					newTFs = append(newTFs, ps[j].tf)
+					newDocLens = append(newDocLens, ps[j].len)
 				}
 			}
 
-			updates[term] = &BM25PostingList{DocIDs: newDocIDs, TFs: newTFs}
+			updates[term] = &BM25PostingList{DocIDs: newDocIDs, TFs: newTFs, DocLens: newDocLens}
 		}
 
 		shard.index.BulkStore(updates)
@@ -347,14 +359,19 @@ func (idx *BM25InvertedIndex) Delete(id VectorID) {
 						// Clone and remove
 						newDocIDs := make([]VectorID, n-1)
 						newTFs := make([]int, n-1)
+						newDocLens := make([]int, n-1)
 						copy(newDocIDs[:removeIdx], oldPL.DocIDs[:removeIdx])
 						copy(newDocIDs[removeIdx:], oldPL.DocIDs[removeIdx+1:])
 						copy(newTFs[:removeIdx], oldPL.TFs[:removeIdx])
 						copy(newTFs[removeIdx:], oldPL.TFs[removeIdx+1:])
-
+						if len(oldPL.DocLens) == n {
+							copy(newDocLens[:removeIdx], oldPL.DocLens[:removeIdx])
+							copy(newDocLens[removeIdx:], oldPL.DocLens[removeIdx+1:])
+						}
 						updates[term] = &BM25PostingList{
-							DocIDs: newDocIDs,
-							TFs:    newTFs,
+							DocIDs:  newDocIDs,
+							TFs:     newTFs,
+							DocLens: newDocLens,
 						}
 					}
 				}
@@ -389,8 +406,7 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 		shardTerms[shardIdx] = append(shardTerms[shardIdx], term)
 	}
 
-	// Track which docs we need lengths for
-	docSet := make(map[VectorID]struct{})
+
 
 	// Pre-convert roaring filter to dense BitVector for O(1) cache-friendly access
 	var bvFilter BitVector
@@ -421,15 +437,13 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 				// Optimization: If no filter, use posting list directly
 				if filter == nil {
 					termDocTF[term] = pl
-					for _, docID := range pl.DocIDs {
-						docSet[docID] = struct{}{}
-					}
 					continue
 				}
 
 				filteredPL := &BM25PostingList{
-					DocIDs: make([]VectorID, 0, len(pl.DocIDs)/4), // heuristic initial capacity
-					TFs:    make([]int, 0, len(pl.TFs)/4),
+					DocIDs:  make([]VectorID, 0, len(pl.DocIDs)/4), // heuristic initial capacity
+					TFs:     make([]int, 0, len(pl.TFs)/4),
+					DocLens: make([]int, 0, len(pl.DocLens)/4),
 				}
 				for i, docID := range pl.DocIDs {
 					if !bvFilter.Get(uint32(docID)) {
@@ -437,7 +451,11 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 					}
 					filteredPL.DocIDs = append(filteredPL.DocIDs, docID)
 					filteredPL.TFs = append(filteredPL.TFs, pl.TFs[i])
-					docSet[docID] = struct{}{}
+					if i < len(pl.DocLens) {
+						filteredPL.DocLens = append(filteredPL.DocLens, pl.DocLens[i])
+					} else {
+						filteredPL.DocLens = append(filteredPL.DocLens, idx.GetDocLength(docID))
+					}
 				}
 				if len(filteredPL.DocIDs) > 0 {
 					termDocTF[term] = filteredPL
@@ -446,22 +464,110 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 		}
 	}
 
-	if len(docSet) == 0 {
+	if len(termDocTF) == 0 {
 		return nil
 	}
 
-	// Get document lengths in batch
-	docLengths := make(map[VectorID]int, len(docSet))
-	docIDs := make([]VectorID, 0, len(docSet))
-	for docID := range docSet {
-		docIDs = append(docIDs, docID)
-	}
-	idx.GetDocLengthsBatch(docIDs, docLengths)
-
-	// Calculate BM25 scores in batch using Block-Max WAND (Weak AND)
 	avgDL := float32(idx.scorer.AvgDocLength())
 	k1 := float32(idx.config.K1)
 	b := float32(idx.config.B)
+
+	searchLimit := limit
+	if searchLimit <= 0 {
+		searchLimit = 1000 // default fallback
+	}
+
+	var heap []SearchResult
+	theta := float32(0.0)
+
+	siftUp := func(i int) {
+		for i > 0 {
+			parent := (i - 1) / 2
+			if heap[parent].Score <= heap[i].Score {
+				break
+			}
+			heap[parent], heap[i] = heap[i], heap[parent]
+			i = parent
+		}
+	}
+
+	siftDown := func(i int) {
+		n := len(heap)
+		for {
+			left := 2*i + 1
+			if left >= n {
+				break
+			}
+			smallest := left
+			right := left + 1
+			if right < n && heap[right].Score < heap[left].Score {
+				smallest = right
+			}
+			if heap[i].Score <= heap[smallest].Score {
+				break
+			}
+			heap[i], heap[smallest] = heap[smallest], heap[i]
+			i = smallest
+		}
+	}
+
+	// Fast path: single-term query evaluated with SIMD vector scoring
+	if len(termDocTF) == 1 {
+		var singleTerm string
+		var pl *BM25PostingList
+		for t, p := range termDocTF {
+			singleTerm = t
+			pl = p
+		}
+		if len(pl.DocIDs) == 0 {
+			return nil
+		}
+
+		df := termDF[singleTerm]
+		idf := float32(idx.scorer.IDF(df))
+
+		docLens := pl.DocLens
+		if len(docLens) < len(pl.DocIDs) {
+			docLens = make([]int, len(pl.DocIDs))
+			for i, id := range pl.DocIDs {
+				docLens[i] = idx.GetDocLength(id)
+			}
+		}
+
+		scores := simd.BM25ScoreBatch(pl.TFs, docLens, avgDL, idf, k1, b)
+		for i, sc := range scores {
+			if sc <= 0 {
+				continue
+			}
+			if len(heap) < searchLimit {
+				heap = append(heap, SearchResult{ID: lbtypes.VectorID(pl.DocIDs[i]), Score: sc})
+				siftUp(len(heap) - 1)
+				if len(heap) == searchLimit {
+					theta = heap[0].Score
+				}
+			} else if sc > theta {
+				heap[0] = SearchResult{ID: lbtypes.VectorID(pl.DocIDs[i]), Score: sc}
+				siftDown(0)
+				theta = heap[0].Score
+			}
+		}
+
+		results := make([]SearchResult, len(heap))
+		for i := len(heap) - 1; i >= 0; i-- {
+			results[i] = heap[0]
+			heap[0] = heap[len(heap)-1]
+			heap = heap[:len(heap)-1]
+			if len(heap) > 0 {
+				siftDown(0)
+			}
+		}
+		if pool != nil {
+			final := make([]SearchResult, len(results))
+			copy(final, results)
+			return final
+		}
+		return results
+	}
 
 	scoreSingle := func(tf int, docLen int, avgDL, idf, k1, b float32) float32 {
 		tfF := float32(tf)
@@ -503,7 +609,12 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 				if pl.TFs[i] > maxTF {
 					maxTF = pl.TFs[i]
 				}
-				l := docLengths[pl.DocIDs[i]]
+				l := 0
+				if i < len(pl.DocLens) {
+					l = pl.DocLens[i]
+				} else {
+					l = idx.GetDocLength(pl.DocIDs[i])
+				}
 				if l < minLen {
 					minLen = l
 				}
@@ -523,34 +634,6 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 			blockMaxScores: blockMaxScores,
 			blockSize:      blockSize,
 		})
-	}
-
-	// Priority queue: sorted ascending by score (heap[0] is the minimum score).
-	// We keep a maximum of limit entries.
-	searchLimit := limit
-	if searchLimit <= 0 {
-		searchLimit = 1000 // default fallback
-	}
-
-	var heap []SearchResult
-	theta := float32(0.0)
-
-	insertHeap := func(res SearchResult) {
-		if len(heap) < searchLimit {
-			heap = append(heap, res)
-			sort.Slice(heap, func(i, j int) bool {
-				return heap[i].Score < heap[j].Score
-			})
-			if len(heap) == searchLimit {
-				theta = heap[0].Score
-			}
-		} else if res.Score > theta {
-			heap[0] = res
-			sort.Slice(heap, func(i, j int) bool {
-				return heap[i].Score < heap[j].Score
-			})
-			theta = heap[0].Score
-		}
 	}
 
 	for {
@@ -599,12 +682,28 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 				if p.pos < len(p.pl.DocIDs) && p.pl.DocIDs[p.pos] == pivotDocID {
 					df := termDF[p.term]
 					idf := float32(idx.scorer.IDF(df))
-					actualScore += scoreSingle(p.pl.TFs[p.pos], docLengths[pivotDocID], avgDL, idf, k1, b)
+					l := 0
+					if p.pos < len(p.pl.DocLens) {
+						l = p.pl.DocLens[p.pos]
+					} else {
+						l = idx.GetDocLength(pivotDocID)
+					}
+					actualScore += scoreSingle(p.pl.TFs[p.pos], l, avgDL, idf, k1, b)
 				}
 			}
 
 			// Try to insert in heap
-			insertHeap(SearchResult{ID: lbtypes.VectorID(pivotDocID), Score: actualScore})
+			if len(heap) < searchLimit {
+				heap = append(heap, SearchResult{ID: lbtypes.VectorID(pivotDocID), Score: actualScore})
+				siftUp(len(heap) - 1)
+				if len(heap) == searchLimit {
+					theta = heap[0].Score
+				}
+			} else if actualScore > theta {
+				heap[0] = SearchResult{ID: lbtypes.VectorID(pivotDocID), Score: actualScore}
+				siftDown(0)
+				theta = heap[0].Score
+			}
 
 			// Advance pointers that matched pivotDocID
 			for _, p := range pointers {
@@ -625,10 +724,15 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 		}
 	}
 
-	// Convert sorted ascending heap to descending results
+	// Convert min-heap to descending results
 	results := make([]SearchResult, len(heap))
-	for i := range heap {
-		results[i] = heap[len(heap)-1-i]
+	for i := len(heap) - 1; i >= 0; i-- {
+		results[i] = heap[0]
+		heap[0] = heap[len(heap)-1]
+		heap = heap[:len(heap)-1]
+		if len(heap) > 0 {
+			siftDown(0)
+		}
 	}
 
 	if pool != nil {

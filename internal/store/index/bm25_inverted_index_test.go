@@ -377,3 +377,17 @@ func BenchmarkBM25InvertedIndexSearchBM25(b *testing.B) {
 		idx.SearchBM25("various terms", 10, nil, nil)
 	}
 }
+
+func BenchmarkBM25InvertedIndexSearchBM25_SingleTerm(b *testing.B) {
+	idx := NewBM25InvertedIndex(DefaultBM25Config())
+
+	// Pre-populate with 10000 documents
+	for i := 0; i < 10000; i++ {
+		idx.Add(VectorID(i), "document with various terms for searching")
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		idx.SearchBM25("searching", 10, nil, nil)
+	}
+}

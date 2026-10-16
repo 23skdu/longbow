@@ -10,22 +10,21 @@
 | Pri | # | Item | Area | Impact / Rationale |
 |:---|:---|:---|:---|:---|
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
-| **P1** | **1** | **End-to-End GPU Search Dispatch & Complex128 Bottleneck** | GPU Engine | Item 34 revealed that server search currently bypasses GPU kernels entirely (`CUDAIndex.SearchBatchDistances` returns "not implemented"). Wire GPU search dispatch and resolve complex128 scaling bottleneck. |
 | **P1** | **6/27** | **AVX-512 VNNI (`VPDPBUSD`) & Saturated Int8/Uint8 Dispatch** | SIMD Kernels | In `dispatch.go`, int8/uint8 dot product and uint8 Euclidean distance fall back to scalar 4x unrolled loops. Wire native 64-byte VNNI kernels for 4x–8x throughput on Cascade Lake / Sapphire Rapids. |
 | **P1** | **7** | **Direct Base Pointer Caching in SearchContext for SlabArena** | Memory / Hotpath | Profile shows `GetWithGeneration` accounts for 14.08% flat CPU time due to per-hop integer divisions and atomic pointer reloads. Cache raw slab base pointers during reader-pinned searches. |
 | **P1** | **25/26** | **TurboQuant 4-Lane Polar Reconstruction & Cross-Hop Caching** | Quantization | Scalar polar reconstruction accounts for 89.2% of TQ distance evaluation time. Interleave reconstruction across 4 AVX2 lanes and memoize reconstructed float32 vectors in scratch arena to cut P99 latency by 20%. |
+| **P1** | **9** | **Inlined 4-Ary Candidate Heap & Branchless Struct Swapping** | Algorithmic | Candidate heap maintenance (`down`, `Less`, `Swap`) accounts for ~15.2% combined flat time during beam search. Inlined 4-ary candidate heap eliminates slice copies and bounds checks. |
 
 ```mermaid
 graph TD
     subgraph P1["Top 5 Priorities"]
         I32["32: Re-cut Baselines & Wire Index-Time CI Gate"]
-        I1["1: GPU Search Dispatch & complex128 Bottleneck"]
         I6["6/27: AVX-512 VNNI & Saturated Kernels in Dispatch"]
         I7["7: Base Pointer Caching in SearchContext"]
         I25["25/26: TurboQuant 4-Lane Vectorization & Hop Cache"]
+        I9["9: Inlined 4-Ary Candidate Heap"]
     end
     subgraph P2["Algorithmic & Storage Optimizations"]
-        I9["9: Inlined 4-Ary Candidate Heap"]
         I8["8: Lock-Free Adjacency & NUMA Worker Queues"]
         I12["12: Lock-Free Map for Metadata & IDs"]
         I13["13: SIMD Fused BM25 Posting Intersection"]
@@ -44,7 +43,7 @@ graph TD
         I23["23: Declarative Compose/Helm Provisioning"]
     end
 
-    I32 --> I1
+    I32 --> I6
     I6 --> I25
     I7 --> I9
     I18 --> I19
@@ -65,15 +64,6 @@ graph TD
   2. Integrate `scripts/check_index_regression.py` into `.github/workflows/benchmark-ab.yml` to enforce a ≤5% index-time regression gate on scheduled interleaved A/B runs.
 - **Success Criteria**: Zero false-positive alerts on self-noise tests; automated CI cancellation on true index-time regressions ≥5%.
 
-### Item 1: End-to-End GPU Search Dispatch & Complex128 Bottleneck
-- **Status**: **OPEN**
-- **Files**: `internal/store/index/navigation_search.go`, `internal/store/index/cuda_index.go`, `internal/gpu/cuda/cuda_index_search.go`
-- **State**: Item 34 profiling confirmed that the dataset index in production is a CPU HNSW instance; `navigation_search.go` only invokes GPU kernels if attached as `*ArrowHNSW`. Crucially, `CUDAIndex.SearchBatchDistances` currently returns `errors.New("not implemented")`. Additionally, complex128 distance evaluation exhibits poor GPU kernel occupancy compared to float32.
-- **Plan**:
-  1. Complete `CUDAIndex.SearchBatchDistances` to enable batch distance offloading from the search beam.
-  2. Implement native complex128 batched Euclidean distance CUDA kernel matching the float32 kernel memory throughput.
-  3. Wire GPU index initialization directly into store dataset startup when `LONGBOW_GPU_ENABLED=1`.
-- **Success Criteria**: 250k GPU search benchmarks record active kernel compute via `gpu_kernel_profile`; complex128 GPU search QPS exceeds CPU AVX-512 baseline by ≥2.5x.
 
 ### Item 6 & 27: Wire AVX-512 VNNI (`VPDPBUSD`) and Saturated Int8/Uint8 Kernels
 - **Status**: **OPEN**
@@ -209,7 +199,7 @@ graph TD
 ## 5. Verified & Removed Completed Items (Changelog)
 
 | # | Item | Verified Completion Date | Key Commit | Verification Evidence |
-|:---|:---|:---|:---|:---|
+| **1** | End-to-End GPU Search Dispatch & Complex128 Bottleneck | 2026-10-16 | `in-commit` | `CUDAIndex.SearchBatchDistances` batched candidate kernel; complex128 batched coalesced kernel; end-to-end dataset auto-sharding & bulk ingest GPU sync wired. |
 | **4** | BM25 Inverted Index COW Elimination | 2026-10-15 | `5514faf9` | `BM25InvertedIndex.AddBatch` and `BM25ArenaIndex` eliminate per-doc map copying; >12 GB heap churn removed during ingest. |
 | **5** | Native L2-Squared Integer SIMD Kernels | 2026-10-15 | `cb6c2712` | Native AVX-512 `l2SquaredInt8AVX512Kernel` implemented; eliminates redundant terminal `VSQRTSS` and `d * d` squaring. |
 | **14** | Ingestion Zero-Copy & Timer Elimination | 2026-10-11 | `1b3927e4` | Geometric slice growth in `LockFreeSlice.Append`; wake channels replace polling timers. |

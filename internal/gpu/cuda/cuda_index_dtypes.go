@@ -307,10 +307,14 @@ func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []floa
 		return nil, nil, fmt.Errorf("no resident pages available for search")
 	}
 
-	totalVecs := 0
-	for _, p := range pages {
-		totalVecs += p.nvecs
+	numPages := len(pages)
+	hPageStarts := make([]C.int, numPages+1)
+	hPagePtrs := make([]unsafe.Pointer, numPages)
+	for i, p := range pages {
+		hPagePtrs[i] = p.ptr
+		hPageStarts[i+1] = hPageStarts[i] + C.int(p.nvecs)
 	}
+	totalVecs := int(hPageStarts[numPages])
 
 	dAllDists, err := idx.allocGPUMem(int64(totalVecs * 4))
 	if err != nil {
@@ -318,23 +322,32 @@ func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []floa
 	}
 	defer idx.freeGPUMem(dAllDists)
 
-	// Per-page launch: complex kernels expect a flat vectors base, not page-pointer arrays.
-	// (Previously dPagePtrs was passed as vectors — broken for multi-page and wrong for single-page.)
-	offset := 0
-	for _, p := range pages {
-		distPtr := unsafe.Pointer(uintptr(dAllDists) + uintptr(offset*4)) // #nosec G115
-		profL2Complex128.begin(cStream)
-		C.launch_l2_distance_complex128_kernel(
-			(*C.float)(p.ptr),
-			(*C.float)(dQuery),
-			(*C.float)(distPtr),
-			C.int(idx.dim),
-			C.int(p.nvecs),
-			cStream,
-		)
-		profL2Complex128.end(cStream)
-		offset += p.nvecs
+	dPagePtrs, err := idx.allocGPUMem(int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0])))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate page pointers buffer: %w", err)
 	}
+	defer idx.freeGPUMem(dPagePtrs)
+	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
+
+	dPageStarts, err := idx.allocGPUMem(int64((numPages + 1) * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate page starts buffer: %w", err)
+	}
+	defer idx.freeGPUMem(dPageStarts)
+	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
+
+	profL2Complex128Batched.begin(cStream)
+	C.launch_l2_distance_complex128_kernel_v2_batched(
+		(**C.float)(dPagePtrs),
+		(*C.int)(dPageStarts),
+		(*C.float)(dQuery),
+		(*C.float)(dAllDists),
+		C.int(idx.dim),
+		C.int(totalVecs),
+		C.int(numPages),
+		cStream,
+	)
+	profL2Complex128Batched.end(cStream)
 
 	hAllDists := make([]float32, totalVecs)
 	distBytes := int64(totalVecs * 4)

@@ -631,3 +631,72 @@ func (h *ArrowHNSW) ComputeDistancesBatch(query []float32, candidateIDs []uint32
 
 	return h.gpuIndex.SearchBatchDistances(query, candidateIDs)
 }
+
+// SetGPUIndex sets the underlying GPU index.
+func (h *ArrowHNSW) SetGPUIndex(idx gpu.Index) {
+	h.gpuMu.Lock()
+	defer h.gpuMu.Unlock()
+	h.gpuIndex = idx
+	h.gpuEnabled = (idx != nil)
+}
+
+// syncBatchToGPU flattens and syncs ingested vector batches to the GPU index.
+func (h *ArrowHNSW) syncBatchToGPU(startID uint32, n int, vecs any) {
+	h.gpuMu.RLock()
+	enabled := h.gpuEnabled && h.gpuIndex != nil
+	h.gpuMu.RUnlock()
+	if !enabled || n <= 0 {
+		return
+	}
+
+	ids := make([]int64, n)
+	for i := 0; i < n; i++ {
+		ids[i] = int64(startID) + int64(i)
+	}
+	dims := int(h.dims.Load())
+	if dims == 0 {
+		return
+	}
+
+	switch v := vecs.(type) {
+	case [][]float32:
+		flat := make([]float32, n*dims)
+		for i, vec := range v {
+			copy(flat[i*dims:(i+1)*dims], vec)
+		}
+		_ = h.SyncGPU(ids, flat)
+		_ = h.FlushGPUUpdates()
+	case [][]complex128:
+		flat := make([]float32, n*dims*2)
+		for i, vec := range v {
+			offset := i * dims * 2
+			for j, c := range vec {
+				flat[offset+j*2] = float32(real(c))
+				flat[offset+j*2+1] = float32(imag(c))
+			}
+		}
+		_ = h.SyncGPU(ids, flat)
+		_ = h.FlushGPUUpdates()
+	case [][]complex64:
+		flat := make([]float32, n*dims*2)
+		for i, vec := range v {
+			offset := i * dims * 2
+			for j, c := range vec {
+				flat[offset+j*2] = real(c)
+				flat[offset+j*2+1] = imag(c)
+			}
+		}
+		_ = h.SyncGPU(ids, flat)
+		_ = h.FlushGPUUpdates()
+	case [][]float64:
+		flat := make([]float32, n*dims)
+		for i, vec := range v {
+			offset := i * dims
+			for j, x := range vec {
+				flat[offset+j] = float32(x)
+			}
+		}
+		_ = h.SyncGPU(ids, flat)
+		_ = h.FlushGPUUpdates()
+	}
+}

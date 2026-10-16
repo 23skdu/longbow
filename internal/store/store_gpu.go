@@ -83,6 +83,11 @@ func (s *VectorStore) initGPUIfEnabled(idx VectorIndex) {
 		return
 	}
 
+	if asi, ok := idx.(*AutoShardingIndex); ok {
+		_ = asi.InitGPU(s.gpuDeviceID, s.logger)
+		return
+	}
+
 	if hnswIdx, ok := idx.(*ArrowHNSW); ok {
 		start := time.Now()
 

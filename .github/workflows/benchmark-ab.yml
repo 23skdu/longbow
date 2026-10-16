@@ -60,9 +60,9 @@ jobs:
 
       - name: Build both arms
         run: |
-          go build -o "$RUNNER_TEMP/baseline-longbow" ./cmd/longbow
+          (cd main-branch && go build -o "$RUNNER_TEMP/baseline-longbow" ./cmd/longbow)
+          (cd main-branch && go build -o "$RUNNER_TEMP/baseline-bench-tool" ./cmd/bench-tool)
           go build -o "$RUNNER_TEMP/candidate-longbow" ./cmd/longbow
-          go build -o "$RUNNER_TEMP/baseline-bench-tool" ./cmd/bench-tool
           go build -o "$RUNNER_TEMP/candidate-bench-tool" ./cmd/bench-tool
 
       - name: Run interleaved A/B

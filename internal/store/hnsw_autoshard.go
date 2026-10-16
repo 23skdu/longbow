@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/gpu"
 	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
@@ -17,6 +18,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/rs/zerolog"
 )
 
 // AutoShardingConfig configures the auto-sharding behavior.
@@ -1033,6 +1035,29 @@ func (idx *AutoShardingIndex) PreWarm(targetSize int) {
 
 	if h, ok := idx.current.(*ArrowHNSW); ok {
 		h.PreWarm(targetSize)
+	}
+}
+
+// InitGPU initializes GPU acceleration on the underlying HNSW index.
+func (idx *AutoShardingIndex) InitGPU(deviceID int32, logger zerolog.Logger) error {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if h, ok := idx.current.(*ArrowHNSW); ok {
+		return h.InitGPU(deviceID, logger)
+	}
+	return nil
+}
+
+// SetGPUIndex assigns a GPU index to the underlying HNSW index.
+func (idx *AutoShardingIndex) SetGPUIndex(gIdx any) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if h, ok := idx.current.(*ArrowHNSW); ok {
+		if gi, ok := gIdx.(gpu.Index); ok {
+			h.SetGPUIndex(gi)
+		}
 	}
 }
 

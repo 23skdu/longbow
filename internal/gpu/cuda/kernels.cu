@@ -655,6 +655,76 @@ void launch_l2_distance_kernel_v2_batched(
     );
 }
 
+__global__ void l2_distance_candidates_kernel(
+    const float** page_ptrs,
+    const uint32_t* candidate_ids,
+    const float* query,
+    float* distances,
+    int dim,
+    int count,
+    int total_vecs
+) {
+    extern __shared__ float s_query_cand[];
+    if (dim <= 1024) {
+        for (int i = threadIdx.x; i < dim; i += blockDim.x) {
+            s_query_cand[i] = query[i];
+        }
+    }
+    __syncthreads();
+
+    int warp_id = threadIdx.x / WARP_SZ;
+    int lane_id = threadIdx.x % WARP_SZ;
+    int warps_per_block = blockDim.x / WARP_SZ;
+    int cand_idx = blockIdx.x * warps_per_block + warp_id;
+
+    if (cand_idx >= count) return;
+
+    uint32_t cid = candidate_ids[cand_idx];
+    if (cid >= (uint32_t)total_vecs) {
+        if (lane_id == 0) {
+            distances[cand_idx] = 1e38f;
+        }
+        return;
+    }
+
+    int page = cid >> 10;
+    int local_vec = cid & 1023;
+    const float* vec = page_ptrs[page] + (int64_t)local_vec * dim;
+
+    float sum = 0.0f;
+    for (int d = lane_id; d < dim; d += WARP_SZ) {
+        float q = (dim <= 1024) ? s_query_cand[d] : query[d];
+        float diff = vec[d] - q;
+        sum += diff * diff;
+    }
+    for (int offset = WARP_SZ / 2; offset > 0; offset >>= 1) {
+        sum += __shfl_xor_sync(0xffffffff, sum, offset);
+    }
+    if (lane_id == 0) {
+        distances[cand_idx] = sqrtf(sum);
+    }
+}
+
+void launch_l2_distance_candidates(
+    const float** page_ptrs,
+    const uint32_t* candidate_ids,
+    const float* query,
+    float* distances,
+    int dim,
+    int count,
+    int total_vecs,
+    cudaStream_t stream
+) {
+    if (count <= 0) return;
+    int warps_per_block = 8;
+    int vecs_per_block = warps_per_block;
+    int blocks = (count + vecs_per_block - 1) / vecs_per_block;
+    size_t shared_mem = (dim <= 1024) ? dim * sizeof(float) : 0;
+    l2_distance_candidates_kernel<<<blocks, warps_per_block * WARP_SZ, shared_mem, stream>>>(
+        page_ptrs, candidate_ids, query, distances, dim, count, total_vecs
+    );
+}
+
 void launch_l2_distance_fp16_kernel(const __half* vectors, const __half* query, float* distances, int dimensions, int count, cudaStream_t stream) {
     int threadsPerBlock = 256;
     int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
@@ -1552,6 +1622,67 @@ void launch_l2_distance_complex128_kernel(const float* vectors, const float* que
     int threads = 256;
     int blocks = (count + threads - 1) / threads;
     l2_distance_complex128_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+__global__ void l2_distance_complex128_kernel_v2_batched(
+    const float** page_ptrs, const int* page_starts,
+    const float* query, float* distances,
+    int dim, int num_pages
+) {
+    extern __shared__ float s_query_c128[];
+    if (dim <= 1024) {
+        for (int i = threadIdx.x; i < dim; i += blockDim.x) {
+            s_query_c128[i] = query[i];
+        }
+    }
+    __syncthreads();
+
+    int warp_id = threadIdx.x / WARP_SZ;
+    int lane_id = threadIdx.x % WARP_SZ;
+    int warps_per_block = blockDim.x / WARP_SZ;
+    int global_vec = blockIdx.x * warps_per_block + warp_id;
+
+    int total_count = page_starts[num_pages];
+    if (global_vec >= total_count) return;
+
+    int lo = 0, hi = num_pages;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (global_vec < page_starts[mid]) hi = mid;
+        else lo = mid + 1;
+    }
+    int page = lo - 1;
+    int local_vec = global_vec - page_starts[page];
+
+    const float* vec = page_ptrs[page] + (int64_t)local_vec * dim;
+    float sum = 0.0f;
+    for (int d = lane_id; d < dim; d += WARP_SZ) {
+        float q = (dim <= 1024) ? s_query_c128[d] : query[d];
+        float diff = vec[d] - q;
+        sum += diff * diff;
+    }
+    for (int offset = WARP_SZ / 2; offset > 0; offset >>= 1) {
+        sum += __shfl_xor_sync(0xffffffff, sum, offset);
+    }
+    if (lane_id == 0) {
+        distances[global_vec] = sqrtf(sum);
+    }
+}
+
+void launch_l2_distance_complex128_kernel_v2_batched(
+    const float** page_ptrs, const int* page_starts,
+    const float* query, float* distances,
+    int dim, int total_count, int num_pages,
+    cudaStream_t stream
+) {
+    if (total_count <= 0 || num_pages <= 0) return;
+    int warps_per_block = 8;
+    int vecs_per_block = warps_per_block;
+    int blocks = (total_count + vecs_per_block - 1) / vecs_per_block;
+    size_t shared_mem = (dim <= 1024) ? dim * sizeof(float) : 0;
+    l2_distance_complex128_kernel_v2_batched<<<blocks, warps_per_block * WARP_SZ, shared_mem, stream>>>(
+        page_ptrs, page_starts, query, distances, dim, num_pages
+    );
 }
 
 // Complex128 Dot Product: q . v* = sum(q.re*v.re + q.im*vIm, j*(q.im*v.re - q.re*v.im))

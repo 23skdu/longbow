@@ -330,3 +330,61 @@ func TestCUDAIndex_Complex128_MultipleQueries(t *testing.T) {
 		}
 	}
 }
+
+func TestCUDAIndex_SearchBatchDistances(t *testing.T) {
+	dim := 128
+	count := 500
+
+	config := types.GPUConfig{
+		DeviceID:  0,
+		MaxMemory: 1024 * 1024 * 1024,
+		Dimension: dim,
+	}
+
+	idx, err := NewCUDAIndex(config)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	cudaIdx := idx.(*CUDAIndex)
+
+	rng := rand.New(rand.NewSource(42))
+	vectors := make([]float32, count*dim)
+	for i := range vectors {
+		vectors[i] = float32(rng.NormFloat64())
+	}
+
+	ids := make([]int64, count)
+	for i := range ids {
+		ids[i] = int64(i)
+	}
+
+	err = cudaIdx.Add(ids, vectors)
+	require.NoError(t, err)
+	err = cudaIdx.Flush()
+	require.NoError(t, err)
+
+	query := make([]float32, dim)
+	for i := range query {
+		query[i] = float32(rng.NormFloat64())
+	}
+
+	candidateIDs := []uint32{0, 1, 5, 25, 42, 99, 150, 256, 350, 499, 1000}
+	dists, err := cudaIdx.SearchBatchDistances(query, candidateIDs)
+	require.NoError(t, err)
+	require.Len(t, dists, len(candidateIDs))
+
+	for i, cid := range candidateIDs {
+		if int(cid) >= count {
+			assert.InDelta(t, float32(1e38), dists[i], 1e30, "out of bounds candidate should be ~1e38")
+			continue
+		}
+		vec := vectors[int(cid)*dim : (int(cid)+1)*dim]
+		var sum float64
+		for d := 0; d < dim; d++ {
+			diff := float64(query[d] - vec[d])
+			sum += diff * diff
+		}
+		expectedDist := float32(math.Sqrt(sum))
+		assert.InDelta(t, expectedDist, dists[i], 0.001, "candidate %d distance mismatch", cid)
+	}
+}

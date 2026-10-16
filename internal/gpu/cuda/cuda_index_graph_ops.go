@@ -212,7 +212,179 @@ func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]u
 	return resIDs, resScores, nil
 }
 func (idx *CUDAIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
-	return nil, fmt.Errorf("SearchBatchDistances not implemented for CUDAIndex")
+	if err := idx.acquireGPUOp(); err != nil {
+		return nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
+	}
+	defer idx.releaseGPUOp()
+
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	nCand := len(candidateIDs)
+	if nCand == 0 {
+		return []float32{}, nil
+	}
+
+	if len(query) != idx.dim {
+		return nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(query), idx.dim)
+	}
+
+	if err := idx.Flush(); err != nil {
+		return nil, err
+	}
+
+	if idx.pager == nil {
+		return nil, fmt.Errorf("GPU pager not initialized")
+	}
+
+	totalVecs := idx.vectorCount
+	if totalVecs == 0 {
+		dists := make([]float32, nCand)
+		for i := range dists {
+			dists[i] = 1e38
+		}
+		return dists, nil
+	}
+
+	numChunks := (totalVecs + vectorsPerPage - 1) / vectorsPerPage
+	type pageEntry struct {
+		ptr    unsafe.Pointer
+		nvecs  int
+		pinned bool
+	}
+	pages := make([]pageEntry, 0, numChunks)
+	var pinnedPages []*memory.PageInfo
+	for chunk := 0; chunk < numChunks; chunk++ {
+		pid := idx.pageIDFor(0, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			continue
+		}
+		if err := idx.pager.Promote(pi); err != nil {
+			continue
+		}
+		idx.pager.Pin(pi)
+		pinnedPages = append(pinnedPages, pi)
+		gpuPtr := idx.pager.GetGPUAddr(pi)
+		if gpuPtr == nil {
+			continue
+		}
+		vecsInChunk := totalVecs - chunk*vectorsPerPage
+		if vecsInChunk > vectorsPerPage {
+			vecsInChunk = vectorsPerPage
+		}
+		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk, pinned: true})
+	}
+
+	defer func() {
+		for _, pi := range pinnedPages {
+			idx.pager.Unpin(pi)
+		}
+	}()
+
+	if len(pages) == 0 {
+		return idx.searchBatchDistancesCPU(query, candidateIDs)
+	}
+
+	numPages := len(pages)
+	hPagePtrs := make([]unsafe.Pointer, numPages)
+	for i, p := range pages {
+		hPagePtrs[i] = p.ptr
+	}
+
+	var cStream C.cudaStream_t
+	if idx.handle != nil {
+		cStream = idx.handle.streams[0]
+	}
+
+	qBytes := int64(idx.dim * 4)
+	dQuery, err := idx.allocGPUMem(qBytes)
+	if err != nil {
+		return idx.searchBatchDistancesCPU(query, candidateIDs)
+	}
+	defer idx.freeGPUMem(dQuery)
+	C.cudaMemcpy(dQuery, unsafe.Pointer(&query[0]), C.size_t(qBytes), C.cudaMemcpyHostToDevice)
+
+	candBytes := int64(nCand * 4)
+	dCandidates, err := idx.allocGPUMem(candBytes)
+	if err != nil {
+		return idx.searchBatchDistancesCPU(query, candidateIDs)
+	}
+	defer idx.freeGPUMem(dCandidates)
+	C.cudaMemcpy(dCandidates, unsafe.Pointer(&candidateIDs[0]), C.size_t(candBytes), C.cudaMemcpyHostToDevice)
+
+	distBytes := int64(nCand * 4)
+	dDistances, err := idx.allocGPUMem(distBytes)
+	if err != nil {
+		return idx.searchBatchDistancesCPU(query, candidateIDs)
+	}
+	defer idx.freeGPUMem(dDistances)
+
+	pagePtrsBytes := int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0]))
+	dPagePtrs, err := idx.allocGPUMem(pagePtrsBytes)
+	if err != nil {
+		return idx.searchBatchDistancesCPU(query, candidateIDs)
+	}
+	defer idx.freeGPUMem(dPagePtrs)
+	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(pagePtrsBytes), C.cudaMemcpyHostToDevice)
+
+	profL2Candidates.begin(cStream)
+	C.launch_l2_distance_candidates(
+		(**C.float)(dPagePtrs),
+		(*C.uint32_t)(dCandidates),
+		(*C.float)(dQuery),
+		(*C.float)(dDistances),
+		C.int(idx.dim),
+		C.int(nCand),
+		C.int(totalVecs),
+		cStream,
+	)
+	profL2Candidates.end(cStream)
+
+	hDistances := make([]float32, nCand)
+	C.cudaMemcpy(unsafe.Pointer(&hDistances[0]), dDistances, C.size_t(distBytes), C.cudaMemcpyDeviceToHost)
+
+	return hDistances, nil
+}
+
+func (idx *CUDAIndex) searchBatchDistancesCPU(query []float32, candidateIDs []uint32) ([]float32, error) {
+	nCand := len(candidateIDs)
+	dists := make([]float32, nCand)
+	totalVecs := idx.vectorCount
+	dim := idx.dim
+
+	for i, cid := range candidateIDs {
+		if int(cid) >= totalVecs {
+			dists[i] = 1e38
+			continue
+		}
+		chunk := int(cid) / vectorsPerPage
+		offset := int(cid) % vectorsPerPage
+		pid := idx.pageIDFor(0, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			dists[i] = 1e38
+			continue
+		}
+		buf := idx.pager.GetCPUBuf(pi)
+		if len(buf) < (offset+1)*dim*4 {
+			dists[i] = 1e38
+			continue
+		}
+		vecBytes := buf[offset*dim*4 : (offset+1)*dim*4]
+		vec := unsafe.Slice((*float32)(unsafe.Pointer(&vecBytes[0])), dim)
+		var sum float32
+		for d := 0; d < dim; d++ {
+			diff := query[d] - vec[d]
+			sum += diff * diff
+		}
+		dists[i] = float32(math.Sqrt(float64(sum)))
+	}
+	return dists, nil
 }
 
 func (idx *CUDAIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {

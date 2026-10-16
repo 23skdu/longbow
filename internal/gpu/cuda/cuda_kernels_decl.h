@@ -62,6 +62,8 @@ void launch_hnsw_prune_neighbors_kernel(const uint32_t* candidateIds, const floa
 
 // Part 8: Complex type kernels
 void launch_l2_distance_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_l2_distance_complex128_kernel_v2_batched(const float** page_ptrs, const int* page_starts, const float* query, float* distances, int dim, int total_count, int num_pages, cudaStream_t stream);
+void launch_l2_distance_candidates(const float** page_ptrs, const uint32_t* candidate_ids, const float* query, float* distances, int dim, int count, int total_vecs, cudaStream_t stream);
 void launch_dot_product_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 void launch_cosine_similarity_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 void launch_l2_distance_complex64_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);

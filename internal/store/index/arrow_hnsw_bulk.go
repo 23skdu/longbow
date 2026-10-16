@@ -1404,6 +1404,8 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		}
 	}
 
+	h.syncBatchToGPU(startID, totalN, vecs)
+
 	runtime.KeepAlive(data)
 	return nil
 }

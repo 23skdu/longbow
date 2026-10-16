@@ -172,6 +172,13 @@ func (vs *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int32) {
 				}
 			}
 		})
+
+		// Update all dataset vector indices with GPU acceleration
+		vs.IterateDatasets(func(name string, ds *Dataset) {
+			if ds.Index != nil {
+				vs.initGPUIfEnabled(ds.Index)
+			}
+		})
 	}
 }
 

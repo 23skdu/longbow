@@ -782,6 +782,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 				}
 				asi.mu.RUnlock()
 			}
+			s.initGPUIfEnabled(aIdx)
 		}
 		ds.initMu.Unlock()
 	}

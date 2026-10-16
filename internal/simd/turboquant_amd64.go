@@ -80,9 +80,9 @@ func TQPolarReconstructLevelAVX2(recon []float32, qIndices []byte, angleOffset, 
 		return
 	}
 	tqPolarReconstructLevelAVX2Kernel(
-		unsafe.Pointer(&recon[0]),
-		unsafe.Pointer(&qIndices[0]),
-		unsafe.Pointer(&lookup[0]),
+		unsafe.Pointer(&recon[0]),    // #nosec G103
+		unsafe.Pointer(&qIndices[0]), // #nosec G103
+		unsafe.Pointer(&lookup[0]),   // #nosec G103
 		angleOffset,
 		levelSize,
 	)

@@ -3,6 +3,7 @@ package observability_test
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -376,15 +377,33 @@ func TestMetricsDocMatchesRegistry(t *testing.T) {
 	}
 }
 
+// TestRegisteredMetricsInventoryFreshness verifies that testdata/registered_metrics.tsv
+// is in sync with metric declarations in the Go codebase. If this fails, run
+// `make observability-inventory` to regenerate the inventory.
+func TestRegisteredMetricsInventoryFreshness(t *testing.T) {
+	cmd := exec.Command("go", "run", "../../tools/metrics-inventory", "../../internal", "../../cmd")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("run tools/metrics-inventory: %v", err)
+	}
+	expected, err := os.ReadFile(filepath.Join("testdata", "registered_metrics.tsv"))
+	if err != nil {
+		t.Fatalf("read testdata/registered_metrics.tsv: %v", err)
+	}
+	if string(out) != string(expected) {
+		t.Errorf("testdata/registered_metrics.tsv is stale compared to Go source declarations. Run `make observability-inventory` to regenerate.")
+	}
+}
+
 // TestRuleGroupsHaveUnitTests guards roadmap Item 20: a rule group with no
 // promtool unit test has a parse check only, which cannot detect a rule that
 // never fires.
 func TestRuleGroupsHaveUnitTests(t *testing.T) {
 	groups := loadRuleGroups(t)
 
-	// The harness extracts a group with `extract_group <groupname> ...`, so
-	// those call sites are the authoritative list of what is actually tested.
-	harness, err := os.ReadFile(filepath.Join("..", "..", "grafana", "tests", "test-rules.sh"))
+	// The harness runs tests for *_alerts_test.yml, or extracts groups with `extract_group <groupname> ...`.
+	testsDir := filepath.Join("..", "..", "grafana", "tests")
+	harness, err := os.ReadFile(filepath.Join(testsDir, "test-rules.sh"))
 	if err != nil {
 		t.Fatalf("read grafana/tests/test-rules.sh: %v", err)
 	}
@@ -395,6 +414,16 @@ func TestRuleGroupsHaveUnitTests(t *testing.T) {
 	covered := map[string]bool{}
 	for _, m := range regexp.MustCompile(`(?m)^extract_group\s+(\S+)`).FindAllStringSubmatch(string(harness), -1) {
 		covered[m[1]] = true
+	}
+
+	testFiles, err := filepath.Glob(filepath.Join(testsDir, "*_alerts_test.yml"))
+	if err == nil {
+		for _, f := range testFiles {
+			base := filepath.Base(f)
+			name := strings.TrimSuffix(base, ".yml")
+			group := "longbow_" + strings.TrimSuffix(name, "_test")
+			covered[group] = true
+		}
 	}
 
 	var uncovered []string
@@ -433,3 +462,4 @@ func TestRuleGroupsHaveUnitTests(t *testing.T) {
 	b.WriteString("See docs/roadmap.md Item 20.\n")
 	t.Log(b.String())
 }
+

@@ -73,6 +73,10 @@ jobs:
           fi
           echo "All packages have active test coverage."
 
+      - name: Observability & Metric Conformance Gate
+        run: |
+          go test -v ./internal/observability/...
+
   test-arm64-emulation:
     name: Emulated ARM64 SIMD & Kernel Validation
     runs-on: ubuntu-latest

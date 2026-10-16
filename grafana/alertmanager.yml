@@ -1,0 +1,60 @@
+# Alertmanager configuration for Longbow
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'dataset', 'node', 'device', 'component']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'default-receiver'
+  routes:
+    # Critical alerts: PagerDuty / On-call webhook with fast escalation
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Warning alerts: Slack / Chatops notification
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      repeat_interval: 4h
+
+    # Informational alerts: Low-urgency logging
+    - match:
+        severity: info
+      receiver: 'info-alerts'
+      group_wait: 1m
+      repeat_interval: 12h
+
+inhibit_rules:
+  # Inhibit warning alerts if a critical alert is already active for the same dataset/node
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['dataset', 'node']
+
+receivers:
+  - name: 'default-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/alerts'
+        send_resolved: true
+
+  - name: 'critical-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/alerts/critical'
+        send_resolved: true
+
+  - name: 'warning-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/alerts/warning'
+        send_resolved: true
+
+  - name: 'info-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/alerts/info'
+        send_resolved: true

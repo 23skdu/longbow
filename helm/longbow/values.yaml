@@ -465,3 +465,14 @@ nodeSelector: {}
 
 tolerations: []
 
+# Observability & Monitoring (Prometheus Operator)
+monitoring:
+  serviceMonitor:
+    enabled: false
+    interval: "15s"
+    scrapeTimeout: "10s"
+    labels: {}
+  prometheusRule:
+    enabled: false
+    labels: {}
+

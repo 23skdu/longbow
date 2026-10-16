@@ -172,7 +172,43 @@ services:
               count: 1
               capabilities: [gpu]
 
+  # Observability & Monitoring Stack
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: longbow-prometheus
+    volumes:
+      - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./grafana/rules.yml:/etc/prometheus/rules.yml:ro
+    ports:
+      - "9091:9090"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: longbow-alertmanager
+    volumes:
+      - ./grafana/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: longbow-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+    ports:
+      - "3003:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 networks:
   default:
     name: longbow-net
     driver: bridge
+

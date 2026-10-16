@@ -53,6 +53,27 @@ groups:
         annotations:
           summary: "BM25 indexing activity low"
           description: "Keyword searches are being served but no documents have been indexed to BM25 for 15 minutes. Hybrid results will be keyword-only."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowBM25IndexStalled"
+
+      - alert: LongbowRerankerErrors
+        expr: sum(rate(longbow_reranker_errors_total[5m])) by (type) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Hybrid search reranker error"
+          description: "Cross-encoder or reciprocal rank fusion reranker failed on {{ $labels.type }}."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowRerankerErrors"
+
+      - alert: LongbowGraphRAGExpansionErrors
+        expr: sum(rate(longbow_graphrag_expansion_errors_total[5m])) by (dataset) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GraphRAG entity expansion error on {{ $labels.dataset }}"
+          description: "Graph traversal expansion failed during hybrid GraphRAG query."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowGraphRAGExpansionErrors"
 
   - name: longbow_wal_alerts
     rules:
@@ -64,6 +85,7 @@ groups:
         annotations:
           summary: "High WAL queue depth"
           description: "WAL has {{ $value }} pending entries, indicating potential write backlog."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowHighWALQueueDepth"
 
       - alert: LongbowSlowWALFsync
         expr: histogram_quantile(0.99, sum(rate(longbow_wal_fsync_duration_seconds_bucket[5m])) by (le)) > 0.5
@@ -73,6 +95,7 @@ groups:
         annotations:
           summary: "Slow WAL fsync operations"
           description: "P99 WAL fsync duration exceeds 500ms, may indicate disk saturation."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowSlowWALFsync"
 
       - alert: LongbowWALWriteErrors
         expr: rate(longbow_wal_writes_total{status="error"}[5m]) > 0.1
@@ -82,6 +105,38 @@ groups:
         annotations:
           summary: "WAL write errors detected"
           description: "WAL is encountering write errors at {{ $value }} per second."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowWALWriteErrors"
+
+      - alert: LongbowWALFlushErrors
+        expr: rate(longbow_wal_flush_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "WAL flush errors detected"
+          description: "WAL buffer flush errors occurring at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowWALFlushErrors"
+
+      - alert: LongbowWALDirectWriteErrors
+        expr: rate(longbow_wal_write_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "WAL direct write errors detected"
+          description: "WAL write failures occurring at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowWALDirectWriteErrors"
+
+      - alert: LongbowCheckpointTimeouts
+        expr: rate(longbow_checkpoint_timeouts_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "WAL checkpoint timeouts detected"
+          description: "Checkpoint operations are timing out at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowCheckpointTimeouts"
+
 
   - name: longbow_index_alerts
     rules:
@@ -129,6 +184,37 @@ groups:
         annotations:
           summary: "High frequency of adaptive HNSW adjustments"
           description: "Adaptive HNSW parameters are changing frequently (> 0.5/sec)."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowFrequentAdaptiveAdjustments"
+
+      - alert: LongbowIndexJobsDropped
+        expr: rate(longbow_index_jobs_dropped_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Background index jobs dropped"
+          description: "Indexing queue overflow is dropping jobs at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowIndexJobsDropped"
+
+      - alert: LongbowNeighborSelectionErrors
+        expr: sum(rate(longbow_neighbor_selection_errors_total[5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Neighbor selection errors during indexing"
+          description: "Errors encountered selecting graph neighbors at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowNeighborSelectionErrors"
+
+      - alert: LongbowGraphF16ConversionErrors
+        expr: sum(rate(longbow_graph_f16_conversion_errors_total[5m])) by (dataset) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Graph float16 conversion errors on {{ $labels.dataset }}"
+          description: "Errors converting graph vectors to float16 occurring on dataset {{ $labels.dataset }}."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowGraphF16ConversionErrors"
 
   - name: longbow_mesh_alerts
     rules:
@@ -187,6 +273,17 @@ groups:
         annotations:
           summary: "Replication stalled"
           description: "No replication activity detected for 10 minutes."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowReplicationStalled"
+
+      - alert: LongbowReplicationQueueDropped
+        expr: rate(longbow_replication_queue_dropped_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Replication queue messages dropped"
+          description: "Outbound replication queue is full; dropping messages at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowReplicationQueueDropped"
 
   - name: longbow_memory_alerts
     rules:
@@ -198,6 +295,7 @@ groups:
         annotations:
           summary: "High memory pressure"
           description: "Memory pressure level is {{ $value }}, may cause backpressure."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowMemoryPressure"
 
       - alert: LongbowFrequentBackpressure
         expr: rate(longbow_memory_backpressure_rejects_total[5m]) > 1
@@ -207,6 +305,7 @@ groups:
         annotations:
           summary: "Frequent memory backpressure rejections"
           description: "Rejecting {{ $value }} requests/sec due to memory pressure."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowFrequentBackpressure"
 
       - alert: LongbowMemoryFragmentation
         expr: longbow_memory_fragmentation_ratio > 1.5
@@ -216,6 +315,7 @@ groups:
         annotations:
           summary: "High memory fragmentation"
           description: "Memory fragmentation ratio is {{ $value }}, consider compaction."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowMemoryFragmentation"
 
       - alert: LongbowHighBackpressureRejections
         expr: rate(longbow_memory_backpressure_rejects_total[5m]) > 5
@@ -225,6 +325,18 @@ groups:
         annotations:
           summary: "Critical memory backpressure"
           description: "System is rejecting more than 5 requests/sec due to memory exhaustion."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowHighBackpressureRejections"
+
+      - alert: LongbowMemoryLimitRejections
+        expr: rate(longbow_memory_limit_rejects_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Requests rejected due to memory limits"
+          description: "Hard memory limit reached; rejecting requests at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowMemoryLimitRejections"
+
 
   - name: longbow_performance_alerts
     rules:
@@ -292,6 +404,17 @@ groups:
         annotations:
           summary: "Frequent auto-compaction triggers"
           description: "Auto-compaction triggering {{ $value }} times per second."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowFrequentAutoCompaction"
+
+      - alert: LongbowCompactionErrors
+        expr: rate(longbow_compaction_errors_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Compaction errors detected"
+          description: "Background index/vector compaction errors occurring at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowCompactionErrors"
 
   - name: longbow_recording_rules
     rules:
@@ -340,6 +463,37 @@ groups:
         annotations:
           summary: "IPC Buffer Pool Saturated"
           description: "IPC buffer pool utilization is at {{ $value | humanizePercentage }}, risk of allocation failures."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowBufferPoolSaturation"
+
+      - alert: LongbowProcessPanics
+        expr: sum(rate(longbow_panic_total[5m])) by (component) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Component panic recovered in {{ $labels.component }}"
+          description: "Internal panic captured in component {{ $labels.component }}."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowProcessPanics"
+
+      - alert: LongbowLogErrorsHigh
+        expr: rate(longbow_log_errors_total[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated error log rate"
+          description: "Error-level log entries are being emitted at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowLogErrorsHigh"
+
+      - alert: LongbowSemaphoreTimeouts
+        expr: rate(longbow_semaphore_timeouts_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Concurrency semaphore timeouts"
+          description: "Requests timing out waiting for concurrency semaphores at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowSemaphoreTimeouts"
 
   - name: longbow_distributed_alerts
     rules:
@@ -351,6 +505,7 @@ groups:
         annotations:
           summary: "Circuit breaker tripped"
           description: "Store circuit breaker is rejecting {{ $value }} requests/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowCircuitBreakerTripped"
 
       - alert: LongbowGlobalSearchPartialFailures
         expr: rate(longbow_global_search_partial_failures_total[5m]) > 0.1
@@ -360,6 +515,7 @@ groups:
         annotations:
           summary: "Global search partial failures"
           description: "Global search is experiencing partial failures at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowGlobalSearchPartialFailures"
 
       - alert: LongbowVectorClockConflicts
         expr: rate(longbow_vector_clock_conflicts_total[1m]) > 10
@@ -369,6 +525,18 @@ groups:
         annotations:
           summary: "High vector clock conflict rate"
           description: "Vector clock conflicts exceeding 10/sec ({{ $value }})."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowVectorClockConflicts"
+
+      - alert: LongbowSchemaColumnsDropped
+        expr: rate(longbow_schema_columns_dropped_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Schema evolution dropping columns"
+          description: "Schema column drop operations detected at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowSchemaColumnsDropped"
+
 
   - name: longbow_simd_alerts
     rules:
@@ -467,6 +635,37 @@ groups:
         annotations:
           summary: "High GPU fallback rate"
           description: "GPU operations falling back to CPU at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowGPUFallbackHigh"
+
+      - alert: LongbowMultiGPUDeviceErrors
+        expr: sum(rate(longbow_multi_gpu_device_errors[5m])) by (device) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Multi-GPU device error on {{ $labels.device }}"
+          description: "Hardware device errors reported on GPU {{ $labels.device }}."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowMultiGPUDeviceErrors"
+
+      - alert: LongbowONNXInferenceErrors
+        expr: sum(rate(longbow_onnx_inference_errors_total[5m])) by (backend) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ONNX inference errors on {{ $labels.backend }}"
+          description: "ONNX model inference failed on backend {{ $labels.backend }}."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowONNXInferenceErrors"
+
+      - alert: LongbowONNXMetalInferenceErrors
+        expr: rate(longbow_onnx_metal_inference_errors_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Apple Metal ONNX inference errors"
+          description: "Metal ONNX acceleration failures occurring at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowONNXMetalInferenceErrors"
 
   - name: longbow_adaptive_gc_alerts
     rules:
@@ -478,6 +677,7 @@ groups:
         annotations:
           summary: "Adaptive GC targeting high GOGC"
           description: "Adaptive GC has increased GOGC to {{ $value }}, indicating high memory pressure."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowAdaptiveGCHighGOGC"
 
       - alert: LongbowAdaptiveGCAllocationSpike
         expr: rate(longbow_adaptive_gc_allocation_rate_bytes_per_sec[1m]) > 1e9
@@ -487,6 +687,7 @@ groups:
         annotations:
           summary: "Memory allocation spike"
           description: "Allocation rate exceeded 1GB/sec in the last minute."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowAdaptiveGCAllocationSpike"
 
   - name: longbow_storage_alerts
     rules:
@@ -498,6 +699,7 @@ groups:
         annotations:
           summary: "io_uring not available"
           description: "The io_uring ring is closed while io_uring storage is configured. WAL writes are falling back to a slower path. Check longbow_iouring_errors_total."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowIOUringNotAvailable"
 
       - alert: LongbowHighIOWait
         expr: histogram_quantile(0.99, sum(rate(longbow_io_write_latency_seconds_bucket[5m])) by (le, backend)) > 1
@@ -507,6 +709,37 @@ groups:
         annotations:
           summary: "High I/O wait time"
           description: "I/O wait time is {{ $value }}/sec, indicating disk saturation."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowHighIOWait"
+
+      - alert: LongbowDatasetExportFailures
+        expr: sum(rate(longbow_dataset_export_failures_total[5m])) by (dataset) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dataset export failure on {{ $labels.dataset }}"
+          description: "Dataset snapshot/export failed for {{ $labels.dataset }}."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowDatasetExportFailures"
+
+      - alert: LongbowDatasetImportFailures
+        expr: sum(rate(longbow_dataset_import_failures_total[5m])) by (dataset) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dataset import failure on {{ $labels.dataset }}"
+          description: "Dataset snapshot/import failed for {{ $labels.dataset }}."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowDatasetImportFailures"
+
+      - alert: LongbowStoreDroppedDatasets
+        expr: rate(longbow_store_dropped_datasets_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Dataset dropped in VectorStore"
+          description: "Datasets have been dropped or evicted from store."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowStoreDroppedDatasets"
 
   - name: longbow_pipeline_alerts
     rules:
@@ -518,6 +751,68 @@ groups:
         annotations:
           summary: "Slow pipeline stage processing"
           description: "Pipeline stage {{ $labels.stage }} P99 duration exceeds 5 seconds."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowPipelineHighLatency"
+
+      - alert: LongbowStoreCircuitBreakerFailures
+        expr: rate(longbow_store_circuit_breaker_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Store circuit breaker recorded failures"
+          description: "Circuit breaker failure counter incremented at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowStoreCircuitBreakerFailures"
+
+      - alert: LongbowFlightExchangeErrors
+        expr: rate(longbow_do_exchange_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Arrow Flight DoExchange errors"
+          description: "Arrow Flight stream exchange errors occurring at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowFlightExchangeErrors"
+
+      - alert: LongbowStreamTerminationErrors
+        expr: sum(rate(longbow_stream_termination_errors_total[5m])) by (direction, error_type) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Flight stream unexpected termination"
+          description: "Flight data stream terminated abnormally in direction {{ $labels.direction }}."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowStreamTerminationErrors"
+
+      - alert: LongbowValidationFailures
+        expr: sum(rate(longbow_validation_failures_total[5m])) by (component, reason) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Payload validation failure in {{ $labels.component }}"
+          description: "Validation rejected input in {{ $labels.component }} due to {{ $labels.reason }}."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowValidationFailures"
+
+      - alert: LongbowVectorSearchActionErrors
+        expr: rate(longbow_vector_search_action_errors_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vector search action execution errors"
+          description: "Errors encountered executing vector search action at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowVectorSearchActionErrors"
+
+      - alert: LongbowTraceErrors
+        expr: sum(rate(longbow_trace_errors_total[5m])) by (component) > 0
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Telemetry trace export errors in {{ $labels.component }}"
+          description: "Telemetry span exports failing in component {{ $labels.component }}."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowTraceErrors"
+
 
   - name: longbow_temporal_alerts
     rules:
@@ -604,6 +899,17 @@ groups:
         annotations:
           summary: "Evicted layers not being restored"
           description: "Layers are evicted but none have been restored for 15 minutes, check for stale data."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowLayerEvictionRestoreStalled"
+
+      - alert: LongbowEvictionRejectedQueries
+        expr: rate(longbow_eviction_rejected_queries_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queries rejected during layer eviction"
+          description: "Queries rejected because required graph layers are currently evicted."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowEvictionRejectedQueries"
 
   - name: longbow_slab_alerts
     rules:
@@ -705,12 +1011,33 @@ groups:
             with no other symptom. Do not dismiss this for float32: its kernels resolve
             and this alert firing on float32 means they stopped resolving, which is the
             exact failure that was silent for months.
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowSIMDKernelScalarFallbackRatio"
+
+      - alert: LongbowJITKernelErrors
+        expr: rate(longbow_jit_kernel_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SIMD JIT kernel compilation or execution error"
+          description: "JIT vector math kernel failure detected at {{ $value }}/sec."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowJITKernelErrors"
 
   - name: longbow_bulk_insert_alerts
     # Construction cost of HNSW bulk insert. These exist because bulk-insert
     # latency was charted but never alerted: a 250k turboquant build could run
     # for 45 minutes with nothing firing. See grafana/README.md.
     rules:
+      - alert: LongbowBulkInsertDimensionErrors
+        expr: rate(longbow_bulk_insert_dimension_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Bulk insert vector dimension mismatch"
+          description: "Bulk insert rejected vectors due to dimension mismatch."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowBulkInsertDimensionErrors"
+
       # Thresholded at 300s, which is above the healthy band and below the point
       # where a build looks stuck. This only became expressible once the Go
       # histogram buckets were widened past 30s in internal/metrics; with the old

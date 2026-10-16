@@ -49,7 +49,8 @@ type VectorStore struct {
 	dataPath string
 	engine   atomic.Pointer[storage.StorageEngine] // Manages WAL and Snapshots
 
-	indexQueue          *IndexJobQueueLockFree // Integrated HNSW background indexing queue.
+	indexQueue          *IndexJobQueueLockFree // Integrated HNSW background indexing queue (global fallback).
+	numaIndexQueues     []*IndexJobQueueLockFree // NUMA-local indexing queues for per-socket workers.
 	ingestionQueue      *IngestionRingBuffer   // Lock-free ring buffer for high-throughput ingestion.
 	persistenceQueue    chan persistenceJob    // Async persistence queue
 	pendingOverflowJobs atomic.Int64           // Jobs spinning in applyBatchToMemory
@@ -376,10 +377,14 @@ func (vs *VectorStore) initNUMA(logger zerolog.Logger) {
 	if topo.NumNodes > 1 {
 		vs.numaEnabled = true
 		metrics.NUMAEnabled.Set(1)
+		vs.numaIndexQueues = make([]*IndexJobQueueLockFree, topo.NumNodes)
+		for i := 0; i < topo.NumNodes; i++ {
+			vs.numaIndexQueues[i] = NewIndexJobQueueLockFree(DefaultIndexJobQueueConfig())
+		}
 		logger.Info().
 			Int("nodes", topo.NumNodes).
 			Str("topology", topo.String()).
-			Msg("NUMA topology detected")
+			Msg("NUMA topology detected, initialized NUMA-local index queues")
 	} else {
 		vs.numaEnabled = false
 		metrics.NUMAEnabled.Set(0)

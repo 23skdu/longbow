@@ -33,13 +33,14 @@ func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 		s.indexWg.Add(1)
 		go func(workerIdx int) {
 			defer s.indexWg.Done()
+			nodeID := -1
 			// Pin to NUMA node if enabled
 			if s.numaEnabled && s.numaTopology != nil && s.numaTopology.NumNodes > 0 {
-				nodeID := workerIdx % s.numaTopology.NumNodes
+				nodeID = workerIdx % s.numaTopology.NumNodes
 				_ = lbmem.PinToNUMANode(s.numaTopology, nodeID)
 				s.logger.Debug().Int("worker", workerIdx).Int("node", nodeID).Msg("Pinned index worker to NUMA node")
 			}
-			s.runIndexWorker(workerCtx)
+			s.runIndexWorker(workerCtx, nodeID)
 		}(i)
 	}
 	s.logger.Info().Int("added", numWorkers).Int("total", len(s.indexingWorkerCancels)).Msg("Started indexing workers")
@@ -172,7 +173,12 @@ func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
 	}()
 }
 
-func (s *VectorStore) runIndexWorker(ctx context.Context) {
+func (s *VectorStore) runIndexWorker(ctx context.Context, workerNodeIDs ...int) {
+	workerNodeID := -1
+	if len(workerNodeIDs) > 0 {
+		workerNodeID = workerNodeIDs[0]
+	}
+
 	maxBatch := 16
 	currentBatch := 2
 	if DeterministicIngestEnabled() {
@@ -273,7 +279,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 
 				if idx != nil {
 					if adaptive, ok := idx.(interface{ SetEfConstruction(int) }); ok && !DeterministicIngestEnabled() {
-						depth := s.indexQueue.Len()
+						depth := s.TotalIndexQueueDepth()
 						var targetEf int
 						switch {
 						case depth > 5000:
@@ -377,22 +383,57 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 		}
 	}
 
+	popNextJob := func() (IndexJob, bool) {
+		// 1. Pop from NUMA-local queue if assigned
+		if workerNodeID >= 0 && workerNodeID < len(s.numaIndexQueues) && s.numaIndexQueues[workerNodeID] != nil {
+			if job, ok := s.numaIndexQueues[workerNodeID].Pop(); ok {
+				return job, true
+			}
+		}
+		// 2. Pop from global queue
+		if s.indexQueue != nil {
+			if job, ok := s.indexQueue.Pop(); ok {
+				return job, true
+			}
+		}
+		// 3. Work-stealing across other NUMA nodes
+		for i, q := range s.numaIndexQueues {
+			if i != workerNodeID && q != nil {
+				if job, ok := q.Pop(); ok {
+					return job, true
+				}
+			}
+		}
+		return IndexJob{}, false
+	}
+
 	timer := time.NewTimer(100 * time.Millisecond)
 	defer timer.Stop()
 	for {
-		job, ok := s.indexQueue.Pop()
+		job, ok := popNextJob()
 		if ok {
 			jobs = append(jobs, job)
 		}
 
 		if len(jobs) == 0 {
 			timer.Reset(100 * time.Millisecond)
+			var numaNotify <-chan struct{}
+			if workerNodeID >= 0 && workerNodeID < len(s.numaIndexQueues) && s.numaIndexQueues[workerNodeID] != nil {
+				numaNotify = s.numaIndexQueues[workerNodeID].Notify()
+			}
+			var globalNotify <-chan struct{}
+			if s.indexQueue != nil {
+				globalNotify = s.indexQueue.Notify()
+			}
+
 			select {
 			case <-s.stopChan:
 				return
 			case <-ctx.Done():
 				return
-			case <-s.indexQueue.Notify():
+			case <-numaNotify:
+				continue
+			case <-globalNotify:
 				continue
 			case <-timer.C:
 				continue
@@ -407,7 +448,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 		if DeterministicIngestEnabled() {
 			currentBatch = 1
 		} else {
-			queueDepth := s.indexQueue.Len()
+			queueDepth := s.TotalIndexQueueDepth()
 
 			switch {
 			case queueDepth > 100:

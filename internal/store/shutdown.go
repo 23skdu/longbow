@@ -181,7 +181,14 @@ waitLoop:
 // drainIndexQueue closes the index channel and waits for pending jobs to complete
 func (s *VectorStore) drainIndexQueue(ctx context.Context) error {
 	// Close channel to signal workers to stop accepting new jobs
-	s.indexQueue.Stop()
+	if s.indexQueue != nil {
+		s.indexQueue.Stop()
+	}
+	for _, q := range s.numaIndexQueues {
+		if q != nil {
+			q.Stop()
+		}
+	}
 
 	// Wait for index workers to finish with timeout
 	done := make(chan struct{})

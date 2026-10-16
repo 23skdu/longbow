@@ -1125,15 +1125,16 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		Record:      rec,
 		BatchIdx:    batchIdx,
 		CreatedAt:   time.Now(),
+		NodeID:      currNode,
 	}
 
 	ds.PendingIndexJobs.Add(rec.NumRows())
-	if !s.indexQueue.Send(job) {
+	if !s.EnqueueIndexJob(job) {
 		metrics.IndexJobsOverflowTotal.Inc()
 		s.pendingOverflowJobs.Add(1)
 		go func() {
 			defer s.pendingOverflowJobs.Add(-1)
-			if !s.indexQueue.Block(job, 5*time.Second) {
+			if !s.BlockEnqueueIndexJob(job, 5*time.Second) {
 				ds.PendingIndexJobs.Add(-rec.NumRows())
 				rec.Release()
 				s.logger.Warn().Str("dataset", name).Msg("Index job dropped after blocking timeout")

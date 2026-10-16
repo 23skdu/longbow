@@ -36,6 +36,7 @@ type IndexJob struct {
 	BatchIdx     int
 	CreatedAt    time.Time
 	HighPriority bool // If true, job should be prioritized by workers
+	NodeID       int  // Preferred NUMA node ID (-1 for any/global)
 }
 
 // RowLocation represents the physical address of a row (Batch + Row offset).

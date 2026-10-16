@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -132,6 +133,23 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return err
 		}
 		return nil
+
+	case "gpu_kernel_profile":
+		// Per-kernel device time for the run so far (roadmap Item 34). The
+		// CPU answer is an empty, unsupported profile rather than an error:
+		// the benchmark client asks unconditionally, and a report that says
+		// "no kernels were measured" is more useful than a failed call.
+		prof := gpu.CurrentKernelProfile()
+		resp := map[string]any{
+			"profiling_enabled": gpu.KernelProfilingEnabled(),
+			"attributed_pct":    100 * prof.AttributedFraction(),
+			"profile":           prof,
+		}
+		body, marshalErr := json.Marshal(resp)
+		if marshalErr != nil {
+			return status.Errorf(codes.Internal, "failed to serialize GPU kernel profile: %v", marshalErr)
+		}
+		return stream.Send(&flight.Result{Body: body})
 
 	case "check_readiness":
 		var req struct {

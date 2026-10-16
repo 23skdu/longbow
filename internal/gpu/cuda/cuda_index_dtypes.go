@@ -180,6 +180,7 @@ func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float3
 	offset := 0
 	for _, p := range pages {
 		distPtr := unsafe.Pointer(uintptr(dAllDists) + uintptr(offset*4)) // #nosec G115
+		profL2Complex64.begin(cStream)
 		C.launch_l2_distance_complex64_kernel(
 			(*C.float)(p.ptr),
 			(*C.float)(dQuery),
@@ -188,6 +189,7 @@ func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float3
 			C.int(p.nvecs),
 			cStream,
 		)
+		profL2Complex64.end(cStream)
 		offset += p.nvecs
 	}
 
@@ -321,6 +323,7 @@ func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []floa
 	offset := 0
 	for _, p := range pages {
 		distPtr := unsafe.Pointer(uintptr(dAllDists) + uintptr(offset*4)) // #nosec G115
+		profL2Complex128.begin(cStream)
 		C.launch_l2_distance_complex128_kernel(
 			(*C.float)(p.ptr),
 			(*C.float)(dQuery),
@@ -329,6 +332,7 @@ func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []floa
 			C.int(p.nvecs),
 			cStream,
 		)
+		profL2Complex128.end(cStream)
 		offset += p.nvecs
 	}
 

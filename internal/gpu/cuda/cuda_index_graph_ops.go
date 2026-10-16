@@ -251,6 +251,7 @@ func (idx *CUDAIndex) HaversineSearch(centerLat, centerLon float32, points []flo
 	defer idx.freeGPUMem(dResults)
 
 	start := time.Now()
+	profHaversine.begin(nil)
 	ret := C.cuda_haversine_batch(
 		idx.handle,
 		(*C.float)(dCenter),
@@ -262,6 +263,7 @@ func (idx *CUDAIndex) HaversineSearch(centerLat, centerLon float32, points []flo
 		C.float(earthRadius),
 		C.int(count),
 	)
+	profHaversine.end(nil)
 
 	if ret != 0 {
 		return nil, fmt.Errorf("cuda_haversine_batch failed")
@@ -300,6 +302,7 @@ func (idx *CUDAIndex) NormBatch(vectors []float32, dims int) ([]float32, error) 
 	defer idx.freeGPUMem(dResults)
 
 	start := time.Now()
+	profNormBatch.begin(nil)
 	ret := C.cuda_norm_batch_f32(
 		idx.handle,
 		(*C.float)(dVectors),
@@ -309,6 +312,7 @@ func (idx *CUDAIndex) NormBatch(vectors []float32, dims int) ([]float32, error) 
 		C.int(dims),
 		C.int(count),
 	)
+	profNormBatch.end(nil)
 
 	if ret != 0 {
 		return nil, fmt.Errorf("cuda_norm_batch_f32 failed")
@@ -442,6 +446,8 @@ func (idx *CUDAIndex) PruneNeighbors(candidateIds []uint32, candidateDists []flo
 	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
 	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
 
+	profHNSWPrune.begin(nil)
+
 	ret := C.cuda_prune_neighbors(
 		idx.handle,
 		(*C.uint32_t)(dCandIds),
@@ -459,6 +465,8 @@ func (idx *CUDAIndex) PruneNeighbors(candidateIds []uint32, candidateDists []flo
 		C.int(numPages),
 		C.bool(true),
 	)
+
+	profHNSWPrune.end(nil)
 
 	if ret != 0 {
 		return nil, fmt.Errorf("cuda_prune_neighbors failed: %d", ret)

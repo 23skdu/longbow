@@ -199,6 +199,7 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
 
 	// Part 1: Single batched kernel launch for all pages
+	profTQDistant.begin(cStream)
 	C.launch_turboquant_distance_kernel_v2_batched(
 		(**C.float)(dPagePtrs),
 		(*C.int)(dPageStarts),
@@ -211,6 +212,7 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 		C.int(numPages),
 		cStream,
 	)
+	profTQDistant.end(cStream)
 
 	if err := GetLastError(); err != nil {
 		return nil, nil, fmt.Errorf("TQ batched kernel launch failed (dim=%d pow2=%d): %w", idx.dim, pow2, err)
@@ -376,6 +378,7 @@ func (idx *CUDAIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist
 
 	// Launch greedy descent kernel
 	start := time.Now()
+	profTQDescent.begin(cStream)
 	C.launch_turboquant_greedy_descent_kernel(
 		(*C.float)(dQuery),
 		(**C.float)(dPagePtrs),
@@ -391,6 +394,7 @@ func (idx *CUDAIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist
 		C.int(numPages),
 		cStream,
 	)
+	profTQDescent.end(cStream)
 
 	if err := GetLastError(); err != nil {
 		return 0, 0, fmt.Errorf("greedy descent kernel launch failed: %w", err)

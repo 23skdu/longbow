@@ -1112,6 +1112,12 @@ class BenchmarkRunner(ScenarioMixin):
         current_mode = getattr(self, "current_mode", self.args.mode)
         if current_mode in ("metal", "cuda"):
             env["LONGBOW_GPU_ENABLED"] = "true"
+            # Item 34: ask for per-kernel device time on a GPU run. The
+            # profile is written beside the pprof snapshots, so a run that got
+            # slower says which kernel got slower. Off for the CPU matrix,
+            # where there is no device to attribute.
+            if os.environ.get("LONGBOW_GPU_KERNEL_PROF", "1") not in ("0", "false", "no", "off"):
+                env["LONGBOW_GPU_KERNEL_PROF"] = "1"
         else:
             env["LONGBOW_GPU_ENABLED"] = "false"
 
@@ -1525,7 +1531,16 @@ class BenchmarkRunner(ScenarioMixin):
             seed_arg = ""
             self.current_config_seed = None
         shuffle_arg = " -shuffle-modes" if getattr(self.args, "shuffle_modes", False) else ""
-        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {wire_dtype}{tq_arg}{seed_arg}{shuffle_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
+        # Item 34: on a GPU run, ask the server for its per-kernel device time
+        # and keep it beside the pprof snapshots, so a run that got slower can
+        # be attributed to a kernel rather than to "GPU".
+        gpu_profile_arg = ""
+        self.current_gpu_profile = None
+        if getattr(self, "current_mode", self.args.mode) in ("cuda", "metal"):
+            gpu_profile_path = os.path.join(self.log_dir, f"gpu_kernel_profile_{label}.json")
+            gpu_profile_arg = f" -gpu-profile-out {gpu_profile_path}"
+            self.current_gpu_profile = gpu_profile_path
+        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {wire_dtype}{tq_arg}{seed_arg}{shuffle_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}{gpu_profile_arg}"
         cpu_affinity = getattr(self.args, "cpu_affinity", None) or os.environ.get("LONGBOW_CPU_AFFINITY")
         if cpu_affinity and platform.system() == "Linux":
             cmd = f"taskset -c {cpu_affinity} {cmd}"
@@ -1589,6 +1604,33 @@ class BenchmarkRunner(ScenarioMixin):
         # can cause non-zero exit codes even on successful runs.
         print(f"DEBUG: json_file={json_file}")
         metrics = parse_bench_json(json_file)
+
+        # Item 34: fold the server's per-kernel device time into the result row,
+        # so the perf matrix carries the attribution next to the QPS it explains
+        # and not only in a side file someone has to know to open.
+        gpu_profile = getattr(self, "current_gpu_profile", None)
+        if gpu_profile and os.path.exists(gpu_profile):
+            try:
+                with open(gpu_profile) as _pf:
+                    payload = json.load(_pf)
+                ops = (payload.get("profile") or {}).get("ops") or []
+                if ops:
+                    metrics["gpu_kernel_profile"] = {
+                        "attributed_pct": payload.get("attributed_pct", 0.0),
+                        "total_ms": (payload.get("profile") or {}).get("total_ms", 0.0),
+                        "untimed_calls": (payload.get("profile") or {}).get("untimed_calls", 0),
+                        "ops": [
+                            {
+                                "name": o.get("name"),
+                                "calls": o.get("calls", 0),
+                                "total_ms": round(float(o.get("total_ms", 0.0)), 3),
+                                "share_pct": round(float(o.get("share_pct", 0.0)), 2),
+                            }
+                            for o in ops
+                        ],
+                    }
+            except (json.JSONDecodeError, OSError, TypeError, ValueError):
+                print("  (GPU kernel profile unreadable; continuing)")
         if not metrics:
             # R17 (H8): a SIGKILLed client, a timeout and a crash all used to be
             # reported identically - "FAILED" with an empty error - which is how
@@ -1701,6 +1743,11 @@ class BenchmarkRunner(ScenarioMixin):
             # Recorded next to the run seed because the two are not equal and a
             # reproduction needs the one the corpus was drawn from.
             "config_seed": getattr(self, "current_config_seed", None),
+            # Item 34: the per-kernel device time for this row, when the run was
+            # a GPU one. Absent for CPU runs rather than an empty table, so a
+            # reader can tell "not measured" from "measured, nothing ran".
+            **({"gpu_kernel_profile": metrics["gpu_kernel_profile"]}
+               if metrics.get("gpu_kernel_profile") else {}),
             "timestamp": datetime.now().isoformat(),
         }
         self.results.append(result_entry)
@@ -2601,6 +2648,43 @@ class BenchmarkRunner(ScenarioMixin):
             f.write("| " + " | ".join(header_cols) + " |\n")
             sep = ["-------"] * len(header_cols)
             f.write("| " + " | ".join(sep) + " |\n")
+
+            # Item 34: the per-kernel GPU time for each config, under the
+            # results it explains. A GPU row with an empty cell means the run
+            # was made without kernel profiling, not that the kernels were free.
+            profiled = [
+                r
+                for r in self.results
+                if isinstance(r, dict) and (r.get("gpu_kernel_profile") or {}).get("ops")
+            ]
+            if profiled:
+                f.write("\n## GPU Kernel Attribution\n\n")
+                f.write(
+                    "Device time per named kernel, from CUDA events on the "
+                    "launching stream. `attributed` is the share of measured "
+                    "device time the named kernels account for; `untimed` is "
+                    "the number of launches that were not measured (event pool "
+                    "exhausted), which is why it is reported rather than "
+                    "assumed to be zero.\n\n"
+                )
+                f.write(
+                    "| DType | Dim | Count | Kernel | Calls | Device ms | Share |\n"
+                    "|---|---|---|---|---|---|---|\n"
+                )
+                for r in profiled:
+                    prof = r["gpu_kernel_profile"]
+                    for op in prof["ops"]:
+                        f.write(
+                            f"| {r['dtype']} | {r['dim']} | {r['count']:,} | "
+                            f"`{op['name']}` | {op['calls']:,} | "
+                            f"{op['total_ms']:.3f} | {op['share_pct']:.2f}% |\n"
+                        )
+                    f.write(
+                        f"| {r['dtype']} | {r['dim']} | {r['count']:,} | "
+                        f"**total** ({prof['attributed_pct']:.1f}% attributed, "
+                        f"{prof['untimed_calls']} untimed) | | "
+                        f"{prof['total_ms']:.3f} | 100% |\n"
+                    )
 
             for r in self.results:
                 if not isinstance(r, dict) or "search" not in r:

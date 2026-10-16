@@ -158,6 +158,7 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
 
 	if idx.dim > 1024 {
+		profL2BatchedLarge.begin(cStream)
 		C.launch_l2_distance_kernel_large_v2_batched(
 			(**C.float)(dPagePtrs),
 			(*C.int)(dPageStarts),
@@ -168,7 +169,9 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 			C.int(numPages),
 			cStream,
 		)
+		profL2BatchedLarge.end(cStream)
 	} else {
+		profL2Batched.begin(cStream)
 		C.launch_l2_distance_kernel_v2_batched(
 			(**C.float)(dPagePtrs),
 			(*C.int)(dPageStarts),
@@ -179,6 +182,7 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 			C.int(numPages),
 			cStream,
 		)
+		profL2Batched.end(cStream)
 	}
 
 	hAllDists := make([]float32, totalVecs)
@@ -371,6 +375,7 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
 
 	if idx.dim > 1024 {
+		profL2BatchedLarge.begin(nil)
 		C.launch_l2_distance_kernel_large_v2_batched(
 			(**C.float)(dPagePtrs),
 			(*C.int)(dPageStarts),
@@ -381,7 +386,9 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 			C.int(numPages),
 			nil,
 		)
+		profL2BatchedLarge.end(nil)
 	} else {
+		profL2Batched.begin(nil)
 		C.launch_l2_distance_kernel_v2_batched(
 			(**C.float)(dPagePtrs),
 			(*C.int)(dPageStarts),
@@ -392,6 +399,7 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 			C.int(numPages),
 			nil,
 		)
+		profL2Batched.end(nil)
 	}
 
 	hAllDists := make([]float32, totalVecs)

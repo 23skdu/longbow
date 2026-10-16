@@ -263,11 +263,21 @@ func FreeHost(ptr unsafe.Pointer) error {
 }
 
 // MemcpyAsync copies memory asynchronously between host and device on a stream.
+//
+// Timed as a named operation when profiling is on: a transfer that dominates a
+// run has to be visible in the kernel table, or "the kernels are fine" hides a
+// PCIe problem.
 func MemcpyAsync(dst, src unsafe.Pointer, size int64, kind MemcpyKind, stream unsafe.Pointer) error {
 	if dst == nil || src == nil || size <= 0 {
 		return nil
 	}
+	op := profCopyH2D
+	if kind == MemcpyDeviceToHost {
+		op = profCopyD2H
+	}
+	op.begin(stream)
 	ret := C.lb_cudaMemcpyAsync(dst, src, C.size_t(size), C.int(kind), (C.cudaStream_t)(stream))
+	op.end(stream)
 	if ret != 0 {
 		return fmt.Errorf("cudaMemcpyAsync failed (error code %d)", int(ret))
 	}

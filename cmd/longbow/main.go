@@ -439,6 +439,14 @@ func run() error {
 
 		if detectedBackend == gpu.BackendCUDA || detectedBackend == gpu.BackendMetal {
 			vectorStore.SetGPUConfig(detectedBackend, int32(cfg.GPUDeviceID)) // #nosec G115
+			// Item 34: per-kernel device time, off unless asked for. It
+			// records an event pair per launch, so it is a measurement mode
+			// rather than something to leave on in production.
+			if gpu.KernelProfilingEnabled() {
+				logger.Info().
+					Str("backend", detectedBackend.String()).
+					Msg("GPU kernel profiling enabled (LONGBOW_GPU_KERNEL_PROF): every launch is timed with CUDA events, which costs throughput")
+			}
 			logger.Info().
 				Str("backend", detectedBackend.String()).
 				Bool("enabled", cfg.GPUEnabled).

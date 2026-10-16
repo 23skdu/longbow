@@ -149,6 +149,8 @@ func main() {
 		"Randomize search mode execution order using seed (roadmap R12a) to eliminate mode-order coupling.")
 	resultsOut := flag.String("results-out", "",
 		"Write every search hit (mode -> query -> id/score) to this JSON file. Item 31: two runs with the same seed must agree here bit for bit; this is what the digest in -json is computed over.")
+	gpuProfileOut := flag.String("gpu-profile-out", "",
+		"Write the server's per-kernel GPU time breakdown to this JSON file (roadmap Item 34). Empty skips the call; a server without GPU profiling answers an empty, unsupported profile rather than an error.")
 	reset := flag.Bool("reset", false, "Reset dataset in-place before running the benchmark")
 	flag.Parse()
 
@@ -812,6 +814,16 @@ func main() {
 	log.Printf("[SEARCH] results digest %s over %d hits across %d modes (seed %d); two runs with the same seed must agree on it\n",
 		resultsDigest, totalHits, len(searchHitsByMode), *seed)
 
+	// Item 34: pull the server's per-kernel GPU time breakdown. Fetched after
+	// the searches, so the numbers cover ingest and search - a regression that
+	// moved time from one kernel to another, or from the device to the host,
+	// shows up as a different row here.
+	if *gpuProfileOut != "" {
+		if err := writeGPUKernelProfile(*gpuProfileOut, sc); err != nil {
+			log.Printf("[GPU-PROFILE] could not collect: %v\n", err)
+		}
+	}
+
 	if *resultsOut != "" {
 		out := searchResultsOutput{
 			Seed:    *seed,
@@ -1341,6 +1353,67 @@ func digestSearchResults(byMode map[string][][]searchHit) string {
 		b.Reset()
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// gpuKernelProfileResponse is what the server's gpu_kernel_profile action
+// answers with.
+type gpuKernelProfileResponse struct {
+	ProfilingEnabled bool    `json:"profiling_enabled"`
+	AttributedPct    float64 `json:"attributed_pct"`
+	Profile          struct {
+		Ops []struct {
+			Name     string  `json:"name"`
+			Calls    int64   `json:"calls"`
+			TotalMS  float64 `json:"total_ms"`
+			SharePct float64 `json:"share_pct"`
+		} `json:"ops"`
+		TotalMS       float64 `json:"total_ms"`
+		UntimedCalls  int64   `json:"untimed_calls"`
+		PoolExhausted int64   `json:"pool_exhausted"`
+	} `json:"profile"`
+}
+
+// writeGPUKernelProfile asks the server for its per-kernel GPU time and writes
+// it as JSON, printing the same numbers as a table so a run log carries the
+// attribution without needing the file.
+func writeGPUKernelProfile(path string, sc *client.SmartClient) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	stream, err := sc.DoAction(ctx, &flight.Action{Type: "gpu_kernel_profile"})
+	if err != nil {
+		return fmt.Errorf("gpu_kernel_profile action failed: %w", err)
+	}
+	result, err := stream.Recv()
+	if err != nil {
+		return fmt.Errorf("gpu_kernel_profile stream: %w", err)
+	}
+	var resp gpuKernelProfileResponse
+	if err := json.Unmarshal(result.Body, &resp); err != nil {
+		return fmt.Errorf("gpu_kernel_profile payload: %w", err)
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(resp); err != nil {
+		return err
+	}
+
+	if !resp.ProfilingEnabled {
+		log.Printf("[GPU-PROFILE] server has kernel profiling off (LONGBOW_GPU_KERNEL_PROF); nothing to attribute\n")
+		return nil
+	}
+	log.Printf("[GPU-PROFILE] %.3f ms of GPU time over %d operations, %.1f%% attributed to named kernels, %d launches untimed -> %s\n",
+		resp.Profile.TotalMS, len(resp.Profile.Ops), resp.AttributedPct, resp.Profile.UntimedCalls, path)
+	for _, op := range resp.Profile.Ops {
+		log.Printf("[GPU-PROFILE]   %-44s %10d calls %10.3f ms %6.2f%%\n", op.Name, op.Calls, op.TotalMS, op.SharePct)
+	}
+	return nil
 }
 
 func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, dataset string, timeout time.Duration) string {

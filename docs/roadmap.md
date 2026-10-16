@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
 **Last updated**: 2026-10-16  
-**Status**: All roadmap items through 24 resolved as of 2026-10-12; of items 25-34 (§5), 28, 29, 31 and 33 are resolved and 32 is partial; the rest are open. Historical sections below record the completed work and the final validation gates.
+**Status**: All roadmap items through 24 resolved as of 2026-10-12; of items 25-34 (§5), 28, 29, 31, 33 and 34 are resolved and 32 is partial; the rest are open. Historical sections below record the completed work and the final validation gates.
 
 ---
 
@@ -958,7 +958,7 @@ resolves an upper-layer computer while the layer-0 one is live, and
 `computeDistances` resolves its own from the same context — so making one slot
 per context would be wrong. Measured after this item; not fixed by it.
 
-### Item 34 — pprof capture under GPU load with CUDA kernel attribution (Observability)
+### Item 34 — pprof capture under GPU load with CUDA kernel attribution (Observability) — RESOLVED 2026-10-16
 
 - **Files**: `scripts/unified_benchmark.py`, `internal/gpu/cuda/cuda_index.go`
 - **State**: §4 of performance.md has CPU pprof hotspots but no GPU kernel
@@ -968,3 +968,80 @@ per context would be wrong. Measured after this item; not fixed by it.
   search hot path; aggregate per kernel under the existing `pprof` snapshots.
 - **Success**: A pprof-style report for one full 250k run attributes ≥90% of
   GPU time to named kernels; regressions localisable to a kernel.
+
+**Resolution (2026-10-16)**:
+
+1. *Timing.* Every GPU operation the Go layer reaches is bracketed by a
+   `cudaEvent_t` pair recorded on the launching stream
+   (`internal/gpu/cuda/cuda_prof_linux.c`), so the number is device time and
+   not the host cost of the launch. Sixteen operations are named, including the
+   five C helpers that launch a kernel internally (`cuda_prune_neighbors`,
+   `cuda_pq_encode`, `cuda_train_kmeans`, `cuda_haversine_batch`,
+   `cuda_norm_batch_f32`) - timed as a whole from Go, since the Go side cannot
+   bracket a kernel it does not launch. Names match the `__global__` symbols in
+   `kernels.cu`, so a row in the report is findable in any other GPU tool.
+
+   Event pairs come from a pool and are recycled only once the GPU has finished
+   with them: `end` records the finish event, and completed pairs are folded
+   into the totals as they land. Folding only at collection time - the obvious
+   first shape - exhausted the pool after 512 launches and silently dropped the
+   rest of a run; the 250k run below issues ~1500.
+
+   Profiling is off unless `LONGBOW_GPU_KERNEL_PROF=1`, and costs one branch
+   per launch when off. Every launch made while it is on is either timed or
+   counted as untimed, so a report can state its own coverage instead of
+   implying completeness.
+
+2. *Aggregation.* `gpu.KernelProfile` is exposed through
+   `internal/gpu/kernel_profile_gpu.go`, with a stub for builds without CUDA so
+   the server compiles everywhere; the server answers a `gpu_kernel_profile`
+   DoAction; bench-tool pulls it with `-gpu-profile-out`; the harness asks for
+   it on GPU modes (`LONGBOW_GPU_KERNEL_PROF` exported to the server), writes
+   it beside the pprof snapshots, and prints a "GPU Kernel Attribution" section
+   into the markdown report and a `gpu_kernel_profile` block into every result
+   row of the perf matrix.
+
+3. *The criterion, on a 250k run.* `TestKernelProfile_250k` (RTX 4060, 250k
+   float32 dim-128, 500 searches over 4 workers, the same code the server
+   calls):
+
+   ```
+   l2_distance_kernel_v2_batched    500 calls   309.521 ms   87.29%
+   memcpy_device_to_host            500 calls    40.663 ms   11.47%
+   memcpy_host_to_device            500 calls     4.418 ms    1.25%
+   device time 354.602 ms: 100.00% attributed to named operations,
+                       87.29% kernel compute, 12.71% transfers
+   ```
+
+   100% of measured device time is attributed to a named operation, nothing was
+   untimed, and the event pool was not exhausted. Two runs: 86.0% and 87.3% in
+   the kernel.
+
+   The kernel share and the attribution share are kept apart on purpose.
+   Attribution is the item's criterion: is the GPU time explained? The kernel
+   share answers a different and more useful question - is the work on the
+   device, or has it moved to PCIe? Folding the 12.7% of device time spent in
+   transfers into "attributed to kernels" would have passed the criterion at
+   100% and shown nothing; folding it into "other" would have hidden exactly the
+   regression this exists to catch.
+
+4. *What a CUDA benchmark run of the server reports today: nothing.* The 25k
+   and 250k harness runs with `--mode cuda` produce a well-formed report with
+   all sixteen operations named and **0 calls, 0 ms**, and that is the finding,
+   not a defect in the instrumentation. The server's dataset index is CPU HNSW;
+   `navigation_search.go` dispatches a search to the GPU only when the HNSW
+   index has a GPU index attached, and `store.initGPUIfEnabled` attaches one
+   only for a `*ArrowHNSW`, which is not the type the dataset holds. So the CUDA
+   kernels exist, the profiler sees them, and the CPU-indexed server does not
+   call them - `CUDAIndex.SearchBatchDistances` is literally `return nil,
+   errors.New("not implemented")`. Closing that wiring gap changes search
+   behaviour, so it is not this item's to do; recorded here so the next one
+   does not have to rediscover it.
+
+5. *Tests.* `TestKernelProfileTimesTheDistanceKernel`,
+   `TestKernelProfileIsOffByDefault`, `TestKernelProfileAccumulatesAndResets`
+   and `TestKernelProfile_250k` run on a real device and skip without one:
+   a kernel that ran must be timed with non-zero device time, nothing may go
+   untimed, the shares must sum to 100%, the table must be sorted by device
+   time, a second search must add to the total, and reset must clear it.
+   `TestDoAction_GPUKernelProfile` pins the CPU-build answer, which CI runs.

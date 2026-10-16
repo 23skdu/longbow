@@ -223,6 +223,8 @@ func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
 		}
 
 		// Run GPU K-Means with pre-allocated buffers
+		profKMeansTrain.begin(nil)
+		// Run GPU K-Means with pre-allocated buffers
 		res := C.cuda_train_kmeans(
 			idx.handle,
 			(*C.float)(dVectors), (*C.float)(dCentroids), (*C.float)(dSumCentroids),
@@ -231,6 +233,8 @@ func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
 			(*C.float)(unsafe.Pointer(&centroids[0])),
 			C.int(numVecs), C.int(subDim), C.int(k), 20,
 		)
+		// Run GPU K-Means with pre-allocated buffers
+		profKMeansTrain.end(nil)
 		if res != 0 {
 			return fmt.Errorf("GPU K-Means failed for subspace %d", i)
 		}
@@ -309,6 +313,7 @@ func (idx *CUDAIndex) PQEncode(vectors []float32, codebooks []float32, m, subDim
 	defer idx.freeGPUMem(dCodes)
 
 	start := time.Now()
+	profPQEncode.begin(nil)
 	ret := C.cuda_pq_encode(
 		idx.handle,
 		(*C.float)(dVectors),
@@ -321,6 +326,7 @@ func (idx *CUDAIndex) PQEncode(vectors []float32, codebooks []float32, m, subDim
 		C.int(m),
 		C.int(subDim),
 	)
+	profPQEncode.end(nil)
 
 	if ret != 0 {
 		return nil, fmt.Errorf("cuda_pq_encode failed")

@@ -157,22 +157,14 @@ func metricRefsInExpr(expr, source string, line int) []metricFamily {
 // with a human-readable location for the failure message.
 func referencedMetrics(t *testing.T) []metricFamily {
 	t.Helper()
-	raw, err := os.ReadFile(rulesPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", rulesPath, err)
-	}
+	groups := loadRuleGroups(t)
 	var refs []metricFamily
-	for i, line := range strings.Split(string(raw), "\n") {
-		expr := strings.TrimSpace(line)
-		if !strings.HasPrefix(expr, "expr:") {
-			continue
+	for _, g := range groups {
+		for _, r := range g.Rules {
+			if r.Expr != "" {
+				refs = append(refs, metricRefsInExpr(r.Expr, "grafana/rules.yml", 0)...)
+			}
 		}
-		value := strings.TrimSpace(strings.TrimPrefix(expr, "expr:"))
-		value = strings.Trim(value, `'"`)
-		if value == "" {
-			continue
-		}
-		refs = append(refs, metricRefsInExpr(value, "grafana/rules.yml", i+1)...)
 	}
 	return refs
 }

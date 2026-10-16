@@ -602,7 +602,7 @@
       },
       "targets": [
         {
-          "expr": "rate(longbow_index_creation_failures_total[1m])",
+          "expr": "rate(longbow_index_creations_total{status=\"failure\"}[1m])",
           "legendFormat": "Index Failures/s"
         }
       ]

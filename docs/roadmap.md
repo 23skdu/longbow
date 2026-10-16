@@ -47,7 +47,6 @@ graph TD
         I23["23: Declarative Compose/Helm Provisioning"]
     end
 
-    I37 --> I38
     I38 --> I39
     I39 --> I32
     I32 --> I8
@@ -62,13 +61,6 @@ graph TD
 ---
 
 ## 2. P0 — Architectural God Module Blockers
-
-### Item 37: Decompose `arrow_hnsw_bulk.go` & `arrow_hnsw.go` Graph Monolith
-- **Status**: **OPEN**
-- **Files**: `internal/store/index/arrow_hnsw_bulk.go`, `internal/store/index/arrow_hnsw.go`, `internal/store/index/bulk_linker.go`, `internal/store/index/bulk_column_reader.go`
-- **State**: `arrow_hnsw_bulk.go` spans 1,754 LOC interweaving Arrow record batch column decoding, multi-pass graph linking, bidirectional neighbor repairs, and heuristic pruning.
-- **Plan**: Split into `bulk_linker.go` (graph linking state machine), `bulk_column_reader.go` (Arrow record batch extraction), and `bulk_repair.go` (reachability and orphan healing).
-- **Success Criteria**: Component file sizes under 800 LOC each; strict separation between Arrow data extraction and graph topology linking.
 
 ### Item 38: Decouple `VectorStore` Ingestion Coordinator & Dataset Registry
 - **Status**: **OPEN**
@@ -201,6 +193,7 @@ graph TD
 ## 6. Verified & Removed Completed Items (Changelog)
 
 | # | Item | Verified Completion Date | Key Commit | Verification Evidence |
+| **37** | Decompose `arrow_hnsw_bulk.go` & `arrow_hnsw.go` Graph Monolith | 2026-10-16 | In-flight | Monolith decomposed into modular sub-packages: `arrow_hnsw_bulk.go` (343 LOC coordinator), `bulk_column_reader.go` (304 LOC), `bulk_linker.go` (650 LOC), `bulk_repair.go` (353 LOC), `arrow_hnsw.go` (735 LOC), `arrow_hnsw_turboquant.go` (199 LOC), `arrow_hnsw_disk.go` (88 LOC), `arrow_hnsw_parallel.go` (173 LOC), `candidate_pool.go` (71 LOC), `arrow_hnsw_distance_any.go` (109 LOC); all files strictly <800 LOC; 100% of index & repo short tests pass. |
 | **35** | Decompose `distance_computer.go` Monolith into Typed Computers | 2026-10-16 | In-flight | Monolith decomposed from 1,405 LOC down to 30 LOC; clean modular separation into `arrow_hnsw_compute_quantized.go` (pq, tq, sq8), `arrow_hnsw_compute_float32.go` (float32, shared), and `arrow_hnsw_compute_int8.go` (int8, shared); 100% of index tests pass. |
 | **36** | Eliminate Multi-Slab Ghost Scanning & Decouple `SlabArena` Storage | 2026-10-16 | In-flight | Stored direct parent slab reference and primary index on multi-slab placeholder entries; eliminated $O(N)$ linear backward scan from `Get`, `GetWithGeneration`, `GetPointer`, `GetPointerWithGeneration`, and `SlabBatch.Get` down to $O(1)$ direct access; decoupled persistence into `arena_storage.go`; verified by `TestSlabArena_MultiSlab_DirectParentResolution`. |
 | **1** | End-to-End GPU Search Dispatch & Complex128 Bottleneck | 2026-10-16 | `d855f554` | `CUDAIndex.SearchBatchDistances` batched candidate kernel; complex128 batched coalesced kernel; end-to-end dataset auto-sharding & bulk ingest GPU sync wired. |

@@ -257,7 +257,9 @@ on critical ingest/search hot paths.
 - **Plan**: Migrate `BM25InvertedIndex` to use chunked/arena-allocated postings or batched ingestion (`AddBatch`) backed by `BM25ArenaIndex` with preallocated contiguous posting arrays, eliminating per-document map copying.
 - **Success**: Heap allocations during ingest drop by >12 GB; GC pause times reduced during concurrent ingest.
 
-### Item 5: Native L2-Squared Integer SIMD Kernels without VSQRT Latency
+### Item 5: Native L2-Squared Integer SIMD Kernels without VSQRT Latency — RESOLVED 2026-10-15
+
+Added `l2SquaredInt8AVX512Kernel` (AVX-512, no terminal VSQRTSS) mirroring `euclideanInt8AVX512Kernel`, plus the `l2SquaredInt8AVX512` wrapper and a non-AVX fallback. Dispatch now wires `l2SquaredInt8Impl` directly for HasAVX512, and to `l2SquaredInt8Unrolled4x` on AVX2 and ARM/NEON, eliminating the previous redundant `euclidean... · d * d` path whose inner function ended in VSQRTSS. SIMD tests pass; int8 squared-distance CV now has zero square-root instruction on every supported dispatch branch.
 
 - **Files**: `internal/simd/dispatch.go`, `internal/simd/all_kernels_avo_amd64.s`
 - **State**: In `internal/simd/dispatch.go` lines 622-628, `l2SquaredInt8Impl` is implemented by invoking `euclideanInt8AVX512(a, b)` and then squaring the result (`return d * d, nil`). Evaluating `VSQRTPS` in the innermost distance evaluation loop only to immediately square it back in Go adds redundant square-root latency on every candidate distance evaluation in HNSW search.

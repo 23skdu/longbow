@@ -619,13 +619,7 @@ func initializeDispatch() {
 		l2SquaredFloat64Impl = l2SquaredFloat64AVX512
 		cosineDistanceFloat64Impl = cosineFloat64AVX512
 		euclideanDistanceInt8Impl = euclideanInt8AVX512
-		l2SquaredInt8Impl = func(a, b []int8) (float32, error) {
-			d, err := euclideanInt8AVX512(a, b)
-			if err != nil {
-				return 0, err
-			}
-			return d * d, nil
-		}
+		l2SquaredInt8Impl = l2SquaredInt8AVX512
 		dotProductInt8Impl = dotInt8Unrolled4x
 		dotProductUint8Impl = dotUint8Unrolled4x
 		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
@@ -743,13 +737,7 @@ func initializeDispatch() {
 		l2SquaredFloat64Impl = l2SquaredFloat64AVX512
 		cosineDistanceFloat64Impl = cosineFloat64AVX512
 		euclideanDistanceInt8Impl = euclideanInt8AVX512
-		l2SquaredInt8Impl = func(a, b []int8) (float32, error) {
-			d, err := euclideanInt8AVX512(a, b)
-			if err != nil {
-				return 0, err
-			}
-			return d * d, nil
-		}
+		l2SquaredInt8Impl = l2SquaredInt8AVX512
 		dotProductInt8Impl = dotInt8Unrolled4x
 		dotProductUint8Impl = dotUint8Unrolled4x
 		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
@@ -867,13 +855,7 @@ func initializeDispatch() {
 		l2SquaredFloat64Impl = l2SquaredFloat64AVX512
 		cosineDistanceFloat64Impl = cosineFloat64AVX512
 		euclideanDistanceInt8Impl = euclideanInt8AVX512
-		l2SquaredInt8Impl = func(a, b []int8) (float32, error) {
-			d, err := euclideanInt8AVX512(a, b)
-			if err != nil {
-				return 0, err
-			}
-			return d * d, nil
-		}
+		l2SquaredInt8Impl = l2SquaredInt8AVX512
 		dotProductInt8Impl = dotInt8Unrolled4x
 		dotProductUint8Impl = dotUint8Unrolled4x
 		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
@@ -993,13 +975,7 @@ func initializeDispatch() {
 		l2SquaredFloat64Impl = l2SquaredFloat64AVX2
 		cosineDistanceFloat64Impl = cosineFloat64AVX2
 		euclideanDistanceInt8Impl = euclideanInt8AVX2
-		l2SquaredInt8Impl = func(a, b []int8) (float32, error) {
-			d, err := euclideanInt8AVX2(a, b)
-			if err != nil {
-				return 0, err
-			}
-			return d * d, nil
-		}
+		l2SquaredInt8Impl = l2SquaredInt8Unrolled4x
 		dotProductInt8Impl = dotInt8AVX2
 		dotProductUint8Impl = dotUint8AVX2
 		euclideanDistanceUint8Impl = euclideanUint8AVX2
@@ -1120,13 +1096,7 @@ func initializeDispatch() {
 		l2SquaredFloat64Impl = l2SquaredFloat64Unrolled4x
 		cosineDistanceFloat64Impl = cosineFloat64NEON
 		euclideanDistanceInt8Impl = euclideanInt8NEON
-		l2SquaredInt8Impl = func(a, b []int8) (float32, error) {
-			d, err := euclideanInt8NEON(a, b)
-			if err != nil {
-				return 0, err
-			}
-			return d * d, nil
-		}
+		l2SquaredInt8Impl = l2SquaredInt8Unrolled4x
 		cosineDistanceInt8Impl = cosineInt8NEON
 		cosineDistanceUint8Impl = cosineDistanceUint8Unrolled4x
 		cosineDistanceInt16Impl = cosineDistanceInt16Unrolled4x

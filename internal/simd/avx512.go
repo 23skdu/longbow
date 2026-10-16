@@ -619,3 +619,22 @@ func l2SquaredBatchAVX512(query []float32, vectors [][]float32, results []float3
 	}
 	return nil
 }
+
+// l2SquaredInt8AVX512Kernel is the no-square-root counterpart of
+// euclideanInt8AVX512Kernel; emits the raw L2-squared float32 accumulator.
+//go:noescape
+func l2SquaredInt8AVX512Kernel(a, b uintptr, n int) float32
+
+// l2SquaredInt8AVX512 is the native AVX-512 integer L2-squared distance.
+func l2SquaredInt8AVX512(a, b []int8) (float32, error) {
+	if !features.HasAVX512 {
+		return l2SquaredInt8Unrolled4x(a, b)
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return l2SquaredInt8AVX512Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
+}

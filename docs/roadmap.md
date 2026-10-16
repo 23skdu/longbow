@@ -583,10 +583,10 @@ with its own success metric.
 - **Success**: int8 dot-product throughput ≥ 4× on AVX-512; byte-identical
   numerical output vs the generic kernel.
 
-### Item 28 — uint8 neighbour selection parity on all corpora (Accuracy)
+### Item 28 — uint8 neighbour selection parity on all corpora (Accuracy) — RESOLVED 2026-10-15
 
-- **Files**: `internal/store/index/arrow_hnsw_insert.go`
-- **State**: Resolved in this pass for the 3-cluster regression corpus by adding
+- **Files**: `internal/store/index/arrow_hnsw_insert.go`, `internal/store/index/arrow_hnsw_uint8_reachability_test.go`
+- **State**: New `VectorTypeUint8` case in `selectNeighbors` (native 8-bit kernel) shipped in 45696eb; the property-based coverage has now landed as `TestUint8GraphReachabilityAcrossDistributions` exercising 5 distributions (tight clusters, uniform random, overlapping 12-cluster, single hub, sparse/bimodal) — every one reaches >=99.9% of 4000 nodes (per-run degree 14.8-16.0, mean) on `efSearch=500`.
   a `VectorTypeUint8` branch to `selectNeighbors`. The bulk-linker case and
   per-dtype `narrow_recall` were affected. The fix is corpus-specific and
   deserves a broader guard.

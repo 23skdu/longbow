@@ -10,7 +10,7 @@
 | Pri | # | Item | Area | Impact / Rationale |
 |:---|:---|:---|:---|:---|
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
-| **P3** | **19/24** | **Metric-Existence & Docs-Code Consistency Conformance Gates** | CI / Observability | Automated test and CI checks verifying that metric references in alerts, dashboards, and documentation strictly match registered symbols in Go source code. |
+| **P3** | **21** | **Alert Coverage for Critical Failure Counters** | Observability / Alerting | Add Prometheus alerts for unmonitored durability, replication, and data-loss failure counters across `grafana/rules.yml`. |
 
 ```mermaid
 graph TD
@@ -23,15 +23,13 @@ graph TD
         I30["30: EMLGo 0.7 15-DType Accuracy Gate"]
     end
     subgraph P3["Observability & CI Conformance"]
-        I19["19/24: Metric-Existence & Docs CI Gate"]
         I21["21: Alert Coverage for Critical Failure Counters"]
         I20["20: Promtool Test Coverage across 28 Groups"]
         I22["22: Alertmanager Routing & Runbook Links"]
         I23["23: Declarative Compose/Helm Provisioning"]
     end
 
-    I32 --> I19
-    I19 --> I21
+    I32 --> I21
     I20 --> I22
 ```
 
@@ -83,13 +81,6 @@ graph TD
 
 ## 5. P3 — Observability, Alerting & CI Conformance
 
-### Item 19 & 24: Metric-Existence and Docs-Code Consistency Conformance Gates in CI
-- **Status**: **OPEN**
-- **Files**: `internal/metrics/conformance_test.go`, `.github/workflows/ci.yml`, `docs/metrics.md`
-- **State**: No automated test verifies that metric references in alerts, dashboards, and documentation match registered symbols in Go source code.
-- **Plan**: Implement a Go test and CI check that parses `rules.yml`, `dashboards/*.json`, and `docs/metrics.md`, asserting 100% bidirectional consistency with `internal/metrics/`.
-- **Success Criteria**: CI immediately fails if an alert, dashboard, or document references an unregistered metric or if documentation drifts from code.
-
 ### Item 21: Alert Coverage for Critical Failure Counters
 - **Status**: **OPEN**
 - **Files**: `grafana/rules.yml`
@@ -116,6 +107,7 @@ graph TD
 ## 6. Verified & Removed Completed Items (Changelog)
 
 | # | Item | Verified Completion Date | Key Commit | Verification Evidence |
+| **19/24** | Metric-Existence & Docs-Code Consistency Conformance Gates in CI | 2026-10-16 | `d0fb6876` | Implemented `TestRegisteredMetricsInventoryFreshness` in `internal/observability/metrics_conformance_test.go` ensuring `testdata/registered_metrics.tsv` never drifts from AST-extracted metric declarations in Go source code; verified bidirectional consistency between `docs/metrics.md` and registered families via `TestMetricsDocMatchesRegistry`; wired dedicated `Observability & Metric Conformance Gate` step into `.github/workflows/ci.yml` running `go test -v ./internal/observability/...`; 100% of conformance tests pass. |
 | **18** | Repair Alert Rules Bound to Missing Metrics | 2026-10-16 | `84e36aa8` | Verified all 72 alerts across 28 rule groups in `grafana/rules.yml` resolve to registered Prometheus metrics in the Go binary; enhanced `internal/observability/metrics_conformance_test.go` (`referencedMetrics`) to parse multiline YAML alert rules (`expr: |`) preventing silent skip of multiline expressions; resolved divergence in `grafana/dashboards/index-storage.json` by updating unregistered `longbow_index_creation_failures_total` to `longbow_index_creations_total{status="failure"}`; verified 100% alert conformance in CI gate. |
 | **3** | Pooled Row Buffers in `DiskVectorStore` | 2026-10-16 | `6274299a` | Decomposed `disk_vector_store.go` monolith (1,362 LOC down to 187 LOC) into modular sub-modules: `disk_vector_store_read.go` (575 LOC), `disk_vector_store_write.go` (611 LOC), and `disk_vector_store_block.go` (230 LOC); implemented pooled row buffers via `Float32RowPool` and `ByteRowPool` (`internal/store/index/buffer_pool.go` and `internal/store/disk_buffer_pool.go`); added zero-allocation decoding APIs: `GetVector`, `GetVectorInto`, `GetBatchInto`, `GetVectorAnyInto`, `ScanRows`, and `ScanRowsAny`; precomputed block LRU cache keys (`BlockEntry.HotKey`) eliminating string formatting allocations at read time; benchmark `GetBatchInto` improved from 1,490 ns/op (5,771 B/op, 19 allocs/op) to 370.8 ns/op (0 B/op, 0 allocs/op — 4x throughput, 100% allocation elimination); single vector `GetVectorInto` achieves 38.99 ns/op with 0 B/op and 0 allocs/op; 100% of store, index, and repo short tests pass. |
 | **13** | SIMD Fused BM25 Term Scoring & Posting List Intersection | 2026-10-16 | `f9557468` | Added `DocLens []int` parallel slice to `BM25PostingList`; fused document length indexing in contiguous memory; eliminated intermediate map allocations (`docLengths` map) and dynamic load per document; implemented vectorized batch scoring using native AVX-512 `simd.BM25ScoreBatch` for fast-path terms; replaced `sort.Slice` reflection calls with an inlined min-heap sift ($O(\log K)$, 0 allocs); benchmark multi-term latency reduced 209x (3,727,545 ns → 17,854 ns/op), heap churn reduced 99.6% (1,315,688 B → 5,496 B/op), allocations reduced 99.5% (8,392 → 39 allocs/op); 100% of unit, concurrency, and race tests pass. |

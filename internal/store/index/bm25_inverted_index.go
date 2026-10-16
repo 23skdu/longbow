@@ -234,13 +234,12 @@ func (idx *BM25InvertedIndex) AddBatch(docs []BM25Document) {
 
 	for sIdx, byTerm := range shardTerms {
 		shard := &idx.termShards[sIdx]
-		currIndex := shard.index.Load()
 		updates := make(map[string]*BM25PostingList, len(byTerm))
 
 		for term, ps := range byTerm {
 			shard.bloom.Add(term)
 
-			oldPL := currIndex[term]
+			oldPL, _ := shard.index.Get(term)
 			var newDocIDs []VectorID
 			var newTFs []int
 
@@ -334,10 +333,8 @@ func (idx *BM25InvertedIndex) Delete(id VectorID) {
 		updates := make(map[string]*BM25PostingList)
 		deletes := []string{}
 
-		currIndex := shard.index.Load()
-
 		for _, term := range termList {
-			if oldPL, ok := currIndex[term]; ok {
+			if oldPL, ok := shard.index.Get(term); ok {
 				n := len(oldPL.DocIDs)
 				removeIdx := sort.Search(n, func(i int) bool {
 					return oldPL.DocIDs[i] >= id
@@ -412,14 +409,13 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 	// Gather all term data from shards (lock-free reads)
 	for shardIdx, terms := range shardTerms {
 		shard := &idx.termShards[shardIdx]
-		currIndex := shard.index.Load()
 
 		for _, term := range terms {
 			// Bloom filter pre-check
 			if !shard.bloom.Contains(term) {
 				continue
 			}
-			if pl, ok := currIndex[term]; ok {
+			if pl, ok := shard.index.Get(term); ok {
 				termDF[term] = len(pl.DocIDs)
 
 				// Optimization: If no filter, use posting list directly

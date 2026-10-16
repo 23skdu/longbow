@@ -617,6 +617,56 @@ func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 	return unsafe.Pointer(&s.data[localOffset]) // #nosec G103
 }
 
+// GetPointerWithGeneration returns unsafe.Pointer to the data enforcing generation isolation.
+func (a *SlabArena) GetPointerWithGeneration(offset uint64, maxGeneration uint64) unsafe.Pointer {
+	if offset == 0 {
+		return nil
+	}
+	slabIdx := offset / uint64(a.slabCap)
+	localOffset := uint32(offset & (uint64(a.slabCap) - 1)) // #nosec G115
+
+	// Lock-free read
+	slabsPtr := a.slabs.Load()
+	if slabsPtr == nil {
+		return nil
+	}
+	slabs := *slabsPtr
+
+	if int(slabIdx) >= len(slabs) { // #nosec G115
+		return nil
+	}
+	s := slabs[slabIdx]
+	if s.data == nil {
+		var realSlab *slab
+		var realIdx int
+		for j := int(slabIdx); j >= 0; j-- { // #nosec G115
+			if slabs[j].data != nil {
+				realSlab = slabs[j]
+				realIdx = j
+				break
+			}
+		}
+		if realSlab != nil {
+			if maxGeneration != math.MaxUint64 && realSlab.generation > maxGeneration {
+				return nil
+			}
+			adjusted := localOffset + uint32(int(slabIdx)-realIdx)*a.slabCap // #nosec G115
+			if int(adjusted) >= len(realSlab.data) {
+				return nil
+			}
+			return unsafe.Pointer(&realSlab.data[adjusted]) // #nosec G103
+		}
+		return nil
+	}
+	if maxGeneration != math.MaxUint64 && s.generation > maxGeneration {
+		return nil
+	}
+	if int(localOffset) >= len(s.data) {
+		return nil
+	}
+	return unsafe.Pointer(&s.data[localOffset]) // #nosec G103
+}
+
 // Save serializes the arena's contents to the given writer.
 func (a *SlabArena) Save(w io.Writer) error {
 	slabsPtr := a.slabs.Load()

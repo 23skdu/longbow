@@ -190,28 +190,40 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 			}
 		}
 
-		cID := int(types.ChunkID(id))
-		if cID != lastCID {
-			if c.maxGen == 18446744073709551615 {
-				lastChunk = c.data.GetVectorsComplex128ChunkFast(cID)
-			} else {
-				lastChunk = c.data.GetVectorsComplex128ChunkWithGen(cID, c.maxGen)
-			}
-			lastCID = cID
-		}
-
-		if lastChunk != nil {
-			cOff := int(id) % types.ChunkSize
-			pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex128)
-			start := cOff * pd
-			if start+c.dims <= len(lastChunk) {
-				v := lastChunk[start : start+c.dims]
+		if c.sctx != nil {
+			v := c.sctx.GetVectorC128(c.data, id, c.dims, c.maxGen)
+			if v != nil {
 				d, err := c.h.distFuncC128(c.q, v)
 				if err != nil {
 					return err
 				}
 				dists[i] = d
 				continue
+			}
+		} else {
+			cID := int(types.ChunkID(id))
+			if cID != lastCID {
+				if c.maxGen == 18446744073709551615 {
+					lastChunk = c.data.GetVectorsComplex128ChunkFast(cID)
+				} else {
+					lastChunk = c.data.GetVectorsComplex128ChunkWithGen(cID, c.maxGen)
+				}
+				lastCID = cID
+			}
+
+			if lastChunk != nil {
+				cOff := int(id) % types.ChunkSize
+				pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex128)
+				start := cOff * pd
+				if start+c.dims <= len(lastChunk) {
+					v := lastChunk[start : start+c.dims]
+					d, err := c.h.distFuncC128(c.q, v)
+					if err != nil {
+						return err
+					}
+					dists[i] = d
+					continue
+				}
 			}
 		}
 		dists[i] = math.MaxFloat32
@@ -224,6 +236,12 @@ func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 	if c.threshold > 0 {
 		if mag := c.data.GetComplex128Magnitude(id); float32(math.Abs(c.queryMag-mag)) > c.threshold {
 			return c.threshold + 1, nil
+		}
+	}
+
+	if c.sctx != nil {
+		if v := c.sctx.GetVectorC128(c.data, id, c.dims, c.maxGen); v != nil {
+			return c.h.distFuncC128(c.q, v)
 		}
 	}
 

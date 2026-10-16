@@ -30,6 +30,9 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 
 	// Cache atomics for hot loop
 	cachedMMax := h.mMax.Load()
+	if computer.sctx == nil && ctx != nil {
+		computer.sctx = ctx
+	}
 
 	// Compute entry point distance and prefetch neighbors.
 	// No type assertion needed — computer is *float32ToFloat32Computer.
@@ -142,7 +145,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 				continue
 			}
 			cID := int(nID) / types.ChunkSize
-			chunk := data.GetVectorsChunkWithGen(cID, maxGen)
+			chunk := ctx.GetChunkF32(data, cID, maxGen)
 			if chunk != nil {
 				// Touch data to warm cache — Prefetch is called by computer
 				_ = chunk

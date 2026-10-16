@@ -358,41 +358,18 @@ type float32Computer struct {
 	qC128     []complex128
 	diskGraph *DiskGraph
 	maxGen    uint64
+	sctx      *ArrowSearchContext
 }
 
 func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	var chunk []float32
-	if c.maxGen == 18446744073709551615 {
-		chunk = c.data.GetVectorsChunkFast(cID)
-	} else {
-		chunk = c.data.GetVectorsChunkWithGen(cID, c.maxGen)
-	}
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat32)
-		start := cOff * pd
-		if start+c.dims <= len(chunk) {
-			v := chunk[start : start+c.dims]
+	if c.sctx != nil {
+		if v := c.sctx.GetVectorF32(c.data, id, c.dims, c.maxGen); v != nil {
 			if c.squared {
 				return c.h.distFuncSquared(c.q, v)
 			}
 			return c.h.distFunc(c.q, v)
 		}
-	}
-
-	var chunkF16 []float16.Num
-	if c.maxGen == 18446744073709551615 {
-		chunkF16 = c.data.GetVectorsF16ChunkFast(cID)
-	} else {
-		chunkF16 = c.data.GetVectorsF16ChunkWithGen(cID, c.maxGen)
-	}
-	if chunkF16 != nil {
-		cOff := int(id) % types.ChunkSize
-		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
-		start := cOff * pd
-		if start+c.dims <= len(chunkF16) {
-			v := chunkF16[start : start+c.dims]
+		if v16 := c.sctx.GetVectorF16(c.data, id, c.dims, c.maxGen); v16 != nil {
 			var q16 []float16.Num
 			if len(c.qF16) == len(c.q) {
 				q16 = c.qF16
@@ -402,7 +379,52 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 					q16[i] = float16.New(val)
 				}
 			}
-			return c.h.distFuncF16(q16, v)
+			return c.h.distFuncF16(q16, v16)
+		}
+	} else {
+		cID := types.ChunkID(id)
+		var chunk []float32
+		if c.maxGen == 18446744073709551615 {
+			chunk = c.data.GetVectorsChunkFast(cID)
+		} else {
+			chunk = c.data.GetVectorsChunkWithGen(cID, c.maxGen)
+		}
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat32)
+			start := cOff * pd
+			if start+c.dims <= len(chunk) {
+				v := chunk[start : start+c.dims]
+				if c.squared {
+					return c.h.distFuncSquared(c.q, v)
+				}
+				return c.h.distFunc(c.q, v)
+			}
+		}
+
+		var chunkF16 []float16.Num
+		if c.maxGen == 18446744073709551615 {
+			chunkF16 = c.data.GetVectorsF16ChunkFast(cID)
+		} else {
+			chunkF16 = c.data.GetVectorsF16ChunkWithGen(cID, c.maxGen)
+		}
+		if chunkF16 != nil {
+			cOff := int(id) % types.ChunkSize
+			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
+			start := cOff * pd
+			if start+c.dims <= len(chunkF16) {
+				v := chunkF16[start : start+c.dims]
+				var q16 []float16.Num
+				if len(c.qF16) == len(c.q) {
+					q16 = c.qF16
+				} else {
+					q16 = make([]float16.Num, len(c.q))
+					for i, val := range c.q {
+						q16[i] = float16.New(val)
+					}
+				}
+				return c.h.distFuncF16(q16, v)
+			}
 		}
 	}
 
@@ -620,45 +642,44 @@ type float32ToFloat32Computer struct {
 }
 
 func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	var chunk []float32
-	if c.maxGen == 18446744073709551615 {
-		chunk = c.data.GetVectorsChunkFast(cID)
-	} else {
-		chunk = c.data.GetVectorsChunkWithGen(cID, c.maxGen)
-	}
-	if chunk == nil {
-		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-		if err != nil {
-			return 0, err
-		}
-		if v, ok := vecAny.([]float32); ok {
+	if c.sctx != nil {
+		if v := c.sctx.GetVectorF32(c.data, id, c.dims, c.maxGen); v != nil {
 			if c.squared {
 				return c.h.distFuncSquared(c.q, v)
 			}
 			return c.h.distFunc(c.q, v)
 		}
-		return math.MaxFloat32, nil
+	} else {
+		cID := types.ChunkID(id)
+		var chunk []float32
+		if c.maxGen == 18446744073709551615 {
+			chunk = c.data.GetVectorsChunkFast(cID)
+		} else {
+			chunk = c.data.GetVectorsChunkWithGen(cID, c.maxGen)
+		}
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat32)
+			start := cOff * pd
+			if start+c.dims <= len(chunk) {
+				v := chunk[start : start+c.dims]
+				if c.squared {
+					return c.h.distFuncSquared(c.q, v)
+				}
+				return c.h.distFunc(c.q, v)
+			}
+		}
 	}
 
-	cOff := int(id) % types.ChunkSize
-	pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat32)
-	start := cOff * pd
-	if start+c.dims <= len(chunk) {
-		v := chunk[start : start+c.dims]
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err != nil {
+		return 0, err
+	}
+	if v, ok := vecAny.([]float32); ok {
 		if c.squared {
 			return c.h.distFuncSquared(c.q, v)
 		}
 		return c.h.distFunc(c.q, v)
-	}
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-	if err == nil {
-		if v, ok := vecAny.([]float32); ok {
-			if c.squared {
-				return c.h.distFuncSquared(c.q, v)
-			}
-			return c.h.distFunc(c.q, v)
-		}
 	}
 	return math.MaxFloat32, nil
 }
@@ -691,9 +712,17 @@ func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]
 
 	// Collect indices of vectors that need to be loaded from disk
 	var diskLoads []int
-	batch := c.data.BeginFloat32ChunkBatch(c.maxGen)
+	var batch types.VectorChunkBatch[float32]
+	if c.sctx == nil {
+		batch = c.data.BeginFloat32ChunkBatch(c.maxGen)
+	}
 	for i, id := range ids {
-		v := batch.Vector(types.ChunkID(id), int(id)%types.ChunkSize, len(c.q))
+		var v []float32
+		if c.sctx != nil {
+			v = c.sctx.GetVectorF32(c.data, id, len(c.q), c.maxGen)
+		} else {
+			v = batch.Vector(types.ChunkID(id), int(id)%types.ChunkSize, len(c.q))
+		}
 		if v != nil {
 			c.batchVecs[i] = v
 		} else {
@@ -788,6 +817,7 @@ type int8Computer struct {
 	diskGraph *DiskGraph
 	maxGen    uint64
 	isUint8   bool
+	sctx      *ArrowSearchContext
 }
 
 func (c *int8Computer) uint8Mode() bool {
@@ -795,19 +825,9 @@ func (c *int8Computer) uint8Mode() bool {
 }
 
 func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	var chunk []int8
-	if c.maxGen == 18446744073709551615 {
-		chunk = c.data.GetVectorsInt8ChunkFast(cID)
-	} else {
-		chunk = c.data.GetVectorsInt8ChunkWithGen(cID, c.maxGen)
-	}
-	if chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt8)
-		start := cOff * pd
-		if start+c.dims <= len(chunk) {
-			v8 := chunk[start : start+c.dims]
+	if c.sctx != nil {
+		v8 := c.sctx.GetVectorInt8(c.data, id, c.dims, c.maxGen)
+		if v8 != nil {
 			if c.uint8Mode() {
 				u8 := *(*[]uint8)(unsafe.Pointer(&v8)) // #nosec G103
 				if c.squared && c.h.distFuncUint8Squared != nil {
@@ -820,29 +840,69 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 			}
 			return c.h.distFuncInt8(c.qInt8, v8)
 		}
-	}
-	var chunkSQ8 []byte
-	if c.maxGen == 18446744073709551615 {
-		chunkSQ8 = c.data.GetVectorsSQ8ChunkFast(cID)
-	} else {
-		chunkSQ8 = c.data.GetVectorsSQ8ChunkWithGen(cID, c.maxGen)
-	}
-	if chunkSQ8 != nil {
-		cOff := int(id) % types.ChunkSize
-		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint8)
-		start := cOff * pd
-		if start+c.dims <= len(chunkSQ8) {
-			v8 := chunkSQ8[start : start+c.dims]
+		vSQ8 := c.sctx.GetVectorSQ8(c.data, id, c.dims, c.maxGen)
+		if vSQ8 != nil {
 			if c.uint8Mode() {
 				if c.squared && c.h.distFuncUint8Squared != nil {
-					return c.h.distFuncUint8Squared(c.q, v8)
+					return c.h.distFuncUint8Squared(c.q, vSQ8)
 				}
-				return c.h.distFuncUint8(c.q, v8)
+				return c.h.distFuncUint8(c.q, vSQ8)
 			}
 			if c.squared && c.h.distFuncInt8Squared != nil {
-				return c.h.distFuncInt8Squared(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8))) // #nosec G103
+				return c.h.distFuncInt8Squared(c.qInt8, *(*[]int8)(unsafe.Pointer(&vSQ8))) // #nosec G103
 			}
-			return c.h.distFuncInt8(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8))) // #nosec G103
+			return c.h.distFuncInt8(c.qInt8, *(*[]int8)(unsafe.Pointer(&vSQ8))) // #nosec G103
+		}
+	} else {
+		cID := types.ChunkID(id)
+		var chunk []int8
+		if c.maxGen == 18446744073709551615 {
+			chunk = c.data.GetVectorsInt8ChunkFast(cID)
+		} else {
+			chunk = c.data.GetVectorsInt8ChunkWithGen(cID, c.maxGen)
+		}
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			pd := c.data.GetPaddedDimsForType(types.VectorTypeInt8)
+			start := cOff * pd
+			if start+c.dims <= len(chunk) {
+				v8 := chunk[start : start+c.dims]
+				if c.uint8Mode() {
+					u8 := *(*[]uint8)(unsafe.Pointer(&v8)) // #nosec G103
+					if c.squared && c.h.distFuncUint8Squared != nil {
+						return c.h.distFuncUint8Squared(c.q, u8)
+					}
+					return c.h.distFuncUint8(c.q, u8)
+				}
+				if c.squared && c.h.distFuncInt8Squared != nil {
+					return c.h.distFuncInt8Squared(c.qInt8, v8)
+				}
+				return c.h.distFuncInt8(c.qInt8, v8)
+			}
+		}
+		var chunkSQ8 []byte
+		if c.maxGen == 18446744073709551615 {
+			chunkSQ8 = c.data.GetVectorsSQ8ChunkFast(cID)
+		} else {
+			chunkSQ8 = c.data.GetVectorsSQ8ChunkWithGen(cID, c.maxGen)
+		}
+		if chunkSQ8 != nil {
+			cOff := int(id) % types.ChunkSize
+			pd := c.data.GetPaddedDimsForType(types.VectorTypeUint8)
+			start := cOff * pd
+			if start+c.dims <= len(chunkSQ8) {
+				v8 := chunkSQ8[start : start+c.dims]
+				if c.uint8Mode() {
+					if c.squared && c.h.distFuncUint8Squared != nil {
+						return c.h.distFuncUint8Squared(c.q, v8)
+					}
+					return c.h.distFuncUint8(c.q, v8)
+				}
+				if c.squared && c.h.distFuncInt8Squared != nil {
+					return c.h.distFuncInt8Squared(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8))) // #nosec G103
+				}
+				return c.h.distFuncInt8(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8))) // #nosec G103
+			}
 		}
 	}
 

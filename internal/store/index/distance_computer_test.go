@@ -5,6 +5,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/require"
 	"testing"
+	"unsafe"
 )
 
 func TestFloat32ToFloat32Computer(t *testing.T) {
@@ -56,3 +57,73 @@ func TestFloat32ToFloat32Computer(t *testing.T) {
 	c.Prefetch(0)
 	c.Prefetch(types.ChunkSize)
 }
+
+func TestSearchContextChunkCache(t *testing.T) {
+	const dims = 16
+	const nChunks = 3
+	g := batchParityGraphData(t, types.VectorTypeFloat32, dims, nChunks)
+
+	sctx := NewArrowSearchContext()
+	require.Equal(t, uint32(1), sctx.chunkEpoch)
+
+	// Fetch vector 0 (chunk 0)
+	v0 := sctx.GetVectorF32(g, 0, dims, ^uint64(0))
+	require.NotNil(t, v0)
+	require.Len(t, v0, dims)
+	require.Equal(t, uint32(1), sctx.cachedChunksF32[0].epoch)
+
+	// Cache hit on second call
+	v0Again := sctx.GetVectorF32(g, 0, dims, ^uint64(0))
+	require.Equal(t, v0, v0Again)
+	require.Equal(t, unsafe.Pointer(&v0[0]), unsafe.Pointer(&v0Again[0]))
+
+	// Fetch vector in chunk 1 (id = ChunkSize)
+	v1024 := sctx.GetVectorF32(g, types.ChunkSize, dims, ^uint64(0))
+	require.NotNil(t, v1024)
+	require.Equal(t, uint32(1), sctx.cachedChunksF32[1].epoch)
+
+	// Verify float32ToFloat32Computer with sctx produces identical results
+	h := newBatchBenchHNSW()
+	q := make([]float32, dims)
+	for i := range q {
+		q[i] = float32(i) * 0.5
+	}
+
+	compNoCtx := &float32ToFloat32Computer{
+		data:    g,
+		q:       q,
+		dims:    dims,
+		h:       h,
+		maxGen:  ^uint64(0),
+		squared: false,
+	}
+
+	compWithCtx := &float32ToFloat32Computer{
+		data:    g,
+		q:       q,
+		dims:    dims,
+		h:       h,
+		maxGen:  ^uint64(0),
+		squared: false,
+		sctx:    sctx,
+	}
+
+	for id := uint32(0); id < uint32(nChunks*types.ChunkSize); id += 257 {
+		d1, err1 := compNoCtx.ComputeSingle(id)
+		require.NoError(t, err1)
+		d2, err2 := compWithCtx.ComputeSingle(id)
+		require.NoError(t, err2)
+		require.Equal(t, d1, d2, "mismatch at id %d", id)
+	}
+
+	// Verify Reset() advances epoch and invalidates cache
+	sctx.Reset()
+	require.Equal(t, uint32(2), sctx.chunkEpoch)
+	require.NotEqual(t, sctx.chunkEpoch, sctx.cachedChunksF32[0].epoch)
+
+	// After Reset, resolving again updates to new epoch
+	v0AfterReset := sctx.GetVectorF32(g, 0, dims, ^uint64(0))
+	require.Equal(t, v0, v0AfterReset)
+	require.Equal(t, uint32(2), sctx.cachedChunksF32[0].epoch)
+}
+

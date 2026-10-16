@@ -899,7 +899,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				narrowFloatsToInt8(q, qInt8)
 			}
 			qUint8 := *(*[]uint8)(unsafe.Pointer(&qInt8)) // #nosec G103
-			return &int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: false}
+			return &int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: false, sctx: searchCtx}
 		}
 		if data.Type == types.VectorTypeUint8 {
 			var qUint8 []uint8
@@ -912,7 +912,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				narrowFloatsToUint8(q, qUint8)
 			}
 			qInt8 := *(*[]int8)(unsafe.Pointer(&qUint8)) // #nosec G103
-			return &int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: true}
+			return &int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: true, sctx: searchCtx}
 		}
 		if data.Type == types.VectorTypeInt16 {
 			if searchCtx == nil {

@@ -244,3 +244,21 @@ func (ta *TypedArena[T]) GetWithGeneration(ref SliceRef, maxGeneration uint64) [
 	ptr := unsafe.Pointer(&byteSlice[0])    // #nosec G103
 	return unsafe.Slice((*T)(ptr), ref.Len) // #nosec G103
 }
+
+// GetPointer returns unsafe.Pointer to the typed data at ref.
+func (ta *TypedArena[T]) GetPointer(ref SliceRef) unsafe.Pointer {
+	return ta.GetPointerWithGeneration(ref, math.MaxUint64)
+}
+
+// GetPointerWithGeneration returns unsafe.Pointer to the typed data at ref enforcing generation isolation.
+func (ta *TypedArena[T]) GetPointerWithGeneration(ref SliceRef, maxGeneration uint64) unsafe.Pointer {
+	if ref.Len == 0 {
+		return nil
+	}
+	a := ta.arena.Load()
+	if a == nil {
+		return nil
+	}
+	return a.GetPointerWithGeneration(ref.Offset, maxGeneration)
+}
+

@@ -68,6 +68,25 @@ func (g *GraphData) GetVectorsChunkFastWithGen(chunkID int, maxGen uint64) []flo
 	return nil
 }
 
+// GetVectorsChunkBasePtrWithGen returns the base pointer to the float32 chunk memory and element capacity.
+func (g *GraphData) GetVectorsChunkBasePtrWithGen(chunkID int, maxGen uint64) (unsafe.Pointer, int) {
+	if g.Float32Arena != nil && chunkID < len(g.VectorsF32) {
+		pd := g.GetPaddedDimsForType(VectorTypeFloat32)
+		offset := atomic.LoadUint64(&g.VectorsF32[chunkID])
+		if offset == 0 {
+			return nil, 0
+		}
+		totalLen := ChunkSize * pd
+		ptr := g.Float32Arena.GetPointerWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(totalLen), Cap: uint32(totalLen)}, maxGen) // #nosec G115
+		return ptr, totalLen
+	}
+	if chunkID < len(g.Vectors) && len(g.Vectors[chunkID]) > 0 {
+		return unsafe.Pointer(&g.Vectors[chunkID][0]), len(g.Vectors[chunkID]) // #nosec G103
+	}
+	return nil, 0
+}
+
+
 // GetVectorsTQChunkFast returns a TurboQuant chunk using a non-atomic offset read.
 func (g *GraphData) GetVectorsTQChunkFast(chunkID int) []byte {
 	if chunkID < len(g.VectorsTQ) && g.Uint8Arena != nil {

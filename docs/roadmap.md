@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
 **Last updated**: 2026-10-16  
-**Status**: All roadmap items through 24 resolved as of 2026-10-12; of items 25-34 (§5), 28, 29 and 31 are resolved and 32 is partial; the rest are open. Historical sections below record the completed work and the final validation gates.
+**Status**: All roadmap items through 24 resolved as of 2026-10-12; of items 25-34 (§5), 28, 29, 31 and 33 are resolved and 32 is partial; the rest are open. Historical sections below record the completed work and the final validation gates.
 
 ---
 
@@ -843,7 +843,7 @@ verdict is a verdict about the corpus, not about the code.
 - **Success**: No change that regresses index time by ≥5% merges without
   cancellation; zero false positives in a six-run self-noise test.
 
-### Item 33 — Reduce graph-linker heap churn on large timestamped ingests (Performance)
+### Item 33 — Reduce graph-linker heap churn on large timestamped ingests (Performance) — RESOLVED 2026-10-16
 
 - **Files**: `internal/store/index/arrow_hnsw_bulk.go`, `internal/store/index/arrow_hnsw_insert.go`
 - **State**: Heavy ingests at 500k+ allocations in Go maps remain
@@ -853,6 +853,110 @@ verdict is a verdict about the corpus, not about the code.
   sorted commit, eliminating per-pair map growth.
 - **Success**: `allocs.pprof` heap bytes during 500k ingest drop by ≥50%
   without reducing ingest throughput or recall.
+
+**Resolution (2026-10-16)**:
+
+The criterion is a 500k ingest; the 500k tier is skipped in this session's
+sweeps, so the evidence is the same measurement one tier down (100k float32
+dim-128, ten 10k-row flushes through `AddBatch`, the shape the store ingests at)
+plus a benchmark that anyone can re-run at 500k. What it measures is ingest and
+nothing else: `BenchmarkBulkIngestHeap`, no searches, no server.
+
+**Heap bytes for one 100k ingest: 4,289 MB → 1,015 MB (−76%), 26.53M → 6.42M
+allocations (−76%), 67.2s → 63.3s (−6%).** Six changes, measured one at a time,
+each cumulative on the previous:
+
+| # | change | bytes after | attributed |
+|:--|:---|--:|--:|
+| 1 | `GraphData.Clone` shares the per-chunk vector arrays | 3,496 MB | −18.5% |
+| 2 | `sync.Pool` of candidate slices → a bounded free list | 2,809 MB | −19.6% |
+| 3 | adjacency read cache bypassed while a build is in flight | 2,033 MB | −27.6% |
+| 4 | neighbour appliers on the pooled context, not closures | 1,645 MB | −8.5% |
+| 5 | float32 computer borrows its batch scratch from the context | 1,197 MB | −15.5% |
+| 6 | linkage arenas (sorting cursors, per-chunk edge buffers) reused | 1,015 MB | −15.2% |
+
+1. *The snapshot clone copied the vectors.* The linker publishes a snapshot per
+   sub-batch, and `Clone` deep-copied every chunk's vector array: 756 MB of the
+   ingest's 4.1 GB, for bytes that never change after publication. The per-chunk
+   arrays are now shared — `ShallowStructuralClone` already made that argument —
+   with the outer `[][]float32` still fresh, so `SetExternalVectorsChunk` on one
+   snapshot replaces only its own slot.
+   `TestGraphData_Clone_DoesNotCopyVectors` gates it.
+
+2. *The candidate pool was the wrong shape.* `sync.Pool` is emptied on every GC
+   cycle, and a bulk ingest allocates fast enough that it was empty almost
+   every time: 891 MB of efConstruction-sized slices, the single largest site,
+   plus a pointer allocated per `Put`. It is now a bounded free list (4096
+   entries, slices wider than 8192 candidates dropped rather than retained),
+   which is sized for what actually holds slices alive — a sub-batch keeps one
+   per node until it has been linked.
+
+3. *The adjacency cache cannot work during a build.* Every adjacency write
+   removes its target from the cache, so while an `AddBatch` is in flight the
+   cache can only serve entries that are stale or about to be dropped, and every
+   fill is a copy the next write throws away: 740 MB (556 MB of copies, 132 MB
+   of list objects, 51 MB of chunk directories) and 11.6M allocations, for a
+   read path that is already zero-copy — the packed adjacency hands back a
+   window into the arena. Reads by a query that overlaps a build lose the cache
+   and keep their correctness: the list is copy-on-write and the build's writes
+   remove what they change.
+
+4. *Every edge update allocated a closure.* `UpdateNeighbors` takes a `func`,
+   and each call site passed a literal capturing the target, the sources, the
+   limits, the graph and the context — heap-allocated per call, and the bulk
+   linker runs the batch one once per node plus once per reverse link (~33 per
+   inserted node). It takes an interface now (`types.NeighborApplier`), and the
+   four bodies live on the pooled search context (`neighbor_appliers.go`). This
+   was the largest single allocation site after the first three changes: 321 MB
+   and 7.5M allocations.
+
+5. *The float32 computer's batch scratch was per-search.* `ComputeBatch` grew
+   `c.batchVecs` to capacity and reused it, but the computer itself is
+   constructed per search, so it restarted empty every time (284 MB). The scratch
+   now comes from the context — the arrangement the complex128 computer already
+   used — and the computer stays per-search, because two of them can be live on
+   one context at a time.
+
+6. *The linker's own arenas.* The counting-sort cursors (Item 31's P2) are
+   allocated once per batch instead of once per layer, and the per-chunk edge
+   buffers are reused across sub-batches instead of regrown: 218 MB, and the
+   graph digest is unchanged, so the reuse did not perturb the op order.
+
+**A bug this found, which the plan did not predict.** The appliers (4) live on
+the pooled context and point at the GraphData they last wrote, and a pooled
+context is reachable for the life of the process — so the last snapshot of every
+build stayed reachable. `GraphData` releases its Arrow references from a
+finalizer, so a pinned snapshot never reached one and its vector buffers stayed
+resident: 801,024 bytes per index, visible as an allocator imbalance in
+`TestHNSW_BulkInsert` and nowhere else. The appliers are now cleared when a
+context goes back to the pool and on `Reset`, and
+`TestSearchContextPoolDoesNotPinGraphData` pins the invariant rather than the
+symptom.
+
+**End to end** (100k float32 dim-128, 500 queries, 4 workers, `-tags emlgo`,
+same config and same derived seed, 4 runs a side): peak RSS **1852 MB → 1213 MB
+(−34.5%)**, index time **18.5s → 17.5s (−5.4%)**, dense QPS 4771 → 4548
+(−4.7%). The QPS line is GC pacing, not this work: the live heap is a third
+smaller, so `GOGC=100` collects proportionally more often. At equal GC headroom
+(`GOGC=200`) the two builds are identical — 4327 vs 4330 QPS — with resident
+sets of **4046 MB before and 1620 MB after**. That is the trade the item asks
+for, stated as a trade.
+
+**Recall** is unchanged by construction: for one corpus the graph is
+byte-identical before and after (`BULK_GRAPH_DIGEST` `2d7bb180…`, entry point,
+per-node levels and adjacency of every layer), and an identical graph recalls
+identically. The uint8 degree floor (16.00 mean, Item 29) and the 95%
+reachability gate pass unchanged.
+
+**What the plan got wrong.** There is no map in the link path and no per-pair
+edge staging to slab-ify; the profile put the heap elsewhere entirely. The
+criterion (heap bytes) was kept and measured, the plan was discarded.
+
+**Left standing.** `resolveHNSWComputer` still allocates a computer per search:
+327 MB, 27% of what remains. It cannot simply be pooled — a search entry point
+resolves an upper-layer computer while the layer-0 one is live, and
+`computeDistances` resolves its own from the same context — so making one slot
+per context would be wrong. Measured after this item; not fixed by it.
 
 ### Item 34 — pprof capture under GPU load with CUDA kernel attribution (Observability)
 

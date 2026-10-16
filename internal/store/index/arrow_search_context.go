@@ -150,6 +150,16 @@ type ArrowSearchContext struct {
 	// one of the ~33 calls a single bulk-inserted node makes.
 	diff neighborDiff
 
+	// The read-modify-write bodies UpdateNeighbors runs, one per call site.
+	// They live here rather than in closures so a pooled context pays for them
+	// once instead of every call heap-allocating a new applier (roadmap Item
+	// 33). Only one is in flight at a time, which is the same assumption the
+	// pooled scratch buffers already rest on.
+	batchApplier   batchNeighborApplier
+	addConnApplier addConnNeighborApplier
+	pruneApplier   pruneNeighborApplier
+	inboundApplier inboundNeighborApplier
+
 	// inDegreeView overrides where the pruning guard reads inbound-edge counts
 	// from. nil means the index's live tracker. Bulk linkage sets it to a
 	// snapshot taken between its passes, because the guard's decision has to be
@@ -297,6 +307,8 @@ func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 		panic("ArrowSearchContextPool.Put: context is not in use! (possible double-put)")
 	}
 
+	ctx.clearAppliers()
+
 	// Try to return to pool, if full let GC handle it
 	p.ring.Push(ctx)
 }
@@ -310,6 +322,8 @@ func (p *ArrowSearchContextPool) PutWithMetrics(ctx *ArrowSearchContext, dataTyp
 		panic("ArrowSearchContextPool.PutWithMetrics: context is not in use! (possible double-put)")
 	}
 
+	ctx.clearAppliers()
+
 	// Flush accumulated metrics if present
 	if ctx.distComputeCount > 0 {
 		metrics.RecordSearchBatchMetrics(dataType, dims, "euclidean", ctx.distComputeCount, ctx.distComputeTime)
@@ -320,7 +334,25 @@ func (p *ArrowSearchContextPool) PutWithMetrics(ctx *ArrowSearchContext, dataTyp
 }
 
 // Reset clears the context for reuse.
+// clearAppliers drops the neighbour appliers' references to the graph and the
+// index.
+//
+// They have to be dropped when the context goes back to the pool, not only when
+// it comes out: a pooled context is reachable for the life of the process, and
+// a context still pointing at the GraphData it last wrote pins that snapshot
+// alive. GraphData releases its Arrow references from a finalizer, so a pinned
+// snapshot never reaches one and the vector buffers stay resident - 800 KB that
+// no test could attribute, found as an Arrow allocator imbalance in
+// TestHNSW_BulkInsert (roadmap Item 33).
+func (ctx *ArrowSearchContext) clearAppliers() {
+	ctx.batchApplier = batchNeighborApplier{}
+	ctx.addConnApplier = addConnNeighborApplier{}
+	ctx.pruneApplier = pruneNeighborApplier{}
+	ctx.inboundApplier = inboundNeighborApplier{}
+}
+
 func (ctx *ArrowSearchContext) Reset() {
+	ctx.clearAppliers()
 	ctx.candidates = ctx.candidates[:0]
 	ctx.visited.Clear()
 	ctx.dists = ctx.dists[:0]

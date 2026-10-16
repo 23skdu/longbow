@@ -758,6 +758,26 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		// No need to promote nodes here as chunks were pre-allocated and published.
 	})
 
+	// linkOp is one cross-node edge waiting for P2: the list it points at, the
+	// node that will be added to it, and the distance to record.
+	type linkOp struct {
+		target  uint32
+		src     uint32
+		dist    float32
+		maxConn int32
+	}
+
+	// Counting-sort cursors and the in-degree snapshot backing store for the
+	// linkage passes below. All three are sized for this batch and reused by
+	// every sub-batch of every layer: P2 leaves the cursors zeroed, so there is
+	// nothing to clear between sub-batches (roadmap Item 33).
+	//
+	// nodeCount has not been updated for this batch yet, so nodeCount+n is the
+	// widest node id it can produce.
+	linkageCounts := make([]int, int(h.nodeCount.Load())+numRemaining+1)
+	linkageCursors := make([]int, len(linkageCounts))
+	var linkageInDegree inDegreeSnapshot
+
 	for lc := topL; lc >= 0; lc-- {
 		// Honour cancellation between layers: a single layer over a large
 		// batch can run for minutes, so the caller must not be stuck waiting
@@ -795,6 +815,16 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			}
 		}
 
+		// edgeChunks holds one growth buffer per worker chunk for the linkage
+		// passes, reused across sub-batches by resetting each to length zero.
+		// The cross-node edges of a sub-batch are recorded there before P2
+		// sorts them by target; at 100k, reallocating those buffers per
+		// sub-batch was 178 MB of the ingest's heap traffic (roadmap Item 33).
+		// Sized from this layer's widest sub-batch - the chunk count is
+		// ceil(K/chunk) and chunk is never below 16 - so no sub-batch ever has
+		// to grow it.
+		edgeChunks := make([][]linkOp, (subBatchSize+15)/16)
+
 		// Candidate lists produced by the graph search of the current sub-batch,
 		// indexed by position within remainingNodes.
 		//
@@ -805,16 +835,6 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		// entries. Entries outside the current sub-batch are stale and are
 		// cleared as the sub-batch is dispatched.
 		graphCandidates := make([]*[]types.Candidate, numRemaining)
-
-		// Counting-sort cursors for the P2 pass below, sized for the widest
-		// node id this batch can produce (nodeCount has not been updated for
-		// the batch yet) and reused by every sub-batch of this layer. P2
-		// leaves them zeroed, so no clearing is needed between sub-batches.
-		linkageCounts := make([]int, int(h.nodeCount.Load())+numRemaining+1)
-		linkageCursors := make([]int, len(linkageCounts))
-		// Backing store for the pruning guard's in-degree snapshot, reused by
-		// every sub-batch of this layer.
-		var linkageInDegree inDegreeSnapshot
 
 		for i := 0; i < len(activeIndices); i += subBatchSize {
 			// Sub-batches are the unit of work between two graph clones, so
@@ -963,14 +983,17 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			// One edge buffer per worker chunk: P1 appends to its own without a
 			// lock, and concatenating the buffers in chunk order gives a total
 			// order that depends on the sub-batch, not on the schedule.
-			type linkOp struct {
-				target  uint32
-				src     uint32
-				dist    float32
-				maxConn int32
-			}
 			numChunks := (K + linkageChunkSize - 1) / linkageChunkSize
-			chunkOps := make([][]linkOp, numChunks)
+			if numChunks > len(edgeChunks) {
+				// Sized from subBatchSize, which is the widest sub-batch this
+				// layer runs, so this cannot happen; reallocating would still
+				// be correct, only wasteful.
+				edgeChunks = make([][]linkOp, numChunks)
+			}
+			chunkOps := edgeChunks[:numChunks]
+			for ci := range chunkOps {
+				chunkOps[ci] = chunkOps[ci][:0]
+			}
 
 			// P1: decide, and write this node's own list only.
 			pool.ParallelFor(K, linkageChunkSize, func(start, end int) {

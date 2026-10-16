@@ -234,12 +234,12 @@ func (fa *FlatAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint32)
 	return true
 }
 
-func (fa *FlatAdjacency) UpdateNeighbors(id uint32, fn func(old []uint32) []uint32) error {
+func (fa *FlatAdjacency) UpdateNeighbors(id uint32, applier types.NeighborApplier) error {
 	fa.Lock(id)
 	defer fa.Unlock(id)
 
 	old, _ := fa.GetNeighbors(id)
-	new := fn(old)
+	new := applier.ApplyNeighbors(old)
 	if new != nil {
 		return fa.SetNeighbors(id, new)
 	}

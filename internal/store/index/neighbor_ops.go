@@ -119,39 +119,11 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 		d := neighborDiffFor(ctx)
 
 		// Pre-compute targets to avoid doing it inside the CAS loop
-		_ = pn.UpdateNeighbors(source, func(old []uint32) []uint32 {
-			for _, n := range old {
-				if n == target {
-					// No change. The bookkeeping below runs once, after the CAS
-					// loop settles, so it has to be told about this path too:
-					// leaving a previous losing attempt's pair in place would
-					// apply a diff that was never committed.
-					d.set(old, old)
-					return nil
-				}
-			}
-
-			var next []uint32
-			if len(old) < maxConn {
-				// ctx.batchNext is reset here rather than reset-then-append so
-				// the previous call's contents are never observable. The arena
-				// copy in SetNeighbors happens before the next call can reuse
-				// the buffer.
-				next = append(newNextBuf(ctx, len(old)+1), old...)
-				next = append(next, target)
-			} else {
-				// Pruning needed - Diversity heuristic
-				// This is expensive, but only happens when we hit maxConn
-				h.bulkContentionCount.Add(1)
-				single := newSourcesBuf(ctx, 1)
-				single = append(single, target)
-				next = h.computePrunedNeighbors(ctx, data, source, old, single, maxConn, layer)
-			}
-
-			// Snapshot for the layer-0 in-degree delta applied after commit.
-			d.set(old, next)
-			return next
-		})
+		ctx.addConnApplier = addConnNeighborApplier{
+			h: h, data: data, source: source, target: target,
+			layer: layer, maxConn: maxConn, d: d, ctx: ctx,
+		}
+		_ = pn.UpdateNeighbors(source, &ctx.addConnApplier)
 
 		if layer == 0 && d.valid && InboundEdgeGuardEnabled {
 			h.updateInDegreeL0Diff(d.old, d.next)
@@ -226,62 +198,15 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 		// caller's pooled search context.
 		d := neighborDiffFor(ctx)
 
-		_ = pn.UpdateNeighbors(target, func(old []uint32) []uint32 {
-			// Find truly new sources.
-			//
-			// The previous shape built newSources with a bare append from nil
-			// (log2(len(sources)) reallocations per call) and then rebuilt
-			// `next` with a fresh make plus two slices.Clone. Bulk linkage
-			// calls this once per node and once per reverse link, so across a
-			// 1M-node build that was the bulk of the 39.4 GB attributed to this
-			// path. All three buffers now live on the caller's pooled search
-			// context and are reused across calls.
-			newSources := newSourcesBuf(ctx, len(sources))
-			for _, s := range sources {
-				found := false
-				for _, o := range old {
-					if o == s {
-						found = true
-						break
-					}
-				}
-				if !found && s != target {
-					newSources = append(newSources, s)
-				}
-			}
-			if ctx != nil {
-				ctx.batchSrc = newSources[:0]
-			}
-
-			if len(newSources) == 0 {
-				// No change; see the matching note in AddConnection about
-				// keeping the recorded diff in step with the winning
-				// attempt.
-				d.set(old, old)
-				return nil
-			}
-
-			var next []uint32
-			if len(old)+len(newSources) <= maxConn {
-				merged := newNextBuf(ctx, len(old)+len(newSources))
-				next = append(merged, old...)
-				next = append(next, newSources...)
-				if ctx != nil {
-					// Keep the grown array: append reallocates past cap, and
-					// without storing it back the next call would start from
-					// the stale (smaller) buffer and allocate again.
-					ctx.batchNext = next[:0]
-				}
-			} else {
-				// Pruning needed
-				h.bulkContentionCount.Add(1)
-				next = h.computePrunedNeighbors(ctx, data, target, old, newSources, maxConn, layer)
-			}
-
-			// Snapshot for the layer-0 in-degree delta applied after commit.
-			d.set(old, next)
-			return next
-		})
+		// The read-modify-write body runs from the context too: as a closure
+		// it captured this frame and was heap-allocated on every one of those
+		// calls, which was the single largest allocation site in a bulk
+		// ingest (roadmap Item 33).
+		ctx.batchApplier = batchNeighborApplier{
+			h: h, data: data, target: target, sources: sources,
+			layer: layer, maxConn: maxConn, d: d, ctx: ctx,
+		}
+		_ = pn.UpdateNeighbors(target, &ctx.batchApplier)
 
 		if layer == 0 && d.valid && InboundEdgeGuardEnabled {
 			h.updateInDegreeL0Diff(d.old, d.next)
@@ -330,23 +255,11 @@ func (h *ArrowHNSW) AddConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *types.GraphData, id uint32, maxConn, layer int) *types.GraphData {
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
-		var lastOld []uint32
-		var lastNew []uint32
-
-		_ = pn.UpdateNeighbors(id, func(old []uint32) []uint32 {
-			if len(old) <= maxConn {
-				// No change; see the matching note in AddConnection.
-				lastOld, lastNew = old, old
-				return nil
-			}
-
-			h.bulkContentionCount.Add(1)
-			next := h.computePrunedNeighbors(ctx, data, id, old, nil, maxConn, layer)
-			lastOld = slices.Clone(old)
-			lastNew = slices.Clone(next)
-			atomic.AddUint64(&data.GlobalVersion, 1)
-			return next
-		})
+		ctx.pruneApplier = pruneNeighborApplier{
+			h: h, data: data, id: id, maxConn: maxConn, layer: layer, ctx: ctx,
+		}
+		_ = pn.UpdateNeighbors(id, &ctx.pruneApplier)
+		lastOld, lastNew := ctx.pruneApplier.lastOld, ctx.pruneApplier.lastNew
 		if layer == 0 && lastNew != nil && InboundEdgeGuardEnabled {
 			h.updateInDegreeL0Diff(lastOld, lastNew)
 		}
@@ -811,70 +724,13 @@ func (h *ArrowHNSW) ensureInboundEdge(ctx *ArrowSearchContext, data *types.Graph
 		return
 	}
 	pn := data.PackedNeighbors[0]
-	var lastOld, lastNew []uint32
+	ctx.inboundApplier = inboundNeighborApplier{
+		h: h, data: data, host: host, target: target, maxConn: maxConn, ctx: ctx,
+	}
+	_ = pn.UpdateNeighbors(host, &ctx.inboundApplier)
 
-	_ = pn.UpdateNeighbors(host, func(old []uint32) []uint32 {
-		for _, o := range old {
-			if o == target {
-				lastOld, lastNew = old, old
-				return nil
-			}
-		}
-		if len(old) < maxConn {
-			var next []uint32
-			if ctx != nil && cap(ctx.scratchPool) >= len(old)+1 {
-				next = append(ctx.scratchPool[:0], old...)
-			} else {
-				next = make([]uint32, len(old), len(old)+1)
-				copy(next, old)
-			}
-			next = append(next, target)
-			lastOld = slices.Clone(old)
-			lastNew = slices.Clone(next)
-			return next
-		}
-
-		// Host is full: find neighbor in old with inDegree > 1 and maximum distance from host.
-		bestToEvict := -1
-		var bestDist float32 = -1
-		var dists []float32
-		if ctx != nil && cap(ctx.scratchDists) >= len(old) {
-			dists = ctx.scratchDists[:len(old)]
-		} else {
-			dists = make([]float32, len(old))
-		}
-		h.computeDistances(ctx, data, host, old, dists)
-
-		for i, o := range old {
-			if h.inDegreeL0.Get(o) > 1 {
-				if dists[i] > bestDist {
-					bestDist = dists[i]
-					bestToEvict = i
-				}
-			}
-		}
-
-		if bestToEvict < 0 {
-			// All neighbors of host have inDegree <= 1; cannot evict without stranding someone.
-			lastOld, lastNew = old, old
-			return nil
-		}
-
-		var next []uint32
-		if ctx != nil && cap(ctx.scratchPool) >= len(old) {
-			next = append(ctx.scratchPool[:0], old...)
-		} else {
-			next = make([]uint32, len(old))
-			copy(next, old)
-		}
-		next[bestToEvict] = target
-		lastOld = slices.Clone(old)
-		lastNew = slices.Clone(next)
-		return next
-	})
-
-	if lastNew != nil && InboundEdgeGuardEnabled {
-		h.updateInDegreeL0Diff(lastOld, lastNew)
+	if lastNew := ctx.inboundApplier.lastNew; lastNew != nil && InboundEdgeGuardEnabled {
+		h.updateInDegreeL0Diff(ctx.inboundApplier.lastOld, lastNew)
 	}
 }
 

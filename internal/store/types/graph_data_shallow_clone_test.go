@@ -79,92 +79,98 @@ func TestGraphData_ShallowStructuralClone_SharesSliceHeaders(t *testing.T) {
 	assert.Equal(t, len(g.Vectors[0]), len(clone.Vectors[0]))
 }
 
-// TestGraphData_ShallowStructuralClone_HeapSavings verifies that the
-// shallow clone allocates substantially less heap than the full Clone.
-// The savings come from sharing the per-chunk Vectors* slice headers
-// instead of allocating fresh ones and copying the data.
+// TestGraphData_Clone_DoesNotCopyVectors is the roadmap Item 33 gate for the
+// snapshot clone.
 //
-// We measure the difference in HeapAlloc before and after each call.
-// The savings are not deterministic due to allocator batching, so we
-// run the test in a loop and assert that the shallow clone is
-// strictly smaller in aggregate.
-func TestGraphData_ShallowStructuralClone_HeapSavings(t *testing.T) {
+// Clone used to deep-copy every chunk's vector array. A bulk ingest clones
+// once per sub-batch, so a 100k float32 dim-128 build paid 756 MB to copy
+// bytes that are immutable after publication - the second-largest allocation
+// site in the whole ingest. Both clones now share those arrays, and this
+// measures it directly rather than by comparing the two clones to each other:
+// a single 64 MB external chunk, and a clone that must cost a small fraction
+// of the payload.
+func TestGraphData_Clone_DoesNotCopyVectors(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping heap savings test in -short mode")
+		t.Skip("skipping clone heap test in -short mode")
 	}
 
 	const (
-		dims    = 384
-		chunks  = 50
+		dims    = 256
+		rows    = ChunkSize * 4 // 4 chunks' worth of vectors in one array
 		perIter = 5
 	)
-	heapBefore := make([]uint64, perIter*2)
-	heapAfter := make([]uint64, perIter*2)
+	payload := rows * dims * 4
 
-	// Build a populated GraphData once. NewGraphData(capacity, ...) sets
-	// up the structural slices (Neighbors, Counts, Versions) to the
-	// right size for the requested capacity. We populate both the
-	// modern path (VectorsF32 + Float32Arena via EnsureChunk) AND the
-	// legacy path (Vectors via SetExternalVectorsChunk) so the heap
-	// savings from sharing Vectors[i] are measurable.
-	g := NewGraphData(chunks*ChunkSize, dims, false, false, -1, false, false, false, VectorTypeFloat32, false, false, false, 8, "test-ssc-heap", nil, false)
+	g := NewGraphData(rows, dims, false, false, -1, false, false, false, VectorTypeFloat32, false, false, false, 8, "test-clone-heap", nil, false)
 	require.NotNil(t, g)
-	for cID := 0; cID < chunks; cID++ {
-		require.NoError(t, g.EnsureChunk(cID, 0, dims))
-		chunk := g.GetVectorsChunk(cID)
-		for i := range chunk {
-			chunk[i] = float32(i)
+	extSlice := make([]float32, rows*dims)
+	for i := range extSlice {
+		extSlice[i] = float32(i)
+	}
+	require.NoError(t, g.SetExternalVectorsChunk(0, extSlice, nil))
+	defer g.Release()
+
+	measure := func(clone func(*GraphData) *GraphData) uint64 {
+		var total uint64
+		for i := 0; i < perIter; i++ {
+			runtime.GC()
+			before := heapAlloc()
+			c := clone(g)
+			total += heapAlloc() - before
+			c.Release()
 		}
-		// Also populate the legacy Vectors[chunkID] slice header so
-		// the full Clone's per-chunk deep copy has work to do.
-		// (The shared Slab chunk from EnsureChunk is reused here —
-		// SetExternalVectorsChunk just records the slice header, not
-		// a fresh allocation.)
-		extSlice := make([]float32, ChunkSize*dims)
-		for i := range extSlice {
-			extSlice[i] = float32(i)
-		}
-		require.NoError(t, g.SetExternalVectorsChunk(cID, extSlice, nil))
-	}
-	// Snapshot the heap so we only measure the delta from the clones.
-	runtime.GC()
-	base := heapAlloc()
-
-	// Measure: per-iter, do a full Clone and a ShallowStructuralClone,
-	// then release both. We track the deltas.
-	var fullTotal, shallowTotal uint64
-	for i := 0; i < perIter; i++ {
-		runtime.GC()
-		heapBefore[i*2] = heapAlloc()
-
-		clone := g.Clone()
-		heapAfter[i*2] = heapAlloc()
-		clone.Release()
-
-		heapBefore[i*2+1] = heapAlloc()
-		sclone := g.ShallowStructuralClone()
-		heapAfter[i*2+1] = heapAlloc()
-		sclone.Release()
-	}
-	_ = base
-
-	for i := 0; i < perIter; i++ {
-		fullTotal += heapAfter[i*2] - heapBefore[i*2]
-		shallowTotal += heapAfter[i*2+1] - heapBefore[i*2+1]
+		return total / perIter
 	}
 
-	t.Logf("Full Clone total delta:           %d bytes (avg %.1f bytes/iter)", fullTotal, float64(fullTotal)/perIter)
-	t.Logf("ShallowStructuralClone total delta: %d bytes (avg %.1f bytes/iter)", shallowTotal, float64(shallowTotal)/perIter)
-	t.Logf("Savings:                          %d bytes (%.1f%%)",
-		fullTotal-shallowTotal, 100*float64(fullTotal-shallowTotal)/float64(fullTotal))
+	full := measure((*GraphData).Clone)
+	shallow := measure((*GraphData).ShallowStructuralClone)
 
-	// The shallow clone should allocate at most 70% of the full clone.
-	// (Empirically the savings are ~75% on this workload; we leave
-	// 30% slack for allocator noise.)
-	assert.Less(t, shallowTotal, fullTotal*7/10,
-		"ShallowStructuralClone must use strictly less heap than full Clone")
+	t.Logf("Clone bytes/iter: %d, ShallowStructuralClone bytes/iter: %d, vector payload: %d",
+		full, shallow, uint64(payload))
 
-	g.Release()
+	// 10% of the payload leaves room for the structural slices and the
+	// allocator's slack while failing loudly if the vectors are copied again.
+	limit := uint64(payload) / 10
+	assert.Less(t, full, limit,
+		"Clone must share the immutable per-chunk vector arrays, not copy them")
+	assert.Less(t, shallow, limit,
+		"ShallowStructuralClone must share the immutable per-chunk vector arrays, not copy them")
+}
+
+// TestGraphData_Clone_SharesVectorArrays pins the sharing itself: a snapshot
+// taken between sub-batches must point at the same vector bytes, or the heap
+// assertion above could be satisfied by an empty graph.
+func TestGraphData_Clone_SharesVectorArrays(t *testing.T) {
+	dims := 64
+	g := NewGraphData(10, dims, false, false, -1, false, false, false, VectorTypeFloat32, false, false, false, 8, "test-clone-share", nil, false)
+	require.NotNil(t, g)
+
+	extSlice := make([]float32, ChunkSize*dims)
+	for i := range extSlice {
+		extSlice[i] = float32(i)
+	}
+	require.NoError(t, g.SetExternalVectorsChunk(0, extSlice, nil))
+
+	for name, clone := range map[string]func(*GraphData) *GraphData{
+		"Clone":                  (*GraphData).Clone,
+		"ShallowStructuralClone": (*GraphData).ShallowStructuralClone,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := clone(g)
+			require.NotNil(t, c)
+			defer c.Release()
+			require.Len(t, c.Vectors, 1)
+			require.NotNil(t, c.Vectors[0])
+			assert.Equal(t, uintptr(unsafe.Pointer(&g.Vectors[0][0])),
+				uintptr(unsafe.Pointer(&c.Vectors[0][0])),
+				"%s must share the Vectors[0] underlying array (~%d bytes)", name, ChunkSize*dims*4)
+			assert.Equal(t, len(g.Vectors[0]), len(c.Vectors[0]))
+			// The outer slice is still private, so replacing a chunk on the
+			// clone cannot be seen by the original.
+			assert.NotSame(t, unsafe.SliceData(g.Vectors), unsafe.SliceData(c.Vectors),
+				"%s must keep its own [][]float32 header array", name)
+		})
+	}
 }
 
 func heapAlloc() uint64 {

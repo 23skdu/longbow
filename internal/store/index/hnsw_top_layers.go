@@ -119,7 +119,7 @@ func (h *ArrowHNSW) GetNeighborsCombined(layer int, id uint32, maxGen uint64) []
 
 // GetNeighborsCombinedCached returns neighbors, using the provided DiskGraph cache if available.
 func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGraph, maxGen uint64) []uint32 {
-	if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+	if h.neighborCacheActive() && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
 		if cached, ok := h.neighborCache[layer].GetNeighbors(id); ok {
 			return cached
 		}
@@ -165,17 +165,36 @@ func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGra
 		}
 	}
 
-	if res != nil && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+	if res != nil && h.neighborCacheActive() && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
 		h.neighborCache[layer].SetNeighbors(id, res)
 	}
 
 	return res
 }
 
+// neighborCacheActive reports whether the adjacency read cache is worth using.
+//
+// Every adjacency write removes the target from the cache (AddConnectionsBatch,
+// AddConnection), so while an AddBatch is in flight the cache can only serve
+// entries that are already stale or about to be dropped, and every fill is a
+// copy the next write throws away. Over a 100k float32 ingest that was 740 MB
+// - 556 MB of list copies, 132 MB of list objects, 51 MB of chunk directories -
+// for a read path that is already zero-copy: the packed adjacency hands back a
+// window into the arena, not a fresh slice (roadmap Item 33).
+//
+// Reads made by a query that overlaps a build lose the cache for the duration.
+// They do not lose correctness: a reader that already holds a cached slice
+// keeps it, the list is copy-on-write, and a build's writes remove what they
+// change.
+func (h *ArrowHNSW) neighborCacheActive() bool {
+	return h.inAddBatch.Load() == 0
+}
+
 // GetNeighborsCombinedManual returns neighbors using the provided GraphData pointer.
 // This is critical for internal operations (like linkage) that operate on a local COW pointer.
 func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int, id uint32, buf []uint32, maxGen uint64) []uint32 {
-	if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+	cache := h.neighborCacheActive()
+	if cache && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
 		if cached, ok := h.neighborCache[layer].GetNeighbors(id); ok {
 			if buf != nil && cap(buf) >= len(cached) {
 				res := buf[:len(cached)]
@@ -235,7 +254,7 @@ func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int,
 		}
 	}
 
-	if res != nil && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+	if res != nil && cache && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
 		h.neighborCache[layer].SetNeighbors(id, res)
 	}
 
@@ -244,7 +263,7 @@ func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int,
 
 // GetNeighborsCombinedManualLocked returns neighbors while holding the node lock.
 func (h *ArrowHNSW) GetNeighborsCombinedManualLocked(data *types.GraphData, layer int, id uint32, buf []uint32, maxGen uint64) []uint32 {
-	if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+	if h.neighborCacheActive() && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
 		if cached, ok := h.neighborCache[layer].GetNeighbors(id); ok {
 			if buf != nil && cap(buf) >= len(cached) {
 				res := buf[:len(cached)]
@@ -305,7 +324,7 @@ func (h *ArrowHNSW) GetNeighborsCombinedManualLocked(data *types.GraphData, laye
 		}
 	}
 
-	if res != nil && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+	if res != nil && h.neighborCacheActive() && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
 		h.neighborCache[layer].SetNeighbors(id, res)
 	}
 

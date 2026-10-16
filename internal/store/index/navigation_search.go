@@ -882,7 +882,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				return &float32ToSQ8Computer{data: data, q: q, dims: len(q), h: h, squared: squared, maxGen: maxGen, minV: minV, scale: scale}
 			}
 
-			return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}
+			return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen, sctx: searchCtx}
 		}
 		maxGen := uint64(math.MaxUint64)
 		if searchCtx != nil {

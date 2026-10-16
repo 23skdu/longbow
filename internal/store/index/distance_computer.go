@@ -609,6 +609,13 @@ type float32ToFloat32Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
+	// sctx, when set, lends the batch scratch to the pooled search context
+	// instead of owning it. The computer itself is still per-search - two of
+	// them can be live on one context at once, so a single reusable slot would
+	// be wrong - but the scratch does not escape ComputeBatch, so it can be
+	// shared. Same arrangement the complex128 computer already uses
+	// (roadmap Item 33).
+	sctx      *ArrowSearchContext
 	batchVecs [][]float32
 }
 
@@ -670,10 +677,17 @@ func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]
 		}
 	}
 
-	if cap(c.batchVecs) < len(ids) {
-		c.batchVecs = make([][]float32, len(ids))
+	if c.sctx != nil {
+		if cap(c.sctx.batchVecsFloat32) < len(ids) {
+			c.sctx.batchVecsFloat32 = make([][]float32, len(ids))
+		}
+		c.batchVecs = c.sctx.batchVecsFloat32[:len(ids)]
+	} else {
+		if cap(c.batchVecs) < len(ids) {
+			c.batchVecs = make([][]float32, len(ids))
+		}
+		c.batchVecs = c.batchVecs[:len(ids)]
 	}
-	c.batchVecs = c.batchVecs[:len(ids)]
 
 	// Collect indices of vectors that need to be loaded from disk
 	var diskLoads []int

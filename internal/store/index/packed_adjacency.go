@@ -388,7 +388,7 @@ func (pa *PackedAdjacency) Unlock(id uint32) {
 }
 
 // UpdateNeighbors modifies a node's neighbor list using a transformation function.
-func (pa *PackedAdjacency) UpdateNeighbors(id uint32, fn func(old []uint32) []uint32) error {
+func (pa *PackedAdjacency) UpdateNeighbors(id uint32, applier types.NeighborApplier) error {
 	// Use striped lock to prevent O(N^2) lock-free retry storms when fn() is expensive
 	pa.Lock(id)
 	defer pa.Unlock(id)
@@ -407,7 +407,7 @@ func (pa *PackedAdjacency) UpdateNeighbors(id uint32, fn func(old []uint32) []ui
 		oldRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
 		old := pa.neighborArena.Get(oldRef)
 
-		new := fn(old)
+		new := applier.ApplyNeighbors(old)
 		if new == nil {
 			return nil // No change requested
 		}

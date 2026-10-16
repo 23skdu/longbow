@@ -104,43 +104,38 @@ func (g *GraphData) Clone() *GraphData {
 		}
 	}
 
-	// Deep copy Vectors (Slice of slices)
+	// Share the per-chunk vector arrays instead of copying them (roadmap Item
+	// 33). A 100k float32 dim-128 ingest cloned the vector arena once per
+	// sub-batch: 756 MB of the 4.1 GB it allocated, for bytes that never
+	// change.
+	//
+	// The outer [][]float32 is still fresh, so SetExternalVectorsChunk on one
+	// snapshot replaces only that snapshot's own slot. The per-chunk arrays are
+	// shared because nothing writes into them after publication: the only
+	// writers replace the whole slice (SetExternalVectorsChunk,
+	// SetZeroCopyMapping), and the modern write path goes through the typed
+	// arenas and their offsets rather than through Vectors[i]. That is the
+	// argument ShallowStructuralClone already makes, and it is now the one the
+	// hot path relies on.
 	if g.Vectors != nil {
 		newG.Vectors = make([][]float32, len(g.Vectors))
-		for i := range g.Vectors {
-			if g.Vectors[i] != nil {
-				newG.Vectors[i] = make([]float32, len(g.Vectors[i]))
-				copy(newG.Vectors[i], g.Vectors[i])
-			}
-		}
+		copy(newG.Vectors, g.Vectors)
 	}
 	if g.VectorsFloat64 != nil {
 		newG.VectorsFloat64 = make([][]float64, len(g.VectorsFloat64))
-		for i := range g.VectorsFloat64 {
-			if g.VectorsFloat64[i] != nil {
-				newG.VectorsFloat64[i] = make([]float64, len(g.VectorsFloat64[i]))
-				copy(newG.VectorsFloat64[i], g.VectorsFloat64[i])
-			}
-		}
+		copy(newG.VectorsFloat64, g.VectorsFloat64)
 	}
 	if g.VectorsComplex64 != nil {
 		newG.VectorsComplex64 = make([][]complex64, len(g.VectorsComplex64))
-		for i := range g.VectorsComplex64 {
-			if g.VectorsComplex64[i] != nil {
-				newG.VectorsComplex64[i] = make([]complex64, len(g.VectorsComplex64[i]))
-				copy(newG.VectorsComplex64[i], g.VectorsComplex64[i])
-			}
-		}
+		copy(newG.VectorsComplex64, g.VectorsComplex64)
 	}
 	if g.VectorsComplex128 != nil {
 		newG.VectorsComplex128 = make([][]complex128, len(g.VectorsComplex128))
-		for i := range g.VectorsComplex128 {
-			if g.VectorsComplex128[i] != nil {
-				newG.VectorsComplex128[i] = make([]complex128, len(g.VectorsComplex128[i]))
-				copy(newG.VectorsComplex128[i], g.VectorsComplex128[i])
-			}
-		}
+		copy(newG.VectorsComplex128, g.VectorsComplex128)
 	}
+	// Complex128Magnitudes stays a copy: unlike the chunk arrays it is a flat
+	// slice indexed by global id and grown as nodes are added, so two snapshots
+	// sharing one array would append into each other.
 	if g.Complex128Magnitudes != nil {
 		newG.Complex128Magnitudes = make([]float64, len(g.Complex128Magnitudes))
 		copy(newG.Complex128Magnitudes, g.Complex128Magnitudes)

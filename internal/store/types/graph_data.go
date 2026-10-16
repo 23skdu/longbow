@@ -165,6 +165,21 @@ type graphFallback interface {
 }
 
 // PackedNeighbors interface for graph adjacency management with atomic support.
+// NeighborApplier computes a node's next neighbour list from its current one.
+//
+// It is an interface rather than a func because of who calls it: bulk linkage
+// runs UpdateNeighbors once per node plus once per reverse link, and a closure
+// capturing the target, the sources, the limits and the pooled context is
+// heap-allocated on every one of those calls. An applier can live on the
+// caller's pooled search context instead, where it is reused (roadmap Item 33).
+//
+// Apply may be called more than once for one update - the packed path retries
+// on a lost CAS - so an implementation must derive its result from old and its
+// own inputs alone.
+type NeighborApplier interface {
+	ApplyNeighbors(old []uint32) []uint32
+}
+
 type PackedNeighbors interface {
 	// GetNeighbors returns the list of neighbor IDs for a given node.
 	GetNeighbors(id uint32) ([]uint32, bool)
@@ -190,8 +205,8 @@ type PackedNeighbors interface {
 	Lock(id uint32)
 	// Unlock releases a node-specific lock.
 	Unlock(id uint32)
-	// UpdateNeighbors performs an atomic read-modify-write update using a callback.
-	UpdateNeighbors(id uint32, fn func(old []uint32) []uint32) error
+	// UpdateNeighbors performs an atomic read-modify-write update using an applier.
+	UpdateNeighbors(id uint32, applier NeighborApplier) error
 	// GetNeighborsWithGen returns the neighbor list for a node with generation isolation.
 	GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint32, bool)
 	// GetNeighborsF16WithGen returns neighbors and their distances with generation isolation.

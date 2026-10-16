@@ -85,7 +85,7 @@ type ArrowHNSW struct {
 	oopqEncoder      any                       // Accepts *pq.PQEncoder or *pq.OPQEncoder (Issue 4: Use new OPQ)
 	tqRuntime        atomic.Pointer[tqRuntime] // TurboQuant encoder + computer, published as one unit
 	searchPool       *ArrowSearchContextPool
-	candidatePool    sync.Pool
+	candidatePool    candidateFreeList
 
 	name                   string
 	hotpath                hotpathMetrics
@@ -220,17 +220,12 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		insertPool:           NewInsertContextPool(),
 		externalIDIndex:      make(map[uint64]uint32),
 		internalToExternalID: make(map[uint32]uint64),
-		candidatePool: sync.Pool{
-			New: func() any {
-				s := make([]types.Candidate, 0, config.EfConstruction)
-				return &s
-			},
-		},
-		locationStore:   NewChunkedLocationStore(),
-		deleted:         roaring.New(),
-		levelMultiplier: 1.0 / math.Log(float64(config.M)),
-		topLayerManager: NewTopLayerManager(config.LockFreeThreshold),
-		topo:            topo,
+		candidatePool:        candidateFreeList{maxItems: candidateFreeListMaxItems, maxCap: candidateFreeListMaxCap},
+		locationStore:        NewChunkedLocationStore(),
+		deleted:              roaring.New(),
+		levelMultiplier:      1.0 / math.Log(float64(config.M)),
+		topLayerManager:      NewTopLayerManager(config.LockFreeThreshold),
+		topo:                 topo,
 	}
 	for i := 0; i < types.ArrowMaxLayers; i++ {
 		h.neighborCache[i] = NewLockFreeNeighborCache()
@@ -495,14 +490,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 
 // getCandidateSlice retrieves a pooled candidate slice.
 func (h *ArrowHNSW) getCandidateSlice(capacity int) []types.Candidate {
-	ptr := h.candidatePool.Get().(*[]types.Candidate)
-	s := *ptr
-	if cap(s) < capacity {
-		s = make([]types.Candidate, 0, capacity)
-	} else {
-		s = s[:0]
-	}
-	return s
+	return h.candidatePool.get(capacity)
 }
 
 // putCandidateSlice returns a slice obtained from getCandidateSlice to the pool.
@@ -515,7 +503,73 @@ func (h *ArrowHNSW) putCandidateSlice(s []types.Candidate) {
 	if s == nil {
 		return
 	}
-	h.candidatePool.Put(&s)
+	h.candidatePool.put(s)
+}
+
+// candidateFreeList is a bounded free list of candidate slices.
+//
+// It replaced a sync.Pool, which is the wrong shape for this workload: a
+// sync.Pool drops everything it holds on every GC cycle, and a bulk ingest
+// allocates fast enough that it was empty almost every time. Over a 100k
+// float32 ingest that cost 891 MB of efConstruction-sized slices - the largest
+// single allocation site in the build - and Put(&s) allocated a fresh pointer
+// on every return besides.
+//
+// The list is bounded in both count and slice size so it retains a working set
+// rather than growing with the build, and it holds its own mutex rather than
+// borrowing one: the critical section is a slice header pop or push.
+type candidateFreeList struct {
+	mu       sync.Mutex
+	free     [][]types.Candidate
+	maxItems int
+	maxCap   int
+}
+
+const (
+	// A candidate slice wider than this is one nobody asked for: keeping it
+	// would retain memory for the rest of the process to save one
+	// allocation.
+	candidateFreeListMaxCap = 8192
+	// A sub-batch holds one candidate slice per node alive until it has been
+	// linked - 4096 of them at layer 0 of a 250k build - so a list shorter
+	// than a sub-batch is empty from the moment it starts and can only
+	// recycle across sub-batches. This is sized for that: at efConstruction
+	// 200 it retains a few MB.
+	candidateFreeListMaxItems = 4096
+)
+
+func (f *candidateFreeList) get(capacity int) []types.Candidate {
+	if capacity <= 0 {
+		capacity = 1
+	}
+	f.mu.Lock()
+	n := len(f.free)
+	if n == 0 {
+		f.mu.Unlock()
+		return make([]types.Candidate, 0, capacity)
+	}
+	s := f.free[n-1]
+	f.free[n-1] = nil
+	f.free = f.free[:n-1]
+	f.mu.Unlock()
+	if cap(s) < capacity {
+		// Too narrow for this caller: hand it a right-sized one and let the
+		// narrow slice go, rather than growing this one for a size only one
+		// caller needs.
+		return make([]types.Candidate, 0, capacity)
+	}
+	return s[:0]
+}
+
+func (f *candidateFreeList) put(s []types.Candidate) {
+	if cap(s) > f.maxCap {
+		return
+	}
+	f.mu.Lock()
+	if len(f.free) < f.maxItems {
+		f.free = append(f.free, s[:0])
+	}
+	f.mu.Unlock()
 }
 
 // SetDisableNodeCountMetric prevents this ArrowHNSW from reporting HNSWNodeCount.

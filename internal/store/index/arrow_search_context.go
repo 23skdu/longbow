@@ -60,6 +60,16 @@ func (h *CandidateHeap) PopAndReturn() (types.Candidate, bool) {
 	return heap.Pop(h).(types.Candidate), true
 }
 
+// CandidatesMinHeap returns the frontier candidate min-heap adapter backed by ctx.candidates.
+func (ctx *ArrowSearchContext) CandidatesMinHeap() *MinCandidateHeapAdapter {
+	return (*MinCandidateHeapAdapter)(&ctx.candidates)
+}
+
+// ResultSetMaxHeap returns the result set max-heap adapter backed by ctx.resultSet.
+func (ctx *ArrowSearchContext) ResultSetMaxHeap() *MaxCandidateHeapAdapter {
+	return (*MaxCandidateHeapAdapter)(&ctx.resultSet)
+}
+
 // ArrowSearchContext holds pre-allocated buffers for Arrow-based HNSW search operations
 // to minimize allocation overhead during high-frequency searches.
 type ArrowSearchContext struct {

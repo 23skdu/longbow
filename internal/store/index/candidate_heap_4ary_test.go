@@ -1,6 +1,7 @@
 package index
 
 import (
+	"fmt"
 	"math/rand"
 	"sort"
 	"testing"
@@ -548,3 +549,50 @@ func TestCandidateHeapAdapter_NoAllocations(t *testing.T) {
 		t.Fatalf("max adapter allocated %v times per push/pop, want 0", maxAllocs)
 	}
 }
+
+func TestCandidateHeapAdapter_InsertOrReplace(t *testing.T) {
+	rnd := rand.New(rand.NewSource(12345))
+	const total = 500
+	cands := uniqueShuffledCands(rnd, total)
+
+	for _, limit := range []int{1, 10, 64, 128} {
+		t.Run(fmt.Sprintf("limit=%d", limit), func(t *testing.T) {
+			h := make(MaxCandidateHeapAdapter, 0, limit)
+			for _, c := range cands {
+				h.InsertOrReplace(c, limit)
+				checkMax4Ary(t, h)
+				if h.Len() > limit {
+					t.Fatalf("heap size %d exceeded limit %d", h.Len(), limit)
+				}
+			}
+
+			// Reference: sort all cands ascending by Dist, take the first `limit`
+			ref := refSorted(cands, true)
+			if len(ref) > limit {
+				ref = ref[:limit]
+			}
+
+			// Draining max-heap yields elements from largest to smallest among the top `limit`
+			drained := make([]types.Candidate, 0, limit)
+			for h.Len() > 0 {
+				drained = append(drained, h.PopCandidate())
+			}
+
+			if len(drained) != len(ref) {
+				t.Fatalf("drained %d items, want %d", len(drained), len(ref))
+			}
+
+			// Reverse drained to get ascending order
+			for i, j := 0, len(drained)-1; i < j; i, j = i+1, j-1 {
+				drained[i], drained[j] = drained[j], drained[i]
+			}
+
+			for i := range ref {
+				if drained[i].ID != ref[i].ID || drained[i].Dist != ref[i].Dist {
+					t.Fatalf("at index %d: got candidate %+v, want %+v", i, drained[i], ref[i])
+				}
+			}
+		})
+	}
+}
+

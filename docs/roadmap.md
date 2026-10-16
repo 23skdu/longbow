@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
 **Last updated**: 2026-10-16  
-**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 4–7, 14–17, 25–29, 31, 33, 34) have been verified and removed to maintain execution clarity.
+**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 4–7, 9, 14–17, 25–29, 31, 33, 34) have been verified and removed to maintain execution clarity.
 
 ---
 
@@ -10,22 +10,21 @@
 | Pri | # | Item | Area | Impact / Rationale |
 |:---|:---|:---|:---|:---|
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
-| **P1** | **9** | **Inlined 4-Ary Candidate Heap & Branchless Struct Swapping** | Algorithmic | Candidate heap maintenance (`down`, `Less`, `Swap`) accounts for ~15.2% combined flat time during beam search. Inlined 4-ary candidate heap eliminates slice copies and bounds checks. |
 | **P1** | **8** | **Lock-Free Adjacency Updates & NUMA Worker Queues** | Concurrency / Ingest | Mutex lock profiling shows 69.10% flat lock delay in `sync.(*Mutex).Unlock`, with `StartIndexingWorkers` contributing 53.8% cumulative lock delay. Migrate to generation-stamped CAS adjacency lists and sharded NUMA worker queues. |
 | **P1** | **12** | **Lock-Free Concurrent Map for Metadata & ID Translation** | Concurrency / Memory | Copy-on-Write cloning in `MapRCU` triggers >1,200 MB of heap allocations during streaming ingestion batches due to repeated `make(map[K]V)` allocations. Replace with chunked Trie or lock-free hash map. |
 | **P1** | **13** | **SIMD Fused BM25 Term Scoring & Posting List Intersection** | Sparse / Ranking | BM25 multi-term queries evaluate posting lists sequentially with map lookups. Vectorize posting list intersection using AVX-512 `VFMADD` instructions across contiguous document length arrays. |
+| **P1** | **10** | **Iterative Stack Traversal for Geospatial Quadtree Queries** | Geospatial / Algorithmic | `(*Quadtree).queryBoxRecursive` and `SearchRadius` allocate temporary slices at each recursive quadrant subdivision (~1,985 MB cumulative allocations). Replace with iterative fixed-depth stack. |
 
 ```mermaid
 graph TD
     subgraph P1["Top 5 Priorities"]
         I32["32: Re-cut Baselines & Wire Index-Time CI Gate"]
-        I9["9: Inlined 4-Ary Candidate Heap"]
         I8["8: Lock-Free Adjacency & NUMA Worker Queues"]
         I12["12: Lock-Free Map for Metadata & IDs"]
         I13["13: SIMD Fused BM25 Posting Intersection"]
+        I10["10: Iterative Quadtree Stack Traversal"]
     end
     subgraph P2["Algorithmic & Storage Optimizations"]
-        I10["10: Iterative Quadtree Stack Traversal"]
         I3["3: Pooled Disk Row Buffers"]
         I2["2: ARM NEON Dequant Assembly"]
         I11["11: Hardware-Aware Dynamic EMLGo Thresholds"]
@@ -40,10 +39,10 @@ graph TD
         I23["23: Declarative Compose/Helm Provisioning"]
     end
 
-    I32 --> I9
-    I9 --> I8
+    I32 --> I8
     I8 --> I12
     I12 --> I13
+    I13 --> I10
     I18 --> I19
     I19 --> I21
     I20 --> I22
@@ -65,13 +64,6 @@ graph TD
 ---
 
 ## 3. P2 — Algorithmic & Storage Optimizations
-
-### Item 9: Inlined 4-Ary Candidate Heap & Branchless Struct Swapping
-- **Status**: **OPEN**
-- **Files**: `internal/store/index/candidate_heap.go`, `internal/store/index/arrow_search_context.go`
-- **State**: Candidate heap maintenance (`down`, `Less`, `Swap`) accounts for ~15.2% combined flat time during beam search. Value-receiver calls incur slice copies and boundary checks.
-- **Plan**: Implement an inlined 4-ary candidate heap with branchless struct swapping and cache-aligned candidate entries directly in `ArrowSearchContext`.
-- **Success Criteria**: Priority queue operation overhead eliminated; graph search layer traversal accelerates by 8%–12%.
 
 ### Item 8: Lock-Free Adjacency Updates & NUMA-Local Index Worker Queueing
 - **Status**: **OPEN**
@@ -177,6 +169,7 @@ graph TD
 | **6/27** | AVX-512 VNNI & Saturated Int8/Uint8 Dispatch | 2026-10-16 | `c204cea0` | Native 64-byte `VPDPBUSD` dot product and saturated AVX-512 int8/uint8 kernels in `int8_kernels_avx512_amd64.s`; wired in dispatch table for emerald, granite, and avx512 tiers; parity verified with 100% bit identity. |
 | **7** | Direct Base Pointer Caching in SearchContext for SlabArena & TypedArena | 2026-10-16 | `89ecd910` | Direct chunk slice & base pointer cache with generational epoch bump in `ArrowSearchContext`; zero-division vector access across Float32, Float64, Int8, Uint8, Float16, Complex128, TQ, and SQ8. |
 | **25/26** | TurboQuant 4-Lane Polar Reconstruction & Cross-Hop Caching | 2026-10-16 | `HEAD` | Native Plan 9 AVX2 kernel `tqPolarReconstructLevelAVX2Kernel` with 4-lane parallel decoding; branchless QJL correction; 2-way associative ephemeral cross-hop reconstruction cache in `ArrowSearchContext`; 42%–50% latency drop on TurboQuant distance computation with 100% bit identity. |
+| **9** | Inlined 4-Ary Candidate Heap & Branchless Struct Swapping | 2026-10-16 | `HEAD` | Branchless 4-way child selection with cmov comparisons, single-pass shifting in `up`/`down` eliminating redundant swaps, `ReplaceCandidate` and `InsertOrReplace` root replacement; SearchLayerTrim latency reduced 72%–84% (19.8 ns → 3.1 ns at ef=64; 25.9 ns → 7.2 ns at ef=256); wired into `search_float32`, `search_float64`, and `distance_dispatch`. |
 | **4** | BM25 Inverted Index COW Elimination | 2026-10-15 | `5514faf9` | `BM25InvertedIndex.AddBatch` and `BM25ArenaIndex` eliminate per-doc map copying; >12 GB heap churn removed during ingest. |
 | **5** | Native L2-Squared Integer SIMD Kernels | 2026-10-15 | `cb6c2712` | Native AVX-512 `l2SquaredInt8AVX512Kernel` implemented; eliminates redundant terminal `VSQRTSS` and `d * d` squaring. |
 | **14** | Ingestion Zero-Copy & Timer Elimination | 2026-10-11 | `1b3927e4` | Geometric slice growth in `LockFreeSlice.Append`; wake channels replace polling timers. |

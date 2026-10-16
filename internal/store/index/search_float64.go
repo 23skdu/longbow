@@ -67,8 +67,8 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 	// search is unfiltered.
 	fm := ctx.filterMask
 
-	minHeap := (*MinCandidateHeapAdapter)(&ctx.candidates)
-	resultSetAdapter := (*MaxCandidateHeapAdapter)(&ctx.resultSet)
+	minHeap := ctx.CandidatesMinHeap()
+	resultSetAdapter := ctx.ResultSetMaxHeap()
 
 	epCand := types.Candidate{ID: entryPoint, Dist: epDist}
 	minHeap.PushCandidate(epCand)
@@ -218,19 +218,10 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 								continue
 							}
 
-							if len(ctx.resultSet) > 0 {
-								furthest := ctx.resultSet[0]
-								if ctx.resultSet.Len() < ef || d < furthest.Dist {
-									resultSetAdapter.PushCandidate(cand)
-									if ctx.resultSet.Len() > ef {
-										resultSetAdapter.PopCandidate()
-									}
-								}
-							} else {
-								resultSetAdapter.PushCandidate(cand)
-							}
+							resultSetAdapter.InsertOrReplace(cand, ef)
 						}
 					}
+
 				}
 			}
 		} else {
@@ -287,18 +278,7 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 								continue
 							}
 
-							if len(ctx.resultSet) > 0 {
-								furthest := ctx.resultSet[0]
-
-								if ctx.resultSet.Len() < ef || d < furthest.Dist {
-									resultSetAdapter.PushCandidate(cand)
-									if ctx.resultSet.Len() > ef {
-										resultSetAdapter.PopCandidate()
-									}
-								}
-							} else {
-								resultSetAdapter.PushCandidate(cand)
-							}
+							resultSetAdapter.InsertOrReplace(cand, ef)
 						}
 					}
 				}

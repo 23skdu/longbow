@@ -38,50 +38,110 @@ func (h *MinCandidateHeapAdapter) PushCandidate(c types.Candidate) {
 
 // Zero-allocation Pop
 func (h *MinCandidateHeapAdapter) PopCandidate() types.Candidate {
-	n := len(*h)
-	c := (*h)[0]
-	(*h)[0] = (*h)[n-1]
-	*h = (*h)[:n-1]
-	if len(*h) > 0 {
-		h.down(0, len(*h))
+	s := *h
+	n := len(s)
+	c := s[0]
+	s[0] = s[n-1]
+	*h = s[:n-1]
+	if n > 1 {
+		h.down(0, n-1)
 	}
 	return c
 }
 
+// ReplaceCandidate replaces the root candidate with c and restores the heap property in a single pass.
+func (h *MinCandidateHeapAdapter) ReplaceCandidate(c types.Candidate) {
+	s := *h
+	if len(s) == 0 {
+		*h = append(s, c)
+		return
+	}
+	s[0] = c
+	h.down(0, len(s))
+}
+
 func (h *MinCandidateHeapAdapter) up(j int) {
+	s := *h
+	if j <= 0 || j >= len(s) {
+		return
+	}
+	target := s[j]
+	targetDist := target.Dist
 	for j > 0 {
-		i := (j - 1) / 4
-		if !h.Less(j, i) {
+		parent := (j - 1) / 4
+		if s[parent].Dist <= targetDist {
 			break
 		}
-		h.Swap(i, j)
-		j = i
+		s[j] = s[parent]
+		j = parent
 	}
+	s[j] = target
 }
 
 func (h *MinCandidateHeapAdapter) down(i0, n int) bool {
+	s := *h
+	if i0 < 0 || i0 >= n || n > len(s) {
+		return false
+	}
+	target := s[i0]
+	targetDist := target.Dist
 	i := i0
 	for {
 		j1 := 4*i + 1
-		if j1 >= n || j1 < 0 {
+		if j1 >= n {
 			break
 		}
-		jEnd := j1 + 4
-		if jEnd > n {
-			jEnd = n
-		}
-		best := j1
-		for j := j1 + 1; j < jEnd; j++ {
-			if h.Less(j, best) {
-				best = j
+		var best int
+		var bestDist float32
+		if j1+3 < n {
+			// All 4 children exist. Branchless/unrolled 4-way minimum.
+			d0 := s[j1].Dist
+			d1 := s[j1+1].Dist
+			d2 := s[j1+2].Dist
+			d3 := s[j1+3].Dist
+
+			b0 := j1
+			if d1 < d0 {
+				b0 = j1 + 1
+				d0 = d1
+			}
+			b1 := j1 + 2
+			if d3 < d2 {
+				b1 = j1 + 3
+				d2 = d3
+			}
+			best = b0
+			bestDist = d0
+			if d2 < d0 {
+				best = b1
+				bestDist = d2
+			}
+		} else {
+			// 1, 2, or 3 trailing children.
+			best = j1
+			bestDist = s[j1].Dist
+			k := n - j1
+			if k > 1 {
+				if d1 := s[j1+1].Dist; d1 < bestDist {
+					best = j1 + 1
+					bestDist = d1
+				}
+				if k > 2 {
+					if d2 := s[j1+2].Dist; d2 < bestDist {
+						best = j1 + 2
+						bestDist = d2
+					}
+				}
 			}
 		}
-		if !h.Less(best, i) {
+
+		if targetDist <= bestDist {
 			break
 		}
-		h.Swap(i, best)
+		s[i] = s[best]
 		i = best
 	}
+	s[i] = target
 	return i > i0
 }
 
@@ -101,49 +161,125 @@ func (h *MaxCandidateHeapAdapter) PushCandidate(c types.Candidate) {
 
 // Zero-allocation Pop
 func (h *MaxCandidateHeapAdapter) PopCandidate() types.Candidate {
-	n := len(*h)
-	c := (*h)[0]
-	(*h)[0] = (*h)[n-1]
-	*h = (*h)[:n-1]
-	if len(*h) > 0 {
-		h.down(0, len(*h))
+	s := *h
+	n := len(s)
+	c := s[0]
+	s[0] = s[n-1]
+	*h = s[:n-1]
+	if n > 1 {
+		h.down(0, n-1)
 	}
 	return c
 }
 
+// ReplaceCandidate replaces the root candidate with c and restores the heap property in a single pass.
+func (h *MaxCandidateHeapAdapter) ReplaceCandidate(c types.Candidate) {
+	s := *h
+	if len(s) == 0 {
+		*h = append(s, c)
+		return
+	}
+	s[0] = c
+	h.down(0, len(s))
+}
+
+// InsertOrReplace inserts c if len < limit, or replaces the root if c.Dist < root.Dist.
+// Returns true if c was added/retained, false if discarded.
+func (h *MaxCandidateHeapAdapter) InsertOrReplace(c types.Candidate, limit int) bool {
+	s := *h
+	if len(s) < limit {
+		h.PushCandidate(c)
+		return true
+	}
+	if c.Dist < s[0].Dist {
+		s[0] = c
+		h.down(0, len(s))
+		return true
+	}
+	return false
+}
+
 func (h *MaxCandidateHeapAdapter) up(j int) {
+	s := *h
+	if j <= 0 || j >= len(s) {
+		return
+	}
+	target := s[j]
+	targetDist := target.Dist
 	for j > 0 {
-		i := (j - 1) / 4
-		if !h.Less(j, i) {
+		parent := (j - 1) / 4
+		if s[parent].Dist >= targetDist {
 			break
 		}
-		h.Swap(i, j)
-		j = i
+		s[j] = s[parent]
+		j = parent
 	}
+	s[j] = target
 }
 
 func (h *MaxCandidateHeapAdapter) down(i0, n int) bool {
+	s := *h
+	if i0 < 0 || i0 >= n || n > len(s) {
+		return false
+	}
+	target := s[i0]
+	targetDist := target.Dist
 	i := i0
 	for {
 		j1 := 4*i + 1
-		if j1 >= n || j1 < 0 {
+		if j1 >= n {
 			break
 		}
-		jEnd := j1 + 4
-		if jEnd > n {
-			jEnd = n
-		}
-		best := j1
-		for j := j1 + 1; j < jEnd; j++ {
-			if h.Less(j, best) {
-				best = j
+		var best int
+		var bestDist float32
+		if j1+3 < n {
+			// All 4 children exist. Branchless/unrolled 4-way maximum.
+			d0 := s[j1].Dist
+			d1 := s[j1+1].Dist
+			d2 := s[j1+2].Dist
+			d3 := s[j1+3].Dist
+
+			b0 := j1
+			if d1 > d0 {
+				b0 = j1 + 1
+				d0 = d1
+			}
+			b1 := j1 + 2
+			if d3 > d2 {
+				b1 = j1 + 3
+				d2 = d3
+			}
+			best = b0
+			bestDist = d0
+			if d2 > d0 {
+				best = b1
+				bestDist = d2
+			}
+		} else {
+			// 1, 2, or 3 trailing children.
+			best = j1
+			bestDist = s[j1].Dist
+			k := n - j1
+			if k > 1 {
+				if d1 := s[j1+1].Dist; d1 > bestDist {
+					best = j1 + 1
+					bestDist = d1
+				}
+				if k > 2 {
+					if d2 := s[j1+2].Dist; d2 > bestDist {
+						best = j1 + 2
+						bestDist = d2
+					}
+				}
 			}
 		}
-		if !h.Less(best, i) {
+
+		if targetDist >= bestDist {
 			break
 		}
-		h.Swap(i, best)
+		s[i] = s[best]
 		i = best
 	}
+	s[i] = target
 	return i > i0
 }

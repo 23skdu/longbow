@@ -292,6 +292,23 @@ func BenchmarkCandidateHeapAdapter_SearchLayerTrim(b *testing.B) {
 				}
 				reportElem(b, 1)
 			})
+			b.Run("4ary_replace", func(b *testing.B) {
+				h := make(MaxCandidateHeapAdapter, 0, ef)
+				k := 0
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if k == len(pool) {
+						for h.Len() > 0 {
+							benchHeapSink = h.PopCandidate()
+						}
+						k = 0
+					}
+					h.InsertOrReplace(pool[k], ef)
+					k++
+				}
+				reportElem(b, 1)
+			})
 			b.Run("binary", func(b *testing.B) {
 				h := make(binaryMaxAdapter, 0, ef+1)
 				k := 0

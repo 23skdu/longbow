@@ -96,6 +96,13 @@ jobs:
           fi
           exit "$rc"
 
+      - name: Enforce index-time regression gate (Item 32)
+        run: |
+          python3 scripts/check_index_regression.py \
+            --verdict data/perf_logs/ab_verdict.json \
+            --threshold 5.0 \
+            --mode index
+
       - name: Upload A/B artifacts
         if: always()
         uses: actions/upload-artifact@v7

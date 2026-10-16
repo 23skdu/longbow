@@ -197,7 +197,8 @@
           "wire_dtype": "float32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T15:53:26.654030"
+          "timestamp": "2026-10-15T15:53:26.654030",
+          "config_seed": 1582972669052839248
         },
         {
           "dim": 128,
@@ -309,7 +310,8 @@
           "wire_dtype": "float64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T15:54:24.156153"
+          "timestamp": "2026-10-15T15:54:24.156153",
+          "config_seed": 835370969160382070
         },
         {
           "dim": 128,
@@ -421,7 +423,8 @@
           "wire_dtype": "float16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T15:55:07.904901"
+          "timestamp": "2026-10-15T15:55:07.904901",
+          "config_seed": 1351797188455139628
         },
         {
           "dim": 128,
@@ -533,7 +536,8 @@
           "wire_dtype": "int8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T15:55:42.709802"
+          "timestamp": "2026-10-15T15:55:42.709802",
+          "config_seed": 1629201777106066767
         },
         {
           "dim": 128,
@@ -645,7 +649,8 @@
           "wire_dtype": "int16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T15:56:22.556653"
+          "timestamp": "2026-10-15T15:56:22.556653",
+          "config_seed": 2539554083701662422
         },
         {
           "dim": 128,
@@ -757,7 +762,8 @@
           "wire_dtype": "int32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T15:57:08.941270"
+          "timestamp": "2026-10-15T15:57:08.941270",
+          "config_seed": 2615980256565106397
         },
         {
           "dim": 128,
@@ -869,7 +875,8 @@
           "wire_dtype": "int64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T15:58:03.025590"
+          "timestamp": "2026-10-15T15:58:03.025590",
+          "config_seed": 2061871510974245088
         },
         {
           "dim": 128,
@@ -981,7 +988,8 @@
           "wire_dtype": "uint8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T15:58:33.987923"
+          "timestamp": "2026-10-15T15:58:33.987923",
+          "config_seed": 3808111252040984345
         },
         {
           "dim": 128,
@@ -1093,7 +1101,8 @@
           "wire_dtype": "uint16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T15:59:05.894661"
+          "timestamp": "2026-10-15T15:59:05.894661",
+          "config_seed": 958388379963770506
         },
         {
           "dim": 128,
@@ -1205,7 +1214,8 @@
           "wire_dtype": "uint32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T15:59:42.415559"
+          "timestamp": "2026-10-15T15:59:42.415559",
+          "config_seed": 3378402444127435571
         },
         {
           "dim": 128,
@@ -1317,7 +1327,8 @@
           "wire_dtype": "uint64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:00:47.167497"
+          "timestamp": "2026-10-15T16:00:47.167497",
+          "config_seed": 2923396169897487091
         },
         {
           "dim": 128,
@@ -1429,7 +1440,8 @@
           "wire_dtype": "complex64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:01:27.334998"
+          "timestamp": "2026-10-15T16:01:27.334998",
+          "config_seed": 4261314110208864757
         },
         {
           "dim": 128,
@@ -1541,7 +1553,8 @@
           "wire_dtype": "complex128",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:02:10.359277"
+          "timestamp": "2026-10-15T16:02:10.359277",
+          "config_seed": 2233314688099195513
         },
         {
           "dim": 128,
@@ -1653,7 +1666,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 4,
           "seed": 42,
-          "timestamp": "2026-10-15T16:03:29.782736"
+          "timestamp": "2026-10-15T16:03:29.782736",
+          "config_seed": 1051274736262368413
         },
         {
           "dim": 128,
@@ -1765,7 +1779,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 8,
           "seed": 42,
-          "timestamp": "2026-10-15T16:04:49.212688"
+          "timestamp": "2026-10-15T16:04:49.212688",
+          "config_seed": 4581257849047860624
         }
       ],
       "completed_configs": [
@@ -2032,7 +2047,8 @@
           "wire_dtype": "float32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:05:40.724952"
+          "timestamp": "2026-10-15T16:05:40.724952",
+          "config_seed": 3807579485389625566
         },
         {
           "dim": 128,
@@ -2144,7 +2160,8 @@
           "wire_dtype": "float64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:06:18.058989"
+          "timestamp": "2026-10-15T16:06:18.058989",
+          "config_seed": 974671948463690040
         },
         {
           "dim": 128,
@@ -2256,7 +2273,8 @@
           "wire_dtype": "float16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:06:49.248237"
+          "timestamp": "2026-10-15T16:06:49.248237",
+          "config_seed": 487742931091458545
         },
         {
           "dim": 128,
@@ -2368,7 +2386,8 @@
           "wire_dtype": "int8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:07:14.905624"
+          "timestamp": "2026-10-15T16:07:14.905624",
+          "config_seed": 281555008901891165
         },
         {
           "dim": 128,
@@ -2480,7 +2499,8 @@
           "wire_dtype": "int16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:07:50.056596"
+          "timestamp": "2026-10-15T16:07:50.056596",
+          "config_seed": 640848545521659257
         },
         {
           "dim": 128,
@@ -2592,7 +2612,8 @@
           "wire_dtype": "int32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:08:26.904454"
+          "timestamp": "2026-10-15T16:08:26.904454",
+          "config_seed": 1967849552927031116
         },
         {
           "dim": 128,
@@ -2704,7 +2725,8 @@
           "wire_dtype": "int64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:09:28.695065"
+          "timestamp": "2026-10-15T16:09:28.695065",
+          "config_seed": 3525340902337940322
         },
         {
           "dim": 128,
@@ -2816,7 +2838,8 @@
           "wire_dtype": "uint8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:10:15.764180"
+          "timestamp": "2026-10-15T16:10:15.764180",
+          "config_seed": 4519082122537365550
         },
         {
           "dim": 128,
@@ -2928,7 +2951,8 @@
           "wire_dtype": "uint16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:11:03.521908"
+          "timestamp": "2026-10-15T16:11:03.521908",
+          "config_seed": 2841646910046897784
         },
         {
           "dim": 128,
@@ -3040,7 +3064,8 @@
           "wire_dtype": "uint32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:11:53.278314"
+          "timestamp": "2026-10-15T16:11:53.278314",
+          "config_seed": 665408037552892803
         },
         {
           "dim": 128,
@@ -3152,7 +3177,8 @@
           "wire_dtype": "uint64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:13:51.383910"
+          "timestamp": "2026-10-15T16:13:51.383910",
+          "config_seed": 3064033711420578486
         },
         {
           "dim": 128,
@@ -3264,7 +3290,8 @@
           "wire_dtype": "complex64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:14:44.449668"
+          "timestamp": "2026-10-15T16:14:44.449668",
+          "config_seed": 1417483392989417162
         },
         {
           "dim": 128,
@@ -3376,7 +3403,8 @@
           "wire_dtype": "complex128",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:15:35.827065"
+          "timestamp": "2026-10-15T16:15:35.827065",
+          "config_seed": 3042122117604389196
         },
         {
           "dim": 128,
@@ -3488,7 +3516,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 4,
           "seed": 42,
-          "timestamp": "2026-10-15T16:16:46.302436"
+          "timestamp": "2026-10-15T16:16:46.302436",
+          "config_seed": 3975501880378991107
         },
         {
           "dim": 128,
@@ -3600,7 +3629,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 8,
           "seed": 42,
-          "timestamp": "2026-10-15T16:18:22.931471"
+          "timestamp": "2026-10-15T16:18:22.931471",
+          "config_seed": 632112438346635685
         }
       ],
       "completed_configs": [
@@ -3867,7 +3897,8 @@
           "wire_dtype": "float32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:39:40.348270"
+          "timestamp": "2026-10-15T16:39:40.348270",
+          "config_seed": 2445568636867463644
         },
         {
           "dim": 128,
@@ -3979,7 +4010,8 @@
           "wire_dtype": "float64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:41:09.913223"
+          "timestamp": "2026-10-15T16:41:09.913223",
+          "config_seed": 391304097449533269
         },
         {
           "dim": 128,
@@ -4091,7 +4123,8 @@
           "wire_dtype": "float16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:41:53.040159"
+          "timestamp": "2026-10-15T16:41:53.040159",
+          "config_seed": 860501745768213906
         },
         {
           "dim": 128,
@@ -4203,7 +4236,8 @@
           "wire_dtype": "int8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:42:32.685695"
+          "timestamp": "2026-10-15T16:42:32.685695",
+          "config_seed": 2215554129261281795
         },
         {
           "dim": 128,
@@ -4315,7 +4349,8 @@
           "wire_dtype": "int16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:43:13.505936"
+          "timestamp": "2026-10-15T16:43:13.505936",
+          "config_seed": 1476036428537419248
         },
         {
           "dim": 128,
@@ -4427,7 +4462,8 @@
           "wire_dtype": "int32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:44:01.523403"
+          "timestamp": "2026-10-15T16:44:01.523403",
+          "config_seed": 772033592141313236
         },
         {
           "dim": 128,
@@ -4539,7 +4575,8 @@
           "wire_dtype": "int64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:45:14.165997"
+          "timestamp": "2026-10-15T16:45:14.165997",
+          "config_seed": 1940993720107365051
         },
         {
           "dim": 128,
@@ -4651,7 +4688,8 @@
           "wire_dtype": "uint8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:46:02.034633"
+          "timestamp": "2026-10-15T16:46:02.034633",
+          "config_seed": 2414923958256902344
         },
         {
           "dim": 128,
@@ -4763,7 +4801,8 @@
           "wire_dtype": "uint16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:46:59.252137"
+          "timestamp": "2026-10-15T16:46:59.252137",
+          "config_seed": 2375738854887269581
         },
         {
           "dim": 128,
@@ -4875,7 +4914,8 @@
           "wire_dtype": "uint32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:47:56.042251"
+          "timestamp": "2026-10-15T16:47:56.042251",
+          "config_seed": 1876124253886588659
         },
         {
           "dim": 128,
@@ -4987,7 +5027,8 @@
           "wire_dtype": "uint64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:49:17.302580"
+          "timestamp": "2026-10-15T16:49:17.302580",
+          "config_seed": 2215163162695985581
         },
         {
           "dim": 128,
@@ -5099,7 +5140,8 @@
           "wire_dtype": "complex64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:50:04.836246"
+          "timestamp": "2026-10-15T16:50:04.836246",
+          "config_seed": 347154674088886113
         },
         {
           "dim": 128,
@@ -5211,7 +5253,8 @@
           "wire_dtype": "complex128",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:50:55.337392"
+          "timestamp": "2026-10-15T16:50:55.337392",
+          "config_seed": 421947418272593029
         },
         {
           "dim": 128,
@@ -5323,7 +5366,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 4,
           "seed": 42,
-          "timestamp": "2026-10-15T16:52:33.556945"
+          "timestamp": "2026-10-15T16:52:33.556945",
+          "config_seed": 2360487896642339112
         },
         {
           "dim": 128,
@@ -5435,7 +5479,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 8,
           "seed": 42,
-          "timestamp": "2026-10-15T16:54:25.831127"
+          "timestamp": "2026-10-15T16:54:25.831127",
+          "config_seed": 180261982559048825
         }
       ],
       "completed_configs": [
@@ -5702,7 +5747,8 @@
           "wire_dtype": "float32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:55:15.944079"
+          "timestamp": "2026-10-15T16:55:15.944079",
+          "config_seed": 3411540724279699180
         },
         {
           "dim": 128,
@@ -5814,7 +5860,8 @@
           "wire_dtype": "float64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:56:02.433136"
+          "timestamp": "2026-10-15T16:56:02.433136",
+          "config_seed": 430164445672139447
         },
         {
           "dim": 128,
@@ -5926,7 +5973,8 @@
           "wire_dtype": "float16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:56:34.919651"
+          "timestamp": "2026-10-15T16:56:34.919651",
+          "config_seed": 3522769029364446802
         },
         {
           "dim": 128,
@@ -6038,7 +6086,8 @@
           "wire_dtype": "int8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:57:04.266061"
+          "timestamp": "2026-10-15T16:57:04.266061",
+          "config_seed": 3650888377177318255
         },
         {
           "dim": 128,
@@ -6150,7 +6199,8 @@
           "wire_dtype": "int16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:57:35.697617"
+          "timestamp": "2026-10-15T16:57:35.697617",
+          "config_seed": 2989254251425536096
         },
         {
           "dim": 128,
@@ -6262,7 +6312,8 @@
           "wire_dtype": "int32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:58:12.393670"
+          "timestamp": "2026-10-15T16:58:12.393670",
+          "config_seed": 3139813582129472623
         },
         {
           "dim": 128,
@@ -6374,7 +6425,8 @@
           "wire_dtype": "int64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:59:02.843975"
+          "timestamp": "2026-10-15T16:59:02.843975",
+          "config_seed": 692188521190354607
         },
         {
           "dim": 128,
@@ -6486,7 +6538,8 @@
           "wire_dtype": "uint8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T16:59:32.187339"
+          "timestamp": "2026-10-15T16:59:32.187339",
+          "config_seed": 1419012430201187506
         },
         {
           "dim": 128,
@@ -6598,7 +6651,8 @@
           "wire_dtype": "uint16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:00:03.196087"
+          "timestamp": "2026-10-15T17:00:03.196087",
+          "config_seed": 1555977021834583880
         },
         {
           "dim": 128,
@@ -6710,7 +6764,8 @@
           "wire_dtype": "uint32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:00:40.372240"
+          "timestamp": "2026-10-15T17:00:40.372240",
+          "config_seed": 2996954880387897955
         },
         {
           "dim": 128,
@@ -6822,7 +6877,8 @@
           "wire_dtype": "uint64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:01:45.533828"
+          "timestamp": "2026-10-15T17:01:45.533828",
+          "config_seed": 1248595792868917991
         },
         {
           "dim": 128,
@@ -6934,7 +6990,8 @@
           "wire_dtype": "complex64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:02:26.346821"
+          "timestamp": "2026-10-15T17:02:26.346821",
+          "config_seed": 4507095408682734672
         },
         {
           "dim": 128,
@@ -7046,7 +7103,8 @@
           "wire_dtype": "complex128",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:03:11.630414"
+          "timestamp": "2026-10-15T17:03:11.630414",
+          "config_seed": 1061206782704363394
         },
         {
           "dim": 128,
@@ -7158,7 +7216,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 4,
           "seed": 42,
-          "timestamp": "2026-10-15T17:04:51.474422"
+          "timestamp": "2026-10-15T17:04:51.474422",
+          "config_seed": 2029291390901103571
         },
         {
           "dim": 128,
@@ -7270,7 +7329,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 8,
           "seed": 42,
-          "timestamp": "2026-10-15T17:06:36.526821"
+          "timestamp": "2026-10-15T17:06:36.526821",
+          "config_seed": 107196589355232956
         }
       ],
       "completed_configs": [
@@ -7537,7 +7597,8 @@
           "wire_dtype": "float32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:08:35.203040"
+          "timestamp": "2026-10-15T17:08:35.203040",
+          "config_seed": 2295835630816175501
         },
         {
           "dim": 128,
@@ -7649,7 +7710,8 @@
           "wire_dtype": "float64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:10:31.903908"
+          "timestamp": "2026-10-15T17:10:31.903908",
+          "config_seed": 4002157332688991446
         },
         {
           "dim": 128,
@@ -7761,7 +7823,8 @@
           "wire_dtype": "float16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:11:47.328923"
+          "timestamp": "2026-10-15T17:11:47.328923",
+          "config_seed": 568305524532028290
         },
         {
           "dim": 128,
@@ -7873,7 +7936,8 @@
           "wire_dtype": "int8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:12:55.381912"
+          "timestamp": "2026-10-15T17:12:55.381912",
+          "config_seed": 498738336551729910
         },
         {
           "dim": 128,
@@ -7985,7 +8049,8 @@
           "wire_dtype": "int16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:14:10.355181"
+          "timestamp": "2026-10-15T17:14:10.355181",
+          "config_seed": 1302843095522700130
         },
         {
           "dim": 128,
@@ -8097,7 +8162,8 @@
           "wire_dtype": "int32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:15:42.436402"
+          "timestamp": "2026-10-15T17:15:42.436402",
+          "config_seed": 857441833433293013
         },
         {
           "dim": 128,
@@ -8209,7 +8275,8 @@
           "wire_dtype": "int64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:17:54.414892"
+          "timestamp": "2026-10-15T17:17:54.414892",
+          "config_seed": 1494574316637616723
         },
         {
           "dim": 128,
@@ -8321,7 +8388,8 @@
           "wire_dtype": "uint8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:19:03.555920"
+          "timestamp": "2026-10-15T17:19:03.555920",
+          "config_seed": 1277270487058971577
         },
         {
           "dim": 128,
@@ -8433,7 +8501,8 @@
           "wire_dtype": "uint16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:20:19.490550"
+          "timestamp": "2026-10-15T17:20:19.490550",
+          "config_seed": 3717085907960802789
         },
         {
           "dim": 128,
@@ -8545,7 +8614,8 @@
           "wire_dtype": "uint32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:21:54.079942"
+          "timestamp": "2026-10-15T17:21:54.079942",
+          "config_seed": 2261696782950194288
         },
         {
           "dim": 128,
@@ -8657,7 +8727,8 @@
           "wire_dtype": "uint64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:24:52.282679"
+          "timestamp": "2026-10-15T17:24:52.282679",
+          "config_seed": 1584066910237917302
         },
         {
           "dim": 128,
@@ -8769,7 +8840,8 @@
           "wire_dtype": "complex64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:26:32.858257"
+          "timestamp": "2026-10-15T17:26:32.858257",
+          "config_seed": 1065675914159684126
         },
         {
           "dim": 128,
@@ -8881,7 +8953,8 @@
           "wire_dtype": "complex128",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:28:26.898565"
+          "timestamp": "2026-10-15T17:28:26.898565",
+          "config_seed": 2632611623810657293
         },
         {
           "dim": 128,
@@ -8993,7 +9066,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 4,
           "seed": 42,
-          "timestamp": "2026-10-15T17:35:50.913902"
+          "timestamp": "2026-10-15T17:35:50.913902",
+          "config_seed": 1385806354792924167
         },
         {
           "dim": 128,
@@ -9105,7 +9179,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 8,
           "seed": 42,
-          "timestamp": "2026-10-15T17:43:09.347316"
+          "timestamp": "2026-10-15T17:43:09.347316",
+          "config_seed": 2875967873677806381
         }
       ],
       "completed_configs": [
@@ -9372,7 +9447,8 @@
           "wire_dtype": "float32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:45:07.091333"
+          "timestamp": "2026-10-15T17:45:07.091333",
+          "config_seed": 31251335128983613
         },
         {
           "dim": 128,
@@ -9484,7 +9560,8 @@
           "wire_dtype": "float64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:47:00.236043"
+          "timestamp": "2026-10-15T17:47:00.236043",
+          "config_seed": 1388518197007960836
         },
         {
           "dim": 128,
@@ -9596,7 +9673,8 @@
           "wire_dtype": "float16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:48:12.065089"
+          "timestamp": "2026-10-15T17:48:12.065089",
+          "config_seed": 1353683251991592905
         },
         {
           "dim": 128,
@@ -9708,7 +9786,8 @@
           "wire_dtype": "int8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:49:15.197778"
+          "timestamp": "2026-10-15T17:49:15.197778",
+          "config_seed": 823680982352749426
         },
         {
           "dim": 128,
@@ -9820,7 +9899,8 @@
           "wire_dtype": "int16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:50:23.862682"
+          "timestamp": "2026-10-15T17:50:23.862682",
+          "config_seed": 3349434927530921781
         },
         {
           "dim": 128,
@@ -9932,7 +10012,8 @@
           "wire_dtype": "int32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:51:50.876309"
+          "timestamp": "2026-10-15T17:51:50.876309",
+          "config_seed": 3587082800544797963
         },
         {
           "dim": 128,
@@ -10044,7 +10125,8 @@
           "wire_dtype": "int64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:53:56.332359"
+          "timestamp": "2026-10-15T17:53:56.332359",
+          "config_seed": 3303571867663989591
         },
         {
           "dim": 128,
@@ -10156,7 +10238,8 @@
           "wire_dtype": "uint8",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:55:00.137620"
+          "timestamp": "2026-10-15T17:55:00.137620",
+          "config_seed": 3760082337700067442
         },
         {
           "dim": 128,
@@ -10268,7 +10351,8 @@
           "wire_dtype": "uint16",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:56:09.901441"
+          "timestamp": "2026-10-15T17:56:09.901441",
+          "config_seed": 3821664734611031948
         },
         {
           "dim": 128,
@@ -10380,7 +10464,8 @@
           "wire_dtype": "uint32",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T17:57:38.532293"
+          "timestamp": "2026-10-15T17:57:38.532293",
+          "config_seed": 857207395089830213
         },
         {
           "dim": 128,
@@ -10492,7 +10577,8 @@
           "wire_dtype": "uint64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T18:00:36.920364"
+          "timestamp": "2026-10-15T18:00:36.920364",
+          "config_seed": 3814336394227781385
         },
         {
           "dim": 128,
@@ -10604,7 +10690,8 @@
           "wire_dtype": "complex64",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T18:02:12.939192"
+          "timestamp": "2026-10-15T18:02:12.939192",
+          "config_seed": 1064292145479376495
         },
         {
           "dim": 128,
@@ -10716,7 +10803,8 @@
           "wire_dtype": "complex128",
           "tq_bits": 0,
           "seed": 42,
-          "timestamp": "2026-10-15T18:04:01.815288"
+          "timestamp": "2026-10-15T18:04:01.815288",
+          "config_seed": 942755346363731351
         },
         {
           "dim": 128,
@@ -10828,7 +10916,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 4,
           "seed": 42,
-          "timestamp": "2026-10-15T18:11:19.267783"
+          "timestamp": "2026-10-15T18:11:19.267783",
+          "config_seed": 236238266327114176
         },
         {
           "dim": 128,
@@ -10940,7 +11029,8 @@
           "wire_dtype": "turboquant",
           "tq_bits": 8,
           "seed": 42,
-          "timestamp": "2026-10-15T18:18:40.727930"
+          "timestamp": "2026-10-15T18:18:40.727930",
+          "config_seed": 3539226363899317668
         }
       ],
       "completed_configs": [

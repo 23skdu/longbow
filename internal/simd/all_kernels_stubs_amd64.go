@@ -230,6 +230,18 @@ func euclideanPQVNNIKernel(q uintptr, c uintptr, subDim int, k int, res uintptr)
 
 func adcBatchAVX2Kernel(table uintptr, codes uintptr, m int, results uintptr, n int)
 
+func dotInt8AVX512Kernel(a uintptr, b uintptr, n int) float32
+
+func dotUint8AVX512Kernel(a uintptr, b uintptr, n int) float32
+
+func euclideanUint8AVX512Kernel(a uintptr, b uintptr, n int) float32
+
+func l2SquaredUint8AVX512Kernel(a uintptr, b uintptr, n int) float32
+
+func dotInt8VNNIKernel(a uintptr, b uintptr, n int) float32
+
+func dotUint8VNNIKernel(a uintptr, b uintptr, n int) float32
+
 func euclideanSQ8AVX2Kernel(a uintptr, b uintptr, n int) int32
 
 func cosine8AVX2(a uintptr, b uintptr) (dot float32, normA float32, normB float32)

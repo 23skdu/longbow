@@ -10,22 +10,21 @@
 | Pri | # | Item | Area | Impact / Rationale |
 |:---|:---|:---|:---|:---|
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
-| **P1** | **6/27** | **AVX-512 VNNI (`VPDPBUSD`) & Saturated Int8/Uint8 Dispatch** | SIMD Kernels | In `dispatch.go`, int8/uint8 dot product and uint8 Euclidean distance fall back to scalar 4x unrolled loops. Wire native 64-byte VNNI kernels for 4x–8x throughput on Cascade Lake / Sapphire Rapids. |
 | **P1** | **7** | **Direct Base Pointer Caching in SearchContext for SlabArena** | Memory / Hotpath | Profile shows `GetWithGeneration` accounts for 14.08% flat CPU time due to per-hop integer divisions and atomic pointer reloads. Cache raw slab base pointers during reader-pinned searches. |
 | **P1** | **25/26** | **TurboQuant 4-Lane Polar Reconstruction & Cross-Hop Caching** | Quantization | Scalar polar reconstruction accounts for 89.2% of TQ distance evaluation time. Interleave reconstruction across 4 AVX2 lanes and memoize reconstructed float32 vectors in scratch arena to cut P99 latency by 20%. |
 | **P1** | **9** | **Inlined 4-Ary Candidate Heap & Branchless Struct Swapping** | Algorithmic | Candidate heap maintenance (`down`, `Less`, `Swap`) accounts for ~15.2% combined flat time during beam search. Inlined 4-ary candidate heap eliminates slice copies and bounds checks. |
+| **P1** | **8** | **Lock-Free Adjacency Updates & NUMA Worker Queues** | Concurrency / Ingest | Mutex lock profiling shows 69.10% flat lock delay in `sync.(*Mutex).Unlock`, with `StartIndexingWorkers` contributing 53.8% cumulative lock delay. Migrate to generation-stamped CAS adjacency lists and sharded NUMA worker queues. |
 
 ```mermaid
 graph TD
     subgraph P1["Top 5 Priorities"]
         I32["32: Re-cut Baselines & Wire Index-Time CI Gate"]
-        I6["6/27: AVX-512 VNNI & Saturated Kernels in Dispatch"]
         I7["7: Base Pointer Caching in SearchContext"]
         I25["25/26: TurboQuant 4-Lane Vectorization & Hop Cache"]
         I9["9: Inlined 4-Ary Candidate Heap"]
+        I8["8: Lock-Free Adjacency & NUMA Worker Queues"]
     end
     subgraph P2["Algorithmic & Storage Optimizations"]
-        I8["8: Lock-Free Adjacency & NUMA Worker Queues"]
         I12["12: Lock-Free Map for Metadata & IDs"]
         I13["13: SIMD Fused BM25 Posting Intersection"]
         I10["10: Iterative Quadtree Stack Traversal"]
@@ -43,9 +42,10 @@ graph TD
         I23["23: Declarative Compose/Helm Provisioning"]
     end
 
-    I32 --> I6
-    I6 --> I25
+    I32 --> I7
     I7 --> I9
+    I9 --> I25
+    I25 --> I8
     I18 --> I19
     I19 --> I21
     I20 --> I22
@@ -65,12 +65,6 @@ graph TD
 - **Success Criteria**: Zero false-positive alerts on self-noise tests; automated CI cancellation on true index-time regressions ≥5%.
 
 
-### Item 6 & 27: Wire AVX-512 VNNI (`VPDPBUSD`) and Saturated Int8/Uint8 Kernels
-- **Status**: **OPEN**
-- **Files**: `internal/simd/dispatch.go`, `internal/simd/all_kernels_avo_amd64.s`, `internal/simd/dot_product_amd64.go`
-- **State**: In `dispatch.go` lines 623–625 under AVX-512 detection, `dotProductInt8Impl`, `dotProductUint8Impl`, and `euclideanDistanceUint8Impl` fall back to scalar 4x unrolled loops (`dotInt8Unrolled4x`, `dotUint8Unrolled4x`, `euclideanUint8Unrolled4x`), leaving modern server CPUs (Cascade Lake, Sapphire Rapids) underutilized despite available VNNI instructions.
-- **Plan**: Expose and bind native 64-byte `VPDPBUSD` dot product and saturated AVX-512 int8/uint8 kernels into the primary dispatch table when `features.HasAVX512VNNI` is set.
-- **Success Criteria**: Vectorized 64-byte throughput on AVX-512 hosts; quantized dot-product and angular search throughput increases by 4x–8x with exact bit-identity against generic reference implementations.
 
 ### Item 7: Direct Base Pointer Caching in SearchContext for SlabArena and TypedArena
 - **Status**: **OPEN**
@@ -199,7 +193,8 @@ graph TD
 ## 5. Verified & Removed Completed Items (Changelog)
 
 | # | Item | Verified Completion Date | Key Commit | Verification Evidence |
-| **1** | End-to-End GPU Search Dispatch & Complex128 Bottleneck | 2026-10-16 | `in-commit` | `CUDAIndex.SearchBatchDistances` batched candidate kernel; complex128 batched coalesced kernel; end-to-end dataset auto-sharding & bulk ingest GPU sync wired. |
+| **1** | End-to-End GPU Search Dispatch & Complex128 Bottleneck | 2026-10-16 | `d855f554` | `CUDAIndex.SearchBatchDistances` batched candidate kernel; complex128 batched coalesced kernel; end-to-end dataset auto-sharding & bulk ingest GPU sync wired. |
+| **6/27** | AVX-512 VNNI & Saturated Int8/Uint8 Dispatch | 2026-10-16 | `in-commit` | Native 64-byte `VPDPBUSD` dot product and saturated AVX-512 int8/uint8 kernels in `int8_kernels_avx512_amd64.s`; wired in dispatch table for emerald, granite, and avx512 tiers; parity verified with 100% bit identity. |
 | **4** | BM25 Inverted Index COW Elimination | 2026-10-15 | `5514faf9` | `BM25InvertedIndex.AddBatch` and `BM25ArenaIndex` eliminate per-doc map copying; >12 GB heap churn removed during ingest. |
 | **5** | Native L2-Squared Integer SIMD Kernels | 2026-10-15 | `cb6c2712` | Native AVX-512 `l2SquaredInt8AVX512Kernel` implemented; eliminates redundant terminal `VSQRTSS` and `d * d` squaring. |
 | **14** | Ingestion Zero-Copy & Timer Elimination | 2026-10-11 | `1b3927e4` | Geometric slice growth in `LockFreeSlice.Append`; wake channels replace polling timers. |

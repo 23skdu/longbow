@@ -259,3 +259,11 @@ var (
 	profPQEncode    = registerOp("pq_encode_with_copies")
 	profKMeansTrain = registerOp("kmeans_train_with_copies")
 )
+
+var _ = []any{
+	profStream,
+	profL2Complex128,
+	profGraphBFS,
+	profGraphActivate,
+	profPQDistance,
+}

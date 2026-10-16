@@ -642,3 +642,114 @@ func l2SquaredInt8AVX512(a, b []int8) (float32, error) {
 		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
+
+func dotInt8AVX512(a, b []int8) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	ptrA := uintptr(unsafe.Pointer(&a[0])) // #nosec G103
+	ptrB := uintptr(unsafe.Pointer(&b[0])) // #nosec G103
+	n := len(a)
+	if features.HasVNNI {
+		return dotInt8VNNIKernel(ptrA, ptrB, n), nil
+	}
+	if features.HasAVX512 {
+		return dotInt8AVX512Kernel(ptrA, ptrB, n), nil
+	}
+	return dotInt8AVX2(a, b)
+}
+
+func dotUint8AVX512(a, b []uint8) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	ptrA := uintptr(unsafe.Pointer(&a[0])) // #nosec G103
+	ptrB := uintptr(unsafe.Pointer(&b[0])) // #nosec G103
+	n := len(a)
+	if features.HasVNNI {
+		return dotUint8VNNIKernel(ptrA, ptrB, n), nil
+	}
+	if features.HasAVX512 {
+		return dotUint8AVX512Kernel(ptrA, ptrB, n), nil
+	}
+	return dotUint8AVX2(a, b)
+}
+
+func euclideanUint8AVX512(a, b []uint8) (float32, error) {
+	if !features.HasAVX512 {
+		return euclideanUint8AVX2(a, b)
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanUint8AVX512Kernel(
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
+		len(a)), nil
+}
+
+func l2SquaredUint8AVX512(a, b []uint8) (float32, error) {
+	if !features.HasAVX512 {
+		d, err := euclideanUint8AVX2(a, b)
+		return d * d, err
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return l2SquaredUint8AVX512Kernel(
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
+		len(a)), nil
+}
+
+func cosineInt8AVX512(a, b []int8) (float32, error) {
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	ptrA := uintptr(unsafe.Pointer(&a[0])) // #nosec G103
+	ptrB := uintptr(unsafe.Pointer(&b[0])) // #nosec G103
+	n := len(a)
+	var dot, normA, normB float32
+	if features.HasVNNI {
+		dot = dotInt8VNNIKernel(ptrA, ptrB, n)
+		normA = dotInt8VNNIKernel(ptrA, ptrA, n)
+		normB = dotInt8VNNIKernel(ptrB, ptrB, n)
+	} else if features.HasAVX512 {
+		dot = dotInt8AVX512Kernel(ptrA, ptrB, n)
+		normA = dotInt8AVX512Kernel(ptrA, ptrA, n)
+		normB = dotInt8AVX512Kernel(ptrB, ptrB, n)
+	} else {
+		return cosineInt8AVX2(a, b)
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := float64(dot) / (math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
+func cosineUint8AVX512(a, b []uint8) (float32, error) {
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	ptrA := uintptr(unsafe.Pointer(&a[0])) // #nosec G103
+	ptrB := uintptr(unsafe.Pointer(&b[0])) // #nosec G103
+	n := len(a)
+	var dot, normA, normB float32
+	if features.HasVNNI {
+		dot = dotUint8VNNIKernel(ptrA, ptrB, n)
+		normA = dotUint8VNNIKernel(ptrA, ptrA, n)
+		normB = dotUint8VNNIKernel(ptrB, ptrB, n)
+	} else if features.HasAVX512 {
+		dot = dotUint8AVX512Kernel(ptrA, ptrB, n)
+		normA = dotUint8AVX512Kernel(ptrA, ptrA, n)
+		normB = dotUint8AVX512Kernel(ptrB, ptrB, n)
+	} else {
+		return cosineUint8AVX2(a, b)
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := float64(dot) / (math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}

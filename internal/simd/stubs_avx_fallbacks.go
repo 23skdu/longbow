@@ -222,6 +222,15 @@ func euclideanInt8AVX2(a, b []int8) (float32, error)     { return euclideanInt8U
 func dotInt8AVX2(a, b []int8) (float32, error)           { return dotInt8Unrolled4x(a, b) }
 func euclideanUint8AVX2(a, b []uint8) (float32, error)   { return euclideanUint8Unrolled4x(a, b) }
 func dotUint8AVX2(a, b []uint8) (float32, error)         { return dotUint8Unrolled4x(a, b) }
+func dotInt8AVX512(a, b []int8) (float32, error)         { return dotInt8Unrolled4x(a, b) }
+func dotUint8AVX512(a, b []uint8) (float32, error)       { return dotUint8Unrolled4x(a, b) }
+func euclideanUint8AVX512(a, b []uint8) (float32, error) { return euclideanUint8Unrolled4x(a, b) }
+func l2SquaredUint8AVX512(a, b []uint8) (float32, error) {
+	d, err := euclideanUint8Unrolled4x(a, b)
+	return d * d, err
+}
+func cosineInt8AVX512(a, b []int8) (float32, error)     { return cosineDistanceInt8Unrolled4x(a, b) }
+func cosineUint8AVX512(a, b []uint8) (float32, error)   { return cosineDistanceUint8Unrolled4x(a, b) }
 func euclideanInt16AVX2(a, b []int16) (float32, error)   { return euclideanInt16Unrolled4x(a, b) }
 func euclideanUint16AVX2(a, b []uint16) (float32, error) { return euclideanUint16Unrolled4x(a, b) }
 func dotInt16AVX2(a, b []int16) (float32, error)         { return dotInt16Unrolled4x(a, b) }

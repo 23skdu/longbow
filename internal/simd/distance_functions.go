@@ -339,6 +339,20 @@ func EuclideanDistanceUint8(a, b []uint8) (float32, error) {
 	return euclideanUint8Unrolled4x(a, b)
 }
 
+// L2SquaredUint8 calculates squared Euclidean distance for Uint8 vectors.
+func L2SquaredUint8(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if l2SquaredUint8Impl != nil {
+		return l2SquaredUint8Impl(a, b)
+	}
+	return l2SquaredUint8Unrolled4x(a, b)
+}
+
 // CosineDistanceUint8 calculates the cosine distance for Uint8 vectors.
 func CosineDistanceUint8(a, b []uint8) (float32, error) {
 	if len(a) != len(b) {

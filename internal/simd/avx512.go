@@ -622,6 +622,7 @@ func l2SquaredBatchAVX512(query []float32, vectors [][]float32, results []float3
 
 // l2SquaredInt8AVX512Kernel is the no-square-root counterpart of
 // euclideanInt8AVX512Kernel; emits the raw L2-squared float32 accumulator.
+//
 //go:noescape
 func l2SquaredInt8AVX512Kernel(a, b uintptr, n int) float32
 
@@ -633,8 +634,11 @@ func l2SquaredInt8AVX512(a, b []int8) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	// #nosec G103 -- AVX-512 kernel takes raw pointers by design; the lengths
+	// come from the same slices the pointers are taken from, and the kernel
+	// reads exactly len(a) bytes from each.
 	return l2SquaredInt8AVX512Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }

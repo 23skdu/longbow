@@ -1393,7 +1393,10 @@ func writeGPUKernelProfile(path string, sc *client.SmartClient) error {
 		return fmt.Errorf("gpu_kernel_profile payload: %w", err)
 	}
 
-	f, err := os.Create(path)
+	// #nosec G304 -- the path is the operator's own -gpu-profile-out argument,
+	// chosen on this command line. Writing where the operator pointed is the
+	// flag's whole purpose; there is no untrusted input between it and here.
+	f, err := os.Create(path) // #nosec G304
 	if err != nil {
 		return fmt.Errorf("create %s: %w", path, err)
 	}

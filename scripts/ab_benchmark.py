@@ -105,7 +105,7 @@ def one_sided_sign_pvalue(successes, trials, direction):
     return min(1.0, tail)
 
 
-def summarize(ratios, threshold_pct):
+def summarize(ratios, threshold_pct, higher_is_better=True):
     """Median ratio, spread, direction consistency, and a verdict.
 
     The verdict needs both a magnitude and a consistency:
@@ -114,6 +114,9 @@ def summarize(ratios, threshold_pct):
                    agree in that direction (one-sided sign test p < 0.05)
       improvement  the mirror image
       inconclusive anything else, including too few pairs
+
+    For metrics where higher is better (e.g. QPS), candidate/baseline < 1 is down.
+    For metrics where lower is better (e.g. index_time), candidate/baseline > 1 is a regression.
 
     Reporting "inconclusive" rather than passing silently matters: a gate that
     cannot distinguish a real regression from noise should say so instead of
@@ -155,17 +158,28 @@ def summarize(ratios, threshold_pct):
 
     # Consistency: 90% agreement, which for n>=3 is a one-sided sign-test
     # p-value at or below 0.05.
-    if median_pct <= -threshold_pct and down / n >= 0.9:
+    if higher_is_better:
+        is_regress = (median_pct <= -threshold_pct and down / n >= 0.9)
+        is_improve = (median_pct >= threshold_pct and up / n >= 0.9)
+        regress_count, improve_count = down, up
+        regress_sign, improve_sign = f"-{threshold_pct}%", f"+{threshold_pct}%"
+    else:
+        is_regress = (median_pct >= threshold_pct and up / n >= 0.9)
+        is_improve = (median_pct <= -threshold_pct and down / n >= 0.9)
+        regress_count, improve_count = up, down
+        regress_sign, improve_sign = f"+{threshold_pct}%", f"-{threshold_pct}%"
+
+    if is_regress:
         summary["verdict"] = "regression"
         summary["reason"] = (
-            f"median {median_pct:+.1f}% at or beyond -{threshold_pct}%, "
-            f"with {down}/{n} pairs agreeing"
+            f"median {median_pct:+.1f}% at or beyond {regress_sign}, "
+            f"with {regress_count}/{n} pairs agreeing"
         )
-    elif median_pct >= threshold_pct and up / n >= 0.9:
+    elif is_improve:
         summary["verdict"] = "improvement"
         summary["reason"] = (
-            f"median {median_pct:+.1f}% at or beyond +{threshold_pct}%, "
-            f"with {up}/{n} pairs agreeing"
+            f"median {median_pct:+.1f}% at or beyond {improve_sign}, "
+            f"with {improve_count}/{n} pairs agreeing"
         )
     else:
         agree = max(down, up) / n
@@ -220,7 +234,7 @@ def build_order(reps):
 # --------------------------------------------------------------------------
 
 
-def run_one(variant, binary, args, label, port, log_dir):
+def run_one(variant, binary, args, label, port, log_dir, bench_tool=None):
     """Invoke the matrix harness once for a single variant."""
     cmd = [
         sys.executable, _RUNNER,
@@ -245,26 +259,24 @@ def run_one(variant, binary, args, label, port, log_dir):
     if args.seed is not None:
         cmd += ["--seed", str(args.seed)]
 
+    env = dict(os.environ)
+    if bench_tool:
+        env["LONGBOW_BENCH_TOOL"] = os.path.abspath(bench_tool)
+
     log_path = os.path.join(log_dir, f"ab_{variant}_{label}.log")
     with open(log_path, "w") as log:
-        proc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=_ROOT)
+        proc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=_ROOT, env=env)
     return proc.returncode, log_path
 
 
 _QPS_RE = re.compile(r"^(?P<mode>[a-z0-9_]+)_qps$")
 
 
-def load_qps(result_path):
-    """Extract {(dtype, count, mode): qps} from harness result JSON.
+def load_metrics(result_path):
+    """Extract {(dtype, count, mode): metric_val} from harness result JSON.
 
-    `result_path` may be a single path or a list of them. Accepting a bare string
-    is deliberate: the obvious call is `load_qps(files[-1])`, and iterating a
-    string yields characters rather than paths, which silently produced an empty
-    mapping and therefore an empty - and passing - report.
-
-    Unparseable files raise rather than being skipped. A file that exists but
-    cannot be read is a broken run, and swallowing it would turn a measurement
-    failure into a clean bill of health.
+    Extracts both indexing_duration_seconds under mode 'index_time' and search
+    QPS under their respective search mode names.
     """
     if isinstance(result_path, str):
         result_path = [result_path]
@@ -275,15 +287,26 @@ def load_qps(result_path):
             continue
         with open(path) as f:
             doc = json.load(f)
-        for row in doc.get("results", []) or []:
-            if not isinstance(row, dict):
-                continue
-            key0 = (row.get("dtype"), row.get("count"))
-            for mode, m in (row.get("search") or {}).items():
-                qps = m.get("qps")
-                if qps and qps > 0:
-                    out[key0 + (mode,)] = qps
+        runs = doc.get("runs", [doc]) if isinstance(doc, dict) else []
+        for run in runs:
+            for row in (run.get("results", []) or []):
+                if not isinstance(row, dict):
+                    continue
+                key0 = (row.get("dtype"), row.get("count"))
+                # Ingest index time (seconds)
+                ingest = row.get("ingest") or {}
+                idx_sec = ingest.get("indexing_duration_seconds")
+                if idx_sec is not None and idx_sec > 0:
+                    out[key0 + ("index_time",)] = idx_sec
+
+                for mode, m in (row.get("search") or {}).items():
+                    qps = m.get("qps")
+                    if qps and qps > 0:
+                        out[key0 + (mode,)] = qps
     return out
+
+
+load_qps = load_metrics
 
 
 def find_result_files(pattern):
@@ -301,6 +324,10 @@ def main():
                    help="Server binary for the baseline arm")
     p.add_argument("--candidate-binary", required=True,
                    help="Server binary for the candidate arm")
+    p.add_argument("--baseline-bench-tool", default=None,
+                   help="Optional bench-tool binary for the baseline arm")
+    p.add_argument("--candidate-bench-tool", default=None,
+                   help="Optional bench-tool binary for the candidate arm")
     p.add_argument("--mode", default="cpu")
     p.add_argument("--dims", type=int, default=128)
     p.add_argument("--counts", required=True,
@@ -343,8 +370,12 @@ def main():
     os.makedirs(args.log_dir, exist_ok=True)
     stamp = args.label or "ab"
     binaries = {"baseline": args.baseline_binary, "candidate": args.candidate_binary}
+    bench_tools = {
+        "baseline": args.baseline_bench_tool,
+        "candidate": args.candidate_bench_tool,
+    }
 
-    # (variant, rep) -> {(dtype,count,mode): qps}
+    # (variant, rep) -> {(dtype,count,mode): metric_val}
     samples = defaultdict(dict)
     order = build_order(args.reps)
 
@@ -354,7 +385,8 @@ def main():
         print(f"[{i + 1}/{len(order)}] {variant} rep {rep} ({binaries[variant]})",
               flush=True)
         rc, log_path = run_one(variant, binaries[variant], args, label,
-                               args.port + (i % 2), args.log_dir)
+                               args.port + (i % 2), args.log_dir,
+                               bench_tool=bench_tools.get(variant))
         results = find_result_files(
             os.path.join(args.log_dir, f"perf_matrix_{args.mode}_{label}_*.json")
         )
@@ -365,12 +397,12 @@ def main():
         # `_latest.json` alias and files from earlier invocations, so pick the
         # most recently written one rather than relying on name sort order.
         newest = max(results, key=os.path.getmtime)
-        qps = load_qps(newest)
-        if not qps:
-            print(f"    arm produced no QPS measurements in {newest}; "
+        metrics = load_metrics(newest)
+        if not metrics:
+            print(f"    arm produced no measurements in {newest}; "
                   f"treating as a failed arm")
             continue
-        samples[(variant, rep)] = qps
+        samples[(variant, rep)] = metrics
 
     # Pair adjacent reps: the runner guarantees baseline/candidate alternate, so
     # rep r of each arm is adjacent in time.
@@ -387,9 +419,12 @@ def main():
             base.append(b if b else 0)
             cand.append(c if c else 0)
         ratios = paired_ratios(base, cand)
-        summary = summarize(ratios, args.threshold)
         dtype, count, mode = key
+        higher_is_better = (mode != "index_time")
+        summary = summarize(ratios, args.threshold, higher_is_better=higher_is_better)
         summary.update({"dtype": dtype, "count": count, "mode": mode,
+                        "baseline_values": [x for x in base if x],
+                        "candidate_values": [x for x in cand if x],
                         "baseline_qps": [x for x in base if x],
                         "candidate_qps": [x for x in cand if x]})
         rows.append(summary)

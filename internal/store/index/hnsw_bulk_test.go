@@ -3,6 +3,7 @@ package index_test
 import (
 	"context"
 	"math/rand"
+	"runtime"
 	"testing"
 	"time"
 
@@ -22,7 +23,10 @@ func TestHNSW_BulkInsert(t *testing.T) {
 
 	// Setup
 	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
-	defer mem.AssertSize(t, 0)
+	defer func() {
+		runtime.GC()
+		mem.AssertSize(t, 0)
+	}()
 
 	dims := 128
 	numVectors := 1500

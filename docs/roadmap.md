@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
-**Last updated**: 2026-10-12  
-**Status**: All roadmap items resolved as of 2026-10-12. Historical sections below record the completed work and the final validation gates; no open items remain.
+**Last updated**: 2026-10-15  
+**Status**: All roadmap items through 24 resolved as of 2026-10-12; items 25-34 (§5) are open. Historical sections below record the completed work and the final validation gates; no open items remain.
 
 ---
 
@@ -536,3 +536,131 @@ until an incident.
 references, rewrite the `grafana/README.md` inventory) were carried out in the
 same audit pass and are not repeated here; their residual automation is folded
 into Item 24 above.*
+
+---
+
+## 5. Next 10 Improvements (2026-10-15, post-emlgo 0.7 / baseline revalidation pass)
+
+All items below are **open**. They are drawn from the profiling findings in
+`docs/performance.md` §4, the emlgo 0.7 upgrade in this pass, and the
+re-measurement requirements above. Each is sized to be a single PR-sized change
+with its own success metric.
+
+### Item 25 — Tile the TurboQuant polar reconstruction across four lanes (Performance)
+
+- **Files**: `internal/store/index/turboquant_distance*.go`, `internal/tensor/quantization/turboquant.go`
+- **State**: `pprof` §4 decomposes `turboQuantDistanceAVX2Scratch`: 89.2% of
+  distance time is scalar polar reconstruction + QJL correction, only 4.3% is
+  the SIMD L2 kernel. At 100k the 4-way batched path already interleaves four
+  independent chains; it is not vectorised single-lane.
+- **Plan**: Lift the scalar reconstruction loop into a 4-lane AVX2 kernel with
+  independent accumulator registers, hoisting the lookup-table fetches; reuse
+  the radius scale once per chunk.
+- **Success**: TurboQuant search QPS rises from ~300 to ≥600 at 100k on AVX2
+  with no change in `TurboQuantDistanceBatch` bit-identity.
+
+### Item 26 — Cache the reconstructed TurboQuant vectors in a scratch arena across hops (Stability/Accuracy)
+
+- **Files**: `internal/store/index/arrow_hnsw_search.go`, `internal/memory/arena.go`
+- **State**: Each candidate's TurboQuant vector is reconstructed from polar codes
+  on every hop it is visited. Under beam search the same neighbor is touched
+  multiple times; the reconstruction work is wasted and increases the variance of
+  P99 latency.
+- **Plan**: Memoise reconstructed float32 representations in an ephemeral,
+  per-search scratch arena keyed by node index and invalidate on eviction.
+  Reuse across neighbors-within-a-chunk to amortise polar reconstruction.
+- **Success**: Total polar reconstructions per query ≤ 1.1× (currently
+  ≥ 1.8×) at `efSearch=500`; P99 latency −20%.
+
+### Item 27 — AVX-512 VNNI dot-product fast path for quantized dtypes (Performance)
+
+- **Files**: `internal/simd/dot_product_amd64.go`, `internal/simd/dispatch.go`
+- **State**: Roadmap Item 6 is marked closed but the AVX2-only i7 client still
+  routes int8/uint8 dot products through scalar 4x unrolled loops. The 0.7 vendor
+  now ships `vpdpbusd` kernels; the dispatch table has not been updated.
+- **Plan**: Wire `HasAVX512VNNI`/`HasAVX512` detection to the new kernels,
+  keeping scalar fallback for unsupported hosts.
+- **Success**: int8 dot-product throughput ≥ 4× on AVX-512; byte-identical
+  numerical output vs the generic kernel.
+
+### Item 28 — uint8 neighbour selection parity on all corpora (Accuracy)
+
+- **Files**: `internal/store/index/arrow_hnsw_insert.go`
+- **State**: Resolved in this pass for the 3-cluster regression corpus by adding
+  a `VectorTypeUint8` branch to `selectNeighbors`. The bulk-linker case and
+  per-dtype `narrow_recall` were affected. The fix is corpus-specific and
+  deserves a broader guard.
+- **Plan**: Add a property-based test that builds a uint8 index from 5
+  distinct synthetic distributions and asserts reachability ≥ 95% on every one,
+  so a future refactor cannot re-introduce the branch omission silently.
+- **Success**: TestNarrowSearchReachesWholeGraph passes across all 5 corpora
+  with zero skips; uint8 reachability ≥ 95% on each.
+
+### Item 29 — uint8 connection-degree invariant under bulk indexing (Stability)
+
+- **Files**: `internal/store/index/bulk_linker.go`, `internal/store/index/index_quality_test.go`
+- **State**: The uint8 bulk linker previously pruned to mean degree 1.3–6.3
+  (vs 16.00 for int8) because of the missing diversity branch.
+- **Plan**: Make `selectNeighbors` the single entry point for both narrow and
+  bulk paths; add a bulk-quality gate that fails the build below degree 15.0
+  for any dtype whose bulk path previously pruned below 14.
+- **Success**: Minimum observed degree ≥ 15.0 on a 4k uint8 build; quality test
+  becomes a CI gate.
+
+### Item 30 — EMLGo 0.7 accuracy gating across all 15 dtypes (Accuracy)
+
+- **Files**: `internal/mathutil/mathutil_emlgo.go`, `internal/simd/*_test.go`
+- **State**: The emlgo 0.7 upgrade (vendored copy) brings new AVX-2/AVX-512
+  kernels. Existing gating uses tight 1e-4 tolerances that may not hold on
+  every dtype after the upgrade.
+- **Plan**: Run the full `simd_accuracy` suite on every supported dtype after
+  the upgrade; tighten tolerances where the 0.7 kernels improve accuracy and
+  loosen them only with documented justification.
+- **Success**: Every dtype passes the accuracy gate at the regression threshold
+  used by CI; no new loosenings without a recorded justification.
+
+### Item 31 — Deterministic seed plumbing through bench-tool ingest (Stability)
+
+- **Files**: `cmd/bench-tool/main.go`, `scripts/unified_benchmark.py`
+- **State**: The `--seed` arg is normalised only at the client edge; the data
+  generator and the server's HNSW RNG can still diverge when the harness is
+  restarted mid-run, which is exactly the case during long 500k sweeps.
+- **Plan**: Thread a single `LONGBOW_BENCH_SEED` through generation and
+  indexing; derive all per-config seeds deterministically from it.
+- **Success**: Identical 500k index built in two separate harness invocations
+  yields bit-identical search output for 500 fixed queries.
+
+### Item 32 — Per-dtype index-time regression guard at 250k and 500k (Performance)
+
+- **Files**: `scripts/check_regression.py`, `benchmarks/baseline_*.json`
+- **State**: The CI gate uses a 10% arms-length threshold that the roadmap
+  documents fires falsely 77-89% of the time. A paired index-time check with
+  `scripts/ab_benchmark.py` admits only interleaved runs and has not been
+  scheduled for index time.
+- **Plan**: Add an index-time arm to the scheduled A/B job that measures
+  `indexing_duration_seconds` for every dtype at 250k, gating merges on a paired,
+  threshold-5 verdict.
+- **Success**: No change that regresses index time by ≥5% merges without
+  cancellation; zero false positives in a six-run self-noise test.
+
+### Item 33 — Reduce graph-linker heap churn on large timestamped ingests (Performance)
+
+- **Files**: `internal/store/index/arrow_hnsw_bulk.go`, `internal/store/index/arrow_hnsw_insert.go`
+- **State**: Heavy ingests at 500k+ allocations in Go maps remain
+  copy-on-write; the benchmark shows peak RSS scaling with link batches that do
+  not persist past insertion.
+- **Plan**: Switch bulk edge staging to a reusable slab of pair indices with
+  sorted commit, eliminating per-pair map growth.
+- **Success**: `allocs.pprof` heap bytes during 500k ingest drop by ≥50%
+  without reducing ingest throughput or recall.
+
+### Item 34 — pprof capture under GPU load with CUDA kernel attribution (Observability)
+
+- **Files**: `scripts/unified_benchmark.py`, `internal/gpu/cuda/cuda_index.go`
+- **State**: §4 of performance.md has CPU pprof hotspots but no GPU kernel
+  attribution beyond aggregate QPS; when a CUDA path regresses there is no
+  kernel-level signal.
+- **Plan**: Export CUDA `__global__` timing via CUDA events for the ingest and
+  search hot path; aggregate per kernel under the existing `pprof` snapshots.
+- **Success**: A pprof-style report for one full 250k run attributes ≥90% of
+  GPU time to named kernels; regressions localisable to a kernel.

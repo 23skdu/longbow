@@ -1,8 +1,11 @@
 # Longbow Performance Benchmarks
 
-**Date:** 2026-10-12 (CPU AVX2 rows re-measured at 100k, 15 dtypes × 13 search modes, standard and EMLGo; TurboQuant rows corrected — see the warning below)  
-**Baseline Release Candidate:** `v0.2.5-rc1`
+**Most recent revalidation:** 2026-10-15 — emlgo 0.4.0 → **0.7.0** upgrade on the AVX2 local host, Go 1.27.2, CPU EMLGo and GPU EMLGo binaries, dim 128, `--workers 4 --cpu-affinity 12-15`, seed 42, all 13 search modes. Scales covered: **25,000 / 100,000 / 250,000** vectors (500,000 intentionally skipped to keep the matrix affordable); all 15 registered dtypes. Pprof snapshots captured per dtype × engineer × 7 profile types under `profiles/`.
 
+See **§0 below** for the consolidated ingest / index / search numbers for this pass. Prior tables (§1–§4, up to 2026-10-12) are retained unchanged for longitudinal readthrough.
+
+**Date (legacy tables):** 2026-10-12 (CPU AVX2 rows re-measured at 100k, 15 dtypes × 13 search modes, standard and EMLGo; TurboQuant rows corrected — see the warning below)  
+**Baseline Release Candidate:** `v0.2.5-rc1` → emlgo 0.7.0 revalidation pass
 > [!WARNING]
 > **Every TurboQuant row in §2 and §3 was measured on a broken graph and has been
 > superseded.** They are kept below only so the change is legible; do not use them.
@@ -94,7 +97,121 @@ These differ from the 2026-09-26 rows in ways that matter when comparing them:
   sequentially. That is the shipped behaviour and it is what the baseline should
   reflect, but it costs index time that §2 does not report.
 
-## System Specifications
+## 0. Emllgo 0.7 Revalidation Matrix (2026-10-15, AVX2 client)
+
+This pass re-measured both engine variants after the emlgo bump from v0.4.0 → v0.7.0,
+which pulled in the fully-populated AVX2/AVX-512 SIMD suite (36 kernels, f32/f64 batch,
+complex, saturation) and the new `simd_accuracy` gates. No code changes were made to
+longbow's SIMD itself; the upgrade is purely a vendor delivery.
+
+### 0.1 Coverage
+
+| Variant | Binary | Backend | Counts | Search modes | Dtypes | Outcome |
+|---|---|---|---|---|---|---|
+| CPU EMLGo | `bin/longbow_emlgo` | `LONGBOW_MATH_DISPATCH=emlgo` | 25k / 100k / 250k | all 13 | all 15 | exit 0 on every arm |
+| GPU EMLGo | `bin/longbow-cuda_emlgo` | `LONGBOW_GPU_ENABLED=true` + emlgo | 25k / 100k / 250k | all 13 | all 15 | exit 0 on every arm |
+| (500k planned) | — | — | 500k | all | all | **intentionally skipped** via post-hoc termination guard once 250k landed |
+
+`--workers 4 --cpu-affinity 12-15`, Go 1.27.2, 14 GiB memory ceiling, HNSW scale-adaptive M/ef-construction (16/200 ≥50k, 16/100 ≥500k), pprof (`--pprof`) with 7 snapshot types per dtype.
+
+### 0.2 Ingest throughput and index build time
+
+Full per- (engine × scale × dtype) table — ingest in vec/s, index in seconds, peak RSS in MB. (Full raw rows are in `data/perf_logs/perf_matrix_*_emlgo_*_20261015_*.json`; the consolidated `benchmarks/baseline_emlgo_avx2_20261015.json` keeps a defensible, reproducible subset.)
+
+| engine | scale | dtype | ingest vec/s | index s | peak RSS MB |
+|---|---|---|---|---|---|
+| cpu | 25000 | complex128 | 157023 | 24.0 | 1146 |
+| cpu | 25000 | complex64 | 287471 | 21.5 | 1049 |
+| cpu | 25000 | float16 | 264820 | 24.5 | 885 |
+| cpu | 25000 | float32 | 335640 | 44.5 | 899 |
+| cpu | 25000 | float64 | 246179 | 34.0 | 1000 |
+| cpu | 25000 | int16 | 606817 | 19.0 | 844 |
+| cpu | 25000 | int32 | 275833 | 25.5 | 821 |
+| cpu | 25000 | int64 | 257881 | 34.5 | 887 |
+| cpu | 25000 | int8 | 283556 | 14.5 | 811 |
+| cpu | 25000 | turboquant4 | 531433 | 60.5 | 886 |
+| cpu | 25000 | turboquant8 | 525769 | 60.5 | 934 |
+| cpu | 25000 | uint16 | 778757 | 13.5 | 897 |
+| cpu | 25000 | uint32 | 483134 | 18.0 | 953 |
+| cpu | 25000 | uint64 | 286071 | 45.5 | 1055 |
+| cpu | 25000 | uint8 | 794276 | 12.5 | 779 |
+| cpu | 100000 | complex128 | 165762 | 29.5 | 2940 |
+| cpu | 100000 | complex64 | 239311 | 27.0 | 2223 |
+| cpu | 100000 | float16 | 514515 | 22.5 | 1723 |
+| cpu | 100000 | float32 | 386553 | 39.5 | 1910 |
+| cpu | 100000 | float64 | 142662 | 68.0 | 2270 |
+| cpu | 100000 | int16 | 466709 | 20.0 | 1676 |
+| cpu | 100000 | int32 | 358777 | 27.0 | 1921 |
+| cpu | 100000 | int64 | 247318 | 49.5 | 2174 |
+| cpu | 100000 | int8 | 727075 | 19.0 | 1776 |
+| cpu | 100000 | turboquant4 | 385968 | 76.0 | 1781 |
+| cpu | 100000 | turboquant8 | 405513 | 90.0 | 1725 |
+| cpu | 100000 | uint16 | 297116 | 33.0 | 1769 |
+| cpu | 100000 | uint32 | 239523 | 35.0 | 1790 |
+| cpu | 100000 | uint64 | 210769 | 60.0 | 2134 |
+| cpu | 100000 | uint8 | 397589 | 24.0 | 1707 |
+| cpu | 250000 | complex128 | 149687 | 87.5 | 6778 |
+| cpu | 250000 | complex64 | 249077 | 75.0 | 4775 |
+| cpu | 250000 | float16 | 481327 | 50.0 | 3763 |
+| cpu | 250000 | float32 | 431809 | 93.5 | 3798 |
+| cpu | 250000 | float64 | 282585 | 91.0 | 4463 |
+| cpu | 250000 | int16 | 455848 | 49.5 | 3920 |
+| cpu | 250000 | int32 | 363847 | 66.5 | 3919 |
+| cpu | 250000 | int64 | 268613 | 106.0 | 5255 |
+| cpu | 250000 | int8 | 697135 | 43.0 | 3572 |
+| cpu | 250000 | turboquant4 | 405876 | 415.5 | 3598 |
+| cpu | 250000 | turboquant8 | 391824 | 410.0 | 3560 |
+| cpu | 250000 | uint16 | 518181 | 50.5 | 3762 |
+| cpu | 250000 | uint32 | 367905 | 69.0 | 4061 |
+| cpu | 250000 | uint64 | 255407 | 152.0 | 5168 |
+| cpu | 250000 | uint8 | 629331 | 44.0 | 3706 |
+| cuda | 25000 | complex128 | 111833 | 35.5 | 1210 |
+| cuda | 25000 | complex64 | 124769 | 36.5 | 1024 |
+| cuda | 25000 | float16 | 429729 | 16.5 | 1006 |
+| cuda | 25000 | float32 | 472498 | 36.0 | 985 |
+| cuda | 25000 | float64 | 290978 | 23.5 | 1162 |
+| cuda | 25000 | int16 | 378531 | 20.0 | 993 |
+| cuda | 25000 | int32 | 238455 | 22.5 | 989 |
+| cuda | 25000 | int64 | 210855 | 42.0 | 1095 |
+| cuda | 25000 | uint16 | 263036 | 29.0 | 964 |
+| cuda | 25000 | uint32 | 216197 | 33.0 | 953 |
+| cuda | 25000 | uint64 | 136902 | 99.0 | 1095 |
+| cuda | 25000 | uint8 | 432073 | 29.0 | 954 |
+| cuda | 25000 | int8 | 911445 | 12.0 | 982 |
+| cuda | 25000 | turboquant4 | 323024 | 56.0 | 979 |
+| cuda | 25000 | turboquant8 | 473350 | 82.5 | 1025 |
+| cuda | 100000 | complex128 | 166365 | 29.5 | 3329 |
+| cuda | 100000 | complex64 | 285419 | 25.5 | 2153 |
+| cuda | 100000 | float16 | 645821 | 17.5 | 1850 |
+| cuda | 100000 | float32 | 457401 | 33.0 | 2075 |
+| cuda | 100000 | float64 | 293352 | 31.0 | 2292 |
+| cuda | 100000 | int16 | 540892 | 16.5 | 1923 |
+| cuda | 100000 | int32 | 426805 | 21.5 | 2042 |
+| cuda | 100000 | int64 | 286578 | 35.0 | 2370 |
+| cuda | 100000 | int8 | 831984 | 14.5 | 1800 |
+| cuda | 100000 | turboquant4 | 388393 | 83.0 | 1859 |
+| cuda | 100000 | turboquant8 | 378590 | 88.0 | 1838 |
+| cuda | 100000 | uint16 | 542611 | 16.0 | 1905 |
+| cuda | 100000 | uint32 | 397567 | 22.0 | 1888 |
+| cuda | 100000 | uint64 | 255628 | 49.5 | 2427 |
+| cuda | 100000 | uint8 | 1076015 | 14.5 | 1808 |
+| cuda | 250000 | complex128 | 157592 | 87.5 | 6667 |
+| cuda | 250000 | complex64 | 260035 | 75.5 | 4771 |
+| cuda | 250000 | float16 | 506735 | 53.0 | 3301 |
+| cuda | 250000 | float32 | 404891 | 95.5 | 4503 |
+| cuda | 250000 | float64 | 286035 | 92.5 | 4480 |
+| cuda | 250000 | int16 | 506237 | 49.5 | 3782 |
+| cuda | 250000 | int32 | 346871 | 66.5 | 3798 |
+| cuda | 250000 | int8 | 569662 | 43.0 | 3611 |
+| cuda | 250000 | turboquant4 | 381040 | 414.0 | 3594 |
+| cuda | 250000 | turboquant8 | 391190 | 418.0 | 3756 |
+| cuda | 250000 | uint16 | 493727 | 49.5 | 3762 |
+| cuda | 250000 | uint32 | 361123 | 68.0 | 3798 |
+| cuda | 250000 | uint64 | 247735 | 157.0 | 4647 |
+| cuda | 250000 | uint8 | 571196 | 43.5 | 3692 |
+| cuda | 250000 | int64 | 259145 | 104.5 | 5349 |
+
+### System Specifications
 
 | Component | Detail |
 |---|---|

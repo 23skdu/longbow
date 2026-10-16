@@ -102,6 +102,47 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
+	case types.VectorTypeUint8:
+		// uint8 needs its own case for the same reason int8 has one. It used
+		// to fall through to the default branch, which is the documented
+		// fallback for unknown types and applies no diversity heuristic at
+		// all - it keeps the first m candidates in arrival order and does
+		// nothing else. A neighbour list pruned that way is a truncation
+		// rather than a selection, and the graph does not hold together.
+		//
+		// Measured on the 3-cluster corpus the recall tests use: a uint8
+		// index built through the default branch reached 314-1572 of 4,000
+		// nodes from its entry point, mean degree 1.27-6.29, varying run to
+		// run on unchanged code. int8 on the same corpus reached 4,000 at
+		// degree 16.00 every time. The difference is that int8 has this
+		// branch and uint8 did not - the bulk linker prunes ~63k times per
+		// 4,000-node uint8 build and never for int8, because only uint8 was
+		// taking the distance-computing prune path.
+		//
+		// The distances were available all along: distFuncUint8 is the native
+		// 8-bit kernel and int8Computer.uint8Mode already exists.
+		for i, cand := range candidates {
+			if len(selected) >= m {
+				break
+			}
+			isDiverse := true
+			v1, _ := extracted[i].([]uint8)
+			if v1 == nil {
+				continue
+			}
+			for j := range selected {
+				v2 := selectedVecs[j].([]uint8)
+				d, _ := h.distFuncUint8(v1, v2)
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
+			}
+			if isDiverse {
+				selected = append(selected, cand)
+				selectedVecs = append(selectedVecs, v1)
+			}
+		}
 	case types.VectorTypeInt16:
 		for i, cand := range candidates {
 			if len(selected) >= m {

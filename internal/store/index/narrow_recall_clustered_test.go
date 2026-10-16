@@ -405,11 +405,16 @@ func ftoa(v float64) string { return strconv.FormatFloat(v, 'f', 3, 64) }
 // 500 while int8, int16 and uint16 returned 4000 - traversal terminating because
 // the frontier was exhausted rather than because the results were exhausted.
 //
-// That defect is corpus-dependent: it did not reproduce on the 40-cluster corpus
-// above, where uint8 reaches recall@10 of 0.97. A connectivity failure that
+// That defect was corpus-dependent: it did not reproduce on the 40-cluster corpus
+// above, where uint8 reached recall@10 of 0.97. A connectivity failure that
 // depends on the data is a construction instability, not a wrong constant
-// somewhere, which is why it is pinned here by its observable effect rather
-// than by a threshold chosen to match one corpus.
+// somewhere, which is why it is pinned here by its observable effect rather than
+// by a threshold chosen to match one corpus.
+//
+// The cause was that uint8 had no case in selectNeighbors, so it pruned through
+// the branch documented for unknown types - which applies no diversity heuristic
+// at all. uint8 now has one, using the native 8-bit kernel, so it is no longer
+// skipped here and returns 4000 of 4000 on this corpus like every other dtype.
 func TestNarrowSearchReachesWholeGraph(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds four 4k indexes")
@@ -422,18 +427,6 @@ func TestNarrowSearchReachesWholeGraph(t *testing.T) {
 
 	for _, d := range narrowDomains() {
 		d := d
-		if d.name == "uint8" {
-			// uint8 fails this today and is tracked as docs/roadmap.md item 9.
-			// It is not skipped to keep the tree green: the check runs for every
-			// other dtype on the same corpus, so a regression anywhere else is
-			// still caught, and the uint8 figures are reported below.
-			t.Run("uint8", func(t *testing.T) {
-				t.Skip("uint8 graph construction produces a disconnected graph; " +
-					"docs/roadmap.md item 9. Measured: ~600-3500 of 4000 candidates for k=n " +
-					"at efSearch=500, against 4000 for int8, int16 and uint16 on the same corpus.")
-			})
-			continue
-		}
 		t.Run(d.name, func(t *testing.T) {
 			scale, bias, lo, hi := quantizerFor(d.vectorTyp)
 			idx, stored := buildQuantizedCorpusArity(t, corpus, d.arrowType, d.vectorTyp, scale, bias, lo, hi)

@@ -9,25 +9,15 @@
 
 | Pri | # | Item | Area | Impact / Rationale |
 |:---|:---|:---|:---|:---|
-| **P0** | **37** | **Decompose `arrow_hnsw_bulk.go` Graph Monolith** | Architecture / Index | 1,754-LOC file interweaving batch linking, Arrow column extraction, and graph repair. Split into cohesive sub-components. |
-| **P0** | **38** | **Decouple `VectorStore` Ingestion Coordinator & Dataset Registry** | Architecture / Store | 163-file coordinator struct mixing NUMA pinning, queue workers, batch decoding, and dataset state. Extract worker pool and registry. |
-| **P0** | **39** | **Modularize `simd/dispatch.go` Function Tables** | Architecture / SIMD | 1,512-LOC monolith with 150+ flat function pointers. Group into sub-dispatchers with layered inheritance. |
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
-| **P1** | **8** | **Lock-Free Adjacency Updates & NUMA Worker Queues** | Concurrency / Ingest | Mutex lock profiling shows 69.10% flat lock delay in `sync.(*Mutex).Unlock`, with `StartIndexingWorkers` contributing 53.8% cumulative lock delay. Migrate to generation-stamped CAS adjacency lists and sharded NUMA worker queues. |
 | **P1** | **12** | **Lock-Free Concurrent Map for Metadata & ID Translation** | Concurrency / Memory | Copy-on-Write cloning in `MapRCU` triggers >1,200 MB of heap allocations during streaming ingestion batches due to repeated `make(map[K]V)` allocations. Replace with chunked Trie or lock-free hash map. |
 | **P1** | **13** | **SIMD Fused BM25 Term Scoring & Posting List Intersection** | Sparse / Ranking | BM25 multi-term queries evaluate posting lists sequentially with map lookups. Vectorize posting list intersection using AVX-512 `VFMADD` instructions across contiguous document length arrays. |
 | **P1** | **10** | **Iterative Stack Traversal for Geospatial Quadtree Queries** | Geospatial / Algorithmic | `(*Quadtree).queryBoxRecursive` and `SearchRadius` allocate temporary slices at each recursive quadrant subdivision (~1,985 MB cumulative allocations). Replace with iterative fixed-depth stack. |
 
 ```mermaid
 graph TD
-    subgraph P0["P0 Architectural Blockers"]
-        I37["37: Decompose arrow_hnsw_bulk.go"]
-        I38["38: Decouple VectorStore Ingestion & Registry"]
-        I39["39: Modularize simd/dispatch.go Tables"]
-    end
     subgraph P1["P1 Critical Path"]
         I32["32: Re-cut Baselines & Wire Index-Time CI Gate"]
-        I8["8: Lock-Free Adjacency & NUMA Worker Queues"]
         I12["12: Lock-Free Map for Metadata & IDs"]
         I13["13: SIMD Fused BM25 Posting Intersection"]
         I10["10: Iterative Quadtree Stack Traversal"]
@@ -47,8 +37,7 @@ graph TD
         I23["23: Declarative Compose/Helm Provisioning"]
     end
 
-    I32 --> I8
-    I8 --> I12
+    I32 --> I12
     I12 --> I13
     I13 --> I10
     I18 --> I19

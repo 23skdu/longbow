@@ -193,14 +193,26 @@ func turboQuantDistanceBatchWithL2(query []float32, codes [][]byte, dst []float3
 		angleOffset := angleCount
 		for currentLevelSize < pow2 {
 			angleOffset -= currentLevelSize
-			for i := currentLevelSize - 1; i >= 0; i-- {
+			if currentLevelSize < 4 {
+				for i := currentLevelSize - 1; i >= 0; i-- {
+					for w := 0; w < m; w++ {
+						r := recon[w*pow2+i]
+						q := indices[w*angleCount+angleOffset+i]
+						c := lookup[2*int(q)]
+						s := lookup[2*int(q)+1]
+						recon[w*pow2+2*i] = r * c
+						recon[w*pow2+2*i+1] = r * s
+					}
+				}
+			} else {
 				for w := 0; w < m; w++ {
-					r := recon[w*pow2+i]
-					q := indices[w*angleCount+angleOffset+i]
-					c := lookup[2*int(q)]
-					s := lookup[2*int(q)+1]
-					recon[w*pow2+2*i] = r * c
-					recon[w*pow2+2*i+1] = r * s
+					TQPolarReconstructLevel(
+						recon[w*pow2:(w+1)*pow2],
+						indices[w*angleCount:(w+1)*angleCount],
+						angleOffset,
+						currentLevelSize,
+						lookup,
+					)
 				}
 			}
 			currentLevelSize *= 2

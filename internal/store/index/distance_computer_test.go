@@ -127,3 +127,58 @@ func TestSearchContextChunkCache(t *testing.T) {
 	require.Equal(t, uint32(2), sctx.cachedChunksF32[0].epoch)
 }
 
+func TestSearchContextTQReconCache(t *testing.T) {
+	sctx := NewArrowSearchContext()
+	require.Equal(t, uint32(1), sctx.tqReconEpoch)
+
+	// 1. Initial state: cache miss
+	d, hit := sctx.ProbeTQRecon(42)
+	require.False(t, hit)
+	require.Equal(t, float32(0), d)
+
+	// 2. Insert distance
+	sctx.InsertTQRecon(42, 1.2345)
+	d, hit = sctx.ProbeTQRecon(42)
+	require.True(t, hit)
+	require.Equal(t, float32(1.2345), d)
+
+	// Different ID misses
+	_, hit = sctx.ProbeTQRecon(43)
+	require.False(t, hit)
+
+	// 3. Test vector memoization
+	const pow2 = 16
+	sctx.EnsureTQReconCapacity(pow2)
+	vec := make([]float32, pow2)
+	for i := range vec {
+		vec[i] = float32(i) * 1.5
+	}
+	sctx.InsertTQReconWithVector(99, 2.718, vec)
+
+	d, hit = sctx.ProbeTQRecon(99)
+	require.True(t, hit)
+	require.Equal(t, float32(2.718), d)
+
+	cachedVec, ok := sctx.ProbeTQReconVector(99)
+	require.True(t, ok)
+	require.Equal(t, vec, cachedVec)
+
+	// 4. Reset invalidates without allocation
+	sctx.Reset()
+	require.Equal(t, uint32(2), sctx.tqReconEpoch)
+
+	// Previous entries are now misses
+	_, hit = sctx.ProbeTQRecon(42)
+	require.False(t, hit)
+	_, hit = sctx.ProbeTQRecon(99)
+	require.False(t, hit)
+	_, ok = sctx.ProbeTQReconVector(99)
+	require.False(t, ok)
+
+	// 5. New insertions in new epoch work cleanly
+	sctx.InsertTQRecon(42, 3.1415)
+	d, hit = sctx.ProbeTQRecon(42)
+	require.True(t, hit)
+	require.Equal(t, float32(3.1415), d)
+}
+

@@ -150,6 +150,7 @@ type tqComputer struct {
 	rotatedQuery []float32
 	diskGraph    *DiskGraph
 	maxGen       uint64
+	sctx         *ArrowSearchContext
 
 	// Small direct-mapped cache of the TurboQuant chunks a search has touched,
 	// used by Prefetch. HNSW traversal is local but not contiguous - a node's
@@ -194,6 +195,12 @@ type tqChunkCacheEntry struct {
 }
 
 func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
+	if c.sctx != nil {
+		if d, ok := c.sctx.ProbeTQRecon(id); ok {
+			return d, nil
+		}
+	}
+
 	dim := int(c.h.dims.Load())
 	// 1. Ephemeral scratch arena (eliminates redundant dequantization during
 	// indexing).
@@ -210,7 +217,11 @@ func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 			return tq.compute.encoder.DecodeInto(tqCode, dst)
 		})
 		if err == nil && dim > 0 && len(c.rotatedQuery) >= dim && len(v) >= dim {
-			return c.h.distFunc(c.rotatedQuery[:dim], v[:dim])
+			d, err2 := c.h.distFunc(c.rotatedQuery[:dim], v[:dim])
+			if err2 == nil && c.sctx != nil {
+				c.sctx.InsertTQReconWithVector(id, d, v)
+			}
+			return d, err2
 		}
 		if err != nil {
 			return 0, err
@@ -223,12 +234,24 @@ func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 			offset := int(id) * dim
 			if offset+dim <= len(p.data) {
 				v := p.data[offset : offset+dim]
-				return c.h.distFunc(c.rotatedQuery[:dim], v)
+				d, err2 := c.h.distFunc(c.rotatedQuery[:dim], v)
+				if err2 == nil && c.sctx != nil {
+					c.sctx.InsertTQReconWithVector(id, d, v)
+				}
+				return d, err2
 			}
 		}
-		return tq.compute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
+		d, err := tq.compute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
+		if err == nil && c.sctx != nil {
+			c.sctx.InsertTQRecon(id, d)
+		}
+		return d, err
 	}
-	return tq.compute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
+	d, err := tq.compute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
+	if err == nil && c.sctx != nil {
+		c.sctx.InsertTQRecon(id, d)
+	}
+	return d, err
 }
 
 // ComputeBatch evaluates a whole block of candidates against one batch-scoped
@@ -248,6 +271,20 @@ func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error
 		dst = make([]float32, len(ids))
 	} else {
 		dst = dst[:len(ids)]
+	}
+
+	if c.sctx != nil {
+		allHits := true
+		for i, id := range ids {
+			if d, ok := c.sctx.ProbeTQRecon(id); ok {
+				dst[i] = d
+			} else {
+				allHits = false
+			}
+		}
+		if allHits {
+			return dst, nil
+		}
 	}
 
 	batch := c.chunkBatch()
@@ -271,6 +308,11 @@ func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error
 		if err := c.h.tq().compute.DistanceDirectCodesBatch(c.rotatedQuery, codes, dst); err != nil {
 			return nil, err
 		}
+		if c.sctx != nil {
+			for i, id := range ids {
+				c.sctx.InsertTQRecon(id, dst[i])
+			}
+		}
 		return dst, nil
 	}
 
@@ -281,6 +323,11 @@ func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error
 			if segStart >= 0 {
 				if err := c.h.tq().compute.DistanceDirectCodesBatch(c.rotatedQuery, codes[segStart:i], dst[segStart:i]); err != nil {
 					return nil, err
+				}
+				if c.sctx != nil {
+					for j := segStart; j < i; j++ {
+						c.sctx.InsertTQRecon(ids[j], dst[j])
+					}
 				}
 				segStart = -1
 			}
@@ -298,6 +345,11 @@ func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error
 	if segStart >= 0 {
 		if err := c.h.tq().compute.DistanceDirectCodesBatch(c.rotatedQuery, codes[segStart:], dst[segStart:]); err != nil {
 			return nil, err
+		}
+		if c.sctx != nil {
+			for j := segStart; j < len(ids); j++ {
+				c.sctx.InsertTQRecon(ids[j], dst[j])
+			}
 		}
 	}
 	return dst, nil

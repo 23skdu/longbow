@@ -295,7 +295,42 @@ func (e *TurboQuantEncoder) polarReconstructCodes(radius float32, codes []byte, 
 	e.polarReconstructCodes(radius, codes[n/2:], nextRadii, stack)
 
 	lookup := tqPolarLUTFor(e.params.BitsPerAngle)
-	for i := 0; i < n/2; i++ {
+	i := 0
+	for ; i+4 <= n/2; i += 4 {
+		r0 := nextRadii[i]
+		r1 := nextRadii[i+1]
+		r2 := nextRadii[i+2]
+		r3 := nextRadii[i+3]
+
+		p0 := 2 * int(codes[i])
+		p1 := 2 * int(codes[i+1])
+		p2 := 2 * int(codes[i+2])
+		p3 := 2 * int(codes[i+3])
+
+		c0, s0 := lookup[p0], lookup[p0+1]
+		c1, s1 := lookup[p1], lookup[p1+1]
+		c2, s2 := lookup[p2], lookup[p2+1]
+		c3, s3 := lookup[p3], lookup[p3+1]
+
+		out0 := r0 * c0
+		out1 := r0 * s0
+		out2 := r1 * c1
+		out3 := r1 * s1
+		out4 := r2 * c2
+		out5 := r2 * s2
+		out6 := r3 * c3
+		out7 := r3 * s3
+
+		dst[2*i] = out0
+		dst[2*i+1] = out1
+		dst[2*i+2] = out2
+		dst[2*i+3] = out3
+		dst[2*i+4] = out4
+		dst[2*i+5] = out5
+		dst[2*i+6] = out6
+		dst[2*i+7] = out7
+	}
+	for ; i < n/2; i++ {
 		r := nextRadii[i]
 		pair := 2 * int(codes[i])
 		dst[2*i] = r * lookup[pair]
@@ -381,16 +416,10 @@ func (e *TurboQuantEncoder) DecodeInto(data []byte, dst []float32) error {
 	stack := workspace[e.pow2*2 : e.pow2*3]
 	e.polarReconstructCodes(radius, codes, recon, stack)
 
-	// Apply QJL Correction
+	// Apply QJL Correction branchlessly
 	qjlBits := data[qjlOffset:]
 	correction := radius / float32(math.Sqrt(float64(e.pow2))) * 0.1 // Heuristic
-	for i := 0; i < e.pow2; i++ {
-		if i/8 < len(qjlBits) && (qjlBits[i/8]&(byte(1)<<(i%8))) != 0 {
-			recon[i] += correction
-		} else {
-			recon[i] -= correction
-		}
-	}
+	simd.TQApplyQJLCorrection(recon[:e.pow2], qjlBits, correction)
 
 	n := e.pow2
 	if len(dst) < n {

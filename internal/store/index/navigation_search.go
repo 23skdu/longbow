@@ -824,8 +824,16 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				if len(searchCtx.rotatedQueryTQ) < pow2 {
 					searchCtx.rotatedQueryTQ = make([]float32, pow2)
 				}
+				searchCtx.EnsureTQReconCapacity(pow2)
 				_ = tq.compute.PrecomputeRotatedQuery(q, searchCtx.rotatedQueryTQ)
-				return &tqComputer{data: data, h: h, rotatedQuery: searchCtx.rotatedQueryTQ, diskGraph: searchCtx.diskGraph, maxGen: searchCtx.MaxGeneration}
+				return &tqComputer{
+					data:         data,
+					h:            h,
+					rotatedQuery: searchCtx.rotatedQueryTQ,
+					diskGraph:    searchCtx.diskGraph,
+					maxGen:       searchCtx.MaxGeneration,
+					sctx:         searchCtx,
+				}
 			}
 			if h.config.PQEnabled && h.oopqEncoder != nil {
 				var table any

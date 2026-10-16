@@ -1271,3 +1271,55 @@ tail_next2_512:
 done_pack2_512:
     VZEROUPPER
     RET
+
+// func tqPolarReconstructLevelAVX2Kernel(recon, qIndices, lookup unsafe.Pointer, angleOffset, levelSize int)
+TEXT ·tqPolarReconstructLevelAVX2Kernel(SB), NOSPLIT, $0-40
+    MOVQ    recon+0(FP), SI
+    MOVQ    qIndices+8(FP), DI
+    MOVQ    lookup+16(FP), BX
+    MOVQ    angleOffset+24(FP), R8
+    MOVQ    levelSize+32(FP), CX
+
+    ADDQ    R8, DI          // DI = qIndices + angleOffset
+    SUBQ    $4, CX          // base = levelSize - 4
+
+loop_polar_recon_avx2:
+    CMPQ    CX, $0
+    JL      done_polar_recon_avx2
+
+    // Load 4 byte codes at (DI + CX)
+    MOVBLZX (DI)(CX*1), R9
+    MOVBLZX 1(DI)(CX*1), R10
+    MOVBLZX 2(DI)(CX*1), R11
+    MOVBLZX 3(DI)(CX*1), R12
+
+    // Lookup 4 pairs [cos, sin] from lookup (BX)
+    // Each pair is 2 float32s (8 bytes)
+    VMOVQ       (BX)(R9*8), X1
+    VMOVQ       (BX)(R10*8), X2
+    VPUNPCKLQDQ X2, X1, X1          // X1 = [c0, s0, c1, s1]
+    VMOVQ       (BX)(R11*8), X3
+    VMOVQ       (BX)(R12*8), X4
+    VPUNPCKLQDQ X4, X3, X3          // X3 = [c2, s2, c3, s3]
+    VINSERTF128 $1, X3, Y1, Y1      // Y1 = [c0, s0, c1, s1, c2, s2, c3, s3]
+
+    // Load 4 radii from recon (SI) at CX
+    VMOVUPS     (SI)(CX*4), X0      // X0 = [r0, r1, r2, r3]
+
+    // Duplicate radii: [r0, r0, r1, r1, r2, r2, r3, r3] into Y0
+    VUNPCKLPS   X0, X0, X5          // X5 = [r0, r0, r1, r1]
+    VUNPCKHPS   X0, X0, X6          // X6 = [r2, r2, r3, r3]
+    VINSERTF128 $1, X6, Y5, Y0      // Y0 = [r0, r0, r1, r1, r2, r2, r3, r3]
+
+    // 8-lane parallel multiply
+    VMULPS      Y0, Y1, Y2          // Y2 = Y0 * Y1
+
+    // Store 8 float32 outputs to recon[2*base] = (SI)(CX*8)
+    VMOVUPS     Y2, (SI)(CX*8)
+
+    SUBQ        $4, CX
+    JMP         loop_polar_recon_avx2
+
+done_polar_recon_avx2:
+    VZEROUPPER
+    RET

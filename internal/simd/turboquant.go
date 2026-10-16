@@ -420,13 +420,17 @@ func turboQuantDistanceWithL2Scratch(query []float32, tqData []byte, dim int, po
 	angleOffset := angleCount
 	for currentLevelSize < pow2 {
 		angleOffset -= currentLevelSize
-		for i := currentLevelSize - 1; i >= 0; i-- {
-			r := recon[i]
-			q := qIndices[angleOffset+i]
-			c := lookup[2*int(q)]
-			s := lookup[2*int(q)+1]
-			recon[2*i] = r * c
-			recon[2*i+1] = r * s
+		if currentLevelSize < 4 {
+			for i := currentLevelSize - 1; i >= 0; i-- {
+				r := recon[i]
+				q := qIndices[angleOffset+i]
+				c := lookup[2*int(q)]
+				s := lookup[2*int(q)+1]
+				recon[2*i] = r * c
+				recon[2*i+1] = r * s
+			}
+		} else {
+			TQPolarReconstructLevel(recon, qIndices, angleOffset, currentLevelSize, lookup)
 		}
 		currentLevelSize *= 2
 	}
@@ -465,6 +469,64 @@ func turboQuantDistanceWithL2Scratch(query []float32, tqData []byte, dim int, po
 	return float32(math.Sqrt(float64(sum))), nil
 }
 
+// TQPolarReconstructLevel executes 4-lane polar reconstruction for a single level where levelSize >= 4.
+func TQPolarReconstructLevel(recon []float32, qIndices []byte, angleOffset int, levelSize int, lookup []float32) {
+	if features.HasAVX2 {
+		TQPolarReconstructLevelAVX2(recon, qIndices, angleOffset, levelSize, lookup)
+		return
+	}
+	TQPolarReconstructLevelGeneric(recon, qIndices, angleOffset, levelSize, lookup)
+}
+
+// TQPolarReconstructLevelGeneric executes 4-lane unrolled polar reconstruction with independent registers.
+func TQPolarReconstructLevelGeneric(recon []float32, qIndices []byte, angleOffset int, levelSize int, lookup []float32) {
+	base := levelSize - 4
+	for ; base >= 0; base -= 4 {
+		r0 := recon[base]
+		r1 := recon[base+1]
+		r2 := recon[base+2]
+		r3 := recon[base+3]
+
+		q0 := int(qIndices[angleOffset+base])
+		q1 := int(qIndices[angleOffset+base+1])
+		q2 := int(qIndices[angleOffset+base+2])
+		q3 := int(qIndices[angleOffset+base+3])
+
+		p0 := 2 * q0
+		p1 := 2 * q1
+		p2 := 2 * q2
+		p3 := 2 * q3
+
+		c0, s0 := lookup[p0], lookup[p0+1]
+		c1, s1 := lookup[p1], lookup[p1+1]
+		c2, s2 := lookup[p2], lookup[p2+1]
+		c3, s3 := lookup[p3], lookup[p3+1]
+
+		out0 := r0 * c0
+		out1 := r0 * s0
+		out2 := r1 * c1
+		out3 := r1 * s1
+		out4 := r2 * c2
+		out5 := r2 * s2
+		out6 := r3 * c3
+		out7 := r3 * s3
+
+		recon[2*base] = out0
+		recon[2*base+1] = out1
+		recon[2*base+2] = out2
+		recon[2*base+3] = out3
+		recon[2*base+4] = out4
+		recon[2*base+5] = out5
+		recon[2*base+6] = out6
+		recon[2*base+7] = out7
+	}
+}
+
+// TQApplyQJLCorrection applies QJL sign correction to recon using branchless arithmetic.
+func TQApplyQJLCorrection(recon []float32, qjlBits []byte, correction float32) {
+	tqApplyQJLCorrection(recon, qjlBits, correction)
+}
+
 // tqApplyQJLCorrection adds correction to recon[i] when bit i of qjlBits is set
 // and subtracts it otherwise, branchlessly.
 //
@@ -485,14 +547,14 @@ func tqApplyQJLCorrection(recon []float32, qjlBits []byte, correction float32) {
 		bits := qjlBits[i>>3]
 		for j := 0; j < 8; j++ {
 			b := (bits >> uint(j)) & 1
-			recon[i+j] += correction * (1 - 2*float32(b))
+			recon[i+j] += correction * (2*float32(b) - 1)
 		}
 	}
 	if i < maxI {
 		bits := qjlBits[i>>3]
 		for ; i < maxI; i++ {
 			b := (bits >> (uint(i) & 7)) & 1
-			recon[i] += correction * (1 - 2*float32(b))
+			recon[i] += correction * (2*float32(b) - 1)
 		}
 	}
 }

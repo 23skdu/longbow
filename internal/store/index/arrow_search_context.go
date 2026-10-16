@@ -232,6 +232,20 @@ type ArrowSearchContext struct {
 	cachedChunksC128  []cachedChunkC128
 	cachedChunksTQ    []cachedChunkBytes
 	cachedChunksSQ8   []cachedChunkBytes
+
+	// Ephemeral reconstructed TQ vector memoization across search hops (roadmap Item 26)
+	tqReconEpoch uint32
+	tqReconTable [tqReconCacheSlots]tqReconCacheEntry
+	tqReconVecs  []float32
+	tqReconPow2  int
+}
+
+const tqReconCacheSlots = 512
+
+type tqReconCacheEntry struct {
+	id    uint32
+	epoch uint32
+	dist  float32
 }
 
 type cachedChunkF32 struct {
@@ -333,6 +347,7 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		cachedChunksTQ:         make([]cachedChunkBytes, 16),
 		cachedChunksSQ8:        make([]cachedChunkBytes, 16),
 		chunkEpoch:             1,
+		tqReconEpoch:           1,
 	}
 }
 
@@ -494,6 +509,87 @@ func (ctx *ArrowSearchContext) Reset() {
 		clear(ctx.cachedChunksTQ)
 		clear(ctx.cachedChunksSQ8)
 		ctx.chunkEpoch = 1
+	}
+
+	// Invalidate TQ reconstruction cache via generation bump (O(1), zero allocations)
+	ctx.tqReconEpoch++
+	if ctx.tqReconEpoch == 0 {
+		ctx.tqReconEpoch = 1
+		clear(ctx.tqReconTable[:])
+	}
+}
+
+// EnsureTQReconCapacity ensures the memoization buffer has room for tqReconCacheSlots * pow2 floats.
+func (ctx *ArrowSearchContext) EnsureTQReconCapacity(pow2 int) {
+	ctx.tqReconPow2 = pow2
+	needed := tqReconCacheSlots * pow2
+	if cap(ctx.tqReconVecs) < needed {
+		ctx.tqReconVecs = make([]float32, needed)
+	} else {
+		ctx.tqReconVecs = ctx.tqReconVecs[:needed]
+	}
+}
+
+// ProbeTQRecon probes the ephemeral cross-hop cache for an evaluated distance.
+func (ctx *ArrowSearchContext) ProbeTQRecon(id uint32) (float32, bool) {
+	set := int((id & 255) << 1)
+	if ctx.tqReconTable[set].epoch == ctx.tqReconEpoch && ctx.tqReconTable[set].id == id {
+		return ctx.tqReconTable[set].dist, true
+	}
+	if ctx.tqReconTable[set+1].epoch == ctx.tqReconEpoch && ctx.tqReconTable[set+1].id == id {
+		return ctx.tqReconTable[set+1].dist, true
+	}
+	return 0, false
+}
+
+// ProbeTQReconVector probes the ephemeral cross-hop cache for a reconstructed float32 vector.
+func (ctx *ArrowSearchContext) ProbeTQReconVector(id uint32) ([]float32, bool) {
+	if ctx.tqReconPow2 <= 0 || len(ctx.tqReconVecs) < tqReconCacheSlots*ctx.tqReconPow2 {
+		return nil, false
+	}
+	set := int((id & 255) << 1)
+	var slot int
+	if ctx.tqReconTable[set].epoch == ctx.tqReconEpoch && ctx.tqReconTable[set].id == id {
+		slot = set
+	} else if ctx.tqReconTable[set+1].epoch == ctx.tqReconEpoch && ctx.tqReconTable[set+1].id == id {
+		slot = set + 1
+	} else {
+		return nil, false
+	}
+	start := slot * ctx.tqReconPow2
+	return ctx.tqReconVecs[start : start+ctx.tqReconPow2], true
+}
+
+// InsertTQRecon inserts an evaluated distance into the ephemeral cross-hop cache.
+func (ctx *ArrowSearchContext) InsertTQRecon(id uint32, dist float32) {
+	set := int((id & 255) << 1)
+	if ctx.tqReconTable[set].epoch != ctx.tqReconEpoch {
+		ctx.tqReconTable[set] = tqReconCacheEntry{id: id, epoch: ctx.tqReconEpoch, dist: dist}
+		return
+	}
+	if ctx.tqReconTable[set+1].epoch != ctx.tqReconEpoch {
+		ctx.tqReconTable[set+1] = tqReconCacheEntry{id: id, epoch: ctx.tqReconEpoch, dist: dist}
+		return
+	}
+	slot := set | int((id>>8)&1)
+	ctx.tqReconTable[slot] = tqReconCacheEntry{id: id, epoch: ctx.tqReconEpoch, dist: dist}
+}
+
+// InsertTQReconWithVector inserts an evaluated distance and its reconstructed vector into the cache.
+func (ctx *ArrowSearchContext) InsertTQReconWithVector(id uint32, dist float32, vec []float32) {
+	set := int((id & 255) << 1)
+	var slot int
+	if ctx.tqReconTable[set].epoch != ctx.tqReconEpoch {
+		slot = set
+	} else if ctx.tqReconTable[set+1].epoch != ctx.tqReconEpoch {
+		slot = set + 1
+	} else {
+		slot = set | int((id>>8)&1)
+	}
+	ctx.tqReconTable[slot] = tqReconCacheEntry{id: id, epoch: ctx.tqReconEpoch, dist: dist}
+	if ctx.tqReconPow2 > 0 && len(vec) >= ctx.tqReconPow2 && len(ctx.tqReconVecs) >= (slot+1)*ctx.tqReconPow2 {
+		start := slot * ctx.tqReconPow2
+		copy(ctx.tqReconVecs[start:start+ctx.tqReconPow2], vec[:ctx.tqReconPow2])
 	}
 }
 

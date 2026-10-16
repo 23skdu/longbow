@@ -73,3 +73,20 @@ func packTQ4AVX2Kernel(src, dst unsafe.Pointer, n int)
 
 //go:noescape
 func packTQ8AVX2Kernel(src, dst unsafe.Pointer, n int)
+
+// TQPolarReconstructLevelAVX2 runs the 4-lane AVX2 polar reconstruction kernel.
+func TQPolarReconstructLevelAVX2(recon []float32, qIndices []byte, angleOffset, levelSize int, lookup []float32) {
+	if levelSize < 4 || len(recon) < 2*levelSize || len(qIndices) < angleOffset+levelSize || len(lookup) == 0 {
+		return
+	}
+	tqPolarReconstructLevelAVX2Kernel(
+		unsafe.Pointer(&recon[0]),
+		unsafe.Pointer(&qIndices[0]),
+		unsafe.Pointer(&lookup[0]),
+		angleOffset,
+		levelSize,
+	)
+}
+
+//go:noescape
+func tqPolarReconstructLevelAVX2Kernel(recon, qIndices, lookup unsafe.Pointer, angleOffset, levelSize int)

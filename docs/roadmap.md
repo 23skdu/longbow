@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
 **Last updated**: 2026-10-16  
-**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 4, 5, 14–17, 28, 29, 31, 33, 34) have been verified and removed to maintain execution clarity.
+**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 4–7, 14–17, 25–29, 31, 33, 34) have been verified and removed to maintain execution clarity.
 
 ---
 
@@ -10,22 +10,21 @@
 | Pri | # | Item | Area | Impact / Rationale |
 |:---|:---|:---|:---|:---|
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
-| **P1** | **25/26** | **TurboQuant 4-Lane Polar Reconstruction & Cross-Hop Caching** | Quantization | Scalar polar reconstruction accounts for 89.2% of TQ distance evaluation time. Interleave reconstruction across 4 AVX2 lanes and memoize reconstructed float32 vectors in scratch arena to cut P99 latency by 20%. |
 | **P1** | **9** | **Inlined 4-Ary Candidate Heap & Branchless Struct Swapping** | Algorithmic | Candidate heap maintenance (`down`, `Less`, `Swap`) accounts for ~15.2% combined flat time during beam search. Inlined 4-ary candidate heap eliminates slice copies and bounds checks. |
 | **P1** | **8** | **Lock-Free Adjacency Updates & NUMA Worker Queues** | Concurrency / Ingest | Mutex lock profiling shows 69.10% flat lock delay in `sync.(*Mutex).Unlock`, with `StartIndexingWorkers` contributing 53.8% cumulative lock delay. Migrate to generation-stamped CAS adjacency lists and sharded NUMA worker queues. |
 | **P1** | **12** | **Lock-Free Concurrent Map for Metadata & ID Translation** | Concurrency / Memory | Copy-on-Write cloning in `MapRCU` triggers >1,200 MB of heap allocations during streaming ingestion batches due to repeated `make(map[K]V)` allocations. Replace with chunked Trie or lock-free hash map. |
+| **P1** | **13** | **SIMD Fused BM25 Term Scoring & Posting List Intersection** | Sparse / Ranking | BM25 multi-term queries evaluate posting lists sequentially with map lookups. Vectorize posting list intersection using AVX-512 `VFMADD` instructions across contiguous document length arrays. |
 
 ```mermaid
 graph TD
     subgraph P1["Top 5 Priorities"]
         I32["32: Re-cut Baselines & Wire Index-Time CI Gate"]
-        I25["25/26: TurboQuant 4-Lane Vectorization & Hop Cache"]
         I9["9: Inlined 4-Ary Candidate Heap"]
         I8["8: Lock-Free Adjacency & NUMA Worker Queues"]
         I12["12: Lock-Free Map for Metadata & IDs"]
+        I13["13: SIMD Fused BM25 Posting Intersection"]
     end
     subgraph P2["Algorithmic & Storage Optimizations"]
-        I13["13: SIMD Fused BM25 Posting Intersection"]
         I10["10: Iterative Quadtree Stack Traversal"]
         I3["3: Pooled Disk Row Buffers"]
         I2["2: ARM NEON Dequant Assembly"]
@@ -41,10 +40,10 @@ graph TD
         I23["23: Declarative Compose/Helm Provisioning"]
     end
 
-    I32 --> I25
-    I25 --> I9
+    I32 --> I9
     I9 --> I8
     I8 --> I12
+    I12 --> I13
     I18 --> I19
     I19 --> I21
     I20 --> I22
@@ -62,17 +61,6 @@ graph TD
   1. Re-generate canonical baseline files (`benchmarks/baseline_*.json`) across 25k, 100k, and 250k scales using the new deterministic seed derivation.
   2. Integrate `scripts/check_index_regression.py` into `.github/workflows/benchmark-ab.yml` to enforce a ≤5% index-time regression gate on scheduled interleaved A/B runs.
 - **Success Criteria**: Zero false-positive alerts on self-noise tests; automated CI cancellation on true index-time regressions ≥5%.
-
-
-
-### Item 25 & 26: TurboQuant 4-Lane Polar Reconstruction & Cross-Hop Caching
-- **Status**: **OPEN**
-- **Files**: `internal/store/index/turboquant_distance*.go`, `internal/tensor/quantization/turboquant.go`, `internal/store/index/arrow_hnsw_search.go`
-- **State**: Profiling demonstrates that 89.2% of distance evaluation time during TurboQuant search is scalar polar reconstruction and QJL sign correction. Furthermore, visited nodes are repeatedly reconstructed across beam search hops, inflating P99 search latency.
-- **Plan**:
-  1. **Item 25**: Implement 4-lane AVX2 vectorized polar reconstruction with independent accumulator registers, amortizing radius scaling per chunk.
-  2. **Item 26**: Add an ephemeral, per-search scratch arena in `ArrowSearchContext` to memoize reconstructed float32 vectors across graph hops.
-- **Success Criteria**: TurboQuant dense search QPS increases from ~300 to ≥600 at 100k; total polar reconstructions per query drop from ≥1.8x to ≤1.1x at `efSearch=500`; P99 latency decreases by ≥20%.
 
 ---
 
@@ -188,6 +176,7 @@ graph TD
 | **1** | End-to-End GPU Search Dispatch & Complex128 Bottleneck | 2026-10-16 | `d855f554` | `CUDAIndex.SearchBatchDistances` batched candidate kernel; complex128 batched coalesced kernel; end-to-end dataset auto-sharding & bulk ingest GPU sync wired. |
 | **6/27** | AVX-512 VNNI & Saturated Int8/Uint8 Dispatch | 2026-10-16 | `c204cea0` | Native 64-byte `VPDPBUSD` dot product and saturated AVX-512 int8/uint8 kernels in `int8_kernels_avx512_amd64.s`; wired in dispatch table for emerald, granite, and avx512 tiers; parity verified with 100% bit identity. |
 | **7** | Direct Base Pointer Caching in SearchContext for SlabArena & TypedArena | 2026-10-16 | `89ecd910` | Direct chunk slice & base pointer cache with generational epoch bump in `ArrowSearchContext`; zero-division vector access across Float32, Float64, Int8, Uint8, Float16, Complex128, TQ, and SQ8. |
+| **25/26** | TurboQuant 4-Lane Polar Reconstruction & Cross-Hop Caching | 2026-10-16 | `HEAD` | Native Plan 9 AVX2 kernel `tqPolarReconstructLevelAVX2Kernel` with 4-lane parallel decoding; branchless QJL correction; 2-way associative ephemeral cross-hop reconstruction cache in `ArrowSearchContext`; 42%–50% latency drop on TurboQuant distance computation with 100% bit identity. |
 | **4** | BM25 Inverted Index COW Elimination | 2026-10-15 | `5514faf9` | `BM25InvertedIndex.AddBatch` and `BM25ArenaIndex` eliminate per-doc map copying; >12 GB heap churn removed during ingest. |
 | **5** | Native L2-Squared Integer SIMD Kernels | 2026-10-15 | `cb6c2712` | Native AVX-512 `l2SquaredInt8AVX512Kernel` implemented; eliminates redundant terminal `VSQRTSS` and `d * d` squaring. |
 | **14** | Ingestion Zero-Copy & Timer Elimination | 2026-10-11 | `1b3927e4` | Geometric slice growth in `LockFreeSlice.Append`; wake channels replace polling timers. |

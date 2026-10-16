@@ -1,6 +1,7 @@
 package tensor
 
 import (
+	"os"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/mathutil"
@@ -102,6 +103,10 @@ func TestResolveBackend_AutoMode_SizeThresholds(t *testing.T) {
 	origMode := dispatchMode
 	defer func() { dispatchMode = origMode }()
 
+	origThresholds := GetDispatchThresholds()
+	defer SetDispatchThresholds(origThresholds)
+	SetDispatchThresholds(DefaultThresholds())
+
 	// Probe: forced DispatchEML returns EML only on emlgo builds (stub always standard).
 	dispatchMode = DispatchEML
 	emlgoTagged := ResolveBackend("float32", 1) == mathutil.BackendEML
@@ -139,4 +144,99 @@ func TestResolveBackend_AutoMode_SizeThresholds(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHardwareAwareThresholdCalibration(t *testing.T) {
+	// Tier 1: Advanced Server (AMX or AVX-512 VNNI with large L3)
+	t.Run("Tier1_AMX_Server", func(t *testing.T) {
+		profile := CPUHardwareProfile{
+			HasAMX:        true,
+			HasAVX512:     true,
+			HasAVX512VNNI: true,
+			L2CacheBytes:  2 * 1024 * 1024,
+			L3CacheBytes:  64 * 1024 * 1024,
+		}
+		thresholds := CalibrateThresholds(profile)
+		assert.Equal(t, 25000, thresholds.MinEMLVectorCount)
+		assert.Equal(t, 25000, thresholds.TurboQuantEMLMinCount)
+		assert.Equal(t, 400000, thresholds.Complex64EMLMaxCount)
+		assert.Equal(t, 750000, thresholds.Complex128EMLMaxCount)
+	})
+
+	// Tier 2: Standard Server (AVX-512 or large L3)
+	t.Run("Tier2_AVX512_Server", func(t *testing.T) {
+		profile := CPUHardwareProfile{
+			HasAMX:        false,
+			HasAVX512:     true,
+			HasAVX512VNNI: false,
+			L2CacheBytes:  1024 * 1024,
+			L3CacheBytes:  32 * 1024 * 1024,
+		}
+		thresholds := CalibrateThresholds(profile)
+		assert.Equal(t, 35000, thresholds.MinEMLVectorCount)
+		assert.Equal(t, 35000, thresholds.TurboQuantEMLMinCount)
+		assert.Equal(t, 300000, thresholds.Complex64EMLMaxCount)
+		assert.Equal(t, 600000, thresholds.Complex128EMLMaxCount)
+	})
+
+	// Tier 3: Standard Client (AVX2, 16MB L3)
+	t.Run("Tier3_Standard_Client", func(t *testing.T) {
+		profile := CPUHardwareProfile{
+			HasAMX:        false,
+			HasAVX512:     false,
+			HasAVX512VNNI: false,
+			L2CacheBytes:  512 * 1024,
+			L3CacheBytes:  16 * 1024 * 1024,
+		}
+		thresholds := CalibrateThresholds(profile)
+		assert.Equal(t, DefaultMinEMLVectorCount, thresholds.MinEMLVectorCount)
+		assert.Equal(t, DefaultTurboQuantEMLMinCount, thresholds.TurboQuantEMLMinCount)
+		assert.Equal(t, DefaultComplex64EMLMaxCount, thresholds.Complex64EMLMaxCount)
+		assert.Equal(t, DefaultComplex128EMLMaxCount, thresholds.Complex128EMLMaxCount)
+	})
+
+	// Tier 4: Cache-Constrained (<8MB L3)
+	t.Run("Tier4_Constrained_Cache", func(t *testing.T) {
+		profile := CPUHardwareProfile{
+			HasAMX:        false,
+			HasAVX512:     false,
+			HasAVX512VNNI: false,
+			L2CacheBytes:  256 * 1024,
+			L3CacheBytes:  4 * 1024 * 1024,
+		}
+		thresholds := CalibrateThresholds(profile)
+		assert.Equal(t, 65536, thresholds.MinEMLVectorCount)
+		assert.Equal(t, 65536, thresholds.TurboQuantEMLMinCount)
+		assert.Equal(t, 150000, thresholds.Complex64EMLMaxCount)
+		assert.Equal(t, 300000, thresholds.Complex128EMLMaxCount)
+	})
+}
+
+func TestApplyDispatchConfig_EnvOverrides(t *testing.T) {
+	origThresholds := GetDispatchThresholds()
+	defer SetDispatchThresholds(origThresholds)
+
+	os.Setenv("LONGBOW_MATH_DISPATCH_MIN_VECTORS", "12345")
+	os.Setenv("LONGBOW_MATH_DISPATCH_COMPLEX64_MAX", "345678")
+	os.Setenv("LONGBOW_MATH_DISPATCH_COMPLEX128_MAX", "890123")
+	defer func() {
+		os.Unsetenv("LONGBOW_MATH_DISPATCH_MIN_VECTORS")
+		os.Unsetenv("LONGBOW_MATH_DISPATCH_COMPLEX64_MAX")
+		os.Unsetenv("LONGBOW_MATH_DISPATCH_COMPLEX128_MAX")
+		ApplyDispatchConfig()
+	}()
+
+	ApplyDispatchConfig()
+	th := GetDispatchThresholds()
+	assert.Equal(t, 12345, th.MinEMLVectorCount)
+	assert.Equal(t, 12345, th.TurboQuantEMLMinCount)
+	assert.Equal(t, 345678, th.Complex64EMLMaxCount)
+	assert.Equal(t, 890123, th.Complex128EMLMaxCount)
+}
+
+func TestDetectHardwareProfile(t *testing.T) {
+	profile := DetectHardwareProfile()
+	// L2 and L3 should be non-negative
+	assert.GreaterOrEqual(t, profile.L2CacheBytes, 0)
+	assert.GreaterOrEqual(t, profile.L3CacheBytes, 0)
 }

@@ -4,9 +4,12 @@ package tensor
 
 import (
 	"os"
+	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/mathutil"
+	"github.com/klauspost/cpuid/v2"
 )
 
 // DispatchMode controls which math backend is used.
@@ -21,17 +24,142 @@ const (
 	DispatchStandard
 )
 
-var dispatchMode DispatchMode = DispatchAuto
+// DefaultMinEMLVectorCount is the baseline minimum vector count before auto mode
+// routes any type to emlgo. Below this, emlgo's channel-based batch workers and
+// per-call IsEML checks cost more than they save (see docs/emlgo.md §11).
+const DefaultMinEMLVectorCount = 50000
 
-// MinEMLVectorCount is the minimum vector count before auto mode routes any
-// type to emlgo. Below this, emlgo's channel-based batch workers and per-call
-// IsEML checks cost more than they save (see docs/emlgo.md §11).
-const MinEMLVectorCount = 50000
-
-// complex64EMLMaxCount is the largest count where auto mode still routes
+// DefaultComplex64EMLMaxCount is the baseline count where auto mode still routes
 // complex64 to emlgo. At 500k, emlgo complex64 dense regressed -38%
 // (docs/emlgo.md, roadmap.md §2); standard wins above this threshold.
-const complex64EMLMaxCount = 250000
+const DefaultComplex64EMLMaxCount = 250000
+
+// DefaultComplex128EMLMaxCount is the baseline count where auto mode routes
+// complex128 to emlgo before standard math takes over.
+const DefaultComplex128EMLMaxCount = 500000
+
+// DefaultTurboQuantEMLMinCount is the baseline count for TurboQuant EMLGo dispatch.
+const DefaultTurboQuantEMLMinCount = 50000
+
+// MinEMLVectorCount is preserved for backward compatibility.
+const MinEMLVectorCount = DefaultMinEMLVectorCount
+
+// DispatchThresholds specifies the calibrated vector count cutoffs for math dispatch.
+type DispatchThresholds struct {
+	MinEMLVectorCount     int
+	Complex64EMLMaxCount  int
+	Complex128EMLMaxCount int
+	TurboQuantEMLMinCount int
+}
+
+// CPUHardwareProfile captures the hardware traits used to calibrate dispatch thresholds.
+type CPUHardwareProfile struct {
+	HasAVX512     bool
+	HasAVX512VNNI bool
+	HasAMX        bool
+	L2CacheBytes  int
+	L3CacheBytes  int
+}
+
+// DefaultThresholds returns the uncalibrated baseline thresholds.
+func DefaultThresholds() DispatchThresholds {
+	return DispatchThresholds{
+		MinEMLVectorCount:     DefaultMinEMLVectorCount,
+		Complex64EMLMaxCount:  DefaultComplex64EMLMaxCount,
+		Complex128EMLMaxCount: DefaultComplex128EMLMaxCount,
+		TurboQuantEMLMinCount: DefaultTurboQuantEMLMinCount,
+	}
+}
+
+// CalibrateThresholds computes dynamic, hardware-aware dispatch thresholds based on
+// CPU instruction set extensions (AVX-512, VNNI, AMX) and L2/L3 cache sizes.
+func CalibrateThresholds(profile CPUHardwareProfile) DispatchThresholds {
+	t := DefaultThresholds()
+
+	// Tier 1: Advanced Server Matrix / Vector Accelerators (AMX or AVX-512 with VNNI & >=32MB L3)
+	if profile.HasAMX || (profile.HasAVX512 && profile.HasAVX512VNNI && profile.L3CacheBytes >= 32*1024*1024) {
+		t.MinEMLVectorCount = 25000
+		t.TurboQuantEMLMinCount = 25000
+		t.Complex64EMLMaxCount = 400000
+		t.Complex128EMLMaxCount = 750000
+		return t
+	}
+
+	// Tier 2: Wide SIMD Server / High-End Workstation (AVX-512 or >=32MB L3)
+	if profile.HasAVX512 || profile.L3CacheBytes >= 32*1024*1024 {
+		t.MinEMLVectorCount = 35000
+		t.TurboQuantEMLMinCount = 35000
+		t.Complex64EMLMaxCount = 300000
+		t.Complex128EMLMaxCount = 600000
+		return t
+	}
+
+	// Tier 4: Cache-constrained client / VM (<8MB L3 or undetectable with no AVX512)
+	if profile.L3CacheBytes > 0 && profile.L3CacheBytes < 8*1024*1024 {
+		t.MinEMLVectorCount = 65536
+		t.TurboQuantEMLMinCount = 65536
+		t.Complex64EMLMaxCount = 150000
+		t.Complex128EMLMaxCount = 300000
+		return t
+	}
+
+	// Tier 3: Standard Client (AVX2, 8MB-32MB L3)
+	return t
+}
+
+// DetectHardwareProfile inspects the host CPU for vector extensions and cache topology.
+func DetectHardwareProfile() CPUHardwareProfile {
+	hasAVX512 := cpuid.CPU.Supports(cpuid.AVX512F) &&
+		cpuid.CPU.Supports(cpuid.AVX512DQ) &&
+		cpuid.CPU.Supports(cpuid.AVX512BW) &&
+		cpuid.CPU.Supports(cpuid.AVX512VL)
+
+	hasVNNI := cpuid.CPU.Supports(cpuid.AVX512VNNI)
+	hasAMX := cpuid.CPU.Supports(cpuid.AMXTILE) && os.Getenv("LONGBOW_DISABLE_AMX") == ""
+
+	l2 := cpuid.CPU.Cache.L2
+	if l2 < 0 {
+		l2 = 0
+	}
+	l3 := cpuid.CPU.Cache.L3
+	if l3 < 0 {
+		l3 = 0
+	}
+
+	return CPUHardwareProfile{
+		HasAVX512:     hasAVX512,
+		HasAVX512VNNI: hasVNNI,
+		HasAMX:        hasAMX,
+		L2CacheBytes:  l2,
+		L3CacheBytes:  l3,
+	}
+}
+
+var (
+	dispatchMode     DispatchMode = DispatchAuto
+	activeThresholds atomic.Pointer[DispatchThresholds]
+)
+
+func init() {
+	def := DefaultThresholds()
+	activeThresholds.Store(&def)
+	ApplyDispatchConfig()
+}
+
+// GetDispatchThresholds returns the current active dispatch thresholds.
+func GetDispatchThresholds() DispatchThresholds {
+	p := activeThresholds.Load()
+	if p == nil {
+		def := DefaultThresholds()
+		return def
+	}
+	return *p
+}
+
+// SetDispatchThresholds sets the active dispatch thresholds.
+func SetDispatchThresholds(t DispatchThresholds) {
+	activeThresholds.Store(&t)
+}
 
 // GetDispatchMode returns the current dispatch mode.
 func GetDispatchMode() DispatchMode {
@@ -57,14 +185,12 @@ func ParseDispatchMode(val string) DispatchMode {
 }
 
 // ResolveBackend selects the math backend for a given data type and vector count.
-// Routing rules (empirical, docs/emlgo.md):
+// Routing rules (calibrated dynamically by hardware profile):
 //   - Below MinEMLVectorCount: always standard (emlgo dispatch overhead dominates)
-//   - complex64: emlgo only up to complex64EMLMaxCount (500k dense: -38%)
-//   - complex128: emlgo for dense/hybrid wins (+159% at 100k); standard at 500k+
-//     where sparse regresses -37% and dense P99 spikes (roadmap.md §2)
-//   - turboquant: emlgo above MinEMLVectorCount (TQ kernels benefit)
-//   - float64/int*/uint*/float16/binary: always standard (float64 emlgo
-//     adds +47% memory at 500k; ints/float16 regress dense at 100k)
+//   - complex64: emlgo only up to Complex64EMLMaxCount
+//   - complex128: emlgo up to Complex128EMLMaxCount
+//   - turboquant: emlgo above TurboQuantEMLMinCount (TQ kernels benefit)
+//   - float64/int*/uint*/float16/binary: always standard
 func ResolveBackend(typeName string, vectorCount int) mathutil.Backend {
 	switch dispatchMode {
 	case DispatchEML:
@@ -73,33 +199,59 @@ func ResolveBackend(typeName string, vectorCount int) mathutil.Backend {
 		return mathutil.BackendStandard
 	}
 
+	thresholds := GetDispatchThresholds()
+
 	// Auto mode
-	if vectorCount < MinEMLVectorCount {
+	if vectorCount < thresholds.MinEMLVectorCount {
 		return mathutil.BackendStandard
 	}
 
 	switch typeName {
 	case "complex64":
-		if vectorCount <= complex64EMLMaxCount {
+		if vectorCount <= thresholds.Complex64EMLMaxCount {
 			return mathutil.BackendEML
 		}
 		return mathutil.BackendStandard
 	case "complex128":
-		if vectorCount >= 500000 {
+		if vectorCount >= thresholds.Complex128EMLMaxCount {
 			return mathutil.BackendStandard
 		}
 		return mathutil.BackendEML
 	case "turboquant", "turboquant2", "turboquant4", "turboquant8":
-		return mathutil.BackendEML
+		if vectorCount >= thresholds.TurboQuantEMLMinCount {
+			return mathutil.BackendEML
+		}
+		return mathutil.BackendStandard
 	default:
 		// float32, float64, int8..int64, uint8..uint64, float16, binary
 		return mathutil.BackendStandard
 	}
 }
 
-// ApplyDispatchConfig reads LONGBOW_MATH_DISPATCH and configures the math backend.
-// Call once at startup after CPU feature detection.
+// ApplyDispatchConfig reads LONGBOW_MATH_DISPATCH and hardware features to configure math thresholds and backend.
 func ApplyDispatchConfig() {
+	// First calibrate based on detected hardware profile
+	calibrated := CalibrateThresholds(DetectHardwareProfile())
+
+	// Apply optional environment variable overrides
+	if val, ok := os.LookupEnv("LONGBOW_MATH_DISPATCH_MIN_VECTORS"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && n > 0 {
+			calibrated.MinEMLVectorCount = n
+			calibrated.TurboQuantEMLMinCount = n
+		}
+	}
+	if val, ok := os.LookupEnv("LONGBOW_MATH_DISPATCH_COMPLEX64_MAX"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && n > 0 {
+			calibrated.Complex64EMLMaxCount = n
+		}
+	}
+	if val, ok := os.LookupEnv("LONGBOW_MATH_DISPATCH_COMPLEX128_MAX"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && n > 0 {
+			calibrated.Complex128EMLMaxCount = n
+		}
+	}
+	SetDispatchThresholds(calibrated)
+
 	if val, ok := os.LookupEnv("LONGBOW_MATH_DISPATCH"); ok {
 		SetDispatchMode(ParseDispatchMode(val))
 		return
@@ -122,8 +274,4 @@ func applyModeToBackend(m DispatchMode) {
 		// Auto: leave InitMathDispatch's choice (MathEML for this build);
 		// per-dtype routing happens via ResolveBackend at call sites.
 	}
-}
-
-func init() {
-	ApplyDispatchConfig()
 }

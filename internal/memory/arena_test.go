@@ -3,6 +3,7 @@ package memory
 import (
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	dto "github.com/prometheus/client_model/go"
@@ -375,3 +376,81 @@ func TestArenaFastPathDimensions(t *testing.T) {
 	}
 	assert.Equal(t, initialSlowPath, finalSlowPath, "metrics.ArenaSlowPathTotal should not have incremented (slow path should be bypassed)")
 }
+
+func TestSlabArena_MultiSlab_DirectParentResolution(t *testing.T) {
+	// Arena with 1024-byte slabs (minimum slabCap enforced by NewSlabArena)
+	slabCap := 1024
+	arena := NewSlabArena(slabCap)
+
+	// Allocate 4096 bytes, which spans 4 slots
+	allocSize := 4096
+	off, err := arena.Alloc(allocSize)
+	require.NoError(t, err)
+	require.NotZero(t, off)
+
+	slabsPtr := arena.slabs.Load()
+	require.NotNil(t, slabsPtr)
+	slabs := *slabsPtr
+	require.GreaterOrEqual(t, len(slabs), 4)
+
+	// Primary slab at index 0 should have real data
+	primary := slabs[0]
+	require.NotNil(t, primary.data)
+	require.GreaterOrEqual(t, len(primary.data), allocSize)
+
+	// Slabs 1, 2, 3 must be placeholder slabs with direct parent references
+	for i := 1; i < 4; i++ {
+		ph := slabs[i]
+		assert.Nil(t, ph.data, "placeholder slab %d must have nil data", i)
+		assert.Equal(t, primary, ph.parent, "placeholder slab %d must point directly to primary slab", i)
+		assert.Equal(t, 0, ph.parentIdx, "placeholder slab %d must have parentIdx == 0", i)
+	}
+
+	// Write pattern spanning all 4 slabs
+	data := arena.Get(off, uint32(allocSize))
+	require.Len(t, data, allocSize)
+	for i := range data {
+		data[i] = byte((i * 37) % 251)
+	}
+
+	// Test Get, GetWithGeneration, GetPointer, and GetPointerWithGeneration
+	// at offsets residing inside placeholder slabs 1, 2, and 3
+	for slot := 1; slot < 4; slot++ {
+		slotOff := off + uint64(slot*slabCap) + 16
+		slotLen := uint32(32)
+
+		readBytes := arena.Get(slotOff, slotLen)
+		require.Len(t, readBytes, int(slotLen))
+		expectedOffset := int(slot*slabCap + 16)
+		for j := 0; j < int(slotLen); j++ {
+			assert.Equal(t, byte(((expectedOffset+j)*37)%251), readBytes[j])
+		}
+
+		genBytes := arena.GetWithGeneration(slotOff, slotLen, arena.GetGeneration())
+		assert.Equal(t, readBytes, genBytes)
+
+		ptr := arena.GetPointer(slotOff)
+		require.NotNil(t, ptr)
+		ptrBytes := unsafe.Slice((*byte)(ptr), slotLen)
+		assert.Equal(t, readBytes, ptrBytes)
+
+		genPtr := arena.GetPointerWithGeneration(slotOff, arena.GetGeneration())
+		require.NotNil(t, genPtr)
+		genPtrBytes := unsafe.Slice((*byte)(genPtr), slotLen)
+		assert.Equal(t, readBytes, genPtrBytes)
+	}
+
+	// Test SlabBatch resolution
+	batch := arena.BeginBatch(arena.GetGeneration())
+	for slot := 1; slot < 4; slot++ {
+		slotOff := off + uint64(slot*slabCap) + 16
+		slotLen := uint32(32)
+		batchBytes := batch.Get(slotOff, slotLen)
+		require.Len(t, batchBytes, int(slotLen))
+		expectedOffset := int(slot*slabCap + 16)
+		for j := 0; j < int(slotLen); j++ {
+			assert.Equal(t, byte(((expectedOffset+j)*37)%251), batchBytes[j])
+		}
+	}
+}
+

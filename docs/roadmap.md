@@ -1,14 +1,17 @@
 # Longbow Roadmap
 
 **Last updated**: 2026-10-16  
-**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 4–7, 9, 14–17, 25–29, 31, 33, 34) have been verified and removed to maintain execution clarity.
+**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 4–7, 9, 14–17, 25–29, 31, 33–36) have been verified and removed to maintain execution clarity.
 
 ---
 
-## 1. Top 5 Immediate Priorities
+## 1. Top Immediate Priorities (P0 Blockers & P1 Critical Path)
 
 | Pri | # | Item | Area | Impact / Rationale |
 |:---|:---|:---|:---|:---|
+| **P0** | **37** | **Decompose `arrow_hnsw_bulk.go` Graph Monolith** | Architecture / Index | 1,754-LOC file interweaving batch linking, Arrow column extraction, and graph repair. Split into cohesive sub-components. |
+| **P0** | **38** | **Decouple `VectorStore` Ingestion Coordinator & Dataset Registry** | Architecture / Store | 163-file coordinator struct mixing NUMA pinning, queue workers, batch decoding, and dataset state. Extract worker pool and registry. |
+| **P0** | **39** | **Modularize `simd/dispatch.go` Function Tables** | Architecture / SIMD | 1,512-LOC monolith with 150+ flat function pointers. Group into sub-dispatchers with layered inheritance. |
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
 | **P1** | **8** | **Lock-Free Adjacency Updates & NUMA Worker Queues** | Concurrency / Ingest | Mutex lock profiling shows 69.10% flat lock delay in `sync.(*Mutex).Unlock`, with `StartIndexingWorkers` contributing 53.8% cumulative lock delay. Migrate to generation-stamped CAS adjacency lists and sharded NUMA worker queues. |
 | **P1** | **12** | **Lock-Free Concurrent Map for Metadata & ID Translation** | Concurrency / Memory | Copy-on-Write cloning in `MapRCU` triggers >1,200 MB of heap allocations during streaming ingestion batches due to repeated `make(map[K]V)` allocations. Replace with chunked Trie or lock-free hash map. |
@@ -17,7 +20,12 @@
 
 ```mermaid
 graph TD
-    subgraph P1["Top 5 Priorities"]
+    subgraph P0["P0 Architectural Blockers"]
+        I37["37: Decompose arrow_hnsw_bulk.go"]
+        I38["38: Decouple VectorStore Ingestion & Registry"]
+        I39["39: Modularize simd/dispatch.go Tables"]
+    end
+    subgraph P1["P1 Critical Path"]
         I32["32: Re-cut Baselines & Wire Index-Time CI Gate"]
         I8["8: Lock-Free Adjacency & NUMA Worker Queues"]
         I12["12: Lock-Free Map for Metadata & IDs"]
@@ -39,6 +47,9 @@ graph TD
         I23["23: Declarative Compose/Helm Provisioning"]
     end
 
+    I37 --> I38
+    I38 --> I39
+    I39 --> I32
     I32 --> I8
     I8 --> I12
     I12 --> I13
@@ -50,7 +61,32 @@ graph TD
 
 ---
 
-## 2. P1 — Core Performance & Hardware Acceleration
+## 2. P0 — Architectural God Module Blockers
+
+### Item 37: Decompose `arrow_hnsw_bulk.go` & `arrow_hnsw.go` Graph Monolith
+- **Status**: **OPEN**
+- **Files**: `internal/store/index/arrow_hnsw_bulk.go`, `internal/store/index/arrow_hnsw.go`, `internal/store/index/bulk_linker.go`, `internal/store/index/bulk_column_reader.go`
+- **State**: `arrow_hnsw_bulk.go` spans 1,754 LOC interweaving Arrow record batch column decoding, multi-pass graph linking, bidirectional neighbor repairs, and heuristic pruning.
+- **Plan**: Split into `bulk_linker.go` (graph linking state machine), `bulk_column_reader.go` (Arrow record batch extraction), and `bulk_repair.go` (reachability and orphan healing).
+- **Success Criteria**: Component file sizes under 800 LOC each; strict separation between Arrow data extraction and graph topology linking.
+
+### Item 38: Decouple `VectorStore` Ingestion Coordinator & Dataset Registry
+- **Status**: **OPEN**
+- **Files**: `internal/store/store.go`, `internal/store/store_lifecycle.go`, `internal/store/store_ingest.go`, `internal/store/index_worker_pool.go`, `internal/store/dataset_registry.go`
+- **State**: `VectorStore` is a 163-file coordinator struct mixing NUMA topology pinning, indexing worker goroutines, adaptive $ef$ adjustments, queue batching, and dataset map lookups.
+- **Plan**: Extract `IndexWorkerPool` into `internal/store/index_worker_pool.go` and dataset mapping into `internal/store/dataset_registry.go`.
+- **Success Criteria**: `store_lifecycle.go` reduced from 885 LOC to <300 LOC; clean lifecycle hooks for worker pools and dataset management.
+
+### Item 39: Modularize `simd/dispatch.go` Function Tables
+- **Status**: **OPEN**
+- **Files**: `internal/simd/dispatch.go`, `internal/simd/dispatch_tables.go`
+- **State**: `dispatch.go` spans 1,512 LOC with 150+ flat function pointers on `ImplementationDispatch` and repetitive tier-initialization blocks.
+- **Plan**: Group function pointers into sub-dispatchers (`MetricDispatch`, `BatchDispatch`, `QuantDispatch`, `ConversionDispatch`) and implement table layering (base generic -> AVX2 -> AVX-512/AMX).
+- **Success Criteria**: Zero overhead on hot-path kernel dispatches; initialization boilerplate reduced by >60%.
+
+---
+
+## 3. P1 — Core Performance & Hardware Acceleration
 
 ### Item 32: Per-Dtype Index-Time Regression Guard at 250k and 500k
 - **Status**: **PARTIAL** (Evaluation script complete; baseline re-cut and CI workflow wiring pending)
@@ -63,7 +99,7 @@ graph TD
 
 ---
 
-## 3. P2 — Algorithmic & Storage Optimizations
+## 4. P2 — Algorithmic & Storage Optimizations
 
 ### Item 8: Lock-Free Adjacency Updates & NUMA-Local Index Worker Queueing
 - **Status**: **OPEN**
@@ -123,7 +159,7 @@ graph TD
 
 ---
 
-## 4. P3 — Observability, Alerting & CI Conformance
+## 5. P3 — Observability, Alerting & CI Conformance
 
 ### Item 18: Repair Alert Rules Bound to Missing Metrics
 - **Status**: **OPEN**
@@ -162,9 +198,11 @@ graph TD
 
 ---
 
-## 5. Verified & Removed Completed Items (Changelog)
+## 6. Verified & Removed Completed Items (Changelog)
 
 | # | Item | Verified Completion Date | Key Commit | Verification Evidence |
+| **35** | Decompose `distance_computer.go` Monolith into Typed Computers | 2026-10-16 | In-flight | Monolith decomposed from 1,405 LOC down to 30 LOC; clean modular separation into `arrow_hnsw_compute_quantized.go` (pq, tq, sq8), `arrow_hnsw_compute_float32.go` (float32, shared), and `arrow_hnsw_compute_int8.go` (int8, shared); 100% of index tests pass. |
+| **36** | Eliminate Multi-Slab Ghost Scanning & Decouple `SlabArena` Storage | 2026-10-16 | In-flight | Stored direct parent slab reference and primary index on multi-slab placeholder entries; eliminated $O(N)$ linear backward scan from `Get`, `GetWithGeneration`, `GetPointer`, `GetPointerWithGeneration`, and `SlabBatch.Get` down to $O(1)$ direct access; decoupled persistence into `arena_storage.go`; verified by `TestSlabArena_MultiSlab_DirectParentResolution`. |
 | **1** | End-to-End GPU Search Dispatch & Complex128 Bottleneck | 2026-10-16 | `d855f554` | `CUDAIndex.SearchBatchDistances` batched candidate kernel; complex128 batched coalesced kernel; end-to-end dataset auto-sharding & bulk ingest GPU sync wired. |
 | **6/27** | AVX-512 VNNI & Saturated Int8/Uint8 Dispatch | 2026-10-16 | `c204cea0` | Native 64-byte `VPDPBUSD` dot product and saturated AVX-512 int8/uint8 kernels in `int8_kernels_avx512_amd64.s`; wired in dispatch table for emerald, granite, and avx512 tiers; parity verified with 100% bit identity. |
 | **7** | Direct Base Pointer Caching in SearchContext for SlabArena & TypedArena | 2026-10-16 | `89ecd910` | Direct chunk slice & base pointer cache with generational epoch bump in `ArrowSearchContext`; zero-division vector access across Float32, Float64, Int8, Uint8, Float16, Complex128, TQ, and SQ8. |

@@ -116,17 +116,19 @@ func (b *SlabBatch) resolve(offset uint64, length uint32) []byte {
 	s := b.slabs[slabIdx]
 
 	if s.data == nil {
-		var realSlab *slab
-		var realIdx int
-		for j := int(slabIdx); j >= 0; j-- { // #nosec G115
-			if b.slabs[j].data != nil {
-				realSlab = b.slabs[j]
-				realIdx = j
-				break
-			}
-		}
+		realSlab := s.parent
+		realIdx := s.parentIdx
 		if realSlab == nil {
-			return nil
+			for j := int(slabIdx); j >= 0; j-- { // #nosec G115
+				if b.slabs[j].data != nil {
+					realSlab = b.slabs[j]
+					realIdx = j
+					break
+				}
+			}
+			if realSlab == nil {
+				return nil
+			}
 		}
 		visible := !b.checkGen || realSlab.generation <= b.maxGen
 		b.prime(uint64(realIdx)*b.slabCap, uint64(len(realSlab.data)), realSlab.data, visible) // #nosec G115 -- realIdx >= 0

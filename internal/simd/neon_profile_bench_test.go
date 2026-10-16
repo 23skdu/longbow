@@ -13,8 +13,7 @@ func BenchmarkNeonProfile_768_BaselineASM(b *testing.B) {
 		a[i] = float32(i) * 0.1
 		c[i] = float32(i) * 0.2
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = euclideanNEONKernel(a, c)
 	}
 }
@@ -26,8 +25,7 @@ func BenchmarkNeonProfile_768_GenericUnrolled(b *testing.B) {
 		a[i] = float32(i) * 0.1
 		c[i] = float32(i) * 0.2
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = euclidean768Unrolled4x(a, c)
 	}
 }
@@ -39,8 +37,7 @@ func BenchmarkNeonProfile_768_Blocked(b *testing.B) {
 		a[i] = float32(i) * 0.1
 		c[i] = float32(i) * 0.2
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = euclidean768NEON(a, c)
 	}
 }
@@ -52,8 +49,7 @@ func BenchmarkNeonProfile_768_Direct(b *testing.B) {
 		a[i] = float32(i) * 0.1
 		c[i] = float32(i) * 0.2
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = euclideanNEON(a, c)
 	}
 }
@@ -65,8 +61,7 @@ func BenchmarkNeonProfile_768_UnrolledPrefetchedASM(b *testing.B) {
 		a[i] = float32(i) * 0.1
 		c[i] = float32(i) * 0.2
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = euclideanHighDimNEONKernel(a, c)
 	}
 }

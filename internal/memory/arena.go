@@ -4,16 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 
-	"encoding/binary"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"io"
-	"os"
-	"runtime"
 )
 
 var debugSlabFree = os.Getenv("LONGBOW_DEBUG_SLAB_FREE") != ""
@@ -60,6 +58,8 @@ type slab struct {
 	generation uint64 // Generation ID for isolation
 	data       []byte
 	offset     uint32 // current allocation pointer (relative to slab)
+	parent     *slab  // non-nil for multi-slab placeholder entries pointing to primary slab
+	parentIdx  int    // index of primary slab in slabs array
 }
 
 // ArenaStats holds memory usage information about the arena.
@@ -236,16 +236,6 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	needed := uint32(size) // #nosec G115
 	if needed > a.slabCap {
 		// Dynamic slab capacity expansion: allocate a contiguous block spanning multiple virtual slots
-		numSlots := (needed + a.slabCap - 1) / a.slabCap
-		allocSize := int(numSlots * a.slabCap)
-
-		var buf []byte
-		if a.alloc != nil {
-			buf = a.alloc.Allocate(allocSize)
-		} else {
-			buf = GetSlab(allocSize)
-		}
-
 		a.mu.Lock()
 		currentSlabsPtr := a.slabs.Load()
 		var currentSlabs []*slab
@@ -257,6 +247,16 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		var start uint32
 		if newID == 1 {
 			start = uint32(align) // #nosec G115 -- intentional conversion
+		}
+
+		numSlots := (start + needed + a.slabCap - 1) / a.slabCap
+		allocSize := int(numSlots * a.slabCap)
+
+		var buf []byte
+		if a.alloc != nil {
+			buf = a.alloc.Allocate(allocSize)
+		} else {
+			buf = GetSlab(allocSize)
 		}
 
 		newOffset := start + needed
@@ -275,16 +275,19 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 			clear(buf[start : start+needed])
 		}
 
-		newSlabs := make([]*slab, len(currentSlabs)+int(numSlots))
+		primaryIdx := len(currentSlabs)
+		newSlabs := make([]*slab, primaryIdx+int(numSlots))
 		copy(newSlabs, currentSlabs)
-		newSlabs[len(currentSlabs)] = primarySlab
+		newSlabs[primaryIdx] = primarySlab
 
 		for i := 1; i < int(numSlots); i++ {
-			newSlabs[len(currentSlabs)+i] = &slab{
+			newSlabs[primaryIdx+i] = &slab{
 				id:         newID + uint32(i),
 				generation: a.generation.Load(),
 				data:       nil,
 				offset:     0,
+				parent:     primarySlab,
+				parentIdx:  primaryIdx,
 			}
 		}
 
@@ -497,17 +500,19 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 	s := slabs[slabIdx]
 
 	if s.data == nil {
-		var realSlab *slab
-		var realIdx int
-		for j := int(slabIdx); j >= 0; j-- { // #nosec G115
-			if slabs[j].data != nil {
-				realSlab = slabs[j]
-				realIdx = j
-				break
-			}
-		}
+		realSlab := s.parent
+		realIdx := s.parentIdx
 		if realSlab == nil {
-			return nil
+			for j := int(slabIdx); j >= 0; j-- { // #nosec G115
+				if slabs[j].data != nil {
+					realSlab = slabs[j]
+					realIdx = j
+					break
+				}
+			}
+			if realSlab == nil {
+				return nil
+			}
 		}
 		adjustedOffset := localOffset + uint32(int(slabIdx)-realIdx)*a.slabCap // #nosec G115
 		if uint64(adjustedOffset)+uint64(length) > uint64(len(realSlab.data)) {
@@ -546,17 +551,19 @@ func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneratio
 
 	// Handle placeholder slabs for large allocations
 	if s.data == nil {
-		var realSlab *slab
-		var realIdx int
-		for j := int(slabIdx); j >= 0; j-- { // #nosec G115 -- intentional conversion
-			if slabs[j].data != nil {
-				realSlab = slabs[j]
-				realIdx = j
-				break
-			}
-		}
+		realSlab := s.parent
+		realIdx := s.parentIdx
 		if realSlab == nil {
-			return nil
+			for j := int(slabIdx); j >= 0; j-- { // #nosec G115 -- intentional conversion
+				if slabs[j].data != nil {
+					realSlab = slabs[j]
+					realIdx = j
+					break
+				}
+			}
+			if realSlab == nil {
+				return nil
+			}
 		}
 		// Generation isolation check (elided for committed data)
 		if maxGeneration != math.MaxUint64 && realSlab.generation > maxGeneration {
@@ -599,13 +606,15 @@ func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 	}
 	s := slabs[slabIdx]
 	if s.data == nil {
-		var realSlab *slab
-		var realIdx int
-		for j := int(slabIdx); j >= 0; j-- { // #nosec G115 -- intentional conversion
-			if slabs[j].data != nil {
-				realSlab = slabs[j]
-				realIdx = j
-				break
+		realSlab := s.parent
+		realIdx := s.parentIdx
+		if realSlab == nil {
+			for j := int(slabIdx); j >= 0; j-- { // #nosec G115 -- intentional conversion
+				if slabs[j].data != nil {
+					realSlab = slabs[j]
+					realIdx = j
+					break
+				}
 			}
 		}
 		if realSlab != nil {
@@ -637,13 +646,15 @@ func (a *SlabArena) GetPointerWithGeneration(offset uint64, maxGeneration uint64
 	}
 	s := slabs[slabIdx]
 	if s.data == nil {
-		var realSlab *slab
-		var realIdx int
-		for j := int(slabIdx); j >= 0; j-- { // #nosec G115
-			if slabs[j].data != nil {
-				realSlab = slabs[j]
-				realIdx = j
-				break
+		realSlab := s.parent
+		realIdx := s.parentIdx
+		if realSlab == nil {
+			for j := int(slabIdx); j >= 0; j-- { // #nosec G115
+				if slabs[j].data != nil {
+					realSlab = slabs[j]
+					realIdx = j
+					break
+				}
 			}
 		}
 		if realSlab != nil {
@@ -667,158 +678,6 @@ func (a *SlabArena) GetPointerWithGeneration(offset uint64, maxGeneration uint64
 	return unsafe.Pointer(&s.data[localOffset]) // #nosec G103
 }
 
-// Save serializes the arena's contents to the given writer.
-func (a *SlabArena) Save(w io.Writer) error {
-	slabsPtr := a.slabs.Load()
-	if slabsPtr == nil {
-		return nil
-	}
-	slabs := *slabsPtr
-
-	// Write slab capacity
-	if err := binary.Write(w, binary.LittleEndian, a.slabCap); err != nil {
-		return err
-	}
-	// Write num slabs
-	if err := binary.Write(w, binary.LittleEndian, uint32(len(slabs))); err != nil { // #nosec G115 -- intentional conversion for binary write
-		return err
-	}
-
-	for _, s := range slabs {
-		// Write slab ID and offset
-		if err := binary.Write(w, binary.LittleEndian, s.id); err != nil {
-			return err
-		}
-		if err := binary.Write(w, binary.LittleEndian, s.offset); err != nil {
-			return err
-		}
-
-		// Align to page boundary for mmap
-		if seeker, ok := w.(io.Seeker); ok {
-			pageSize := os.Getpagesize()
-			curr, _ := seeker.Seek(0, io.SeekCurrent)
-			padding := (pageSize - (int(curr) % pageSize)) % pageSize
-			if padding > 0 {
-				if _, err := w.Write(make([]byte, padding)); err != nil {
-					return err
-				}
-			}
-		}
-
-		// Write data
-		// fmt.Printf("Saving slab %d, data len %d, offset %d\n", s.id, len(s.data), s.offset)
-		data := s.data
-		if len(data) == 0 {
-			data = make([]byte, a.slabCap)
-		}
-		if _, err := w.Write(data); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Load deserializes the arena's contents from the given reader.
-func (a *SlabArena) Load(r io.Reader) error {
-	var slabCap uint32
-	if err := binary.Read(r, binary.LittleEndian, &slabCap); err != nil {
-		return err
-	}
-	a.slabCap = slabCap
-
-	var numSlabs uint32
-	if err := binary.Read(r, binary.LittleEndian, &numSlabs); err != nil {
-		return err
-	}
-
-	slabs := make([]*slab, numSlabs)
-	for i := 0; i < int(numSlabs); i++ {
-		var id, offset uint32
-		if err := binary.Read(r, binary.LittleEndian, &id); err != nil {
-			return err
-		}
-		if err := binary.Read(r, binary.LittleEndian, &offset); err != nil {
-			return err
-		}
-
-		// Align to page boundary
-		if seeker, ok := r.(io.Seeker); ok {
-			pageSize := os.Getpagesize()
-			curr, _ := seeker.Seek(0, io.SeekCurrent)
-			padding := (pageSize - (int(curr) % pageSize)) % pageSize
-			if padding > 0 {
-				if _, err := seeker.Seek(int64(padding), io.SeekCurrent); err != nil {
-					return err
-				}
-			}
-		}
-
-		data := make([]byte, a.slabCap)
-		if _, err := io.ReadFull(r, data); err != nil {
-			return err
-		}
-		slabs[i] = &slab{
-			id:     id,
-			data:   data,
-			offset: offset,
-		}
-	}
-	a.slabs.Store(&slabs)
-	return nil
-}
-
-// LoadMmap maps the arena's contents from the given file using mmap.
-func (a *SlabArena) LoadMmap(f *os.File) error {
-	var slabCap uint32
-	if err := binary.Read(f, binary.LittleEndian, &slabCap); err != nil {
-		return err
-	}
-	a.slabCap = slabCap
-
-	var numSlabs uint32
-	if err := binary.Read(f, binary.LittleEndian, &numSlabs); err != nil {
-		return err
-	}
-
-	slabs := make([]*slab, numSlabs)
-	for i := 0; i < int(numSlabs); i++ {
-		var id, offset uint32
-		if err := binary.Read(f, binary.LittleEndian, &id); err != nil {
-			return err
-		}
-		if err := binary.Read(f, binary.LittleEndian, &offset); err != nil {
-			return err
-		}
-
-		// Calculate current file offset and align
-		currOff, _ := f.Seek(0, io.SeekCurrent)
-		pageSize := os.Getpagesize()
-		padding := (pageSize - (int(currOff) % pageSize)) % pageSize
-		if padding > 0 {
-			currOff, _ = f.Seek(int64(padding), io.SeekCurrent)
-		}
-
-		// Mmap the slab data
-		data, err := Mmap(int(f.Fd()), currOff, int(a.slabCap), true)
-		if err != nil {
-			return fmt.Errorf("mmap slab %d failed: %v", i, err)
-		}
-
-		// Advance file pointer
-		if _, err := f.Seek(int64(a.slabCap), io.SeekCurrent); err != nil {
-			return err
-		}
-
-		slabs[i] = &slab{
-			id:     id,
-			data:   data,
-			offset: offset,
-		}
-	}
-	a.slabs.Store(&slabs)
-	return nil
-}
-
 // IsOffHeap returns true if the arena is backed by off-heap memory.
 func (a *SlabArena) IsOffHeap() bool {
 	if a.alloc == nil {
@@ -840,16 +699,25 @@ func (a *SlabArena) ConvertToOffHeap(alloc memory.Allocator) error {
 	slabs := *ptr
 	newSlabs := make([]*slab, len(slabs))
 	for i := range slabs {
-		newData := alloc.Allocate(len(slabs[i].data))
-		if newData == nil {
-			return fmt.Errorf("off-heap allocation failed")
+		var newData []byte
+		if len(slabs[i].data) > 0 {
+			newData = alloc.Allocate(len(slabs[i].data))
+			if newData == nil {
+				return fmt.Errorf("off-heap allocation failed")
+			}
+			copy(newData, slabs[i].data)
 		}
-		copy(newData, slabs[i].data)
 		newSlabs[i] = &slab{
 			id:         slabs[i].id,
 			generation: slabs[i].generation,
 			data:       newData,
 			offset:     slabs[i].offset,
+			parentIdx:  slabs[i].parentIdx,
+		}
+	}
+	for i := range newSlabs {
+		if slabs[i].data == nil && slabs[i].parentIdx >= 0 && slabs[i].parentIdx < len(newSlabs) {
+			newSlabs[i].parent = newSlabs[slabs[i].parentIdx]
 		}
 	}
 	a.slabs.Store(&newSlabs)

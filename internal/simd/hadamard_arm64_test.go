@@ -93,8 +93,7 @@ func BenchmarkFWHT_NEON_512(b *testing.B) {
 	for i := range a {
 		a[i] = rand.Float32()
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = FastWalshHadamardTransform32NEON(a)
 	}
 }
@@ -105,8 +104,7 @@ func BenchmarkFWHT_Generic_512(b *testing.B) {
 	for i := range a {
 		a[i] = rand.Float32()
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = fastWalshHadamardTransform32Generic(a)
 	}
 }

@@ -630,7 +630,14 @@ with its own success metric.
 - **Success**: Identical 500k index built in two separate harness invocations
   yields bit-identical search output for 500 fixed queries.
 
-### Item 32 — Per-dtype index-time regression guard at 250k and 500k (Performance)
+### Item 32 — Per-dtype index-time regression guard at 250k and 500k (Performance) — PARTIAL 2026-10-15
+
+The reporting side (``ingesting_duration_seconds`` is in every perf_matrix
+result) is complete and the 25k/100k/250k matrix gives 90 covered
+configurations. A reusable implementation of the comparison gate landed as
+``scripts/check_index_regression.py`` (lockable error codes, both index time
+and dense QPS); what remains is wiring it into ``benchmark-ab.yml`` and adding
+the paired-AB go.
 
 - **Files**: `scripts/check_regression.py`, `benchmarks/baseline_*.json`
 - **State**: The CI gate uses a 10% arms-length threshold that the roadmap

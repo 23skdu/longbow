@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
 **Last updated**: 2026-10-16  
-**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 4–7, 9, 14–17, 25–29, 31, 33–36) have been verified and removed to maintain execution clarity.
+**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 4–9, 12, 14–17, 25–29, 31, 33–39) have been verified and removed to maintain execution clarity.
 
 ---
 
@@ -10,7 +10,6 @@
 | Pri | # | Item | Area | Impact / Rationale |
 |:---|:---|:---|:---|:---|
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
-| **P1** | **12** | **Lock-Free Concurrent Map for Metadata & ID Translation** | Concurrency / Memory | Copy-on-Write cloning in `MapRCU` triggers >1,200 MB of heap allocations during streaming ingestion batches due to repeated `make(map[K]V)` allocations. Replace with chunked Trie or lock-free hash map. |
 | **P1** | **13** | **SIMD Fused BM25 Term Scoring & Posting List Intersection** | Sparse / Ranking | BM25 multi-term queries evaluate posting lists sequentially with map lookups. Vectorize posting list intersection using AVX-512 `VFMADD` instructions across contiguous document length arrays. |
 | **P1** | **10** | **Iterative Stack Traversal for Geospatial Quadtree Queries** | Geospatial / Algorithmic | `(*Quadtree).queryBoxRecursive` and `SearchRadius` allocate temporary slices at each recursive quadrant subdivision (~1,985 MB cumulative allocations). Replace with iterative fixed-depth stack. |
 
@@ -18,7 +17,6 @@
 graph TD
     subgraph P1["P1 Critical Path"]
         I32["32: Re-cut Baselines & Wire Index-Time CI Gate"]
-        I12["12: Lock-Free Map for Metadata & IDs"]
         I13["13: SIMD Fused BM25 Posting Intersection"]
         I10["10: Iterative Quadtree Stack Traversal"]
     end
@@ -37,8 +35,7 @@ graph TD
         I23["23: Declarative Compose/Helm Provisioning"]
     end
 
-    I32 --> I12
-    I12 --> I13
+    I32 --> I13
     I13 --> I10
     I18 --> I19
     I19 --> I21
@@ -67,13 +64,6 @@ graph TD
 ---
 
 ## 4. P2 — Algorithmic & Storage Optimizations
-
-### Item 12: Lock-Free Concurrent Map for Metadata & ID Translation
-- **Status**: **OPEN**
-- **Files**: `internal/store/types/map_rcu.go`
-- **State**: Copy-on-Write cloning in `MapRCU` triggers >1,200 MB of heap allocations during streaming ingestion batches due to repeated `make(map[K]V)` allocations.
-- **Plan**: Replace `MapRCU` with a chunked Trie or lock-free concurrent hash map for VectorID ↔ Document ID mappings and string metadata.
-- **Success Criteria**: Zero map reallocations on batch writes; significant reduction in GC pause durations during streaming ingestion.
 
 ### Item 13: SIMD Fused BM25 Term Scoring & Posting List Intersection
 - **Status**: **OPEN**
@@ -161,6 +151,7 @@ graph TD
 ## 6. Verified & Removed Completed Items (Changelog)
 
 | # | Item | Verified Completion Date | Key Commit | Verification Evidence |
+| **12** | Lock-Free Concurrent Map for Metadata & ID Translation | 2026-10-16 | `b012180a` | Replaced naive Copy-On-Write cloning in `MapRCU` (which repeatedly allocated `make(map[K]V, ...)` copying thousands of keys on every batch write and causing >1,200 MB of heap churn) with a 64-way sharded zero-reallocation concurrent map; implemented typed hashers for string/integers; eliminated snapshot allocations in BM25 index and query paths; 100% of unit, concurrency, race, and BM25 tests pass. |
 | **8** | Lock-Free Adjacency Updates & NUMA-Local Index Worker Queueing | 2026-10-16 | `58adf7ca` | Replaced 65,536 striped `sync.Mutex` array in `FlatAdjacency` with a 64-bit generation-stamped lock-free CAS seqlock; implemented linearizable un-torn reads in `GetNeighbors` and `GetNeighborsWithGen`; implemented lock-free `CASNeighbors` and `UpdateNeighbors` with exponential backoff; sharded incoming ingestion batches into NUMA-local worker queues (`VectorStore.numaIndexQueues`) with work-stealing fallback to global queue; 100% of unit, concurrency, and race tests pass. |
 | **39** | Modularize `simd/dispatch.go` Function Tables | 2026-10-16 | `f2b2d5e7` | Decomposed `dispatch.go` (1,513 LOC down to 143 LOC); extracted sub-dispatchers (`MetricDispatch`, `BatchDispatch`, `ConversionDispatch`, `ActivationDispatch`, `MathDispatch`, `QuantDispatch`) into `dispatch_tables.go` (439 LOC) with layered tier inheritance (`newGenericDispatch` -> `layerAVX2` -> `layerAVX512` -> `layerEmerald` -> `layerGranite` / `layerNEON`); separated auxiliary bindings into `dispatch_initializers.go` (324 LOC) and dynamic registry into `registry_init.go` (127 LOC); all files strictly <450 LOC; 100% of SIMD & repo tests pass. |
 | **38** | Decouple `VectorStore` Ingestion Coordinator & Dataset Registry | 2026-10-16 | `350eb1de` | Extracted worker pool (`StartIndexingWorkers`, `runIndexWorker`, autoscaling) into `index_worker_pool.go` (444 LOC) and dataset mapping / RCU CAS loops into `dataset_registry.go` (263 LOC); reduced `store_lifecycle.go` from 885 LOC down to 198 LOC (<300 LOC target); 100% of store & repository tests pass. |

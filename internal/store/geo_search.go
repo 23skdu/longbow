@@ -3,8 +3,6 @@ package store
 import (
 	"container/heap"
 	"context"
-	"fmt"
-	"math"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -39,20 +37,13 @@ var (
 			return make([]scoredResult, 0, 1024)
 		},
 	}
-)
-
-// BoundingBox calculates a bounding box around a point with the given radius.
-func BoundingBox(p GeoPoint, radiusKm float64) GeoBoundingBox {
-	latDelta := radiusKm / 111.0
-	lonDelta := radiusKm / (111.0 * math.Cos(p.Lat*math.Pi/180.0))
-
-	return GeoBoundingBox{
-		MinLat: p.Lat - latDelta,
-		MaxLat: p.Lat + latDelta,
-		MinLon: p.Lon - lonDelta,
-		MaxLon: p.Lon + lonDelta,
+	geoCandidatePool = sync.Pool{
+		New: func() any {
+			s := make([]*GeoIndexedVector, 0, 512)
+			return &s
+		},
 	}
-}
+)
 
 // GeoBoundingBox defines a rectangular geographic area.
 type GeoBoundingBox = lbtypes.GeoBoundingBox
@@ -105,6 +96,7 @@ type GeoPointIndex interface {
 	Insert(vec *GeoIndexedVector) bool
 	Contains(point GeoPoint) bool
 	QueryBox(box GeoBoundingBox) []*GeoIndexedVector
+	QueryBoxAppend(box GeoBoundingBox, results *[]*GeoIndexedVector)
 	QueryBoxBitmap(box GeoBoundingBox, bm *roaring.Bitmap)
 	QueryRadius(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector)
 }
@@ -210,223 +202,7 @@ func (gi *GeoIndex) GetVectorIndex() VectorIndex {
 	return gi.ds.Index
 }
 
-// Quadtree implements a recursive spatial partitioning structure.
-type Quadtree struct {
-	bounds      GeoBoundingBox
-	capacity    int
-	vectors     []*GeoIndexedVector
-	divided     atomic.Bool
-	northwest   *Quadtree
-	northeast   *Quadtree
-	southwest   *Quadtree
-	southeast   *Quadtree
-	datasetName string
-	depth       int
-	mu          sync.RWMutex
-}
 
-// NewQuadtree creates a new Quadtree instance with the given bounds and capacity.
-func NewQuadtree(bounds GeoBoundingBox, capacity int, datasetName string) *Quadtree {
-	if capacity <= 0 {
-		capacity = 64 // Increased default capacity for better scaling
-	}
-	return &Quadtree{
-		bounds:      bounds,
-		capacity:    capacity,
-		datasetName: datasetName,
-		depth:       0,
-	}
-}
-
-// Insert adds a geographic vector to the quadtree.
-func (q *Quadtree) Insert(vec *GeoIndexedVector) bool {
-	if !q.Contains(vec.GeoPoint) {
-		return false
-	}
-
-	q.mu.Lock()
-	if !q.divided.Load() {
-		if len(q.vectors) < q.capacity || q.depth >= 24 {
-			q.vectors = append(q.vectors, vec)
-			q.mu.Unlock()
-			return true
-		}
-		q.subdivide()
-	}
-	q.mu.Unlock()
-
-	// Try children - no lock needed here as children are immutable once published
-	if q.northwest.Insert(vec) {
-		return true
-	}
-	if q.northeast.Insert(vec) {
-		return true
-	}
-	if q.southwest.Insert(vec) {
-		return true
-	}
-	return q.southeast.Insert(vec)
-}
-
-// Contains checks if a GeoPoint is within the quadtree bounds.
-func (q *Quadtree) Contains(point GeoPoint) bool {
-	return point.Lat >= q.bounds.MinLat && point.Lat <= q.bounds.MaxLat &&
-		point.Lon >= q.bounds.MinLon && point.Lon <= q.bounds.MaxLon
-}
-
-func (q *Quadtree) subdivide() {
-	metrics.QuadtreeSubdivisionsTotal.WithLabelValues(q.datasetName).Inc()
-	midLat := (q.bounds.MinLat + q.bounds.MaxLat) / 2
-	midLon := (q.bounds.MinLon + q.bounds.MaxLon) / 2
-
-	// Pre-create children
-	nw := &Quadtree{
-		bounds:      GeoBoundingBox{MinLat: midLat, MaxLat: q.bounds.MaxLat, MinLon: q.bounds.MinLon, MaxLon: midLon},
-		capacity:    q.capacity,
-		datasetName: q.datasetName,
-		depth:       q.depth + 1,
-	}
-	ne := &Quadtree{
-		bounds:      GeoBoundingBox{MinLat: midLat, MaxLat: q.bounds.MaxLat, MinLon: midLon, MaxLon: q.bounds.MaxLon},
-		capacity:    q.capacity,
-		datasetName: q.datasetName,
-		depth:       q.depth + 1,
-	}
-	sw := &Quadtree{
-		bounds:      GeoBoundingBox{MinLat: q.bounds.MinLat, MaxLat: midLat, MinLon: q.bounds.MinLon, MaxLon: midLon},
-		capacity:    q.capacity,
-		datasetName: q.datasetName,
-		depth:       q.depth + 1,
-	}
-	se := &Quadtree{
-		bounds:      GeoBoundingBox{MinLat: q.bounds.MinLat, MaxLat: midLat, MinLon: midLon, MaxLon: q.bounds.MaxLon},
-		capacity:    q.capacity,
-		datasetName: q.datasetName,
-		depth:       q.depth + 1,
-	}
-
-	// Direct quadrant assignment for existing vectors
-	for _, v := range q.vectors {
-		if v.GeoPoint.Lat >= midLat {
-			if v.GeoPoint.Lon < midLon {
-				nw.vectors = append(nw.vectors, v)
-			} else {
-				ne.vectors = append(ne.vectors, v)
-			}
-		} else {
-			if v.GeoPoint.Lon < midLon {
-				sw.vectors = append(sw.vectors, v)
-			} else {
-				se.vectors = append(se.vectors, v)
-			}
-		}
-	}
-
-	// Atomic publication of children to ensure Search consistency
-	q.northwest = nw
-	q.northeast = ne
-	q.southwest = sw
-	q.southeast = se
-
-	// Finalize subdivision flag
-	q.divided.Store(true)
-
-	// Clear local vectors only after children are visible
-	q.vectors = nil
-}
-
-// QueryRadius returns all vectors within a given radius from a point.
-func (q *Quadtree) QueryRadius(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector) {
-	cosLat := math.Cos(center.Lat * math.Pi / 180)
-	lonDelta := radiusKm / (111.0 * cosLat)
-	box := GeoBoundingBox{
-		MinLat: center.Lat - radiusKm/111.0,
-		MaxLat: center.Lat + radiusKm/111.0,
-		MinLon: center.Lon - lonDelta,
-		MaxLon: center.Lon + lonDelta,
-	}
-	q.queryRadiusRecursive(box, results)
-}
-
-func (q *Quadtree) queryRadiusRecursive(box GeoBoundingBox, results *[]*GeoIndexedVector) {
-	if !q.intersects(box) {
-		return
-	}
-
-	q.mu.RLock()
-	if !q.divided.Load() {
-		*results = append(*results, q.vectors...)
-		q.mu.RUnlock()
-		return
-	}
-	q.mu.RUnlock()
-
-	q.northwest.queryRadiusRecursive(box, results)
-	q.northeast.queryRadiusRecursive(box, results)
-	q.southwest.queryRadiusRecursive(box, results)
-	q.southeast.queryRadiusRecursive(box, results)
-}
-
-// QueryBox returns all vectors within a bounding box.
-func (q *Quadtree) QueryBox(box GeoBoundingBox) []*GeoIndexedVector {
-	results := make([]*GeoIndexedVector, 0, 128)
-	q.queryBoxRecursive(box, &results)
-	return results
-}
-
-// QueryBoxBitmap pre-computes a Roaring Bitmap of valid geospatial candidates via Quadtree bounding boxes.
-func (q *Quadtree) QueryBoxBitmap(box GeoBoundingBox, bm *roaring.Bitmap) {
-	if !q.intersects(box) {
-		return
-	}
-
-	q.mu.RLock()
-	if !q.divided.Load() {
-		for _, v := range q.vectors {
-			if v.GeoPoint.Lat >= box.MinLat && v.GeoPoint.Lat <= box.MaxLat &&
-				v.GeoPoint.Lon >= box.MinLon && v.GeoPoint.Lon <= box.MaxLon {
-				bm.Add(uint32(v.ID)) // #nosec G115
-			}
-		}
-		q.mu.RUnlock()
-		return
-	}
-	q.mu.RUnlock()
-
-	q.northwest.QueryBoxBitmap(box, bm)
-	q.northeast.QueryBoxBitmap(box, bm)
-	q.southwest.QueryBoxBitmap(box, bm)
-	q.southeast.QueryBoxBitmap(box, bm)
-}
-
-func (q *Quadtree) intersects(box GeoBoundingBox) bool {
-	return !(box.MaxLat < q.bounds.MinLat || box.MinLat > q.bounds.MaxLat ||
-		box.MaxLon < q.bounds.MinLon || box.MinLon > q.bounds.MaxLon)
-}
-
-func (q *Quadtree) queryBoxRecursive(box GeoBoundingBox, results *[]*GeoIndexedVector) {
-	if !q.intersects(box) {
-		return
-	}
-
-	q.mu.RLock()
-	if !q.divided.Load() {
-		for _, v := range q.vectors {
-			if v.GeoPoint.Lat >= box.MinLat && v.GeoPoint.Lat <= box.MaxLat &&
-				v.GeoPoint.Lon >= box.MinLon && v.GeoPoint.Lon <= box.MaxLon {
-				*results = append(*results, v)
-			}
-		}
-		q.mu.RUnlock()
-		return
-	}
-	q.mu.RUnlock()
-
-	q.northwest.queryBoxRecursive(box, results)
-	q.northeast.queryBoxRecursive(box, results)
-	q.southwest.queryBoxRecursive(box, results)
-	q.southeast.queryBoxRecursive(box, results)
-}
 
 // GetBounds computes and returns the centroid and max radius (in km) covering the index vectors.
 func (gi *GeoIndex) GetBounds() (GeoPoint, float64) {
@@ -556,7 +332,16 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 
 	// Get candidate bounding box
 	box := BoundingBox(center, radiusKm)
-	candidates := index.QueryBox(box)
+	candidatesPtr := geoCandidatePool.Get().(*[]*GeoIndexedVector)
+	candidatesSlice := (*candidatesPtr)[:0]
+	index.QueryBoxAppend(box, &candidatesSlice)
+	defer func() {
+		if cap(candidatesSlice) <= 8192 {
+			*candidatesPtr = candidatesSlice[:0]
+			geoCandidatePool.Put(candidatesPtr)
+		}
+	}()
+	candidates := candidatesSlice
 
 	if len(candidates) == 0 {
 		return []lbtypes.SearchResult{}, nil
@@ -700,7 +485,16 @@ func (gi *GeoIndex) SearchBox(ctx context.Context, box GeoBoundingBox, k int) ([
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	candidates := index.QueryBox(box)
+	candidatesPtr := geoCandidatePool.Get().(*[]*GeoIndexedVector)
+	candidatesSlice := (*candidatesPtr)[:0]
+	index.QueryBoxAppend(box, &candidatesSlice)
+	defer func() {
+		if cap(candidatesSlice) <= 8192 {
+			*candidatesPtr = candidatesSlice[:0]
+			geoCandidatePool.Put(candidatesPtr)
+		}
+	}()
+	candidates := candidatesSlice
 
 	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(candidates)))
 	for i := 0; i < min(k, len(candidates)); i++ {
@@ -773,7 +567,17 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	candidates := index.QueryBox(BoundingBox(center, radiusKm))
+	box := BoundingBox(center, radiusKm)
+	candidatesPtr := geoCandidatePool.Get().(*[]*GeoIndexedVector)
+	candidatesSlice := (*candidatesPtr)[:0]
+	index.QueryBoxAppend(box, &candidatesSlice)
+	defer func() {
+		if cap(candidatesSlice) <= 8192 {
+			*candidatesPtr = candidatesSlice[:0]
+			geoCandidatePool.Put(candidatesPtr)
+		}
+	}()
+	candidates := candidatesSlice
 	if len(candidates) == 0 {
 		return []lbtypes.SearchResult{}, nil
 	}
@@ -947,80 +751,4 @@ func (gi *GeoIndex) Delete(id uint64) {
 	gi.nearestCache.Store(&sync.Map{})
 }
 
-// HaversineDistance calculates the great-circle distance between two points.
-func HaversineDistance(p1, p2 GeoPoint, earthRadius float64) float64 {
-	lat1 := p1.Lat * math.Pi / 180
-	lat2 := p2.Lat * math.Pi / 180
-	dLat := (p2.Lat - p1.Lat) * math.Pi / 180
-	dLon := (p2.Lon - p1.Lon) * math.Pi / 180
 
-	a := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(lat1)*math.Cos(lat2)*math.Sin(dLon/2)*math.Sin(dLon/2)
-	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-
-	return earthRadius * c
-}
-
-// EuclideanDistanceGeo calculates the planar distance between two points.
-func EuclideanDistanceGeo(p1, p2 GeoPoint) float64 {
-	dLat := p2.Lat - p1.Lat
-	dLon := p2.Lon - p1.Lon
-	return math.Sqrt(dLat*dLat + dLon*dLon)
-}
-
-// GeoSearchRequest encapsulates parameters for various geographic search types.
-type GeoSearchRequest = lbtypes.GeoSearchRequest
-
-// ValidateGeoSearchRequest ensures a GeoSearchRequest is well-formed.
-func ValidateGeoSearchRequest(req *GeoSearchRequest) error {
-	if req.K <= 0 {
-		req.K = 10
-	}
-
-	switch req.SearchType {
-	case "radius":
-		if req.RadiusKm <= 0 {
-			return fmt.Errorf("radius_km must be positive for radius search")
-		}
-	case "box":
-		if req.Box == nil {
-			return fmt.Errorf("box must be specified for box search")
-		}
-	case "hybrid":
-		if req.RadiusKm <= 0 {
-			return fmt.Errorf("radius_km must be positive for hybrid search")
-		}
-	default:
-		req.SearchType = "radius"
-		req.RadiusKm = 10
-	}
-
-	return nil
-}
-
-// VectorDistance calculates the Euclidean distance between two vectors.
-func VectorDistance(v1, v2 []float32) float64 {
-	d, err := simd.EuclideanDistance(v1, v2)
-	if err != nil {
-		return -1
-	}
-	return float64(d)
-}
-
-// geoResultHeap implements heap.Interface for SearchResult (Max-Heap by Score).
-type geoResultHeap []lbtypes.SearchResult
-
-func (h geoResultHeap) Len() int           { return len(h) }
-func (h geoResultHeap) Less(i, j int) bool { return h[i].Score < h[j].Score }
-func (h geoResultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-
-func (h *geoResultHeap) Push(x any) {
-	*h = append(*h, x.(lbtypes.SearchResult))
-}
-
-func (h *geoResultHeap) Pop() any {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}

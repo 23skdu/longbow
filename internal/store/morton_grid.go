@@ -173,6 +173,11 @@ func (g *MortonGrid) QueryBox(box GeoBoundingBox) []*GeoIndexedVector {
 	return results
 }
 
+// QueryBoxAppend appends all vectors within box to the target results slice without extra allocations.
+func (g *MortonGrid) QueryBoxAppend(box GeoBoundingBox, results *[]*GeoIndexedVector) {
+	g.appendBox(box, results)
+}
+
 // QueryBoxBitmap populates bm with matching VectorIDs within box.
 func (g *MortonGrid) QueryBoxBitmap(box GeoBoundingBox, bm *roaring.Bitmap) {
 	candidates := g.QueryBox(box)

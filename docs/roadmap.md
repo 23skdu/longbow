@@ -1,20 +1,18 @@
 # Longbow Roadmap
 
 **Last updated**: 2026-10-16  
-**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 3, 4–10, 12, 13, 14–17, 18, 25–29, 31, 33–39) have been verified and removed to maintain execution clarity.
+**Status**: **COMPLETE** — All 39 roadmap items across P0, P1, P2, and P3 have been implemented, tested, verified, and closed.
 
 ---
 
 ## 1. Top Immediate Priorities (P0 Blockers & P1 Critical Path)
 
-| Pri | # | Item | Area | Impact / Rationale |
-|:---|:---|:---|:---|:---|
-| **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
+*(All identified priorities across P0 blockers and P1 critical path have been completed and verified. No active priorities remaining.)*
 
 ```mermaid
 graph TD
-    subgraph P1["P1 Critical Path"]
-        I32["32: Re-cut Baselines & Wire Index-Time CI Gate"]
+    subgraph Complete["All Roadmap Milestones Complete"]
+        ALL["All 39 Roadmap Items Verified & Closed"]
     end
 ```
 
@@ -28,21 +26,13 @@ graph TD
 
 ## 3. P1 — Core Performance & Hardware Acceleration
 
-### Item 32: Per-Dtype Index-Time Regression Guard at 250k and 500k
-- **Status**: **PARTIAL** (Evaluation script complete; baseline re-cut and CI workflow wiring pending)
-- **Files**: `scripts/check_index_regression.py`, `.github/workflows/benchmark-ab.yml`, `benchmarks/baseline_*.json`
-- **State**: The comparison script `scripts/check_index_regression.py` exists with lockable exit codes for paired index time and search QPS. However, Item 31 replaced static `--seed 42` with derived seeds per configuration (`LONGBOW_BENCH_SEED`), making historical baseline JSON files incompatible with fresh benchmark runs.
-- **Plan**:
-  1. Re-generate canonical baseline files (`benchmarks/baseline_*.json`) across 25k, 100k, and 250k scales using the new deterministic seed derivation.
-  2. Integrate `scripts/check_index_regression.py` into `.github/workflows/benchmark-ab.yml` to enforce a ≤5% index-time regression gate on scheduled interleaved A/B runs.
-- **Success Criteria**: Zero false-positive alerts on self-noise tests; automated CI cancellation on true index-time regressions ≥5%.
+*(All identified core performance & hardware acceleration milestones—Items 1, 6/27, 7, 9, 31, 32, 33, 34—have been completed and verified. No active P1 items remaining.)*
 
 ---
 
 ## 4. P2 — Algorithmic & Storage Optimizations
 
 *(All identified algorithmic & storage optimizations—Items 2, 4, 5, 8, 10, 11, 12, 13, 25, 26, 27, 28, 29, 30—have been completed and verified. No active P2 items remaining.)*
-
 
 ---
 
@@ -55,6 +45,8 @@ graph TD
 ## 6. Verified & Removed Completed Items (Changelog)
 
 | # | Item | Verified Completion Date | Key Commit | Verification Evidence |
+|:---|:---|:---|:---|:---|
+| **32** | Per-Dtype Index-Time Regression Guard at 250k and 500k | 2026-10-16 | `1a9453df` | Populated deterministic `config_seed` across all 90 configurations in `benchmarks/baseline_emlgo_avx2_20261015.json` using `derive_config_seed(42, label)`; re-cut per-scale canonical baseline files `benchmarks/baseline_25k.json`, `benchmarks/baseline_100k.json`, and `benchmarks/baseline_250k.json`; updated `scripts/check_index_regression.py` to support interleaved A/B verdict files (`--verdict`) alongside `--before`/`--after` comparisons with robust metric and threshold handling; wired dedicated index-time regression CI gate into `.github/workflows/benchmark-ab.yml` with a 5.0% threshold; authored comprehensive unit test suite in `scripts/tests/test_check_index_regression.py` verifying zero false-positive self-noise, permitted drift, regression detection, setup error handling, and verdict parsing; 100% test pass. |
 | **20** | Extend Promtool Unit-Test Coverage Beyond 4 of 28 Rule Groups | 2026-10-16 | `7689e1c9` | Authored comprehensive Promtool unit test suites across all 28 rule groups (27 alert groups + 1 recording rules group) in `grafana/tests/` covering healthy/quiet states and firing/recovery states with full label and annotation assertions; enhanced `grafana/tests/test-rules.sh` to extract and test `*_test.yml` across all 28 groups; updated `TestRuleGroupsHaveUnitTests` in `internal/observability/metrics_conformance_test.go` to enforce 100% test coverage gate (28 of 28 groups tested, 0 uncovered); 100% of Promtool unit tests and Go observability tests pass. |
 | **30** | EMLGo 0.7 Accuracy Gating Across All 15 DTypes | 2026-10-16 | `58fa5872` | Implemented comprehensive numerical accuracy gating suite (`internal/simd/simd_accuracy_test.go`) validating strict precision bounds across all 15 vector dtypes (`Float32`, `Float64`, `Float16`, `Complex64`, `Complex128`, `Int8`, `Int16`, `Int32`, `Int64`, `Uint8`, `Uint16`, `Uint32`, `Uint64`, `TurboQuant4`, `TurboQuant8`) against double-precision ground truths; verified Euclidean, DotProduct, Cosine, L2Squared, and quantized reconstruction error bounds across dimensions 128, 384, and 768; verified 100% numerical parity across `mathutil.BackendStandard` and `mathutil.BackendEML` engines; verified numerical identity edge cases (zero self-distance); 100% test pass on standard and `-tags emlgo` builds and under race detector. |
 | **11** | Dynamic Hardware-Aware EMLGo Math Dispatch Threshold Calibration | 2026-10-16 | `026db985` | Implemented `CalibrateThresholds` and `DetectHardwareProfile` in `internal/tensor/math_dispatch_env.go` and `internal/tensor/math_dispatch_env_stubs.go`; dynamically calibrates minimum vector thresholds and complex/TQ maximum cutoffs across 4 hardware tiers based on detected CPU vector/matrix extensions (`HasAVX512`, `HasAVX512VNNI`, `HasAMX`) and cache sizes (`L2CacheBytes`, `L3CacheBytes`); wired lock-free dynamic dispatch thresholds into `ResolveBackend` via `atomic.Pointer[DispatchThresholds]`; added environment variable overrides (`LONGBOW_MATH_DISPATCH_MIN_VECTORS`, `LONGBOW_MATH_DISPATCH_COMPLEX64_MAX`, `LONGBOW_MATH_DISPATCH_COMPLEX128_MAX`); added unit tests verifying calibration tiers and env overrides; verified 100% test pass on default and `-tags emlgo` builds and under race detector. |

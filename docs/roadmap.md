@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
 **Last updated**: 2026-10-16  
-**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 4–10, 12, 13, 14–17, 25–29, 31, 33–39) have been verified and removed to maintain execution clarity.
+**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 3, 4–10, 12, 13, 14–17, 25–29, 31, 33–39) have been verified and removed to maintain execution clarity.
 
 ---
 
@@ -10,7 +10,7 @@
 | Pri | # | Item | Area | Impact / Rationale |
 |:---|:---|:---|:---|:---|
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
-| **P2** | **3** | **Pooled Row Buffers in `DiskVectorStore`** | Storage / Zero-Alloc | Non-vectorized disk scans allocate slice headers and temporary row buffers on every row extraction. Pool row buffers to eliminate transient allocations during disk traversals. |
+| **P3** | **18** | **Fix Dead Alert Rules on Missing Metrics** | Observability / Reliability | 10 of 72 alerts in `grafana/rules.yml` query metric names not exported by Go binary; alerts evaluate to empty series and will never fire during outages. |
 
 ```mermaid
 graph TD
@@ -18,7 +18,6 @@ graph TD
         I32["32: Re-cut Baselines & Wire Index-Time CI Gate"]
     end
     subgraph P2["Algorithmic & Storage Optimizations"]
-        I3["3: Pooled Disk Row Buffers"]
         I2["2: ARM NEON Dequant Assembly"]
         I11["11: Hardware-Aware Dynamic EMLGo Thresholds"]
         I30["30: EMLGo 0.7 15-DType Accuracy Gate"]
@@ -32,7 +31,7 @@ graph TD
         I23["23: Declarative Compose/Helm Provisioning"]
     end
 
-    I32 --> I3
+    I32 --> I18
     I18 --> I19
     I19 --> I21
     I20 --> I22
@@ -60,13 +59,6 @@ graph TD
 ---
 
 ## 4. P2 — Algorithmic & Storage Optimizations
-
-### Item 3: Pooled Row Buffers in `DiskVectorStore`
-- **Status**: **OPEN**
-- **Files**: `internal/store/index/disk_vector_store.go`, `internal/store/index/buffer_pool.go`
-- **State**: Non-vectorized disk scans allocate slice headers and temporary row buffers on every row extraction.
-- **Plan**: Pool row buffers to eliminate transient allocations during disk traversals.
-- **Success Criteria**: Zero-allocation row decoding in `DiskVectorStore`.
 
 ### Item 2: ARM NEON Dequant Kernel & Remaining Scalar SQ8 Fallbacks
 - **Status**: **OPEN**
@@ -133,6 +125,7 @@ graph TD
 ## 6. Verified & Removed Completed Items (Changelog)
 
 | # | Item | Verified Completion Date | Key Commit | Verification Evidence |
+| **3** | Pooled Row Buffers in `DiskVectorStore` | 2026-10-16 | `6274299a` | Decomposed `disk_vector_store.go` monolith (1,362 LOC down to 187 LOC) into modular sub-modules: `disk_vector_store_read.go` (575 LOC), `disk_vector_store_write.go` (611 LOC), and `disk_vector_store_block.go` (230 LOC); implemented pooled row buffers via `Float32RowPool` and `ByteRowPool` (`internal/store/index/buffer_pool.go` and `internal/store/disk_buffer_pool.go`); added zero-allocation decoding APIs: `GetVector`, `GetVectorInto`, `GetBatchInto`, `GetVectorAnyInto`, `ScanRows`, and `ScanRowsAny`; precomputed block LRU cache keys (`BlockEntry.HotKey`) eliminating string formatting allocations at read time; benchmark `GetBatchInto` improved from 1,490 ns/op (5,771 B/op, 19 allocs/op) to 370.8 ns/op (0 B/op, 0 allocs/op — 4x throughput, 100% allocation elimination); single vector `GetVectorInto` achieves 38.99 ns/op with 0 B/op and 0 allocs/op; 100% of store, index, and repo short tests pass. |
 | **13** | SIMD Fused BM25 Term Scoring & Posting List Intersection | 2026-10-16 | `f9557468` | Added `DocLens []int` parallel slice to `BM25PostingList`; fused document length indexing in contiguous memory; eliminated intermediate map allocations (`docLengths` map) and dynamic load per document; implemented vectorized batch scoring using native AVX-512 `simd.BM25ScoreBatch` for fast-path terms; replaced `sort.Slice` reflection calls with an inlined min-heap sift ($O(\log K)$, 0 allocs); benchmark multi-term latency reduced 209x (3,727,545 ns → 17,854 ns/op), heap churn reduced 99.6% (1,315,688 B → 5,496 B/op), allocations reduced 99.5% (8,392 → 39 allocs/op); 100% of unit, concurrency, and race tests pass. |
 | **10** | Iterative Stack Traversal for Geospatial Quadtree Queries | 2026-10-16 | `dfca2b0e` | Replaced recursive Quadtree quadrant subdivisions in `QueryRadius`, `QueryBox`, and `QueryBoxBitmap` with a fixed-depth stack traversal (`[128]*Quadtree`); introduced `QueryBoxAppend` to `GeoPointIndex` contract across `Quadtree` and `MortonGrid`; pooled candidate buffers via `geoCandidatePool` in `SearchRadius`, `SearchBoundingBox`, and `SearchNearest` to eliminate temporary slice allocations; modularized `geo_quadtree.go` (302 LOC) and `geo_utils.go` (97 LOC) bringing `geo_search.go` down to 756 LOC; 100% of unit, parity, concurrency, and race tests pass. |
 | **12** | Lock-Free Concurrent Map for Metadata & ID Translation | 2026-10-16 | `b012180a` | Replaced naive Copy-On-Write cloning in `MapRCU` (which repeatedly allocated `make(map[K]V, ...)` copying thousands of keys on every batch write and causing >1,200 MB of heap churn) with a 64-way sharded zero-reallocation concurrent map; implemented typed hashers for string/integers; eliminated snapshot allocations in BM25 index and query paths; 100% of unit, concurrency, race, and BM25 tests pass. |

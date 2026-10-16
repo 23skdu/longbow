@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
 **Last updated**: 2026-10-16  
-**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 4–9, 12, 14–17, 25–29, 31, 33–39) have been verified and removed to maintain execution clarity.
+**Status**: Active roadmap focusing on remaining performance, algorithmic scaling, and observability milestones. All completed historical items (Items 1, 4–10, 12, 14–17, 25–29, 31, 33–39) have been verified and removed to maintain execution clarity.
 
 ---
 
@@ -11,14 +11,12 @@
 |:---|:---|:---|:---|:---|
 | **P1** | **32** | **Baseline Re-cut & Index-Time Regression CI Gate** | Performance / CI | Blocks safe PR merges. Implementation exists (`scripts/check_index_regression.py`); requires re-cutting baseline JSONs with deterministic seeds (post-Item 31) and wiring into `.github/workflows/benchmark-ab.yml`. |
 | **P1** | **13** | **SIMD Fused BM25 Term Scoring & Posting List Intersection** | Sparse / Ranking | BM25 multi-term queries evaluate posting lists sequentially with map lookups. Vectorize posting list intersection using AVX-512 `VFMADD` instructions across contiguous document length arrays. |
-| **P1** | **10** | **Iterative Stack Traversal for Geospatial Quadtree Queries** | Geospatial / Algorithmic | `(*Quadtree).queryBoxRecursive` and `SearchRadius` allocate temporary slices at each recursive quadrant subdivision (~1,985 MB cumulative allocations). Replace with iterative fixed-depth stack. |
 
 ```mermaid
 graph TD
     subgraph P1["P1 Critical Path"]
         I32["32: Re-cut Baselines & Wire Index-Time CI Gate"]
         I13["13: SIMD Fused BM25 Posting Intersection"]
-        I10["10: Iterative Quadtree Stack Traversal"]
     end
     subgraph P2["Algorithmic & Storage Optimizations"]
         I3["3: Pooled Disk Row Buffers"]
@@ -36,7 +34,6 @@ graph TD
     end
 
     I32 --> I13
-    I13 --> I10
     I18 --> I19
     I19 --> I21
     I20 --> I22
@@ -71,13 +68,6 @@ graph TD
 - **State**: BM25 multi-term queries evaluate posting lists sequentially, looking up document lengths and term frequencies via Go map lookups.
 - **Plan**: Implement vectorized posting list intersection using AVX-512 `VFMADD` instructions, scoring 16 candidate documents simultaneously from contiguous document length arrays.
 - **Success Criteria**: 3x–5x throughput improvement in sparse and hybrid BM25 ranking.
-
-### Item 10: Iterative Stack Traversal for Geospatial Quadtree Queries
-- **Status**: **OPEN**
-- **Files**: `internal/store/geo_index.go`
-- **State**: `(*Quadtree).queryBoxRecursive` and `SearchRadius` allocate temporary slices at each recursive quadrant subdivision (~1,985 MB cumulative allocations).
-- **Plan**: Replace recursive quadtree bounding box queries with an iterative traversal using a fixed-depth stack and reusable pre-allocated ID buffer in `SearchContext`.
-- **Success Criteria**: Zero heap allocations during geospatial bounding box and radius queries; geo search QPS increases by 25%–40%.
 
 ### Item 3: Pooled Row Buffers in `DiskVectorStore`
 - **Status**: **OPEN**
@@ -151,6 +141,7 @@ graph TD
 ## 6. Verified & Removed Completed Items (Changelog)
 
 | # | Item | Verified Completion Date | Key Commit | Verification Evidence |
+| **10** | Iterative Stack Traversal for Geospatial Quadtree Queries | 2026-10-16 | `dfca2b0e` | Replaced recursive Quadtree quadrant subdivisions in `QueryRadius`, `QueryBox`, and `QueryBoxBitmap` with a fixed-depth stack traversal (`[128]*Quadtree`); introduced `QueryBoxAppend` to `GeoPointIndex` contract across `Quadtree` and `MortonGrid`; pooled candidate buffers via `geoCandidatePool` in `SearchRadius`, `SearchBoundingBox`, and `SearchNearest` to eliminate temporary slice allocations; modularized `geo_quadtree.go` (302 LOC) and `geo_utils.go` (97 LOC) bringing `geo_search.go` down to 756 LOC; 100% of unit, parity, concurrency, and race tests pass. |
 | **12** | Lock-Free Concurrent Map for Metadata & ID Translation | 2026-10-16 | `b012180a` | Replaced naive Copy-On-Write cloning in `MapRCU` (which repeatedly allocated `make(map[K]V, ...)` copying thousands of keys on every batch write and causing >1,200 MB of heap churn) with a 64-way sharded zero-reallocation concurrent map; implemented typed hashers for string/integers; eliminated snapshot allocations in BM25 index and query paths; 100% of unit, concurrency, race, and BM25 tests pass. |
 | **8** | Lock-Free Adjacency Updates & NUMA-Local Index Worker Queueing | 2026-10-16 | `58adf7ca` | Replaced 65,536 striped `sync.Mutex` array in `FlatAdjacency` with a 64-bit generation-stamped lock-free CAS seqlock; implemented linearizable un-torn reads in `GetNeighbors` and `GetNeighborsWithGen`; implemented lock-free `CASNeighbors` and `UpdateNeighbors` with exponential backoff; sharded incoming ingestion batches into NUMA-local worker queues (`VectorStore.numaIndexQueues`) with work-stealing fallback to global queue; 100% of unit, concurrency, and race tests pass. |
 | **39** | Modularize `simd/dispatch.go` Function Tables | 2026-10-16 | `f2b2d5e7` | Decomposed `dispatch.go` (1,513 LOC down to 143 LOC); extracted sub-dispatchers (`MetricDispatch`, `BatchDispatch`, `ConversionDispatch`, `ActivationDispatch`, `MathDispatch`, `QuantDispatch`) into `dispatch_tables.go` (439 LOC) with layered tier inheritance (`newGenericDispatch` -> `layerAVX2` -> `layerAVX512` -> `layerEmerald` -> `layerGranite` / `layerNEON`); separated auxiliary bindings into `dispatch_initializers.go` (324 LOC) and dynamic registry into `registry_init.go` (127 LOC); all files strictly <450 LOC; 100% of SIMD & repo tests pass. |

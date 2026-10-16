@@ -607,16 +607,65 @@ with its own success metric.
 - **Success**: TestNarrowSearchReachesWholeGraph passes across all 5 corpora
   with zero skips; uint8 reachability ≥ 95% on each.
 
-### Item 29 — uint8 connection-degree invariant under bulk indexing (Stability)
+### Item 29 — uint8 connection-degree invariant under bulk indexing (Stability) — RESOLVED 2026-10-16
 
-- **Files**: `internal/store/index/bulk_linker.go`, `internal/store/index/index_quality_test.go`
+- **Files**: `internal/store/index/arrow_hnsw_insert.go`,
+  `internal/store/index/insertion_core.go`,
+  `internal/store/index/hnsw_gpu_build.go`,
+  `internal/store/index/arrow_hnsw_uint8_bulk_degree_test.go`,
+  `internal/store/index/arrow_hnsw_select_neighbors_test.go`
 - **State**: The uint8 bulk linker previously pruned to mean degree 1.3–6.3
-  (vs 16.00 for int8) because of the missing diversity branch.
+  (vs 16.00 for int8) because of the missing diversity branch. The branch
+  landed with Item 28; this closes the other half of the plan.
 - **Plan**: Make `selectNeighbors` the single entry point for both narrow and
   bulk paths; add a bulk-quality gate that fails the build below degree 15.0
   for any dtype whose bulk path previously pruned below 14.
 - **Success**: Minimum observed degree ≥ 15.0 on a 4k uint8 build; quality test
   becomes a CI gate.
+
+**Resolution (2026-10-16)**:
+
+1. *Single entry point.* Three selection sites existed. The bulk linker already
+   called `selectNeighbors`. The narrow path (`insertInternal`) handed the whole
+   ef-wide result set to `AddConnection` one candidate at a time — O(ef) runs of
+   the same heuristic per layer, converging on whatever the last add on a
+   saturated node produced — and `targetM` was there in the code as `_ =
+   targetM`, an unfilled placeholder. It now selects once per layer with `m`
+   equal to that layer's own degree budget (`MMax0` at layer 0, `MMax` above),
+   which is exactly what the incremental prune used to converge on, so the
+   resulting degree is unchanged while the selection that produced it is made
+   once, in distance order, against the full candidate set. The GPU batch build
+   called `selectNeighborsSimple` — an O(n²) sort by distance that took the
+   first `m`, a truncation with no diversity check, which is the same defect
+   class as the uint8 default branch one level down; it now goes through
+   `selectNeighbors` too, and `selectNeighborsSimple` is deleted.
+   `TestSelectNeighborsIsTheSingleEntryPoint` pins the heuristic itself (the
+   near-duplicate rejection that a wiring test would not catch).
+   Both call sites copy the result out of `ctx.scratchSelected` before their
+   `AddConnection` loops, because each of those re-enters selection on the
+   target side — the aliasing the bulk linker already guards against with its
+   `fSources` copy.
+
+2. *The gate.* `TestBulkInsert_Uint8MeanDegreeFloor` builds 4k uint8 indexes
+   through the bulk path in the shape production ingests — four flushes of
+   1,000 rows, each linked into the graph built so far, not one static
+   4,000-row batch — on three corpus shapes (tight clusters, uniform random in
+   [-1,1], 12 overlapping clusters), and fails below mean layer-0 degree 15.0
+   of the 16.0 budget or below 95% reachability. Measured after the change:
+   **16.00 / 16.00 / 16.00**, reachability 4000/4000, 3998/4000, 4000/4000. It
+   runs under plain `go test ./...`, so `ci.yml` (`-race`, no `-short`) gates on
+   it.
+
+3. *No recall regression.* The change touches the sequential path, which is the
+   256-node bootstrap of every bulk build plus all small-batch inserts. A/B
+   against the pre-change code, three runs each (`TestNarrowTypeRecallParity`,
+   float32 recall@10): before 0.428 / 0.392 / 0.400, after 0.380 / 0.400 /
+   0.404 — overlapping distributions, and the spread is the per-process
+   `math/rand` level generator, which is what Item 31 removes. The thresholds
+   in `TestNarrowRecallOnClusteredEmbeddings` (10 flushes, 20k vectors) and
+   `TestNarrowQueryDomainRecall` pass unchanged; the whole `internal/store/index`
+   package passes with and without `-short`.
+
 
 ### Item 30 — EMLGo 0.7 accuracy gating across all 15 dtypes (Accuracy)
 

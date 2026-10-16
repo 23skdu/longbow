@@ -405,37 +405,68 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	cachedMMax0 := int(h.mMax0.Load())
 	cachedEf := max(cachedEfConstruction, cachedM)
 
+	// filtered is the node-self-stripped candidate list for one layer. It is
+	// declared outside the loop because it also becomes the destination the
+	// neighbour selection is copied into - see below.
+	var filtered []types.Candidate
+
 	for l := min(level, maxL+1); l >= 0 && ep != math.MaxUint32; l-- {
 		ef := cachedEf
-		neighbors, err := h.searchLayerForInsert(context.Background(), ctx, vec, ep, ef, l, data)
+		found, err := h.searchLayerForInsert(context.Background(), ctx, vec, ep, ef, l, data)
 		if err != nil {
 			return nil, err
 		}
 
-		var filtered []types.Candidate
-		for _, nb := range neighbors {
+		filtered = filtered[:0]
+		for _, nb := range found {
 			if nb.ID != id {
 				filtered = append(filtered, nb)
 			}
 		}
-		neighbors = filtered
+		// searchLayerForInsert clones into a candidatePool slice; only the bulk
+		// linker was returning it, so every sequential insert leaked one
+		// EfConstruction-sized slice per layer to the GC.
+		h.putCandidateSlice(found)
 
 		maxConn := cachedMMax
-		targetM := cachedM
 		if l == 0 {
 			maxConn = cachedMMax0
-			targetM = cachedM
 		}
 
-		if len(neighbors) > 0 {
+		if len(filtered) > 0 {
 			ensurePrivate()
-			selectedNeighbors := neighbors
-			_ = targetM
-			for _, nb := range selectedNeighbors {
+
+			// Nearest candidate is the descent point for the next layer up
+			// (standard HNSW: ep = closest element of the result set). Captured
+			// before selection because the copy below can overwrite filtered's
+			// backing array.
+			nearest := filtered[0].ID
+
+			// selectNeighbors is the single entry point for neighbour
+			// selection on both insert paths (roadmap Item 29). The bulk
+			// linker has always picked its M here; this path used to hand the
+			// whole ef-wide result set to AddConnection one candidate at a
+			// time and let each per-add prune re-run the same heuristic over
+			// the growing list, which is O(ef) selections per layer where one
+			// selection suffices and leaves the outcome to whichever add
+			// happened last on a saturated node.
+			//
+			// m is the layer's own degree budget (MMax0 at layer 0, MMax
+			// above it) because that is what the incremental prune converged
+			// on: the resulting degree is unchanged, only the selection that
+			// produced it is now made once, in distance order, against the
+			// full candidate set.
+			//
+			// The copy matters: AddConnection below re-enters neighbour
+			// selection on the target side and overwrites ctx.scratchSelected
+			// while this loop is still ranging over it - the same aliasing
+			// the bulk linker guards against with its fSources copy.
+			selected := append(filtered[:0], h.selectNeighbors(ctx, filtered, maxConn, data)...)
+			for _, nb := range selected {
 				h.AddConnection(ctx, data, id, nb.ID, l, maxConn, nb.Dist)
 				h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
 			}
-			ep = neighbors[0].ID
+			ep = nearest
 		}
 	}
 

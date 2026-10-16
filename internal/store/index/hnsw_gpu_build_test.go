@@ -34,52 +34,6 @@ func TestNewGPUBatchBuilder_NilIndex(t *testing.T) {
 	}
 }
 
-func TestSelectNeighborsSimple(t *testing.T) {
-	candidates := []types.Candidate{
-		{ID: 1, Dist: 0.5},
-		{ID: 2, Dist: 0.1},
-		{ID: 3, Dist: 0.3},
-		{ID: 4, Dist: 0.2},
-	}
-
-	selected := selectNeighborsSimple(candidates, 2)
-
-	if len(selected) != 2 {
-		t.Errorf("Expected 2 candidates, got %d", len(selected))
-	}
-
-	if selected[0].Dist > selected[1].Dist {
-		t.Error("Expected candidates sorted by distance (ascending)")
-	}
-
-	if selected[0].ID != 2 {
-		t.Errorf("Expected first candidate to be ID 2, got %d", selected[0].ID)
-	}
-}
-
-func TestSelectNeighborsSimple_LessThanM(t *testing.T) {
-	candidates := []types.Candidate{
-		{ID: 1, Dist: 0.5},
-		{ID: 2, Dist: 0.1},
-	}
-
-	selected := selectNeighborsSimple(candidates, 5)
-
-	if len(selected) != 2 {
-		t.Errorf("Expected 2 candidates (all available), got %d", len(selected))
-	}
-}
-
-func TestSelectNeighborsSimple_Empty(t *testing.T) {
-	candidates := []types.Candidate{}
-
-	selected := selectNeighborsSimple(candidates, 5)
-
-	if len(selected) != 0 {
-		t.Errorf("Expected 0 candidates, got %d", len(selected))
-	}
-}
-
 func TestBatchInsertWithGPU_CPUFallback(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.DataType = types.VectorTypeFloat32

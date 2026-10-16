@@ -312,6 +312,7 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 		if len(neighbors) > 0 {
 			ep = neighbors[0].ID
 		}
+		h.putCandidateSlice(neighbors)
 	}
 
 	if maxL < 0 {
@@ -329,7 +330,6 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 			if l == 0 {
 				m = int(h.mMax0.Load())
 			}
-			selected := selectNeighborsSimple(neighbors, m)
 
 			searchCtx := h.searchPool.Get()
 			searchCtx.MaxNodeCount = meta.NodeCount
@@ -339,16 +339,31 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 				maxConn = int(h.mMax0.Load())
 			}
 
+			// selectNeighbors is the single entry point for neighbour selection
+			// on every insert path (roadmap Item 29). This one used to sort by
+			// distance and take the first m - a truncation, not a selection,
+			// with no diversity check at all, which is the same class of defect
+			// as the uint8 branch that pruned a graph down to mean degree 1.3.
+			//
+			// The result is copied into this call's own candidate slice before
+			// the AddConnection loop, because each of those re-enters neighbour
+			// selection on the target side and would otherwise overwrite
+			// searchCtx.scratchSelected while it is being ranged over.
+			var selected []types.Candidate
+			if len(neighbors) > 0 {
+				selected = append(neighbors[:0], h.selectNeighbors(searchCtx, neighbors, m, data)...)
+			}
+
 			for _, n := range selected {
 				data = h.AddConnection(searchCtx, data, id, n.ID, l, maxConn, n.Dist)
 				data = h.AddConnection(searchCtx, data, n.ID, id, l, maxConn, n.Dist)
 			}
 
-			h.searchPool.Put(searchCtx)
-
 			if len(selected) > 0 {
 				ep = selected[0].ID
 			}
+			h.searchPool.Put(searchCtx)
+			h.putCandidateSlice(neighbors)
 		}
 	}
 
@@ -366,21 +381,12 @@ func (h *ArrowHNSW) batchInsertCPU(ids []uint32, vectors [][]float32, level int)
 	return nil
 }
 
-func selectNeighborsSimple(candidates []types.Candidate, m int) []types.Candidate {
-	if len(candidates) <= m {
-		return candidates
-	}
-
-	for i := 0; i < len(candidates)-1; i++ {
-		for j := i + 1; j < len(candidates); j++ {
-			if candidates[j].Dist < candidates[i].Dist {
-				candidates[i], candidates[j] = candidates[j], candidates[i]
-			}
-		}
-	}
-
-	return candidates[:m]
-}
+// selectNeighborsSimple used to live here: an O(n^2) sort by distance that
+// took the first m candidates with no diversity check. It was the last
+// neighbour-selection entry point that did not go through selectNeighbors, and
+// it is gone for the same reason the uint8 default branch is: a truncation is
+// not a selection. Every insert path now selects through selectNeighbors
+// (roadmap Item 29).
 
 // BuildIndexWithGPU builds the entire HNSW index from a set of vectors using GPU acceleration.
 func (h *ArrowHNSW) BuildIndexWithGPU(ctx context.Context, vectors [][]float32, ids []uint32, config GPUBatchBuildConfig, logger zerolog.Logger) error {

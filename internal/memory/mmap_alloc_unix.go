@@ -56,6 +56,10 @@ func (a *OffHeapAllocator) Allocate(size int) []byte {
 		_ = MbindMemory(unsafe.Pointer(&data[0]), len(data), a.numaNode) // #nosec G103
 	}
 
+	if len(data) >= 2*1024*1024 {
+		_ = MadviseHugePages(unsafe.Pointer(&data[0]), len(data)) // #nosec G103
+	}
+
 	a.allocated.Add(int64(size))
 	return data
 }

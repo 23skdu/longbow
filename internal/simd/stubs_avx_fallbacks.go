@@ -328,3 +328,6 @@ func l2SquaredBatchAVX2(query []float32, vectors [][]float32, results []float32)
 func l2SquaredBatchAVX512(query []float32, vectors [][]float32, results []float32) error {
 	return l2SquaredBatchGeneric(query, vectors, results)
 }
+
+func euclideanF16AVX512FP16(a, b []float16.Num) (float32, error) { return euclideanF16Unrolled4x(a, b) }
+func dotF16AVX512FP16(a, b []float16.Num) (float32, error)       { return dotF16Unrolled4x(a, b) }

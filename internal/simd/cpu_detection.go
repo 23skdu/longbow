@@ -20,6 +20,8 @@ type CPUFeatures struct {
 	HasVBMI       bool // AVX512-VBMI (Ice Lake+)
 	HasNEON       bool
 	HasDotProd    bool // ARM64 FEAT_DotProd (udot/sdot)
+	HasSVE        bool // ARM64 SVE (Graviton 3/4)
+	HasSVE2       bool // ARM64 SVE2 (Graviton 3/4, Grace Hopper)
 	HasAMX        bool // AMX-TILE (Sapphire Rapids+)
 	HasAMXINT8    bool // AMX-INT8 tile dot product
 	HasAMXBF16    bool // AMX-BF16 tile dot product
@@ -55,9 +57,11 @@ func detectCPU() {
 	hasAMXFP16 := cpuid.CPU.Supports(cpuid.AMXFP16) && hasAMX
 	hasAMXCOMPLEX := cpuid.CPU.Supports(cpuid.AMXCOMPLEX) && hasAMX
 
-	// Only detect NEON on ARM platforms
+	// Detect ARM SIMD & SVE capabilities
 	hasNEON := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.ASIMD)
 	hasDotProd := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.ASIMDDP)
+	hasSVE := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.SVE)
+	hasSVE2 := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.SVE2)
 
 	features = CPUFeatures{
 		Vendor:        cpuid.CPU.VendorString,
@@ -74,6 +78,8 @@ func detectCPU() {
 		HasAMXCOMPLEX: hasAMXCOMPLEX,
 		HasNEON:       hasNEON,
 		HasDotProd:    hasDotProd,
+		HasSVE:        hasSVE,
+		HasSVE2:       hasSVE2,
 	}
 
 	// Select best implementation with fallback logic
@@ -93,6 +99,8 @@ func detectCPU() {
 		} else {
 			implementation = "generic"
 		}
+	case features.HasSVE2 || features.HasSVE:
+		implementation = "sve2"
 	case features.HasNEON:
 		implementation = "neon"
 	default:

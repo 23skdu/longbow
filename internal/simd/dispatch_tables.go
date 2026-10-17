@@ -331,6 +331,8 @@ func layerEmerald(avx512 *ImplementationDispatch) *ImplementationDispatch {
 	d.DotProductBatch = dotBatchAMX
 	d.L2SquaredDistance = l2SquaredAMX
 	d.MatMul = matMulAMX
+	d.EuclideanDistanceF16 = euclideanF16AVX512FP16
+	d.DotProductF16 = dotF16AVX512FP16
 	return &d
 }
 
@@ -419,6 +421,26 @@ func layerNEON(base *ImplementationDispatch) *ImplementationDispatch {
 	return &d
 }
 
+// layerSVE2 overlays ARM SVE2 predicate-driven vector instructions onto NEON base.
+func layerSVE2(base *ImplementationDispatch) *ImplementationDispatch {
+	d := *base
+	d.EuclideanDistance = euclideanSVE2
+	d.CosineDistance = cosineSVE2
+	d.DotProduct = func(a, b []float32) (float32, error) {
+		if len(a) != len(b) {
+			return 0, ErrDimensionMismatch
+		}
+		return dotSVE2(a, b), nil
+	}
+	d.L2SquaredDistance = func(a, b []float32) (float32, error) {
+		if len(a) != len(b) {
+			return 0, ErrDimensionMismatch
+		}
+		return l2SquaredSVE2(a, b), nil
+	}
+	return &d
+}
+
 // initDispatchTable builds all architecture dispatch tables using layered inheritance.
 func initDispatchTable() {
 	initTableOnce.Do(func() {
@@ -428,6 +450,7 @@ func initDispatchTable() {
 		emerald := layerEmerald(avx512)
 		granite := layerGranite(emerald)
 		neon := layerNEON(generic)
+		sve2 := layerSVE2(neon)
 
 		dispatchTable["generic"] = generic
 		dispatchTable["avx2"] = avx2
@@ -435,5 +458,6 @@ func initDispatchTable() {
 		dispatchTable["emerald"] = emerald
 		dispatchTable["granite"] = granite
 		dispatchTable["neon"] = neon
+		dispatchTable["sve2"] = sve2
 	})
 }

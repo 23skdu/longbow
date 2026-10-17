@@ -163,8 +163,9 @@ type ArrowHNSW struct {
 	tqDecodeCache atomic.Pointer[tqDecodeCache]  // pre-decoded TQ vectors (non-nil during batch insert for fast construction)
 	tqArena       atomic.Pointer[TQScratchArena] // ephemeral chunked scratch arena for caching reconstructed vectors during indexing
 	gpuTrained    atomic.Bool
-	topo          *memory.NUMATopology
-	efTuner       *PIDTuner
+	topo           *memory.NUMATopology
+	efTuner        *PIDTuner
+	multiCentroids *MultiCentroidTracker
 
 	inBulkInsert atomic.Int64
 
@@ -221,6 +222,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		deleted:              roaring.New(),
 		levelMultiplier:      1.0 / math.Log(float64(config.M)),
 		topLayerManager:      NewTopLayerManager(config.LockFreeThreshold),
+		multiCentroids:       NewMultiCentroidTracker(16),
 		topo:                 topo,
 	}
 	for i := 0; i < types.ArrowMaxLayers; i++ {

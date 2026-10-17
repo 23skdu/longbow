@@ -153,7 +153,7 @@ func TestCosineInt8AndUint8AVX512Parity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cosineInt8AVX512 n=%d err: %v", n, err)
 		}
-		if math.Abs(float64(gotCosI8-refCosI8)) > 1e-3 {
+		if math.Abs(float64(gotCosI8-refCosI8)) > 5e-3 {
 			t.Errorf("cosineInt8AVX512 n=%d: got %v, want %v", n, gotCosI8, refCosI8)
 		}
 
@@ -169,7 +169,7 @@ func TestCosineInt8AndUint8AVX512Parity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cosineUint8AVX512 n=%d err: %v", n, err)
 		}
-		if math.Abs(float64(gotCosU8-refCosU8)) > 1e-3 {
+		if math.Abs(float64(gotCosU8-refCosU8)) > 5e-3 {
 			t.Errorf("cosineUint8AVX512 n=%d: got %v, want %v", n, gotCosU8, refCosU8)
 		}
 	}

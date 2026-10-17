@@ -135,6 +135,12 @@ func DetectHardwareProfile() CPUHardwareProfile {
 	}
 }
 
+// ShouldDispatchBatchAMX returns true if host CPU supports Intel AMX and the batch size B >= 32 (Item 41).
+func ShouldDispatchBatchAMX(batchSize int) bool {
+	profile := DetectHardwareProfile()
+	return profile.HasAMX && batchSize >= 32
+}
+
 var (
 	dispatchMode     DispatchMode = DispatchAuto
 	activeThresholds atomic.Pointer[DispatchThresholds]

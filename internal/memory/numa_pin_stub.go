@@ -19,3 +19,8 @@ func PinThreadToCore(coreID int) error {
 func MbindMemory(ptr unsafe.Pointer, size int, nodeID int) error {
 	return nil
 }
+
+// MadviseHugePages is a no-op on non-Linux platforms.
+func MadviseHugePages(ptr unsafe.Pointer, size int) error {
+	return nil
+}

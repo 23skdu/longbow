@@ -16,6 +16,10 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 		return nil, nil
 	}
 
+	if layer == int(meta.MaxLevel) && h.multiCentroids != nil {
+		entryPoint = h.multiCentroids.SelectBestEntryPoint(entryPoint, computer)
+	}
+
 	maxGen := uint64(math.MaxUint64)
 	if ctx != nil {
 		maxGen = ctx.MaxGeneration
@@ -169,17 +173,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 		}
 
 		if ctx.predicate != nil {
-			batch := ctx.neighborBatch[:0]
-			for _, n := range neighbors {
-				if !ctx.AllowUncommitted && int64(n) >= maxCommitted {
-					continue
-				}
-				if ctx.visited.IsSet(int(n)) {
-					continue
-				}
-				ctx.visited.Set(int(n))
-				batch = append(batch, n)
-			}
+			batch := ctx.visited.FilterAndMarkUnvisited(neighbors, maxCommitted, ctx.AllowUncommitted, ctx.neighborBatch[:0])
 
 			if len(batch) > 0 {
 				matches := ctx.EvaluatePredicateBatch(batch)
@@ -247,17 +241,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 				}
 			}
 		} else {
-			batch := ctx.neighborBatch[:0]
-			for _, n := range neighbors {
-				if !ctx.AllowUncommitted && int64(n) >= maxCommitted {
-					continue
-				}
-				if ctx.visited.IsSet(int(n)) {
-					continue
-				}
-				ctx.visited.Set(int(n))
-				batch = append(batch, n)
-			}
+			batch := ctx.visited.FilterAndMarkUnvisited(neighbors, maxCommitted, ctx.AllowUncommitted, ctx.neighborBatch[:0])
 
 			if len(batch) > 0 {
 				// Cache-blocked candidate evaluation in 64-vector chunks

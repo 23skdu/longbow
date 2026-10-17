@@ -113,3 +113,38 @@ func (b *ArrowBitset) Capacity() int {
 func (b *ArrowBitset) ClearSIMD() {
 	b.Clear()
 }
+
+// FilterAndMarkUnvisited filters candidate IDs against the bitset, appends
+// previously unvisited IDs that satisfy the commit threshold to dst, and marks
+// them as visited. It minimizes branching and eliminates individual Set/IsSet overhead.
+func (b *ArrowBitset) FilterAndMarkUnvisited(ids []uint32, maxCommitted int64, allowUncommitted bool, dst []uint32) []uint32 {
+	n := len(ids)
+	if n == 0 {
+		return dst
+	}
+
+	maxCap := b.blocks * 64
+
+	for i := 0; i < n; i++ {
+		id := ids[i]
+		if !allowUncommitted && int64(id) >= maxCommitted {
+			continue
+		}
+		pos := int(id)
+		if pos >= maxCap {
+			b.growInternal(pos + 1)
+			maxCap = b.blocks * 64
+		}
+
+		block := pos / 64
+		bitMask := uint64(1) << (pos % 64)
+		if (b.bits[block] & bitMask) == 0 {
+			b.bits[block] |= bitMask
+			dst = append(dst, id)
+			if pos > b.size {
+				b.size = pos
+			}
+		}
+	}
+	return dst
+}

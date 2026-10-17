@@ -17,6 +17,7 @@ type pqComputer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
+	codesBuf  []byte
 }
 
 func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
@@ -76,7 +77,11 @@ func (c *pqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error
 		}
 
 		if m > 0 && len(t) == m*256 {
-			flatCodes := make([]byte, n*m)
+			neededLen := n * m
+			if cap(c.codesBuf) < neededLen {
+				c.codesBuf = make([]byte, neededLen)
+			}
+			flatCodes := c.codesBuf[:neededLen]
 			allValid := true
 			for i, id := range ids {
 				code := c.data.GetVectorPQWithGen(id, c.maxGen)

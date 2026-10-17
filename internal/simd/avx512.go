@@ -502,10 +502,8 @@ func cosine16AVX512Wrapper(a, b []float32) (float32, error) {
 // =============================================================================
 // PQ Functions
 // =============================================================================
-
-func adcBatchAVX512(table []float32, flatCodes []byte, m int, results []float32) error {
-	return adcBatchAVX2(table, flatCodes, m, results)
-}
+// PQ Functions (see adc_kernels.go for adcBatchAVX512 implementation)
+// =============================================================================
 
 func adcBatchVNNI(table []float32, flatCodes []byte, m int, results []float32) error {
 	if !features.HasVNNI {

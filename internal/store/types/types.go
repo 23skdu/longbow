@@ -122,7 +122,7 @@ func MapStringToVectorDataType(s string) VectorDataType {
 		return VectorTypeBQ
 	case "pq":
 		return VectorTypePQ
-	case "turboquant", "tq":
+	case "turboquant", "tq", "turboquant2", "tq2":
 		return VectorTypeTQ
 	default:
 		return VectorTypeUnknown

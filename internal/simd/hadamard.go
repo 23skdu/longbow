@@ -51,6 +51,26 @@ func RandomRotation(a []float32, seed int64) error {
 	return randomRotationGeneric(a, seed)
 }
 
+// InverseRandomRotation inverts the random rotation by applying FWHT, scaling by 1/N, and undoing sign flips.
+func InverseRandomRotation(a []float32, seed int64) error {
+	n := len(a)
+	if n == 0 || (n&(n-1)) != 0 {
+		return errors.New("simd: vector length must be a power of 2 for inverse rotation")
+	}
+	if err := FastWalshHadamardTransform32(a); err != nil {
+		return err
+	}
+	invN := float32(1.0 / float64(n))
+	for i := range a {
+		sign := float32(1.0)
+		if ((uint64(seed+int64(i)) * 6364136223846793005) >> 63) == 1 {
+			sign = -1.0
+		}
+		a[i] = a[i] * invN * sign
+	}
+	return nil
+}
+
 func randomRotationGeneric(a []float32, seed int64) error {
 	// 1. Random sign flip (D)
 	// We use a simple bit-manipulation based on seed+index for speed

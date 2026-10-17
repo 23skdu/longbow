@@ -112,6 +112,9 @@ func (h *ArrowHNSW) bootstrapSequential(
 			node := activeNodes[i]
 			if node.level > 0 && node.level < len(h.entryPointPools) {
 				h.entryPointPools[node.level].Insert(node.id)
+				if h.multiCentroids != nil && node.level >= 2 {
+					h.multiCentroids.AddCentroid(node.id)
+				}
 			}
 		}
 		h.initMu.Unlock()

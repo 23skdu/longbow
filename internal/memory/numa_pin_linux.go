@@ -98,3 +98,13 @@ func MbindMemory(ptr unsafe.Pointer, size int, nodeID int) error {
 	}
 	return nil
 }
+
+// MadviseHugePages advises the kernel to use Transparent Huge Pages (THP) for the memory region.
+// This reduces TLB misses on large multi-megabyte arenas.
+func MadviseHugePages(ptr unsafe.Pointer, size int) error {
+	if ptr == nil || size < 2*1024*1024 {
+		return nil
+	}
+	b := unsafe.Slice((*byte)(ptr), size) // #nosec G103
+	return unix.Madvise(b, unix.MADV_HUGEPAGE)
+}

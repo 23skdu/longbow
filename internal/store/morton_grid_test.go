@@ -234,12 +234,10 @@ func TestMortonGrid_EmptyGrid(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	g := NewMortonGrid(geoWorldBounds(), 16, "test_dataset")
-
 	assert.NotNil(t, g.QueryBox(geoWorldBounds()))
 	assert.Empty(t, g.QueryBox(geoWorldBounds()))
 	assert.Equal(t, 0, g.Len())
 	assert.Equal(t, 0, g.CellCount())
-
 	var results []*GeoIndexedVector
 	g.QueryRadius(GeoPoint{Lat: 40, Lon: -74}, 100, &results)
 	assert.Empty(t, results)
@@ -252,17 +250,14 @@ func TestMortonGrid_SinglePoint(t *testing.T) {
 	bounds := geoWorldBounds()
 	quadtree := NewQuadtree(bounds, 4, "test_dataset")
 	g := NewMortonGrid(bounds, 16, "test_dataset")
-
 	vec := &GeoIndexedVector{ID: 7, GeoPoint: GeoPoint{Lat: 40.7128, Lon: -74.0060}}
 	require.True(t, g.Insert(vec))
 	require.True(t, quadtree.Insert(vec))
 	assert.Equal(t, 1, g.CellCount())
-
 	hit := GeoBoundingBox{MinLat: 40.0, MaxLat: 41.0, MinLon: -75.0, MaxLon: -73.0}
 	miss := GeoBoundingBox{MinLat: 41.5, MaxLat: 42.0, MinLon: -75.0, MaxLon: -73.0}
 	assertSameIDs(t, "hit", quadtree.QueryBox(hit), g.QueryBox(hit))
 	assertSameIDs(t, "miss", quadtree.QueryBox(miss), g.QueryBox(miss))
-
 	// Degenerate box exactly on the point.
 	exact := GeoBoundingBox{MinLat: vec.GeoPoint.Lat, MaxLat: vec.GeoPoint.Lat, MinLon: vec.GeoPoint.Lon, MaxLon: vec.GeoPoint.Lon}
 	assertSameIDs(t, "exact", quadtree.QueryBox(exact), g.QueryBox(exact))
@@ -673,8 +668,8 @@ func TestMortonEncodeDecode(t *testing.T) {
 	assert.Equal(t, uint64(3)<<62, mortonEncode(1<<31, 1<<31))
 
 	for i := 0; i < 5000; i++ {
-		x := uint32(i * 2654435761)
-		y := uint32(i * 40503)
+		x := uint32(i) * 2654435761
+		y := uint32(i) * 40503
 		gotX, gotY := mortonDecode(mortonEncode(x, y))
 		assert.Equal(t, x, gotX)
 		assert.Equal(t, y, gotY)

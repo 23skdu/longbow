@@ -18,7 +18,7 @@ import (
 // declare. WAL blocks are read back from disk, so the declared size is data,
 // not a trusted value: without a bound a corrupt or hostile length prefix can
 // request an arbitrarily large allocation.
-const maxWALBlockDecompressedSize = 1 << 31 // 2GiB
+const maxWALBlockDecompressedSize int64 = 1 << 31 // 2GiB
 
 // validateWALDecompressedSize checks a block's declared decompressed size
 // before it is used as an allocation length.

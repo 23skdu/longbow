@@ -46,10 +46,15 @@ func TestBitset_NegativeIndexIsIgnored(t *testing.T) {
 
 		// Populate the bit a negative index would alias, then confirm the
 		// negative probe does not see it.
-		b.bitmap.Add(1<<32 - 1)
+		targetBit := uint32(math.MaxUint32)
+		b.bitmap.Add(targetBit)
 
 		assert.False(t, b.Contains(-1), "a negative index is never contained")
-		assert.True(t, b.Contains(int(1<<32-1)), "the real bit is still set")
+		if int64(targetBit) <= int64(math.MaxInt) {
+			assert.True(t, b.Contains(int(targetBit)), "the real bit is still set")
+		} else {
+			assert.True(t, b.bitmap.Contains(targetBit), "the real bit is still set")
+		}
 	})
 
 	t.Run("Slice", func(t *testing.T) {

@@ -82,10 +82,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+RUN groupadd -r longbow && useradd -r -g longbow -d /app -s /sbin/nologin longbow && \
+    mkdir -p /data && chown -R longbow:longbow /app /data
+
 # Copy binaries from builder
-COPY --from=builder /app/longbow .
-COPY --from=builder /app/longbow-cli .
-COPY --from=builder /app/bench-tool .
+COPY --from=builder --chown=longbow:longbow /app/longbow .
+COPY --from=builder --chown=longbow:longbow /app/longbow-cli .
+COPY --from=builder --chown=longbow:longbow /app/bench-tool .
+
+VOLUME /data
 
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 ENV LONGBOW_GPU_ENABLED=true

@@ -51,9 +51,10 @@ sequenceDiagram
 
 ### Supported Hardware Tiers
 
-- **AVX-512 (x86_64)**: 512-bit vector processing (`ZMM` registers) with support for AVX512F, AVX512DQ, AVX512BW, and VNNI/VBMI extensions.
-- **AMX (x86_64)**: Intel Advanced Matrix Extensions tile registers on modern Xeon processors for massive GEMM and quantized dot products.
+- **AVX-512 (x86_64)**: 512-bit vector processing (`ZMM` registers) with support for AVX512F, AVX512DQ, AVX512BW, AVX512_FP16, and VNNI/VBMI extensions.
+- **AMX (x86_64)**: Intel Advanced Matrix Extensions tile registers on modern Xeon processors (Sapphire/Emerald Rapids) for massive GEMM and quantized dot products.
 - **AVX2 / FMA (x86_64)**: 256-bit vector operations (`YMM` registers) utilizing fused multiply-add.
+- **ARM SVE2 (AArch64)**: Scalable Vector Extension 2 with runtime vector length adaptation for modern ARMv9 cores (Neoverse V2/N2, AWS Graviton 3/4).
 - **NEON (ARM64)**: 128-bit vector operations with optional dot-product extensions (`FEAT_DotProd`).
 - **Unrolled Go (Portable)**: 4x loop-unrolled implementations providing auto-vectorization friendly loops across non-SIMD environments.
 

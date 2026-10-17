@@ -469,7 +469,7 @@ Longbow is optimized for heterogeneous hardware, providing native support for NV
 | **Linux (NVIDIA)** | **CUDA** | RTX/A-series/H-series | Dedicated VRAM | Production |
 | **macOS (Apple)** | **Metal** | M1/M2/M3/M4 | Unified Memory | Production |
 | **Google Cloud** | **TPU** | v7x (Ironwood) | HBM + VMEM | Beta |
-| **Cross-Platform** | **SIMD** | AVX-512/AVX2/NEON | System RAM | Production |
+| **Cross-Platform** | **SIMD / AMX** | AVX-512 (FP16/VNNI), AMX, AVX2, ARM SVE2, NEON | System RAM | Production |
 
 ### 7.2 NVIDIA CUDA Acceleration
 
@@ -498,12 +498,13 @@ Experimental support for Google's latest TPU v7x architecture.
 - **VMEM Scratchpad**: Uses 16MB of ultra-fast SRAM (VMEM) for hot-path distance calculations.
 - **Scalability**: Designed for petabyte-scale vector search in GCP environments.
 
-### 7.5 SIMD Acceleration
+### 7.5 SIMD & AMX Acceleration
 
-- **AVX2/AVX-512**: Featuring optimized `brayCurtisAVX2Kernel` and activation kernels (`exp`, `softmax`). Note that AVX-512 explicitly typed kernels (e.g., `Float16`, `Float64`) are meticulously cast during generator stages (via Avo) using `uintptr(unsafe.Pointer(...))` to guarantee type safety and compilation stability across OS bounds.
-- **NEON**: For ARM64 systems (Apple Silicon, AWS Graviton).
+- **AVX2/AVX-512**: Featuring optimized `brayCurtisAVX2Kernel`, activation kernels (`exp`, `softmax`), and native AVX-512 FP16 half-precision kernels (`vaddph`, `vmulph`). AVX-512 explicitly typed kernels (e.g., `Float16`, `Float64`) are generated via Avo with rigorous type safety and memory alignment.
+- **AMX (Intel Advanced Matrix Extensions)**: Hardware matrix tile registers (`tileloadd`, `tdpbf16ps`) on Sapphire Rapids and Emerald Rapids Xeon CPUs for batched quantized dot products.
+- **ARM SVE2 / NEON**: Scalable Vector Extension 2 (dynamic 128 to 2048-bit vector width) and NEON 128-bit SIMD for ARM64 architectures (Apple Silicon, AWS Graviton 3/4).
 - **TPU Kernels**: Specialized F16/Complex kernels for Google TPU.
-- **TurboQuant**: SIMD-accelerated bit-packing for 3-8x throughput in quantized search.
+- **TurboQuant / TurboQuant2**: SIMD-accelerated bit-packing (2-bit to 8-bit) delivering 4x-64x compression with fast approximate distance computation.
 
 ### 7.6 AVX-512 Activation Kernels (exp, softmax)
 

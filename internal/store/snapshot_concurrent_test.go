@@ -84,7 +84,9 @@ func TestConcurrentSnapshot_NonBlocking(t *testing.T) {
 	}()
 
 	// Wait for some data
-	time.Sleep(200 * time.Millisecond)
+	for pushedOps.Load() < 10 {
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	// Trigger Snapshot
 	start := time.Now()

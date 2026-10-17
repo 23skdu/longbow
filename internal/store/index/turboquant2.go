@@ -6,7 +6,9 @@ import (
 	"math"
 	"math/rand"
 	"sync"
+	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 )
 
@@ -118,6 +120,11 @@ func (e *TurboQuant2Encoder) putCodesScratch(ptr *[]byte) {
 
 // Encode compresses a float32 vector into a 2-bit TurboQuant byte stream.
 func (e *TurboQuant2Encoder) Encode(vec []float32) ([]byte, error) {
+	start := time.Now()
+	defer func() {
+		metrics.TQ2EncodeDurationSeconds.Observe(time.Since(start).Seconds())
+	}()
+
 	wsPtr := e.getWorkspace()
 	workspace := *wsPtr
 	defer e.putWorkspace(wsPtr)
@@ -195,11 +202,16 @@ func (e *TurboQuant2Encoder) Encode(vec []float32) ([]byte, error) {
 	copy(result[4:4+angleBytes], packedAngles)
 	copy(result[4+angleBytes:], qjlBits)
 
+	metrics.TQ2CodesPerVector.Observe(float64(len(angles)))
 	return result, nil
 }
 
 // DecodeInto reconstructs the unrotated float32 vector from data into dst.
 func (e *TurboQuant2Encoder) DecodeInto(data []byte, dst []float32) error {
+	start := time.Now()
+	defer func() {
+		metrics.TQ2DecodeDurationSeconds.Observe(time.Since(start).Seconds())
+	}()
 	angleCount := e.pow2 - 1
 	angleBytes := (angleCount*2 + 7) / 8
 	qjlOffset := 4 + angleBytes

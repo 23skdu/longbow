@@ -59,6 +59,7 @@ hnsw:
   bqEnabled: false    # Binary quantization optional
   pqEnabled: true     # Product quantization enabled by default
   turboQuantEnabled: true
+  turboQuant2Enabled: true
   learnableBitWidthEnabled: true
   geoSearchEnabled: true   # Geo-spatial search enabled by default
   float16Enabled: true    # Float16 vectors enabled by default
@@ -110,6 +111,7 @@ memory:
   maxMemoryHard: "" # Hard memory limit (e.g., "18GB")
   autoSpillDisk: false # Auto spill to disk when memory pressure is high
   spillThresholdRatio: "0.85" # Ratio of max memory at which spill triggers
+  hugePagesEnabled: false # Enable 2MB hugepage allocation when supported by host
 
 # Auto-Quantization Configuration
 autoQuantize:

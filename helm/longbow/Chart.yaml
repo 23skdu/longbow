@@ -2,8 +2,8 @@ apiVersion: v2
 name: longbow
 description: A Helm chart for Longbow - High-performance vector store with Arrow Flight
 type: application
-version: 0.2.5
-appVersion: "0.2.5"
+version: 0.2.4
+appVersion: "0.2.4"
 keywords:
   - vector-store
   - arrow-flight

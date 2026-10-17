@@ -14,6 +14,14 @@ Mapping 32-bit floats to 8-bit or 4-bit integers while preserving relative dista
 
 - **Recall**: ~99% retention for SQ8 with 4x memory reduction.
 - **Search Speed**: Native SIMD instructions (VNNI/AVX-512/NEON) allow for massive throughput gains.
+- **Dynamic Percentile Calibration**: Implements automated outlier rejection by fitting scale and bias parameters across `[p_low, p_high]` percentiles rather than naive `[min, max]`, preventing outliers from collapsing dynamic range.
+
+### Product Quantization (PQ & ADC Fast-Path)
+
+Decomposes vectors into $M$ orthogonal sub-vectors quantized against trained codebooks.
+
+- **Asymmetric Distance Computation (ADC)**: The query vector remains in full FP32 precision while database vectors are stored as $M$-byte code indices.
+- **SIMD 4-bit LUT Lookups**: Uses AVX2/AVX-512 `vpshufb` and NEON `tbl` instructions for parallel distance table lookups, eliminating scalar gathering overhead.
 
 ### Binary Quantization (BQ)
 
@@ -25,6 +33,13 @@ Extreme 1-bit quantization for extremely large-scale retrieval where memory is t
 ### TurboQuant (TQ2/TQ4/TQ8)
 
 TurboQuant is Longbow's proprietary two-stage vector compression algorithm that delivers 4x-64x storage reduction for float32 vectors while maintaining fast approximate nearest neighbor search capabilities. It combines Polar Quantization with Quantized JL (QJL) transformations to achieve extreme compression with tunable accuracy.
+
+#### TurboQuant2 (2-Bit Quantization)
+
+Version 0.2.4 introduces **TurboQuant2** (`TurboQuant2Encoder` in `internal/store/index/turboquant2.go`). Standard polar quantization loses directional accuracy below 4 bits per angle; TurboQuant2 bridges this gap via:
+1. **Random Coordinate Rotation**: Rotates the vector to spread information evenly across all dimensions.
+2. **2-Bit Polar Coordinate Packing**: Quantizes angles to 2 bits per coordinate.
+3. **QJL 1-Bit Residual Correction**: Stores sign bits of the reconstruction residual, guaranteeing ~0.75+ cosine similarity and enabling retrievable ANN search at **16x compression**.
 
 #### Core Algorithm
 
@@ -249,13 +264,32 @@ To minimize GC pressure and fragmentation, Longbow uses a custom **SlabArena** s
 - **Chunked Storage**: Vectors are stored in fixed-size chunks (default: 1024) within slabs.
 - **NUMA Local**: Allocation prefers memory nodes local to the requesting CPU socket.
 
-### PackedAdjacency Lists
+### FlatAdjacency & PackedAdjacency Lists
 
-Adjacency lists (neighbors) use a 2-level packed reference system:
+Adjacency lists (neighbors) use a 2-level packed reference system alongside a **Flat Adjacency Layout** (`internal/store/index/flat_adjacency.go`):
 
+- **Contiguous Memory**: Flattens node neighbor lists into contiguous memory regions, maximizing L1/L2 cache hit rates during graph descent.
 - **Indirection**: A directory of "Pages" maps Node IDs to neighbor offsets.
 - **Memory Efficiency**: Small neighbor lists are packed efficiently to avoid pointer overhead.
 - **Concurrency**: Fine-grained `LockNode` spinlocks (per-node) protect adjacency updates, allowing massive parallel ingestion.
+
+### 2MB Hugepages Allocation
+
+For large memory working sets (>16GB), Longbow integrates a native **2MB Hugepages Allocator** (`internal/memory/hugepages.go`):
+- Allocates memory with `MAP_HUGETLB` / `madvise(MADV_HUGEPAGE)` on supported Linux kernels.
+- Drastically reduces TLB (Translation Lookaside Buffer) misses during random graph traversals, yielding up to 40% latency reduction at scale.
+
+### Vectorized Visited Bitmask
+
+During HNSW graph search, candidate tracking relies on a high-throughput **Vectorized Bitmask**:
+- Utilizes 64-bit word arrays with SIMD bit-manipulation primitives (AVX2/AVX-512 popcount and bit scans).
+- Avoids heap-allocated hash sets or sparse maps in the search hot loop.
+
+### Multi-Centroid HNSW Entry Points
+
+To mitigate graph disconnectivity in clustered or multi-modal datasets, Longbow maintains **Multi-Centroid Entry Points**:
+- Instead of descending from a single global entry point, the index tracks top-layer centroid nodes across clusters.
+- Eliminates graph partition reachability traps where isolated components are missed by standard greedy search.
 
 ### Bulk Ingestion Pipeline (AddBatchBulk)
 

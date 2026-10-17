@@ -714,7 +714,8 @@ Metrics are available at `http://<LONGBOW_METRICS_ADDR>/metrics` -- `http://loca
 
 - **longbow_onnx_metal_memory_used_bytes**: (Gauge) VRAM utilization on Apple Silicon.
 - **longbow_gpu_memory_bytes**: (Gauge) VRAM utilization on NVIDIA/CUDA systems.
-- **longbow_stub_model_usage_total**: (Counter) **New in 0.1.9**: Count of times a stub embedding model was used due to missing configuration. Labels: `model_path`.
+- **longbow_stub_model_usage_total**: (Counter) Count of times a stub embedding model was used due to missing configuration. Labels: `model_path`.
+- **longbow_tq2_encode_duration_seconds** / **longbow_tq2_decode_duration_seconds**: (Histogram) TurboQuant2 encode/decode duration.
 - `longbow_search_`: Latency and throughput.
 - `longbow_gossip_`: Cluster membership status.
 - `longbow_storage_`: WAL and disk usage.

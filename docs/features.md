@@ -10,7 +10,14 @@ Longbow is designed to provide FAISS-level performance with Arrow-native ergonom
 
 ### Performance & Scalability
 
-- **TurboQuant (TQ) V2**: Polar quantization with a configurable angular bit depth of 1-8 bits. Depths below 4 encode but do not round-trip: the recursive polar transform spends one angle per reconstructed coordinate, so a coarse grid caps the achievable cosine (measured ~0.34-0.50 at 2 bits and ~0.72-0.82 at 3 bits, against ~0.92-0.95 at 4 bits and ~0.995 at 8). **4-8 bits is the usable range**, and `TestTurboQuantRoundTrip` pins the cosine > 0.90 contract for exactly that range. Real compression in that range is **~2.5x-5.3x** versus float32, not the 4-64x previously advertised here — see [TurboQuant Compression](#turboquant-compression).
+- **TurboQuant (TQ) V2 & TurboQuant2**: Polar quantization with a configurable angular bit depth of 1-8 bits, plus dedicated **TurboQuant2** (2-bit quantization with random rotation and QJL residual correction for retrievable ANN search at 16x compression with ~0.75+ cosine similarity).
+- **AVX-512 FP16 & ARM SVE2**: Native half-precision AVX-512 FP16 instructions (`_Float16`) and ARM SVE2 dynamic vector length kernels for next-generation x86_64 and ARMv9 architectures.
+- **Intel AMX Matrix Tile Dispatch**: Hardware matrix tile acceleration (`tileloadd`, `tdpbf16ps`) on Sapphire Rapids and Emerald Rapids Xeon CPUs.
+- **PQ ADC Fast-Path**: Asymmetric Distance Computation with SIMD 4-bit lookups (`vpshufb`/`tbl`) for accelerated Product Quantization search.
+- **2MB Hugepages Allocator**: Native `MAP_HUGETLB` / `MADV_HUGEPAGE` memory allocator reducing TLB misses during graph traversals.
+- **Flat Adjacency Layout & Vectorized Bitmask**: Contiguous memory neighbor lists for L1/L2 cache locality and 64-bit SIMD visited bitmask.
+- **Multi-Centroid HNSW Entry Points**: Multi-centroid clustering tracking top-layer centroids across disconnected graph partitions.
+- **Dynamic SQ8 Percentile Calibration**: Automated outlier rejection via percentile dynamic range fitting `[p_low, p_high]`.
 - **Autonomous efSearch Tuning**: Integrated PID-controller for dynamic search depth adjustment, replacing static heuristics with real-time feedback-driven recall targeting.
 - **NEON SIMD Parity**: Full metadata filtering acceleration for ARM64 (macOS/Apple Silicon) via hand-optimized NEON assembly kernels.
 - **Lock-Free Ingestion Workers**: High-performance ingestion pipeline using `LockFreeRingBuffer` and adaptive batching to eliminate mutex contention.
@@ -22,8 +29,9 @@ Longbow is designed to provide FAISS-level performance with Arrow-native ergonom
 
 ### Advanced Quantization Suite
 
-- **Product Quantization (PQ)**: Sophisticated sub-vector quantization with optimized codebook training for extreme memory reduction (16x-32x) while maintaining high recall.
-- **Scalar Quantization (SQ8)**: Integrated support for 8-bit scalar quantization directly within the HNSW metadata layer for 4x memory reduction.
+- **Product Quantization (PQ)**: Sophisticated sub-vector quantization with optimized codebook training and SIMD ADC fast-path for extreme memory reduction (16x-32x) while maintaining high recall.
+- **Scalar Quantization (SQ8)**: Integrated support for 8-bit scalar quantization with dynamic percentile calibration directly within the HNSW metadata layer for 4x memory reduction.
+- **TurboQuant2**: Dedicated 2-bit quantization with random rotation and 1-bit residual correction.
 - **Binary Quantization (BQ)**: Extremely fast Hamming-distance based search for binary-encoded vectors (32x memory reduction).
 - **Float16 Support**: Native half-precision vector storage and distance computation for 2x memory savings.
 

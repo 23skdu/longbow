@@ -103,6 +103,8 @@ spec:
               value: {{ .Values.pq.k | quote }}
             - name: LONGBOW_HNSW_TURBOQUANT_ENABLED
               value: {{ .Values.hnsw.turboQuantEnabled | quote }}
+            - name: LONGBOW_HNSW_TURBOQUANT2_ENABLED
+              value: {{ .Values.hnsw.turboQuant2Enabled | default false | quote }}
             - name: LONGBOW_HNSW_LEARNABLE_BITWIDTH_ENABLED
               value: {{ .Values.hnsw.learnableBitWidthEnabled | quote }}
             - name: LONGBOW_GEO_SEARCH_ENABLED
@@ -161,6 +163,8 @@ spec:
               value: {{ .Values.memory.autoSpillDisk | default false | quote }}
             - name: LONGBOW_SPILL_THRESHOLD_RATIO
               value: {{ .Values.memory.spillThresholdRatio | default "0.85" | quote }}
+            - name: LONGBOW_HUGEPAGES_ENABLED
+              value: {{ .Values.memory.hugePagesEnabled | default false | quote }}
             - name: LONGBOW_GC_BALLAST_G
               value: {{ .Values.memory.gcBallastGB | quote }}
             - name: LONGBOW_GOGC

@@ -22,6 +22,8 @@ Longbow uses HNSW (Hierarchical Navigable Small World) graphs for approximate ne
 | `LONGBOW_HNSW_BULK_MIN_DEGREE_RATIO` | `0` (disabled) | Reject a bulk batch below this fraction of `MMax0` mean layer-0 degree |
 | `LONGBOW_HNSW_BULK_MAX_HOP_DEPTH` | `1.5` | Reject a bulk batch above this multiple of the ideal `log(N)/log(MMax0)` descent depth; `0` disables |
 | `LONGBOW_HNSW_INBOUND_GUARD` | `0` (off) | Never drop a node's last layer-0 inbound edge during pruning (R26) |
+| `LONGBOW_HNSW_TURBOQUANT2_ENABLED` | `false` | Enable 2-bit TurboQuant2 quantization |
+| `LONGBOW_HUGEPAGES_ENABLED` | `false` | Enable 2MB hugepages allocator on supported Linux hosts |
 
 See [deploy.md](deploy.md#bulk-insert-graph-quality-longbow_hnsw_bulk_quality_guard)
 for what each floor measures and why two of them ship disabled.

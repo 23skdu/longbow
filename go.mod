@@ -23,7 +23,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/klauspost/compress v1.20.3
-	github.com/klauspost/cpuid/v2 v2.4.0
+	github.com/klauspost/cpuid/v2 v2.4.1
 	github.com/leanovate/gopter v0.2.11
 	github.com/mmcloughlin/avo v0.6.0
 	github.com/parquet-go/parquet-go v0.32.0

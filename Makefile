@@ -1,4 +1,4 @@
-.PHONY: all build build-adbc test test-adbc test-adbc-python test-adbc-so clean install-commit-hook install-hooks accuracy-gate oracle-gate test-coverage test-fuzz pre-commit
+.PHONY: all build build-adbc test test-adbc test-adbc-python test-adbc-so clean install-commit-hook install-hooks accuracy-gate oracle-gate test-coverage test-fuzz pre-commit test-docker
 
 all: build build-adbc
 
@@ -79,3 +79,8 @@ test-fuzz:
 
 pre-commit:
 	@./scripts/pre-commit.sh
+
+test-docker:
+	@echo "Running Dockerfile unit tests (Go & Python)..."
+	go test -v ./tests/docker/...
+	python3 tests/docker/test_dockerfiles.py

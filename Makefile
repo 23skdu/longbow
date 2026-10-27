@@ -1,4 +1,4 @@
-.PHONY: all build build-adbc test test-adbc test-adbc-python test-adbc-so clean
+.PHONY: all build build-adbc test test-adbc test-adbc-python test-adbc-so clean install-commit-hook install-hooks accuracy-gate oracle-gate test-coverage test-fuzz pre-commit
 
 all: build build-adbc
 
@@ -43,3 +43,39 @@ observability-check: observability-inventory
 # PATH, or PROMTOOL=/path/to/promtool. Install from a Prometheus release archive.
 observability-rules:
 	grafana/tests/test-rules.sh
+
+# Pre-commit hook installation and quality gates
+install-commit-hook:
+	@echo "Installing pre-commit hook..."
+	@mkdir -p .git/hooks
+	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit || cp scripts/pre-commit.sh .git/hooks/pre-commit
+	@chmod +x scripts/pre-commit.sh .git/hooks/pre-commit
+	@echo "Pre-commit hook installed successfully into .git/hooks/pre-commit."
+
+install-hooks: install-commit-hook
+
+accuracy-gate:
+	@echo "Running Accuracy Gate (numerical precision across 15 vector dtypes)..."
+	go test -v ./internal/simd/ -run='^TestSIMDAccuracy'
+
+oracle-gate:
+	@echo "Running Oracle Gate (ground-truth parity vs reference oracles)..."
+	go test -v ./internal/simd/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/ -run='Parity'
+
+test-coverage:
+	@echo "Verifying 100% Package Test Coverage Gate..."
+	@UNTESTED=$$(go test -list '.*' ./... 2>&1 | grep '\[no test files\]' || true); \
+	if [ -n "$$UNTESTED" ]; then \
+		echo "Found packages without test files:"; \
+		echo "$$UNTESTED"; \
+		exit 1; \
+	fi
+	@echo "All packages have active test coverage."
+	go test -v -cover ./...
+
+test-fuzz:
+	@echo "Running fuzz tests..."
+	go test -run='^Fuzz' ./...
+
+pre-commit:
+	@./scripts/pre-commit.sh

@@ -7,6 +7,7 @@ import (
 	"github.com/apache/arrow-adbc/go/adbc"
 
 	longbowadbc "github.com/23skdu/longbow/internal/adbc"
+	"github.com/23skdu/longbow/pkg/version"
 )
 
 func newTestConnection(t *testing.T) adbc.Connection {
@@ -80,6 +81,30 @@ func TestConnection_GetInfo(t *testing.T) {
 		t.Fatal("GetInfo(nil): got nil reader")
 	}
 	reader.Release()
+
+	// Verify standard ADBC 1.1.0 driver info decoding
+	driverInfo, err := adbc.GetDriverInfo(context.Background(), conn)
+	if err != nil {
+		t.Fatalf("adbc.GetDriverInfo: %v", err)
+	}
+	if driverInfo.DriverName != "longbow-adbc" {
+		t.Errorf("DriverName: expected 'longbow-adbc', got %q", driverInfo.DriverName)
+	}
+	if driverInfo.DriverVersion != version.Version {
+		t.Errorf("DriverVersion: expected %q, got %q", version.Version, driverInfo.DriverVersion)
+	}
+	if driverInfo.DriverADBCVersion != adbc.AdbcVersion1_1_0 {
+		t.Errorf("DriverADBCVersion: expected %d (1.1.0), got %d", adbc.AdbcVersion1_1_0, driverInfo.DriverADBCVersion)
+	}
+	if driverInfo.VendorName != "23skdu" {
+		t.Errorf("VendorName: expected '23skdu', got %q", driverInfo.VendorName)
+	}
+	if driverInfo.VendorVersion != version.Version {
+		t.Errorf("VendorVersion: expected %q, got %q", version.Version, driverInfo.VendorVersion)
+	}
+	if driverInfo.LibraryInfo[adbc.DriverInfoKeyDriverArrowVersion] != "18.8.0" {
+		t.Errorf("DriverArrowVersion: expected '18.8.0', got %q", driverInfo.LibraryInfo[adbc.DriverInfoKeyDriverArrowVersion])
+	}
 }
 
 func TestConnection_GetObjects(t *testing.T) {

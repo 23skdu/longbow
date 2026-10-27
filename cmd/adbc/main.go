@@ -90,6 +90,11 @@ typedef int (*AdbcStatementSetSqlQueryFn)(struct AdbcStatement*, const char*, st
 typedef int (*AdbcStatementSetSubstraitPlanFn)(struct AdbcStatement*, const uint8_t*, size_t, struct AdbcError*);
 typedef void (*AdbcErrorReleaseFn)(struct AdbcError*);
 
+// ADBC 1.1.0 function pointer typedefs
+typedef int (*AdbcConnectionCancelFn)(struct AdbcConnection*, struct AdbcError*);
+typedef int (*AdbcStatementCancelFn)(struct AdbcStatement*, struct AdbcError*);
+typedef int (*AdbcStatementExecuteSchemaFn)(struct AdbcStatement*, struct ArrowSchema*, struct AdbcError*);
+
 // AdbcDriver struct layout MUST match the ADBC spec exactly.
 // Field order from adbc.h (1.0.0 + 1.1.0 surface, in order).
 // Fields the longbow stub does not implement are left as `void*`
@@ -125,6 +130,40 @@ struct AdbcDriver {
     AdbcStatementSetOptionFn StatementSetOption;
     AdbcStatementSetSqlQueryFn StatementSetSqlQuery;
     AdbcStatementSetSubstraitPlanFn StatementSetSubstraitPlan;
+
+    // ADBC 1.1.0 additions
+    void* ErrorGetDetailCount;
+    void* ErrorGetDetail;
+    void* ErrorFromArrayStream;
+
+    void* DatabaseGetOption;
+    void* DatabaseGetOptionBytes;
+    void* DatabaseGetOptionDouble;
+    void* DatabaseGetOptionInt;
+    void* DatabaseSetOptionBytes;
+    void* DatabaseSetOptionDouble;
+    void* DatabaseSetOptionInt;
+
+    AdbcConnectionCancelFn ConnectionCancel;
+    void* ConnectionGetOption;
+    void* ConnectionGetOptionBytes;
+    void* ConnectionGetOptionDouble;
+    void* ConnectionGetOptionInt;
+    void* ConnectionGetStatistics;
+    void* ConnectionGetStatisticNames;
+    void* ConnectionSetOptionBytes;
+    void* ConnectionSetOptionDouble;
+    void* ConnectionSetOptionInt;
+
+    AdbcStatementCancelFn StatementCancel;
+    AdbcStatementExecuteSchemaFn StatementExecuteSchema;
+    void* StatementGetOption;
+    void* StatementGetOptionBytes;
+    void* StatementGetOptionDouble;
+    void* StatementGetOptionInt;
+    void* StatementSetOptionBytes;
+    void* StatementSetOptionDouble;
+    void* StatementSetOptionInt;
 };
 
 struct AdbcError {
@@ -150,9 +189,9 @@ struct AdbcError {
 #define ADBC_STATUS_AUTHENTICATION 10
 #define ADBC_STATUS_AUTHORIZATION 11
 
-// ADBC API version. The driver manager calls AdbcDriverInit with
-// the ADBC version it expects; we accept 1.0.0 (== 1).
-#define ADBC_VERSION_1_0_0 1
+// ADBC API versions (spec 1.0.0 and 1.1.0)
+#define ADBC_VERSION_1_0_0 1000000
+#define ADBC_VERSION_1_1_0 1001000
 
 // C-to-Go bridge wrappers for the AdbcDriver function pointer
 // table. Storing the address of these wrappers in the AdbcDriver
@@ -212,6 +251,26 @@ __attribute__((weak)) int bridge_ConnectionSetOption(struct AdbcConnection* conn
     extern int AdbcConnectionSetOption(struct AdbcConnection*, char*, char*, struct AdbcError*);
     return AdbcConnectionSetOption(conn, key, value, err);
 }
+__attribute__((weak)) int bridge_ConnectionGetInfo(struct AdbcConnection* conn, const uint32_t* info_codes, size_t info_codes_length, struct ArrowArrayStream* out, struct AdbcError* err) {
+    extern int AdbcConnectionGetInfo(struct AdbcConnection*, uint32_t*, size_t, struct ArrowArrayStream*, struct AdbcError*);
+    return AdbcConnectionGetInfo(conn, (uint32_t*)info_codes, info_codes_length, out, err);
+}
+__attribute__((weak)) int bridge_ConnectionGetObjects(struct AdbcConnection* conn, int depth, const char* catalog, const char* db_schema, const char* table_name, const char** table_type, const char* column_name, struct ArrowArrayStream* out, struct AdbcError* err) {
+    extern int AdbcConnectionGetObjects(struct AdbcConnection*, int, char*, char*, char*, char**, char*, struct ArrowArrayStream*, struct AdbcError*);
+    return AdbcConnectionGetObjects(conn, depth, (char*)catalog, (char*)db_schema, (char*)table_name, (char**)table_type, (char*)column_name, out, err);
+}
+__attribute__((weak)) int bridge_ConnectionGetTableSchema(struct AdbcConnection* conn, const char* catalog, const char* db_schema, const char* table_name, struct ArrowSchema* schema, struct AdbcError* err) {
+    extern int AdbcConnectionGetTableSchema(struct AdbcConnection*, char*, char*, char*, struct ArrowSchema*, struct AdbcError*);
+    return AdbcConnectionGetTableSchema(conn, (char*)catalog, (char*)db_schema, (char*)table_name, schema, err);
+}
+__attribute__((weak)) int bridge_ConnectionGetTableTypes(struct AdbcConnection* conn, struct ArrowArrayStream* out, struct AdbcError* err) {
+    extern int AdbcConnectionGetTableTypes(struct AdbcConnection*, struct ArrowArrayStream*, struct AdbcError*);
+    return AdbcConnectionGetTableTypes(conn, out, err);
+}
+__attribute__((weak)) int bridge_ConnectionCancel(struct AdbcConnection* conn, struct AdbcError* err) {
+    extern int AdbcConnectionCancel(struct AdbcConnection*, struct AdbcError*);
+    return AdbcConnectionCancel(conn, err);
+}
 __attribute__((weak)) int bridge_StatementNew(struct AdbcConnection* conn, struct AdbcStatement* stmt, struct AdbcError* err) {
     extern int AdbcStatementNew(struct AdbcConnection*, struct AdbcStatement*, struct AdbcError*);
     return AdbcStatementNew(conn, stmt, err);
@@ -232,6 +291,14 @@ __attribute__((weak)) int bridge_StatementExecuteQuery(struct AdbcStatement* stm
     extern int AdbcStatementExecuteQuery(struct AdbcStatement*, struct ArrowArrayStream*, int64_t*, struct AdbcError*);
     return AdbcStatementExecuteQuery(stmt, out, rows, err);
 }
+__attribute__((weak)) int bridge_StatementCancel(struct AdbcStatement* stmt, struct AdbcError* err) {
+    extern int AdbcStatementCancel(struct AdbcStatement*, struct AdbcError*);
+    return AdbcStatementCancel(stmt, err);
+}
+__attribute__((weak)) int bridge_StatementExecuteSchema(struct AdbcStatement* stmt, struct ArrowSchema* schema, struct AdbcError* err) {
+    extern int AdbcStatementExecuteSchema(struct AdbcStatement*, struct ArrowSchema*, struct AdbcError*);
+    return AdbcStatementExecuteSchema(stmt, schema, err);
+}
 
 // C-to-Go bridge for the AdbcError.release callback.
 __attribute__((weak)) void bridge_setCErrorRelease(struct AdbcError* err) {
@@ -247,6 +314,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/adbc"
+	arrowadbc "github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow/cdata"
 )
 
@@ -261,7 +329,7 @@ const (
 )
 
 func isSupportedADBCVersion(version int) bool {
-	return version == 0 || (version >= 1000000 && version < 1002000)
+	return version == 0 || version == 1 || (version >= 1000000 && version < 1002000)
 }
 
 //export AdbcLongbowAdbcInit
@@ -271,18 +339,24 @@ func AdbcLongbowAdbcInit(version C.int, driver unsafe.Pointer, err *C.struct_Adb
 	// ADBC_VERSION_1_0_0 = 1000000
 	// ADBC_VERSION_1_1_0 = 1001000
 	// We support the 1.x family (1000000..1001999).
-	if !isSupportedADBCVersion(int(version)) {
-		setCError(err, fmt.Sprintf("AdbcLongbowAdbcInit: unsupported ADBC version %d (supported: 1.x)", version))
+	v := int(version)
+	if !isSupportedADBCVersion(v) {
+		setCError(err, fmt.Sprintf("AdbcLongbowAdbcInit: unsupported ADBC version %d (supported: 1.0.0, 1.1.0)", version))
 		return C.int(adbcStatusInvalidArgument)
 	}
 
 	cDriver := (*C.struct_AdbcDriver)(driver)
-	// Field order MUST match the ADBC spec struct layout.
+
+	// ADBC 1.0.0 function table.
 	cDriver.DatabaseInit = (C.AdbcDatabaseInitFn)(C.bridge_DatabaseInit)
 	cDriver.DatabaseNew = (C.AdbcDatabaseNewFn)(C.bridge_DatabaseNew)
 	cDriver.DatabaseSetOption = (C.AdbcDatabaseSetOptionFn)(C.bridge_DatabaseSetOption)
 	cDriver.DatabaseRelease = (C.AdbcDatabaseReleaseFn)(C.bridge_DatabaseRelease)
 	cDriver.ConnectionCommit = (C.AdbcConnectionCommitFn)(C.bridge_ConnectionCommit)
+	cDriver.ConnectionGetInfo = (C.AdbcConnectionGetInfoFn)(C.bridge_ConnectionGetInfo)
+	cDriver.ConnectionGetObjects = (C.AdbcConnectionGetObjectsFn)(C.bridge_ConnectionGetObjects)
+	cDriver.ConnectionGetTableSchema = (C.AdbcConnectionGetTableSchemaFn)(C.bridge_ConnectionGetTableSchema)
+	cDriver.ConnectionGetTableTypes = (C.AdbcConnectionGetTableTypesFn)(C.bridge_ConnectionGetTableTypes)
 	cDriver.ConnectionInit = (C.AdbcConnectionInitFn)(C.bridge_ConnectionInit)
 	cDriver.ConnectionNew = (C.AdbcConnectionNewFn)(C.bridge_ConnectionNew)
 	cDriver.ConnectionSetOption = (C.AdbcConnectionSetOptionFn)(C.bridge_ConnectionSetOption)
@@ -293,7 +367,20 @@ func AdbcLongbowAdbcInit(version C.int, driver unsafe.Pointer, err *C.struct_Adb
 	cDriver.StatementSetOption = (C.AdbcStatementSetOptionFn)(C.bridge_StatementSetOption)
 	cDriver.StatementSetSqlQuery = (C.AdbcStatementSetSqlQueryFn)(C.bridge_StatementSetSqlQuery)
 	cDriver.StatementExecuteQuery = (C.AdbcStatementExecuteQueryFn)(C.bridge_StatementExecuteQuery)
+
+	// ADBC 1.1.0 extensions (only written if caller requested 1.1.0 or default 0).
+	if v == 0 || v >= 1001000 {
+		cDriver.ConnectionCancel = (C.AdbcConnectionCancelFn)(C.bridge_ConnectionCancel)
+		cDriver.StatementCancel = (C.AdbcStatementCancelFn)(C.bridge_StatementCancel)
+		cDriver.StatementExecuteSchema = (C.AdbcStatementExecuteSchemaFn)(C.bridge_StatementExecuteSchema)
+	}
+
 	return C.int(adbcStatusOK)
+}
+
+//export AdbcDriverInit
+func AdbcDriverInit(version C.int, driver unsafe.Pointer, err *C.struct_AdbcError) C.int {
+	return AdbcLongbowAdbcInit(version, driver, err)
 }
 
 // ---------------------------------------------------------------------------
@@ -513,6 +600,137 @@ func AdbcConnectionSetOption(conn *C.struct_AdbcConnection, key, value *C.char, 
 func AdbcStatementSetOption(stmt *C.struct_AdbcStatement, key, value *C.char, err *C.struct_AdbcError) C.int {
 	setCError(err, "AdbcStatementSetOption: not implemented in longbow ADBC stub")
 	return C.int(adbcStatusNotImplemented)
+}
+
+//export AdbcConnectionGetInfo
+func AdbcConnectionGetInfo(conn *C.struct_AdbcConnection, infoCodes *C.uint32_t, infoCodesLen C.size_t, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) C.int {
+	if conn == nil || conn.private_data == nil || out == nil {
+		setCError(err, "AdbcConnectionGetInfo: invalid arguments")
+		return C.int(adbcStatusInvalidArgument)
+	}
+	var codes []arrowadbc.InfoCode
+	if infoCodes != nil && infoCodesLen > 0 {
+		slice := unsafe.Slice((*uint32)(unsafe.Pointer(infoCodes)), int(infoCodesLen))
+		codes = make([]arrowadbc.InfoCode, len(slice))
+		for i, c := range slice {
+			codes[i] = arrowadbc.InfoCode(c)
+		}
+	}
+	goConnPtr := (*adbc.Connection)(unsafe.Pointer(conn.private_data))
+	reader, goErr := (*goConnPtr).GetInfo(context.Background(), codes)
+	if goErr != nil {
+		setCError(err, fmt.Sprintf("AdbcConnectionGetInfo: %v", goErr))
+		return C.int(adbcStatusUnknown)
+	}
+	cdata.ExportRecordReader(reader, (*cdata.CArrowArrayStream)(unsafe.Pointer(out)))
+	return C.int(adbcStatusOK)
+}
+
+//export AdbcConnectionGetObjects
+func AdbcConnectionGetObjects(conn *C.struct_AdbcConnection, depth C.int, catalog, dbSchema, tableName *C.char, tableTypes **C.char, columnName *C.char, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) C.int {
+	if conn == nil || conn.private_data == nil || out == nil {
+		setCError(err, "AdbcConnectionGetObjects: invalid arguments")
+		return C.int(adbcStatusInvalidArgument)
+	}
+	var catPtr, schemaPtr, tablePtr, colPtr *string
+	if catalog != nil {
+		s := C.GoString(catalog)
+		catPtr = &s
+	}
+	if dbSchema != nil {
+		s := C.GoString(dbSchema)
+		schemaPtr = &s
+	}
+	if tableName != nil {
+		s := C.GoString(tableName)
+		tablePtr = &s
+	}
+	if columnName != nil {
+		s := C.GoString(columnName)
+		colPtr = &s
+	}
+	goConnPtr := (*adbc.Connection)(unsafe.Pointer(conn.private_data))
+	reader, goErr := (*goConnPtr).GetObjects(context.Background(), arrowadbc.ObjectDepth(depth), catPtr, schemaPtr, tablePtr, colPtr, nil)
+	if goErr != nil {
+		setCError(err, fmt.Sprintf("AdbcConnectionGetObjects: %v", goErr))
+		return C.int(adbcStatusUnknown)
+	}
+	cdata.ExportRecordReader(reader, (*cdata.CArrowArrayStream)(unsafe.Pointer(out)))
+	return C.int(adbcStatusOK)
+}
+
+//export AdbcConnectionGetTableSchema
+func AdbcConnectionGetTableSchema(conn *C.struct_AdbcConnection, catalog, dbSchema, tableName *C.char, out *C.struct_ArrowSchema, err *C.struct_AdbcError) C.int {
+	if conn == nil || conn.private_data == nil || tableName == nil || out == nil {
+		setCError(err, "AdbcConnectionGetTableSchema: invalid arguments")
+		return C.int(adbcStatusInvalidArgument)
+	}
+	var catPtr, schemaPtr *string
+	if catalog != nil {
+		s := C.GoString(catalog)
+		catPtr = &s
+	}
+	if dbSchema != nil {
+		s := C.GoString(dbSchema)
+		schemaPtr = &s
+	}
+	tbl := C.GoString(tableName)
+	goConnPtr := (*adbc.Connection)(unsafe.Pointer(conn.private_data))
+	sch, goErr := (*goConnPtr).GetTableSchema(context.Background(), catPtr, schemaPtr, tbl)
+	if goErr != nil {
+		setCError(err, fmt.Sprintf("AdbcConnectionGetTableSchema: %v", goErr))
+		return C.int(adbcStatusNotFound)
+	}
+	cdata.ExportArrowSchema(sch, (*cdata.CArrowSchema)(unsafe.Pointer(out)))
+	return C.int(adbcStatusOK)
+}
+
+//export AdbcConnectionGetTableTypes
+func AdbcConnectionGetTableTypes(conn *C.struct_AdbcConnection, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) C.int {
+	if conn == nil || conn.private_data == nil || out == nil {
+		setCError(err, "AdbcConnectionGetTableTypes: invalid arguments")
+		return C.int(adbcStatusInvalidArgument)
+	}
+	goConnPtr := (*adbc.Connection)(unsafe.Pointer(conn.private_data))
+	reader, goErr := (*goConnPtr).GetTableTypes(context.Background())
+	if goErr != nil {
+		setCError(err, fmt.Sprintf("AdbcConnectionGetTableTypes: %v", goErr))
+		return C.int(adbcStatusUnknown)
+	}
+	cdata.ExportRecordReader(reader, (*cdata.CArrowArrayStream)(unsafe.Pointer(out)))
+	return C.int(adbcStatusOK)
+}
+
+//export AdbcConnectionCancel
+func AdbcConnectionCancel(conn *C.struct_AdbcConnection, err *C.struct_AdbcError) C.int {
+	if conn == nil || conn.private_data == nil {
+		return C.int(adbcStatusInvalidState)
+	}
+	return C.int(adbcStatusOK)
+}
+
+//export AdbcStatementCancel
+func AdbcStatementCancel(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) C.int {
+	if stmt == nil || stmt.private_data == nil {
+		return C.int(adbcStatusInvalidState)
+	}
+	return C.int(adbcStatusOK)
+}
+
+//export AdbcStatementExecuteSchema
+func AdbcStatementExecuteSchema(stmt *C.struct_AdbcStatement, out *C.struct_ArrowSchema, err *C.struct_AdbcError) C.int {
+	if stmt == nil || stmt.private_data == nil || out == nil {
+		setCError(err, "AdbcStatementExecuteSchema: invalid arguments")
+		return C.int(adbcStatusInvalidArgument)
+	}
+	goStmtPtr := (*adbc.Statement)(unsafe.Pointer(stmt.private_data))
+	sch, goErr := goStmtPtr.ExecuteSchema(context.Background())
+	if goErr != nil {
+		setCError(err, fmt.Sprintf("AdbcStatementExecuteSchema: %v", goErr))
+		return C.int(adbcStatusUnknown)
+	}
+	cdata.ExportArrowSchema(sch, (*cdata.CArrowSchema)(unsafe.Pointer(out)))
+	return C.int(adbcStatusOK)
 }
 
 func main() {

@@ -121,6 +121,51 @@ func TestStatement_ExecutePartitions_NotImplemented(t *testing.T) {
 	}
 }
 
+func TestStatement_ExecuteSchema(t *testing.T) {
+	stmt := newTestStatement(t)
+	execSchema, ok := stmt.(adbc.StatementExecuteSchemaWithContext)
+	if !ok {
+		t.Fatalf("expected Statement to implement StatementExecuteSchemaWithContext, got %T", stmt)
+	}
+
+	// 1. Empty query returns default stub schema
+	sch, err := execSchema.ExecuteSchema(context.Background())
+	if err != nil {
+		t.Fatalf("ExecuteSchema(empty): %v", err)
+	}
+	if sch == nil || sch.NumFields() != 2 {
+		t.Fatalf("ExecuteSchema(empty): expected 2 fields, got %v", sch)
+	}
+	if sch.Field(0).Name != "id" || sch.Field(1).Name != "score" {
+		t.Errorf("ExecuteSchema(empty): unexpected fields %v", sch.Fields())
+	}
+
+	// 2. SHOW TABLES returns table_name, table_type schema
+	if err := stmt.SetSqlQuery("SHOW TABLES"); err != nil {
+		t.Fatalf("SetSqlQuery: %v", err)
+	}
+	sch, err = execSchema.ExecuteSchema(context.Background())
+	if err != nil {
+		t.Fatalf("ExecuteSchema(SHOW TABLES): %v", err)
+	}
+	if sch == nil || sch.NumFields() != 2 || sch.Field(0).Name != "table_name" {
+		t.Errorf("ExecuteSchema(SHOW TABLES): unexpected schema %v", sch)
+	}
+
+	// 3. Unsupported query returns StatusNotImplemented
+	if err := stmt.SetSqlQuery("INSERT INTO foo VALUES (1)"); err != nil {
+		t.Fatalf("SetSqlQuery: %v", err)
+	}
+	_, err = execSchema.ExecuteSchema(context.Background())
+	if err == nil {
+		t.Fatal("ExecuteSchema(unsupported): expected error, got nil")
+	}
+	adbcErr, ok := err.(adbc.Error)
+	if !ok || adbcErr.Code != adbc.StatusNotImplemented {
+		t.Errorf("ExecuteSchema(unsupported): expected StatusNotImplemented, got %v", err)
+	}
+}
+
 func FuzzDialectParsing(f *testing.F) {
 	f.Add("SELECT * FROM test")
 	f.Add("vector <-> ?")

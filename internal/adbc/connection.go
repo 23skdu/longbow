@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/23skdu/longbow/internal/store"
+	"github.com/23skdu/longbow/pkg/version"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -14,6 +15,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 )
+
+var _ adbc.Connection = (*Connection)(nil)
 
 type Connection struct {
 	db     *Database
@@ -44,39 +47,59 @@ func (c *Connection) NewStatement() (adbc.Statement, error) {
 func (c *Connection) GetInfo(ctx context.Context, infoCodes []adbc.InfoCode) (array.RecordReader, error) {
 	pool := memory.NewGoAllocator()
 
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "info_name", Type: arrow.PrimitiveTypes.Uint32},
-		{Name: "value", Type: arrow.BinaryTypes.String},
-	}, nil)
-
-	builder := array.NewRecordBuilder(pool, schema)
+	builder := array.NewRecordBuilder(pool, adbc.GetInfoSchema)
 	defer builder.Release()
 
 	infoNameBuilder := builder.Field(0).(*array.Uint32Builder)
-	valueBuilder := builder.Field(1).(*array.StringBuilder)
+	unionB := builder.Field(1).(*array.DenseUnionBuilder)
+	strB := unionB.Child(0).(*array.StringBuilder)
+	boolB := unionB.Child(1).(*array.BooleanBuilder)
+	int64B := unionB.Child(2).(*array.Int64Builder)
 
 	wanted := make(map[adbc.InfoCode]bool)
 	for _, code := range infoCodes {
 		wanted[code] = true
 	}
 
-	addInfo := func(code adbc.InfoCode, val string) {
+	addInfoStr := func(code adbc.InfoCode, val string) {
 		if len(wanted) > 0 && !wanted[code] {
 			return
 		}
 		infoNameBuilder.Append(uint32(code))
-		valueBuilder.Append(val)
+		unionB.Append(0)
+		strB.Append(val)
 	}
 
-	addInfo(adbc.InfoVendorName, "23skdu")
-	addInfo(adbc.InfoVendorVersion, "0.2.3")
-	addInfo(adbc.InfoDriverName, "longbow-adbc")
-	addInfo(adbc.InfoDriverVersion, "0.2.3")
-	addInfo(adbc.InfoDriverArrowVersion, "18.0.0")
-	addInfo(adbc.InfoDriverADBCVersion, "1.1.0")
+	addInfoBool := func(code adbc.InfoCode, val bool) {
+		if len(wanted) > 0 && !wanted[code] {
+			return
+		}
+		infoNameBuilder.Append(uint32(code))
+		unionB.Append(1)
+		boolB.Append(val)
+	}
+
+	addInfoInt64 := func(code adbc.InfoCode, val int64) {
+		if len(wanted) > 0 && !wanted[code] {
+			return
+		}
+		infoNameBuilder.Append(uint32(code))
+		unionB.Append(2)
+		int64B.Append(val)
+	}
+
+	addInfoStr(adbc.InfoVendorName, "23skdu")
+	addInfoStr(adbc.InfoVendorVersion, version.Version)
+	addInfoStr(adbc.InfoVendorArrowVersion, "18.8.0")
+	addInfoBool(adbc.InfoVendorSql, true)
+	addInfoBool(adbc.InfoVendorSubstrait, false)
+	addInfoStr(adbc.InfoDriverName, "longbow-adbc")
+	addInfoStr(adbc.InfoDriverVersion, version.Version)
+	addInfoStr(adbc.InfoDriverArrowVersion, "18.8.0")
+	addInfoInt64(adbc.InfoDriverADBCVersion, adbc.AdbcVersion1_1_0)
 
 	rec := builder.NewRecordBatch()
-	return array.NewRecordReader(schema, []arrow.RecordBatch{rec})
+	return array.NewRecordReader(adbc.GetInfoSchema, []arrow.RecordBatch{rec})
 }
 
 func (c *Connection) GetObjects(ctx context.Context, depth adbc.ObjectDepth, catalog, dbSchema, tableName, columnName *string, tableType []string) (array.RecordReader, error) {

@@ -15,6 +15,12 @@ import (
 	"github.com/rs/zerolog"
 )
 
+var (
+	_ adbc.Statement                         = (*Statement)(nil)
+	_ adbc.StatementExecuteSchema            = (*Statement)(nil)
+	_ adbc.StatementExecuteSchemaWithContext = (*Statement)(nil)
+)
+
 type Statement struct {
 	conn   *Connection
 	query  string
@@ -44,6 +50,70 @@ func (s *Statement) ExecuteQuery(ctx context.Context) (array.RecordReader, int64
 		return s.stubExecuteQuery()
 	}
 	return s.executeSearch(ctx)
+}
+
+// ExecuteSchema gets the schema of the result set of a query without executing it (ADBC 1.1.0).
+func (s *Statement) ExecuteSchema(ctx context.Context) (*arrow.Schema, error) {
+	if s.conn == nil || s.conn.store == nil || strings.TrimSpace(s.query) == "" {
+		return arrow.NewSchema([]arrow.Field{
+			{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+			{Name: "score", Type: arrow.PrimitiveTypes.Float32},
+		}, nil), nil
+	}
+
+	query := strings.TrimSpace(s.query)
+	upper := strings.ToUpper(query)
+
+	if upper == "SHOW TABLES" || upper == "SHOW DATASETS" {
+		return arrow.NewSchema([]arrow.Field{
+			{Name: "table_name", Type: arrow.BinaryTypes.String},
+			{Name: "table_type", Type: arrow.BinaryTypes.String},
+		}, nil), nil
+	}
+
+	if strings.HasPrefix(upper, "DESCRIBE ") || strings.HasPrefix(upper, "DESC ") {
+		return arrow.NewSchema([]arrow.Field{
+			{Name: "column_name", Type: arrow.BinaryTypes.String},
+			{Name: "data_type", Type: arrow.BinaryTypes.String},
+			{Name: "nullable", Type: arrow.FixedWidthTypes.Boolean},
+		}, nil), nil
+	}
+
+	if strings.HasPrefix(upper, "SELECT") && strings.Contains(upper, " FROM ") {
+		tableName := parseTableFromSQL(query)
+		if tableName == "" {
+			return nil, adbc.Error{
+				Code: adbc.StatusInvalidArgument,
+				Msg:  "could not parse table name from query",
+			}
+		}
+
+		if extractVectorFromSQL(query) != nil {
+			return arrow.NewSchema([]arrow.Field{
+				{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+				{Name: "score", Type: arrow.PrimitiveTypes.Float32},
+			}, nil), nil
+		}
+
+		var tableSchema *arrow.Schema
+		s.conn.store.IterateDatasets(func(name string, ds *store.Dataset) {
+			if name == tableName {
+				tableSchema = ds.GetSchema()
+			}
+		})
+		if tableSchema == nil {
+			return nil, adbc.Error{
+				Code: adbc.StatusNotFound,
+				Msg:  fmt.Sprintf("dataset %q not found", tableName),
+			}
+		}
+		return tableSchema, nil
+	}
+
+	return nil, adbc.Error{
+		Code: adbc.StatusNotImplemented,
+		Msg:  fmt.Sprintf("unsupported SQL query: %q", query),
+	}
 }
 
 func (s *Statement) ExecuteUpdate(ctx context.Context) (int64, error) {

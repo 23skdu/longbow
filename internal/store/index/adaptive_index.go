@@ -17,7 +17,6 @@ import (
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -239,7 +238,7 @@ func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k 
 	for i := len(results) - 1; i >= 0; i-- {
 		item := heap.Pop(h).(bfHeapItem)
 		results[i] = SearchResult{
-			ID:    lbtypes.VectorID(item.id),
+			ID:    types.VectorID(item.id),
 			Score: item.score,
 		}
 	}
@@ -525,7 +524,7 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 	for i := len(results) - 1; i >= 0; i-- {
 		item := heap.Pop(h).(bfHeapItem)
 		results[i] = SearchResult{
-			ID:    lbtypes.VectorID(item.id),
+			ID:    types.VectorID(item.id),
 			Score: item.score,
 		}
 	}
@@ -1119,7 +1118,7 @@ func (idx *AdaptiveIndex) Len() int {
 }
 
 // GetData returns graph data if HNSW is active.
-func (idx *AdaptiveIndex) GetData() *lbtypes.GraphData {
+func (idx *AdaptiveIndex) GetData() *types.GraphData {
 	idx.mu.RLock()
 	hnsw := idx.hnsw
 	idx.mu.RUnlock()
@@ -1127,7 +1126,7 @@ func (idx *AdaptiveIndex) GetData() *lbtypes.GraphData {
 	if hnsw == nil {
 		return nil
 	}
-	if g, ok := hnsw.(interface{ GetData() *lbtypes.GraphData }); ok {
+	if g, ok := hnsw.(interface{ GetData() *types.GraphData }); ok {
 		return g.GetData()
 	}
 	return nil

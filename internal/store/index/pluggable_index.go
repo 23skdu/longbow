@@ -8,7 +8,6 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 // =============================================================================
@@ -70,7 +69,7 @@ type PluggableVectorIndex interface {
 	SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error)
 
 	// GetNeighbors returns the k nearest neighbors for a given vector ID
-	GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error)
+	GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error)
 
 	// Build builds the index (for algorithms requiring training)
 	Build() error
@@ -93,7 +92,7 @@ type PluggableVectorIndex interface {
 	// Legacy interface compatibility
 	AddByLocation(batchIdx, rowIdx int) error
 	GetVectorID(loc Location) (uint64, bool)
-	SearchVectors(query []float32, k int, options types.SearchOptions) []lbtypes.SearchResult
+	SearchVectors(query []float32, k int, options types.SearchOptions) []types.SearchResult
 	Len() int
 }
 
@@ -206,7 +205,7 @@ func (f *IndexFactory) ListTypes() []IndexType {
 
 // createHNSWIndex creates an HNSW index adapter
 func createHNSWIndex(cfg IndexConfig) (PluggableVectorIndex, error) {
-	config := lbtypes.ArrowHNSWConfig{}
+	config := types.ArrowHNSWConfig{}
 	if cfg.HNSWConfig != nil {
 		config = *cfg.HNSWConfig
 	}

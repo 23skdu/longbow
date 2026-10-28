@@ -42,7 +42,6 @@ type OptimisticConcurrentUpdates struct {
 	versionCache map[string]*VectorVersion
 	cacheMu      sync.RWMutex
 	stats        OptimisticStats
-	wg           sync.WaitGroup
 	stopChan     chan struct{}
 }
 

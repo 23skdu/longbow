@@ -94,8 +94,6 @@ func (m *HBMManager) Free(ptr unsafe.Pointer) error {
 
 type VMEMManager struct {
 	total int64
-	used  int64
-	mu    sync.Mutex
 }
 
 func (b *TPUBackend) GetDeviceInfo() (*types.GPUInfo, error) {

@@ -226,7 +226,7 @@ func TestTurboQuantIndexIsEngaged(t *testing.T) {
 // 3.0, against 99.6% and 15.9 for the same corpus with a configured dimension.
 func TestTurboQuantGraphIsConnectedWithoutConfiguredDimension(t *testing.T) {
 	n, dims, batch := 20_000, 128, 10_000
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		n, batch = 2_000, 1_000
 	}
 	c := newTQCorpus(t, n, dims)
@@ -259,7 +259,7 @@ func TestTurboQuantGraphIsConnectedWithoutConfiguredDimension(t *testing.T) {
 
 func TestTurboQuantGraphIsConnected(t *testing.T) {
 	n, dims, batch := 20_000, 128, 10_000
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		n, batch = 2_000, 1_000
 	}
 	for _, bits := range []int{4, 8} {
@@ -303,7 +303,7 @@ func TestTurboQuantGraphIsConnected(t *testing.T) {
 // the float32 graph finds.
 func TestTurboQuantRecallNotBelowFloat32(t *testing.T) {
 	n, dims, k := 20_000, 128, 10
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		n = 2_000
 	}
 
@@ -391,6 +391,9 @@ func TestTurboQuantRecallNotBelowFloat32(t *testing.T) {
 // recall figure from this harness is trustworthy - which is why
 // TestTurboQuantRecallNotBelowFloat32 is written as a relative comparison.
 func TestDenseRecallHarnessSanity(t *testing.T) {
+	if testing.Short() || raceEnabled {
+		t.Skip("skipping heavy test under short mode or race detector")
+	}
 	const n, dims = 5_000, 128
 	c := newTQCorpus(t, n, dims)
 
@@ -427,6 +430,9 @@ func TestDenseRecallHarnessSanity(t *testing.T) {
 // several chunk boundaries and include ids past the resident range, so the
 // fall-back branches are exercised.
 func TestTQComputeBatchMatchesPerCandidate(t *testing.T) {
+	if testing.Short() || raceEnabled {
+		t.Skip("skipping heavy test under short mode or race detector")
+	}
 	const n, dims = 5_000, 128
 	for _, bits := range []int{4, 8} {
 		t.Run("bits"+string(rune('0'+bits)), func(t *testing.T) {
@@ -475,6 +481,9 @@ func TestTQComputeBatchMatchesPerCandidate(t *testing.T) {
 // SIMD function, and a divergence between them would be invisible in any
 // end-to-end measurement because both are "the distance".
 func TestTQDistanceDirectCodesMatchesDistanceDirect(t *testing.T) {
+	if testing.Short() || raceEnabled {
+		t.Skip("skipping heavy test under short mode or race detector")
+	}
 	const n, dims = 5_000, 128
 	for _, bits := range []int{4, 8} {
 		t.Run("bits"+string(rune('0'+bits)), func(t *testing.T) {

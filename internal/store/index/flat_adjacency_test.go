@@ -10,13 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type staticApplier struct {
-	neighbors []uint32
-}
-
-func (s *staticApplier) ApplyNeighbors(old []uint32) []uint32 {
-	return s.neighbors
-}
 
 type appendingApplier struct {
 	val uint32

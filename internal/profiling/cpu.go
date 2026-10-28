@@ -19,11 +19,7 @@ import (
 type Profiler struct {
 	logger *zerolog.Logger
 
-	cpuProfileFile string
-	memProfileFile string
-
 	enabled atomic.Bool
-	mu      sync.RWMutex
 
 	profileDir string
 

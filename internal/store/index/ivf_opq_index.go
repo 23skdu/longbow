@@ -110,6 +110,7 @@ func (idx *IVFOPQIndex) Train(vectors [][]float32) error {
 		if backend == gputypes.BackendCPU {
 			backend = gputypes.DetectGPUBackend()
 		}
+		_ = backend
 
 		// In a real scenario, we'd use a factory to get the backend
 		// For now, we'll assume Metal implementation is available if on Mac

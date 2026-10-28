@@ -5,7 +5,6 @@ package mesh
 import (
 	"context"
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -22,7 +21,6 @@ type RDMAStat struct {
 type RDMAContext struct {
 	enabled bool
 	stats   RDMAStat
-	mu      sync.RWMutex
 	peers   map[string]*RDMAConnection
 }
 

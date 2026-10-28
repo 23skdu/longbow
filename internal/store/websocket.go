@@ -74,7 +74,6 @@ type WebSocketServer struct {
 // WSConnectionPool manages a pool of active WebSocket connections.
 type WSConnectionPool struct {
 	mu          sync.Mutex
-	available   []*WSConnection
 	active      map[string]*WSConnection
 	maxSize     int
 	idleTimeout time.Duration

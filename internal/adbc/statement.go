@@ -3,7 +3,6 @@ package adbc
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 
@@ -181,7 +180,7 @@ func (s *Statement) executeSearch(ctx context.Context) (array.RecordReader, int6
 	}
 
 	if strings.HasPrefix(upper, "SELECT") && strings.Contains(upper, " FROM ") {
-		return s.executeSelect(ctx, query, upper)
+		return s.executeSelect(ctx, query)
 	}
 
 	// Not a recognized SQL dialect — return structured StatusNotImplemented error
@@ -191,7 +190,7 @@ func (s *Statement) executeSearch(ctx context.Context) (array.RecordReader, int6
 	}
 }
 
-func (s *Statement) showTables(ctx context.Context) (array.RecordReader, int64, error) {
+func (s *Statement) showTables(_ context.Context) (array.RecordReader, int64, error) {
 	vs := s.conn.store
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "table_name", Type: arrow.BinaryTypes.String},
@@ -214,7 +213,7 @@ func (s *Statement) showTables(ctx context.Context) (array.RecordReader, int64, 
 	return reader, -1, err
 }
 
-func (s *Statement) describeTable(ctx context.Context, tableName string) (array.RecordReader, int64, error) {
+func (s *Statement) describeTable(_ context.Context, tableName string) (array.RecordReader, int64, error) {
 	vs := s.conn.store
 	var tableSchema *arrow.Schema
 	vs.IterateDatasets(func(name string, ds *store.Dataset) {
@@ -254,7 +253,7 @@ func (s *Statement) describeTable(ctx context.Context, tableName string) (array.
 	return reader, -1, err
 }
 
-func (s *Statement) executeSelect(ctx context.Context, query, upper string) (array.RecordReader, int64, error) {
+func (s *Statement) executeSelect(ctx context.Context, query string) (array.RecordReader, int64, error) {
 	vs := s.conn.store
 	tableName := parseTableFromSQL(query)
 	k := parseKFromSQL(query)
@@ -408,16 +407,4 @@ func (s *Statement) executeScan(ctx context.Context, vs *store.VectorStore, tabl
 	rec := builder.NewRecordBatch()
 	reader, err := array.NewRecordReader(schema, []arrow.RecordBatch{rec})
 	return reader, -1, err
-}
-
-func serializeFloat32s(vec []float32) []byte {
-	b := make([]byte, len(vec)*4)
-	for i, v := range vec {
-		bits := math.Float32bits(v)
-		b[i*4] = byte(bits)         // #nosec G115 -- shifted to low byte, always fits
-		b[i*4+1] = byte(bits >> 8)  // #nosec G115
-		b[i*4+2] = byte(bits >> 16) // #nosec G115
-		b[i*4+3] = byte(bits >> 24) // #nosec G115
-	}
-	return b
 }

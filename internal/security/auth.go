@@ -27,6 +27,12 @@ var (
 	ErrUserNotAuthorized = errors.New("user not authorized")
 )
 
+type contextKey string
+
+const (
+	sessionContextKey contextKey = "session"
+)
+
 type OAuthProvider string
 
 const (
@@ -443,7 +449,7 @@ func (m *OAuthManager) Middleware() func(http.Handler) http.Handler {
 			if sessionID != "" {
 				session, err := m.GetSession(sessionID)
 				if err == nil {
-					ctx := context.WithValue(r.Context(), "session", session)
+					ctx := context.WithValue(r.Context(), sessionContextKey, session)
 					r = r.WithContext(ctx)
 				}
 			}
@@ -547,10 +553,20 @@ func (m *OAuthManager) IsDomainAllowed(email string) bool {
 	return false
 }
 
+func getSessionFromContext(ctx context.Context) *Session {
+	if s, ok := ctx.Value(sessionContextKey).(*Session); ok && s != nil {
+		return s
+	}
+	if s, ok := ctx.Value("session").(*Session); ok && s != nil {
+		return s
+	}
+	return nil
+}
+
 func (m *OAuthManager) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session, ok := r.Context().Value("session").(*Session)
-		if !ok || session == nil {
+		session := getSessionFromContext(r.Context())
+		if session == nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -560,8 +576,8 @@ func (m *OAuthManager) RequireAuth(next http.Handler) http.Handler {
 
 func (m *OAuthManager) RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session, ok := r.Context().Value("session").(*Session)
-		if !ok || session == nil {
+		session := getSessionFromContext(r.Context())
+		if session == nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}

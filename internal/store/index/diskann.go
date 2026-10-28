@@ -15,7 +15,6 @@ import (
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 const (
@@ -374,7 +373,7 @@ func (idx *DiskANNIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearc
 }
 
 // GetNeighbors returns the nearest neighbors for an existing vector ID.
-func (idx *DiskANNIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
+func (idx *DiskANNIndex) GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -383,11 +382,11 @@ func (idx *DiskANNIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, 
 		return nil, fmt.Errorf("vector id %d not found in DiskANN index", id)
 	}
 
-	results := make([]lbtypes.SearchResult, 0, min(k, len(neighbors)))
+	results := make([]types.SearchResult, 0, min(k, len(neighbors)))
 	for i := 0; i < len(neighbors) && i < k; i++ {
 		neighborID := neighbors[i]
-		results = append(results, lbtypes.SearchResult{
-			ID: lbtypes.VectorID(neighborID), // #nosec G115
+		results = append(results, types.SearchResult{
+			ID: types.VectorID(neighborID), // #nosec G115
 		})
 	}
 
@@ -831,16 +830,16 @@ func (idx *DiskANNIndex) GetVectorID(loc Location) (uint64, bool) {
 }
 
 // SearchVectors is a legacy adapter for vector search with options.
-func (idx *DiskANNIndex) SearchVectors(query []float32, k int, options types.SearchOptions) []lbtypes.SearchResult {
+func (idx *DiskANNIndex) SearchVectors(query []float32, k int, options types.SearchOptions) []types.SearchResult {
 	results, _ := idx.Search(query, k)
-	searchResults := make([]lbtypes.SearchResult, len(results))
+	searchResults := make([]types.SearchResult, len(results))
 	for i, r := range results {
 		id := r.ID
 		if id > 4294967295 {
 			id = 4294967295
 		}
-		searchResults[i] = lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(id),
+		searchResults[i] = types.SearchResult{
+			ID:       types.VectorID(id),
 			Distance: r.Distance,
 			Score:    1.0 / (1.0 + r.Distance),
 		}

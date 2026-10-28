@@ -2,14 +2,12 @@ package store
 
 import (
 	"sort"
-	"sync"
 
 	"github.com/23skdu/longbow/internal/core"
 )
 
 // TemporalAggregator manages temporal aggregation of vector search results.
 type TemporalAggregator struct {
-	mu            sync.RWMutex
 	maxBucketSize int
 }
 

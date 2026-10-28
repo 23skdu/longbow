@@ -32,7 +32,7 @@ func TestOAuthManager_Basic(t *testing.T) {
 	assert.Contains(t, url, "github.com")
 	assert.Contains(t, url, "state=random-state")
 
-	url, err = mgr.GetAuthURL("invalid", "state")
+	_, err = mgr.GetAuthURL("invalid", "state")
 	require.Error(t, err)
 
 	// Test Domain Allowed

@@ -31,7 +31,7 @@ func TestMapRCUBasic(t *testing.T) {
 		t.Fatalf("expected 2, got %v (ok=%v)", val, ok)
 	}
 
-	val, ok = m.Get("unknown")
+	_, ok = m.Get("unknown")
 	if ok {
 		t.Fatalf("expected not found for unknown key")
 	}

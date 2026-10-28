@@ -171,8 +171,6 @@ func BeamSearchOptimized(
 type ParallelSearchResult struct {
 	mu      sync.Mutex
 	results []BeamSearchCandidate
-	idx     uint32
-	counter uint32
 	total   uint32
 }
 

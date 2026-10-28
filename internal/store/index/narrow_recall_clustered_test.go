@@ -243,6 +243,7 @@ type recallCorpus struct {
 // buildRecallCorpus materialises a corpus description.
 func buildRecallCorpus(tb testing.TB, c recallCorpus) [][]float32 {
 	tb.Helper()
+	tb.Logf("building %s corpus", c.name)
 	if c.uniform {
 		rng := rand.New(rand.NewSource(21)) // #nosec G404 -- deterministic
 		out := make([][]float32, clusterN)

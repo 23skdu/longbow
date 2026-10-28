@@ -649,8 +649,6 @@ func (h *ArrowHNSW) commitID(id uint32) {
 				}
 			}
 			meta.Generation++
-		} else {
-			// Already committed or skipped
 		}
 	})
 

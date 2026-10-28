@@ -51,7 +51,6 @@ type TierStorage struct {
 	tier        Tier
 	directory   string
 	mmapEnabled bool
-	evictFn     func(keys []string) error
 
 	mu   sync.RWMutex
 	keys map[string]bool

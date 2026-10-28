@@ -39,7 +39,6 @@ type StreamingAggregation struct {
 	aggregates  map[string]*VectorAggregate
 	aggregateMu sync.RWMutex
 	stats       StreamingAggregationStats
-	wg          sync.WaitGroup
 	stopChan    chan struct{}
 }
 

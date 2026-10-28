@@ -19,8 +19,6 @@ type float32Computer struct {
 	h         *ArrowHNSW
 	qF64      []float64
 	qF16      []float16.Num
-	qC64      []complex64
-	qC128     []complex128
 	diskGraph *DiskGraph
 	maxGen    uint64
 	sctx      *ArrowSearchContext

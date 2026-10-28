@@ -265,6 +265,7 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			opts := types.DefaultSearchOptions()
 			opts.Ef = 1100
 			res, err := idx.SearchVectors(context.Background(), vecAny, 1100, nil, opts)
+			assert.NoError(t, err)
 			assert.NotEmpty(t, res)
 			if tt.dataType != types.VectorTypeInt8 && tt.dataType != types.VectorTypeComplex64 && tt.dataType != types.VectorTypeComplex128 {
 				found := false

@@ -18,7 +18,6 @@ import (
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -150,7 +149,7 @@ func (ivf *IVFFlatIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch,
 
 	u32ID := uint32(id)
 	loc := Location{BatchIdx: batchIdx, RowIdx: rowIdx}
-	packed := lbtypes.PackLocation(loc)
+	packed := types.PackLocation(loc)
 	ivf.locationToID[packed] = id
 	ivf.idToLocation[id] = packed
 
@@ -295,7 +294,7 @@ func (ivf *IVFFlatIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearc
 }
 
 // GetNeighbors is not supported for IVF-Flat index
-func (ivf *IVFFlatIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
+func (ivf *IVFFlatIndex) GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error) {
 	return nil, fmt.Errorf("graph-based neighbor retrieval not supported for IVF-Flat: %w", os.ErrPermission)
 }
 
@@ -609,7 +608,7 @@ func (ivf *IVFFlatIndex) GetVectorID(loc Location) (uint64, bool) {
 		return 0, false
 	}
 
-	id, ok := ivf.locationToID[lbtypes.PackLocation(loc)]
+	id, ok := ivf.locationToID[types.PackLocation(loc)]
 	return id, ok
 }
 
@@ -630,7 +629,7 @@ func (ivf *IVFFlatIndex) SetLocation(id uint32, loc any) {
 		ivf.idToLocation = make(map[uint64]uint64)
 	}
 
-	packed := lbtypes.PackLocation(l)
+	packed := types.PackLocation(l)
 	ivf.locationToID[packed] = uint64(id)
 	ivf.idToLocation[uint64(id)] = packed
 }
@@ -649,20 +648,20 @@ func (ivf *IVFFlatIndex) GetLocation(id uint32) (any, bool) {
 		return nil, false
 	}
 
-	return lbtypes.UnpackLocation(packed), true
+	return types.UnpackLocation(packed), true
 }
 
 // SearchVectors performs a search and returns standard SearchResult types.
-func (ivf *IVFFlatIndex) SearchVectors(query []float32, k int, options types.SearchOptions) []lbtypes.SearchResult {
+func (ivf *IVFFlatIndex) SearchVectors(query []float32, k int, options types.SearchOptions) []types.SearchResult {
 	results, _ := ivf.Search(query, k)
-	searchResults := make([]lbtypes.SearchResult, len(results))
+	searchResults := make([]types.SearchResult, len(results))
 	for i, r := range results {
 		id := r.ID
 		if id > 4294967295 {
 			id = 4294967295
 		}
-		searchResults[i] = lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(id),
+		searchResults[i] = types.SearchResult{
+			ID:       types.VectorID(id),
 			Distance: r.Distance,
 			Score:    1.0 / (1.0 + r.Distance),
 		}

@@ -68,10 +68,7 @@ type VectorStore struct {
 	stopChan           chan struct{}
 	stopOnce           sync.Once      // Protects stopChan closure
 	indexWg            sync.WaitGroup // For background workers
-	startIndexingOnce  sync.Once      // Ensure background workers start only once
-	ingestionStartOnce sync.Once      // Ensure ingestion workers start only once
-	// mu       sync.RWMutex   // DEPRECATED: Replaced by RCU
-	datasets atomic.Pointer[map[string]*Dataset]
+	datasets           atomic.Pointer[map[string]*Dataset]
 
 	// configMu protects configuration fields
 	configMu sync.RWMutex
@@ -161,7 +158,7 @@ type VectorStore struct {
 
 	// hnsw2 integration hook (Phase 5)
 	// Called after dataset creation to initialize hnsw2 (avoids import cycle)
-	hnsw2Config *ArrowHNSWConfig //nolint:unused
+	hnsw2Config *ArrowHNSWConfig
 
 	// Memory Tuner
 	tuner atomic.Pointer[lbmem.GCTuner]
@@ -941,4 +938,18 @@ func (s *VectorStore) UnregisterCDCSubscriber(dataset string, sub chan arrow.Rec
 			break
 		}
 	}
+}
+
+// SetHNSW2Config sets the HNSW configuration template for newly created datasets.
+func (s *VectorStore) SetHNSW2Config(cfg *ArrowHNSWConfig) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	s.hnsw2Config = cfg
+}
+
+// GetHNSW2Config returns the current HNSW configuration template.
+func (s *VectorStore) GetHNSW2Config() *ArrowHNSWConfig {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	return s.hnsw2Config
 }

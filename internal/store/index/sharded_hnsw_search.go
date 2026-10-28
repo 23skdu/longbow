@@ -182,7 +182,6 @@ func (idx *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec an
 	type shardResult struct {
 		results  []SearchResult
 		shardIdx int
-		err      error
 	}
 	ch := make(chan shardResult, len(idx.shards))
 	g, ctx := errgroup.WithContext(ctx)

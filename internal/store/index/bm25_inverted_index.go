@@ -9,7 +9,6 @@ import (
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 )
 
@@ -540,13 +539,13 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 				continue
 			}
 			if len(heap) < searchLimit {
-				heap = append(heap, SearchResult{ID: lbtypes.VectorID(pl.DocIDs[i]), Score: sc})
+				heap = append(heap, SearchResult{ID: types.VectorID(pl.DocIDs[i]), Score: sc})
 				siftUp(len(heap) - 1)
 				if len(heap) == searchLimit {
 					theta = heap[0].Score
 				}
 			} else if sc > theta {
-				heap[0] = SearchResult{ID: lbtypes.VectorID(pl.DocIDs[i]), Score: sc}
+				heap[0] = SearchResult{ID: types.VectorID(pl.DocIDs[i]), Score: sc}
 				siftDown(0)
 				theta = heap[0].Score
 			}
@@ -694,13 +693,13 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 
 			// Try to insert in heap
 			if len(heap) < searchLimit {
-				heap = append(heap, SearchResult{ID: lbtypes.VectorID(pivotDocID), Score: actualScore})
+				heap = append(heap, SearchResult{ID: types.VectorID(pivotDocID), Score: actualScore})
 				siftUp(len(heap) - 1)
 				if len(heap) == searchLimit {
 					theta = heap[0].Score
 				}
 			} else if actualScore > theta {
-				heap[0] = SearchResult{ID: lbtypes.VectorID(pivotDocID), Score: actualScore}
+				heap[0] = SearchResult{ID: types.VectorID(pivotDocID), Score: actualScore}
 				siftDown(0)
 				theta = heap[0].Score
 			}

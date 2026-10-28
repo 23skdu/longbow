@@ -287,24 +287,6 @@ func (e *TurboQuant2Encoder) polarTransform(vec []float32, angles []float32, sta
 	return e.polarTransform(nextRadii, angles[n/2:], stack)
 }
 
-func (e *TurboQuant2Encoder) polarReconstruct(radius float32, angles []float32, dst []float32, stack []float32) {
-	n := len(dst)
-	if n == 1 {
-		dst[0] = radius
-		return
-	}
-	stackOffset := e.pow2 - n
-	nextRadii := stack[stackOffset : stackOffset+n/2]
-
-	e.polarReconstruct(radius, angles[n/2:], nextRadii, stack)
-	for i := 0; i < n/2; i++ {
-		r := nextRadii[i]
-		theta := angles[i]
-		sin, cos := math.Sincos(float64(theta))
-		dst[2*i] = r * float32(cos)
-		dst[2*i+1] = r * float32(sin)
-	}
-}
 
 func (e *TurboQuant2Encoder) polarReconstructFromCodes(radius float32, codes []byte, dst []float32, stack []float32) {
 	n := len(dst)

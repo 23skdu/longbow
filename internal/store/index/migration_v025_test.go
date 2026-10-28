@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	topcore "github.com/23skdu/longbow/internal/core"
-
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/pq"
@@ -294,8 +292,8 @@ func TestGraphData_NeedsChunk_SharedVectorSpace(t *testing.T) {
 	assert.True(t, gd.NeedsChunk(1))
 }
 
-func (m *MockProvider) GetMetric() topcore.DistanceMetric {
-	return topcore.MetricEuclidean
+func (m *MockProvider) GetMetric() core.DistanceMetric {
+	return core.MetricEuclidean
 }
 
 func (m *MockProvider) GetLogger() zerolog.Logger {

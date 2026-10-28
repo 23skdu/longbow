@@ -4,7 +4,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -47,7 +46,6 @@ func NewStorageBackend(path string, preferUring, directIO bool) (StorageBackend,
 type FSStorageBackend struct {
 	f    *os.File
 	path string
-	mu   sync.RWMutex
 }
 
 func NewFSStorageBackend(path string, directIO bool) (*FSStorageBackend, error) {

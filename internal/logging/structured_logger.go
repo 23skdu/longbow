@@ -75,103 +75,85 @@ func getZerologLevel(level LogLevel) zerolog.Level {
 	}
 }
 
+type ContextKey string
+
+const (
+	ComponentKey ContextKey = "component"
+	TraceIDKey   ContextKey = "trace_id"
+	SpanIDKey    ContextKey = "span_id"
+)
+
+func extractCtxString(ctx context.Context, k ContextKey) string {
+	if ctx == nil {
+		return ""
+	}
+	if val := ctx.Value(k); val != nil {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	if val := ctx.Value(string(k)); val != nil {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
+func (l *StructuredLogger) applyContext(event *zerolog.Event, ctx context.Context) *zerolog.Event {
+	if comp := extractCtxString(ctx, ComponentKey); comp != "" {
+		event = event.Str("component", comp)
+	}
+	if traceID := extractCtxString(ctx, TraceIDKey); traceID != "" {
+		event = event.Str("trace_id", traceID)
+	}
+	if spanID := extractCtxString(ctx, SpanIDKey); spanID != "" {
+		event = event.Str("span_id", spanID)
+	}
+	return event
+}
+
 func (l *StructuredLogger) Debug(ctx context.Context, msg string, fields ...map[string]any) {
 	if l.level <= DebugLevel {
-		logger := l.logger.Debug()
+		event := l.logger.Debug()
 		if len(fields) > 0 {
-			logger = logger.Fields(getFields(fields...))
+			event = event.Fields(getFields(fields...))
 		}
-		if comp := ctx.Value("component"); comp != nil {
-			if str, ok := comp.(string); ok {
-				logger = logger.Str("component", str)
-			}
-		}
-		if traceID := ctx.Value("trace_id"); traceID != nil {
-			if id, ok := traceID.(string); ok {
-				logger = logger.Str("trace_id", id)
-			}
-		}
-		if spanID := ctx.Value("span_id"); spanID != nil {
-			if id, ok := spanID.(string); ok {
-				logger = logger.Str("span_id", id)
-			}
-		}
-		logger.Msg(msg)
+		event = l.applyContext(event, ctx)
+		event.Msg(msg)
 	}
 }
 
 func (l *StructuredLogger) Info(ctx context.Context, msg string, fields ...map[string]any) {
 	if l.level <= InfoLevel {
-		logger := l.logger.Info()
+		event := l.logger.Info()
 		if len(fields) > 0 {
-			logger = logger.Fields(getFields(fields...))
+			event = event.Fields(getFields(fields...))
 		}
-		if comp := ctx.Value("component"); comp != nil {
-			if str, ok := comp.(string); ok {
-				logger = logger.Str("component", str)
-			}
-		}
-		if traceID := ctx.Value("trace_id"); traceID != nil {
-			if id, ok := traceID.(string); ok {
-				logger = logger.Str("trace_id", id)
-			}
-		}
-		if spanID := ctx.Value("span_id"); spanID != nil {
-			if id, ok := spanID.(string); ok {
-				logger = logger.Str("span_id", id)
-			}
-		}
-		logger.Msg(msg)
+		event = l.applyContext(event, ctx)
+		event.Msg(msg)
 	}
 }
 
 func (l *StructuredLogger) Warn(ctx context.Context, msg string, fields ...map[string]any) {
 	if l.level <= WarnLevel {
-		logger := l.logger.Warn()
+		event := l.logger.Warn()
 		if len(fields) > 0 {
-			logger = logger.Fields(getFields(fields...))
+			event = event.Fields(getFields(fields...))
 		}
-		if comp := ctx.Value("component"); comp != nil {
-			if str, ok := comp.(string); ok {
-				logger = logger.Str("component", str)
-			}
-		}
-		if traceID := ctx.Value("trace_id"); traceID != nil {
-			if id, ok := traceID.(string); ok {
-				logger = logger.Str("trace_id", id)
-			}
-		}
-		if spanID := ctx.Value("span_id"); spanID != nil {
-			if id, ok := spanID.(string); ok {
-				logger = logger.Str("span_id", id)
-			}
-		}
-		logger.Msg(msg)
+		event = l.applyContext(event, ctx)
+		event.Msg(msg)
 	}
 }
 
 func (l *StructuredLogger) Error(ctx context.Context, msg string, fields ...map[string]any) {
 	if l.level <= ErrorLevel {
-		logger := l.logger.Error()
+		event := l.logger.Error()
 		if len(fields) > 0 {
-			logger = logger.Fields(getFields(fields...))
+			event = event.Fields(getFields(fields...))
 		}
-		if comp := ctx.Value("component"); comp != nil {
-			if str, ok := comp.(string); ok {
-				logger = logger.Str("component", str)
-			}
-		}
-		if traceID := ctx.Value("trace_id"); traceID != nil {
-			if id, ok := traceID.(string); ok {
-				logger = logger.Str("trace_id", id)
-			}
-		}
-		if spanID := ctx.Value("span_id"); spanID != nil {
-			if id, ok := spanID.(string); ok {
-				logger = logger.Str("span_id", id)
-			}
-		}
-		logger.Msg(msg)
+		event = l.applyContext(event, ctx)
+		event.Msg(msg)
 	}
 }
 
@@ -179,23 +161,9 @@ func (l *StructuredLogger) Fatal(ctx context.Context, msg string, fields ...map[
 	if l.level <= FatalLevel {
 		event := l.logger.Fatal()
 		if len(fields) > 0 {
-			event = event.Fields(fields)
+			event = event.Fields(getFields(fields...))
 		}
-		if comp := ctx.Value("component"); comp != nil {
-			if str, ok := comp.(string); ok {
-				event = event.Str("component", str)
-			}
-		}
-		if traceID := ctx.Value("trace_id"); traceID != nil {
-			if id, ok := traceID.(string); ok {
-				event = event.Str("trace_id", id)
-			}
-		}
-		if spanID := ctx.Value("span_id"); spanID != nil {
-			if id, ok := spanID.(string); ok {
-				event = event.Str("span_id", id)
-			}
-		}
+		event = l.applyContext(event, ctx)
 		event.Msg(msg)
 		os.Exit(1)
 	}

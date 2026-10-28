@@ -14,7 +14,6 @@ import (
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -31,8 +30,8 @@ type HNSWPluggableAdapter struct {
 	vectors      map[uint64][]float32
 	locationToID map[uint64]uint64
 	hnsw         VectorIndex // actual HNSW index, nil until dataset provided
-	provider     lbtypes.IndexDataProvider
-	hnswConfig   lbtypes.ArrowHNSWConfig
+	provider     types.IndexDataProvider
+	hnswConfig   types.ArrowHNSWConfig
 }
 
 // Type returns the index type.
@@ -143,18 +142,18 @@ func (h *HNSWPluggableAdapter) SearchBatch(queries [][]float32, k int) ([][]Inde
 }
 
 // GetNeighbors retrieves the nearest neighbors for a specific vector ID.
-func (h *HNSWPluggableAdapter) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
+func (h *HNSWPluggableAdapter) GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error) {
 	// Simple mock implementation for the adapter
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	results := make([]lbtypes.SearchResult, 0, k)
+	results := make([]types.SearchResult, 0, k)
 	count := 0
 	for otherID := range h.vectors {
 		if uint32(otherID) == uint32(id) { // #nosec G115
 			continue
 		}
-		results = append(results, lbtypes.SearchResult{ID: lbtypes.VectorID(otherID)}) // #nosec G115
+		results = append(results, types.SearchResult{ID: types.VectorID(otherID)}) // #nosec G115
 		count++
 		if count >= k {
 			break
@@ -262,7 +261,7 @@ func (h *HNSWPluggableAdapter) AddByRecord(ctx context.Context, rec arrow.Record
 
 	// Use packed location as a temporary ID if no ID column is available,
 	// or use a sequence if needed. In this adapter, we just need a unique ID.
-	id := uint64(lbtypes.PackLocation(lbtypes.Location{BatchIdx: batchIdx, RowIdx: rowIdx}))
+	id := uint64(types.PackLocation(types.Location{BatchIdx: batchIdx, RowIdx: rowIdx}))
 
 	h.mu.Lock()
 	h.vectors[id] = vec
@@ -276,7 +275,7 @@ func (h *HNSWPluggableAdapter) AddByRecord(ctx context.Context, rec arrow.Record
 }
 
 // SetDataProvider sets the data provider for the adapter.
-func (h *HNSWPluggableAdapter) SetDataProvider(p lbtypes.IndexDataProvider) {
+func (h *HNSWPluggableAdapter) SetDataProvider(p types.IndexDataProvider) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.provider = p
@@ -307,7 +306,7 @@ func (h *HNSWPluggableAdapter) GetVectorID(loc Location) (uint64, bool) {
 		return 0, false
 	}
 
-	packed := lbtypes.PackLocation(loc)
+	packed := types.PackLocation(loc)
 	id, ok := h.locationToID[packed]
 	return id, ok
 }
@@ -323,7 +322,7 @@ func (h *HNSWPluggableAdapter) SetLocation(id uint64, loc any) {
 	var packed uint64
 	switch l := loc.(type) {
 	case Location:
-		packed = lbtypes.PackLocation(l)
+		packed = types.PackLocation(l)
 	case uint64:
 		packed = l
 	default:
@@ -333,15 +332,15 @@ func (h *HNSWPluggableAdapter) SetLocation(id uint64, loc any) {
 }
 
 // SearchVectors performs a nearest neighbor search and returns results in the store's format.
-func (h *HNSWPluggableAdapter) SearchVectors(query []float32, k int, options types.SearchOptions) []lbtypes.SearchResult {
+func (h *HNSWPluggableAdapter) SearchVectors(query []float32, k int, options types.SearchOptions) []types.SearchResult {
 	results, _ := h.Search(query, k)
-	searchResults := make([]lbtypes.SearchResult, len(results))
+	searchResults := make([]types.SearchResult, len(results))
 	for i, r := range results {
 		id := r.ID
 		if id > 4294967295 {
 			id = 4294967295
 		}
-		searchResults[i] = lbtypes.SearchResult{ID: lbtypes.VectorID(id), Score: r.Distance}
+		searchResults[i] = types.SearchResult{ID: types.VectorID(id), Score: r.Distance}
 	}
 	return searchResults
 }
@@ -362,12 +361,12 @@ func (h *HNSWPluggableAdapter) GetIndexType() string {
 // This allows the adaptive learned index to perform live swaps into the dataset search path.
 type PluggableInternalAdapter struct {
 	inner    PluggableVectorIndex
-	provider lbtypes.IndexDataProvider
+	provider types.IndexDataProvider
 }
 
 // NewPluggableInternalAdapter creates a new adapter for internal use.
 // NewPluggableInternalAdapter creates a new adapter for internal use.
-func NewPluggableInternalAdapter(inner PluggableVectorIndex, provider lbtypes.IndexDataProvider) *PluggableInternalAdapter {
+func NewPluggableInternalAdapter(inner PluggableVectorIndex, provider types.IndexDataProvider) *PluggableInternalAdapter {
 	return &PluggableInternalAdapter{inner: inner, provider: provider}
 }
 
@@ -454,7 +453,7 @@ func (a *PluggableInternalAdapter) AddBatch(ctx context.Context, recs []arrow.Re
 }
 
 // Search implements VectorIndexer.
-func (a *PluggableInternalAdapter) Search(ctx context.Context, q any, k int, filter any) ([]lbtypes.Candidate, error) {
+func (a *PluggableInternalAdapter) Search(ctx context.Context, q any, k int, filter any) ([]types.Candidate, error) {
 	vec, ok := q.([]float32)
 	if !ok {
 		return nil, fmt.Errorf("query must be []float32")
@@ -463,16 +462,16 @@ func (a *PluggableInternalAdapter) Search(ctx context.Context, q any, k int, fil
 	if err != nil {
 		return nil, err
 	}
-	candidates := make([]lbtypes.Candidate, len(results))
+	candidates := make([]types.Candidate, len(results))
 	for i, r := range results {
-		candidates[i] = lbtypes.Candidate{ID: uint32(r.ID), Dist: r.Distance} // #nosec G115
+		candidates[i] = types.Candidate{ID: uint32(r.ID), Dist: r.Distance} // #nosec G115
 	}
 	return candidates, nil
 }
 
 // SearchVectors implements VectorIndexer.
 // Filters are not supported by PluggableVectorIndex - returns error if filters provided.
-func (a *PluggableInternalAdapter) SearchVectors(ctx context.Context, q any, k int, filters []core.Filter, options any) ([]lbtypes.SearchResult, error) {
+func (a *PluggableInternalAdapter) SearchVectors(ctx context.Context, q any, k int, filters []core.Filter, options any) ([]types.SearchResult, error) {
 	vec, ok := q.([]float32)
 	if !ok {
 		if f64, ok := q.([]float64); ok {
@@ -494,16 +493,16 @@ func (a *PluggableInternalAdapter) SearchVectors(ctx context.Context, q any, k i
 		return nil, err
 	}
 
-	results := make([]lbtypes.SearchResult, len(iresults))
+	results := make([]types.SearchResult, len(iresults))
 	for i, r := range iresults {
-		results[i] = lbtypes.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance} // #nosec G115
+		results[i] = types.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance} // #nosec G115
 	}
 	return results, nil
 }
 
 // SearchVectorsWithBitmap implements VectorIndexer.
 // BitMap filters are not supported by PluggableVectorIndex - returns error if bm provided.
-func (a *PluggableInternalAdapter) SearchVectorsWithBitmap(ctx context.Context, q any, k int, bm *roaring.Bitmap, options any) ([]lbtypes.SearchResult, error) {
+func (a *PluggableInternalAdapter) SearchVectorsWithBitmap(ctx context.Context, q any, k int, bm *roaring.Bitmap, options any) ([]types.SearchResult, error) {
 	vec, ok := q.([]float32)
 	if !ok {
 		if f64, ok := q.([]float64); ok {
@@ -525,15 +524,15 @@ func (a *PluggableInternalAdapter) SearchVectorsWithBitmap(ctx context.Context, 
 		return nil, err
 	}
 
-	results := make([]lbtypes.SearchResult, len(iresults))
+	results := make([]types.SearchResult, len(iresults))
 	for i, r := range iresults {
-		results[i] = lbtypes.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance} // #nosec G115
+		results[i] = types.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance} // #nosec G115
 	}
 	return results, nil
 }
 
 // SearchVectorsInRange performs a range search.
-func (a *PluggableInternalAdapter) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []core.Filter, options any) ([]lbtypes.SearchResult, error) {
+func (a *PluggableInternalAdapter) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []core.Filter, options any) ([]types.SearchResult, error) {
 	return nil, nil
 }
 
@@ -573,8 +572,8 @@ func (a *PluggableInternalAdapter) SetIndexedColumns(cols []string) {}
 func (a *PluggableInternalAdapter) GetRawNeighbors(id uint32) ([]uint32, error) { return nil, nil }
 
 // GetNeighbors retrieves the nearest neighbors for a vector.
-func (a *PluggableInternalAdapter) GetNeighbors(ctx context.Context, id uint32, k int) ([]lbtypes.SearchResult, error) {
-	return a.inner.GetNeighbors(ctx, lbtypes.VectorID(id), k)
+func (a *PluggableInternalAdapter) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) {
+	return a.inner.GetNeighbors(ctx, types.VectorID(id), k)
 }
 
 // PreWarm prepares the index for search.
@@ -640,9 +639,9 @@ func (a *PluggableInternalAdapter) ImportGraph(r io.Reader) error {
 }
 
 // ExportDelta exports the delta since the given version.
-func (a *PluggableInternalAdapter) ExportDelta(v uint64) (*lbtypes.DeltaSync, error) {
+func (a *PluggableInternalAdapter) ExportDelta(v uint64) (*types.DeltaSync, error) {
 	if ed, ok := a.inner.(interface {
-		ExportDelta(uint64) (*lbtypes.DeltaSync, error)
+		ExportDelta(uint64) (*types.DeltaSync, error)
 	}); ok {
 		return ed.ExportDelta(v)
 	}
@@ -650,9 +649,9 @@ func (a *PluggableInternalAdapter) ExportDelta(v uint64) (*lbtypes.DeltaSync, er
 }
 
 // ApplyDelta applies the given delta sync to the index.
-func (a *PluggableInternalAdapter) ApplyDelta(d *lbtypes.DeltaSync) error {
+func (a *PluggableInternalAdapter) ApplyDelta(d *types.DeltaSync) error {
 	if ad, ok := a.inner.(interface {
-		ApplyDelta(*lbtypes.DeltaSync) error
+		ApplyDelta(*types.DeltaSync) error
 	}); ok {
 		return ad.ApplyDelta(d)
 	}
@@ -660,11 +659,11 @@ func (a *PluggableInternalAdapter) ApplyDelta(d *lbtypes.DeltaSync) error {
 }
 
 // SetParallelSearchConfig sets the configuration for parallel search.
-func (a *PluggableInternalAdapter) SetParallelSearchConfig(c lbtypes.ParallelSearchConfig) {}
+func (a *PluggableInternalAdapter) SetParallelSearchConfig(c types.ParallelSearchConfig) {}
 
 // GetParallelSearchConfig returns the configuration for parallel search.
-func (a *PluggableInternalAdapter) GetParallelSearchConfig() lbtypes.ParallelSearchConfig {
-	return lbtypes.ParallelSearchConfig{}
+func (a *PluggableInternalAdapter) GetParallelSearchConfig() types.ParallelSearchConfig {
+	return types.ParallelSearchConfig{}
 }
 
 // RemapLocations remaps vector locations.

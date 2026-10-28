@@ -40,10 +40,9 @@ type textIndexQueue struct {
 	// It is separate from the store's stop channel because the drain has to
 	// happen *before* the store signals shutdown - otherwise the workers exit
 	// first and nothing is left to drain them.
-	stop      chan struct{}
-	startOnce sync.Once
-	wg        sync.WaitGroup
-	stopOnce  sync.Once
+	stop     chan struct{}
+	wg       sync.WaitGroup
+	stopOnce sync.Once
 
 	// dropped counts jobs that had to be indexed inline because the queue was
 	// saturated. Exposed for tests and diagnostics.

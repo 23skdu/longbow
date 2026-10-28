@@ -171,15 +171,32 @@ func FuzzDialectParsing(f *testing.F) {
 	f.Add("vector <-> ?")
 	f.Add("INVALID SQL QUERY WITH RANDOM TOKENS")
 
-	f.Fuzz(func(t *testing.T, query string) {
-		driver := longbowadbc.NewDriver()
-		db, _ := driver.NewDatabase(nil)
-		conn, _ := db.Open(context.Background())
-		stmt, _ := conn.NewStatement()
+	driver := longbowadbc.NewDriver()
+	db, err := driver.NewDatabase(nil)
+	if err != nil {
+		f.Fatalf("NewDatabase: %v", err)
+	}
+	defer func() { _ = db.Close() }()
 
+	conn, err := db.Open(context.Background())
+	if err != nil {
+		f.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	stmt, err := conn.NewStatement()
+	if err != nil {
+		f.Fatalf("NewStatement: %v", err)
+	}
+	defer func() { _ = stmt.Close() }()
+
+	f.Fuzz(func(t *testing.T, query string) {
 		_ = stmt.SetSqlQuery(query)
 
-		_, _, err := stmt.ExecuteQuery(context.Background())
+		reader, _, err := stmt.ExecuteQuery(context.Background())
+		if reader != nil {
+			reader.Release()
+		}
 		if err != nil {
 			if adbcErr, ok := err.(adbc.Error); ok {
 				switch adbcErr.Code {

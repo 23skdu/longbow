@@ -44,6 +44,11 @@ func (d *Database) Open(ctx context.Context) (adbc.Connection, error) {
 }
 
 func (d *Database) Close() error {
+	if d.store != nil {
+		err := d.store.Close()
+		d.store = nil
+		return err
+	}
 	return nil
 }
 

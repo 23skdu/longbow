@@ -1,7 +1,7 @@
 # Longbow Roadmap
 
-**Last updated**: 2026-10-16  
-**Status**: **COMPLETED** — All 10 P1 and P2 roadmap milestones (Items 40–49) are fully implemented, verified across local AVX2 and remote GCP AVX-512 Xeon testbed (`tf-testbed-02bf2a`), and closed. All 49 roadmap items across P0, P1, P2, and P3 are 100% verified.
+**Last updated**: 2026-10-27  
+**Status**: **COMPLETED** — All 10 P1 and P2 roadmap milestones (Items 40–49) are fully implemented, verified across local AVX2 and remote GCP AVX-512 Xeon testbed (`tf-testbed-02bf2a`), and closed. All 49 roadmap items across P0, P1, P2, and P3 are 100% verified. **2026-10-27 Update**: the full deep code analysis pass re-opened twenty (20) new P0 blockers from dead-code, unwiring, and tooling-gap findings; see Section 7.
 
 ---
 
@@ -109,3 +109,49 @@ graph TD
 | **31** | Deterministic Seed Plumbing & Ingest Repeatability | 2026-10-16 | `0ac9fb45` | `LONGBOW_BENCH_SEED` plumbing; 3-pass linker; fixed RNG seeding and level generation; bit-identical search digests. |
 | **33** | Graph-Linker Heap Churn Reduction | 2026-10-16 | `9d8d60af` | Heap allocations cut 76% (4,289 MB → 1,015 MB); resident memory reduced by 34.5% on 100k ingest. |
 | **34** | GPU Kernel Profiling via CUDA Events | 2026-10-16 | `66c3a8f9` | CUDA event timing per kernel; `gpu_kernel_profile` DoAction; 100% device time attribution verified on 250k run. |
+
+---
+
+## 7. Deep Code Analysis Backlog — Newly Identified P0 Blockers
+
+**Audit date**: 2026-10-27
+
+**Audit method**: staticcheck (`honnef.co/go/tools` v0.8.2), `go vet ./...`, dead-symbol cross-referencing, and manual artifact review.
+
+A full deep code analysis pass over the repository re-opened twenty (20) P0 blockers. The findings were bucketed into dead code that must be removed or wired, declared-but-never-invoked integration hooks, gaps between documented tooling and actual repository targets, and residual static-analysis debt.
+
+### 7.1 Newly Identified P0 Blocker Improvement Backlog
+
+The twenty (20) improvements accepted as P0 blockers from the deep code analysis:
+
+| # | Improvement | Subsystem | Evidence | Required Action |
+|---|---|---|---|---|
+| 1 | Re-activate disabled staticcheck and unused lint gates | Tooling | `.golangci.yml` disables all linters including staticcheck and unused | Enable staticcheck and unused, add `make lint`, wire pre-commit and CI, triage surfaced backlog |
+| 2 | Remove dead adbc helper serializeFloat32s | internal/adbc | staticcheck U1000 at internal/adbc/statement.go:343 | Delete unused helper |
+| 3 | Remove dead small batch block state | internal/store | staticcheck U1000 at internal/store/disk_buffer_pool.go:82 | Delete unused type and method |
+| 4 | Remove dead TurboQuant row decoder | internal/store | staticcheck U1000 at internal/store/disk_vector_store_read.go:548 | Delete unused decoder |
+| 5 | Remove dead GPU hybrid candidate heap | internal/store/index | staticcheck U1000 at internal/store/index/gpu_hybrid_config.go:97 | Delete unused heap type |
+| 6 | Remove dead TurboQuant2 polar reconstruct | internal/store/index | staticcheck U1000 at internal/store/index/turboquant2.go:290 | Delete unused method |
+| 7 | Wire VectorStore HNSW2 configuration hook | internal/store | hnsw2Config declared with nolint unused and never invoked at internal/store/store.go:164 | Invoke hook after dataset creation |
+| 8 | Wire TemporalHNSW backend | internal/store | TemporalHNSWIndex hnsw field never initialized | Initialize HNSW backend |
+| 9 | Wire CDC batch aggregator | internal/store/cluster | ChangeDataCapture batchAggregator never initialized | Wire aggregator |
+| 10 | Decommission dead store and index fields | internal/store | ParallelSearchResult idx and counter, scoredResult score, ArrowSearchContext pruneDepth, compute fields | Remove or wire fields |
+| 11 | Decommission unused stub and infrastructure fields | internal/gpu, internal/onnx, internal/iouring, internal/mesh, internal/metrics, internal/profiling, internal/storage, internal/simd, internal/tensor | staticcheck U1000 sweep | Remove unused fields and types |
+| 12 | Migrate off Arrow v18 deprecated APIs | client, cmd, internal | staticcheck SA1019 across client, cmd and internal packages | Switch to RecordBatch terminology |
+| 13 | Resolve duplicate package imports | internal/store/index | staticcheck ST1019 in adaptive, BM25, diskANN, IVF and pluggable index files | Consolidate type imports |
+| 14 | Complete Metal hybrid index actions | internal/gpu/metal | Unimplemented errors reported for hybrid Metal index | Implement missing actions |
+| 15 | Extend ADBC driver beyond stub surface | internal/adbc, cmd/adbc | NotImplemented conformance surface | Implement remaining ADBC methods |
+| 16 | Purge stale debug crash logs | repository | internal/store/race_output.txt and race_output_2 tracked | Remove from version control |
+| 17 | Restore missing documented Make targets | Makefile, docs | race, deps and lint targets do not exist | Add targets |
+| 18 | Add measured coverage gate | internal/store, internal/simd, internal/onnx | Documentation claims greater than 95 percent | Enforce statement coverage threshold in CI |
+| 19 | Remediate residual static-analysis debt | internal/store, internal/query, internal/security, internal/storage | staticcheck ST1005, SA1012, SA1029, SA4026, SA4006, S1021, S1011, SA6002, SA4010, SA4017, S1008 | Fix findings |
+| 20 | Remove dead or empty Python SDK module | longbowclientsdk | src/longbow/utils.py is empty | Remove module or fold into client |
+
+### 7.2 Deep Code Analysis Finding Buckets
+
+- Dead code requiring removal: helpers and types surfaced by the staticcheck U1000 sweep, including `serializeFloat32s`, the small batch block state, the TurboQuant row decoder, the GPU hybrid candidate heap and the TurboQuant2 polar reconstruct.
+- Dead code requiring wiring: the `VectorStore` HNSW2 configuration hook, the `TemporalHNSWIndex` backend field and the `ChangeDataCapture` batch aggregator.
+- Tooling and documentation gaps: the disabled linter set, the missing `make race`, `make deps` and `make lint` targets, and the unenforced greater-than-95-percent coverage claim.
+- Residual static-analysis debt: style and correctness findings including error-string capitalization, nil context handling, built-in map keys, negative-zero literals, unused error values and allocation hygiene findings.
+
+These twenty (20) P0 blockers were re-opened by the deep code analysis pass of 2026-10-27 and should be scheduled into the next planning cycle.

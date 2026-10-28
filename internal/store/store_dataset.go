@@ -44,7 +44,6 @@ func (vs *VectorStore) MigrateNamespace(config NamespaceMigrationConfig) (*Names
 		if err := vs.CreateNamespace(config.TargetNamespace); err != nil {
 			return result, fmt.Errorf("failed to create target namespace: %w", err)
 		}
-		targetNS = vs.GetNamespace(config.TargetNamespace)
 	}
 
 	datasets := sourceNS.ListDatasets()

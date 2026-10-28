@@ -28,9 +28,6 @@ type BufferPool struct {
 	allocated map[uintptr]struct{} // Track allocated buffers for safety
 	mu        sync.RWMutex         // Protects allocated map
 
-	// Stats
-	hits   uint64
-	misses uint64
 }
 
 // NewBufferPool creates a new buffer pool with O_DIRECT alignment

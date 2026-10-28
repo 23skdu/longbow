@@ -29,11 +29,6 @@ func applyDispatchToGlobalPointers(dispatch *ImplementationDispatch) {
 	cosineDistanceBatchImpl = dispatch.CosineDistanceBatch
 	dotProductBatchImpl = dispatch.DotProductBatch
 	l2SquaredImpl = dispatch.L2SquaredDistance
-	l2Squared128Impl = dispatch.L2SquaredDistance128
-	l2Squared384Impl = dispatch.L2SquaredDistance384
-	l2Squared768Impl = dispatch.L2SquaredDistance768
-	l2Squared1024Impl = dispatch.L2SquaredDistance1024
-	l2Squared3072Impl = dispatch.L2SquaredDistance3072
 
 	euclideanDistanceF16Impl = dispatch.EuclideanDistanceF16
 	cosineDistanceF16Impl = dispatch.CosineDistanceF16

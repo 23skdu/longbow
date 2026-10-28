@@ -6,9 +6,9 @@ run:
 # Disable all linters - code passes go vet and builds successfully
 # Individual issues can be addressed incrementally if needed
 linters:
-  enable: []
-  disable:
-    - errcheck
+  enable:
     - staticcheck
     - unused
+  disable:
+    - errcheck
     - ineffassign

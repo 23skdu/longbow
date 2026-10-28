@@ -145,6 +145,7 @@ func TestQuery_ProjectionApply(t *testing.T) {
 	defer rec.Release()
 
 	proj, err := NewProjection(schema, []string{"a"})
+	assert.NoError(t, err)
 	res, err := proj.Apply(rec)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), res.NumRows())

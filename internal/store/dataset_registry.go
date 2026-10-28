@@ -75,6 +75,9 @@ func (vs *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset)
 		if newDs != nil {
 			newDs.EvictionManager = vs.evictionManager
 			newDs.SetAdmission(vs.admission)
+			if vs.hnsw2Config != nil && newDs.Index == nil {
+				newDs.Index = index.NewArrowHNSW(newDs, vs.hnsw2Config, nil)
+			}
 			if vs.hybridSearchConfig.Enabled {
 				newDs.BM25Index = NewBM25InvertedIndex(vs.hybridSearchConfig.BM25)
 				slabArena := lbmem.NewSlabArena(4 * 1024 * 1024)

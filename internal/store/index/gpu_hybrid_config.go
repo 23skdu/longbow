@@ -93,24 +93,6 @@ type candidateResult struct {
 	index    int // Original position in GPU results
 }
 
-// candidateHeap is a min-heap for efficient top-k selection
-type candidateHeap []candidateResult
-
-func (h candidateHeap) Len() int           { return len(h) }
-func (h candidateHeap) Less(i, j int) bool { return h[i].distance < h[j].distance }
-func (h candidateHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-
-func (h *candidateHeap) Push(x interface{}) {
-	*h = append(*h, x.(candidateResult))
-}
-
-func (h *candidateHeap) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
 
 // deduplicateCandidates removes duplicate vector IDs from candidates
 // Returns unique candidates preserving best (lowest) distances

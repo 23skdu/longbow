@@ -68,7 +68,6 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 
 	// Commit mutations back to index for visibility before check
 	idx.data.Store(data)
-	data = idx.GetData()
 
 	for i := 0; i < count; i++ {
 		if i >= deletedStart && i < deletedEnd {

@@ -129,9 +129,9 @@ func TestStructuredLogger_Info_WithContextFields(t *testing.T) {
 		logger: zerolog.New(&buf),
 		level:  InfoLevel,
 	}
-	ctx := context.WithValue(context.Background(), "component", "test-comp")
-	ctx = context.WithValue(ctx, "trace_id", "trace-123")
-	ctx = context.WithValue(ctx, "span_id", "span-456")
+	ctx := context.WithValue(context.Background(), ComponentKey, "test-comp")
+	ctx = context.WithValue(ctx, TraceIDKey, "trace-123")
+	ctx = context.WithValue(ctx, SpanIDKey, "span-456")
 	l.Info(ctx, "with ctx")
 	output := buf.String()
 	if !strings.Contains(output, "test-comp") {

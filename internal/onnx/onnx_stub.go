@@ -14,9 +14,7 @@ func Init() error {
 }
 
 // Session is a stub for non-ONNX platforms
-type Session struct {
-	isMetal bool
-}
+type Session struct{}
 
 // NewSession returns an error on non-ONNX platforms
 func NewSession(modelPath string) (*Session, error) {

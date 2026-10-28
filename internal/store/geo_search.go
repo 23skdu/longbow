@@ -55,7 +55,6 @@ type scoredResult struct {
 	id       uint64
 	distance float64
 	vector   []float32
-	score    float64
 }
 
 // GeoDistanceType defines the method used for distance calculations.
@@ -142,7 +141,6 @@ type GeoIndexedVector struct {
 
 // GeoIndex provides efficient spatial indexing for vectors.
 type GeoIndex struct {
-	mu           sync.Mutex
 	dimension    int
 	vectors      sync.Map
 	pointIndex   atomic.Pointer[geoIndexHandle]

@@ -7,14 +7,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Exporter handles GPU-specific metrics export
 type Exporter struct {
-	registry   *prometheus.Registry
-	gatherer   prometheus.Gatherer
 	httpServer *http.Server
 	interval   time.Duration
 	stopChan   chan struct{}
@@ -94,13 +91,7 @@ func UpdateDeviceMetrics(idx types.Index) {
 	}
 
 	// Get device info for name/backend
-	info, err := idx.GetDeviceInfo()
-	if err == nil {
-		// Update static info if needed, or other dynamic metrics
-		if info.Backend == types.BackendCUDA {
-			// CUDA specific metrics if any
-		}
-	}
+	_, _ = idx.GetDeviceInfo()
 }
 
 // RecordGPUSearch records metrics for a GPU search operation

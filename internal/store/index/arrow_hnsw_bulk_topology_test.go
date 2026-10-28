@@ -78,7 +78,7 @@ func buildSequential(t *testing.T, rec arrow.RecordBatch, n int, cfg types.Arrow
 // reachability for both insert paths on the same corpus, and holds the bulk path
 // to the degree floor the R8 gate enforces.
 func TestBulkInsert_GraphTopologyVsSequential(t *testing.T) {
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		t.Skip("builds three indexes of 20k vectors")
 	}
 	const n, dims, batch = 20_000, 128, 10_000

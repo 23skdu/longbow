@@ -1,4 +1,4 @@
-.PHONY: all build build-adbc test test-adbc test-adbc-python test-adbc-so clean install-commit-hook install-hooks accuracy-gate oracle-gate test-coverage test-fuzz pre-commit test-docker
+.PHONY: all build build-adbc test test-adbc test-adbc-python test-adbc-so race deps lint clean install-commit-hook install-hooks accuracy-gate oracle-gate test-coverage test-fuzz pre-commit test-docker
 
 all: build build-adbc
 
@@ -8,6 +8,16 @@ build:
 build-adbc:
 	@echo "Building ADBC driver as C-shared library..."
 	go build -buildmode=c-shared -o liblongbow_adbc.so ./cmd/adbc
+
+deps:
+	go mod download
+	go mod tidy
+
+lint:
+	golangci-lint run ./...
+
+race:
+	go test -race -short ./...
 
 test:
 	go test -v ./...

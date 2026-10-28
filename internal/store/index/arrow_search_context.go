@@ -186,8 +186,6 @@ type ArrowSearchContext struct {
 
 	vectorBuf []float32
 
-	pruneDepth int
-
 	// BQ (Binary Quantization) search mode
 	useBQSearch bool
 
@@ -236,9 +234,7 @@ type ArrowSearchContext struct {
 	cachedChunksF32   []cachedChunkF32
 	cachedChunksF64   []cachedChunkF64
 	cachedChunksInt8  []cachedChunkInt8
-	cachedChunksUint8 []cachedChunkUint8
 	cachedChunksF16   []cachedChunkF16
-	cachedChunksC64   []cachedChunkC64
 	cachedChunksC128  []cachedChunkC128
 	cachedChunksTQ    []cachedChunkBytes
 	cachedChunksSQ8   []cachedChunkBytes
@@ -273,18 +269,8 @@ type cachedChunkInt8 struct {
 	epoch uint32
 }
 
-type cachedChunkUint8 struct {
-	slice []uint8
-	epoch uint32
-}
-
 type cachedChunkF16 struct {
 	slice []float16.Num
-	epoch uint32
-}
-
-type cachedChunkC64 struct {
-	slice []complex64
 	epoch uint32
 }
 
@@ -350,9 +336,7 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		cachedChunksF32:        make([]cachedChunkF32, 64),
 		cachedChunksF64:        make([]cachedChunkF64, 16),
 		cachedChunksInt8:       make([]cachedChunkInt8, 16),
-		cachedChunksUint8:      make([]cachedChunkUint8, 16),
 		cachedChunksF16:        make([]cachedChunkF16, 16),
-		cachedChunksC64:        make([]cachedChunkC64, 16),
 		cachedChunksC128:       make([]cachedChunkC128, 16),
 		cachedChunksTQ:         make([]cachedChunkBytes, 16),
 		cachedChunksSQ8:        make([]cachedChunkBytes, 16),
@@ -512,9 +496,7 @@ func (ctx *ArrowSearchContext) Reset() {
 		clear(ctx.cachedChunksF32)
 		clear(ctx.cachedChunksF64)
 		clear(ctx.cachedChunksInt8)
-		clear(ctx.cachedChunksUint8)
 		clear(ctx.cachedChunksF16)
-		clear(ctx.cachedChunksC64)
 		clear(ctx.cachedChunksC128)
 		clear(ctx.cachedChunksTQ)
 		clear(ctx.cachedChunksSQ8)

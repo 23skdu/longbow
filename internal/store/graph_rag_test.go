@@ -105,8 +105,8 @@ func TestGraphRAG_SearchHybrid(t *testing.T) {
 }
 
 func TestGraphRAG_Stability_Large(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
+	if testing.Short() || raceEnabled {
+		t.Skip("skipping 25k stability test in short mode or under race detector")
 	}
 	// Stability test for Part 23: Ensure no deadlocks or OOM with 25k nodes
 	mem := memory.NewGoAllocator()

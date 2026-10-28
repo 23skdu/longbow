@@ -231,6 +231,7 @@ func TestOptimisticConcurrentUpdates_DeleteVector(t *testing.T) {
 
 	version, exists := ocu.GetVersion("vec1")
 	assert.True(t, exists)
+	assert.Equal(t, uint64(1), version)
 
 	ocu.DeleteVector("vec1")
 

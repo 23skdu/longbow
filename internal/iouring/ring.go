@@ -49,7 +49,6 @@ type Ring struct {
 	cqEntriesCached  uint32
 
 	onSubmit   func(opcode uint8)
-	onComplete func(res int32)
 }
 
 // NewRing creates a new io_uring instance

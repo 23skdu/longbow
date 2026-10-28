@@ -77,30 +77,3 @@ func PutByteRowBuffer(b []byte) {
 	getBytePool(len(b)).Put(b)
 }
 
-// smallBatchBlockState provides stack-allocated tracking for small read batches
-// (up to 32 vector indices across up to 8 blocks) to avoid map and slice allocations.
-type smallBatchBlockState struct {
-	numBlocks   int
-	blockIdxs   [8]int
-	blockCopies [8]BlockEntry
-	blockData   [8][]byte
-	blockOf     [32]int
-	filtered    [32]int
-	numFiltered int
-}
-
-func (s *smallBatchBlockState) findOrAddBlock(bIdx int, entry BlockEntry) int {
-	for i := 0; i < s.numBlocks; i++ {
-		if s.blockIdxs[i] == bIdx {
-			return i
-		}
-	}
-	if s.numBlocks < len(s.blockIdxs) {
-		slot := s.numBlocks
-		s.blockIdxs[slot] = bIdx
-		s.blockCopies[slot] = entry
-		s.numBlocks++
-		return slot
-	}
-	return -1
-}

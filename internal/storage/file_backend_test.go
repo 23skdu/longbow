@@ -41,9 +41,6 @@ func TestFileSnapshotBackend(t *testing.T) {
 	// Test WriteSnapshotFile
 	subName := "subdir/snapshot2"
 	ext := ".bin"
-	err = backend.WriteSnapshotFile(ctx, subName, ext, os.NewFile(0, "dummy")) // Wait, need real reader
-	// Use string reader
-	err = backend.WriteSnapshotFile(ctx, subName, ext, os.NewFile(0, "dummy")) // No
 
 	// Better test for WriteSnapshotFile
 	importData := []byte("more data")

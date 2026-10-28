@@ -16,7 +16,6 @@ import (
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -52,9 +51,8 @@ type IVFIndexEntry struct {
 
 // IVFCluster holds all vectors belonging to one cluster.
 type IVFCluster struct {
-	mu       sync.RWMutex
-	Entries  []IVFIndexEntry
-	centroid []float32
+	mu      sync.RWMutex
+	Entries []IVFIndexEntry
 }
 
 // IVFPQIndex implements a standalone IVF-PQ index for efficient approximate nearest neighbor search.
@@ -745,7 +743,7 @@ func (idx *IVFPQIndex) ExportDelta(fromV uint64) (*types.DeltaSync, error) {
 	var newLocs []core.Location
 	for id := uint32(fromV); id < idx.nextID; id++ { // #nosec G115
 		if packed, ok := idx.idToLocation[id]; ok {
-			newLocs = append(newLocs, lbtypes.UnpackLocation(packed))
+			newLocs = append(newLocs, types.UnpackLocation(packed))
 		}
 	}
 
@@ -767,7 +765,7 @@ func (idx *IVFPQIndex) ApplyDelta(delta *types.DeltaSync) error {
 
 	for i, loc := range delta.NewLocations {
 		id := uint32(delta.StartIndex + i) // #nosec G115
-		packed := lbtypes.PackLocation(loc)
+		packed := types.PackLocation(loc)
 		if idx.locationToID == nil {
 			idx.locationToID = make(map[uint64]uint32)
 		}

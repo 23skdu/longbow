@@ -5,13 +5,10 @@ package metal
 import (
 	"context"
 	"errors"
-	"sync"
 )
 
 // Engine is a stub for non-Metal platforms
-type Engine struct {
-	mu sync.RWMutex
-}
+type Engine struct{}
 
 // ModelInfo contains model information
 type ModelInfo struct {

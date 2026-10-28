@@ -179,6 +179,11 @@ func NewChangeDataCapture(store CDCStore, logger zerolog.Logger) *ChangeDataCapt
 			EventTypeFilterEnabled: true,
 		},
 	}
+	cdc.batchAggregator = NewCDCBatchAggregator("", cdc.config.BufferSize, time.Duration(cdc.config.BatchAggregationMs)*time.Millisecond, func(dataset string, batches [][]arrow.RecordBatch) {
+		for _, bGroup := range batches {
+			cdc.HandleCDCBatch(dataset, bGroup)
+		}
+	})
 	cdc.metrics.Reset()
 
 	return cdc
@@ -574,8 +579,18 @@ func (c *ChangeDataCapture) Disable() {
 	c.logger.Info().Msg("CDC disabled")
 }
 
+// GetBatchAggregator returns the batch aggregator instance.
+func (c *ChangeDataCapture) GetBatchAggregator() *CDCBatchAggregator {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.batchAggregator
+}
+
 // Stop stops the CDC manager and waits for background workers to finish.
 func (c *ChangeDataCapture) Stop() {
+	if c.batchAggregator != nil {
+		c.batchAggregator.Close()
+	}
 	close(c.stopChan)
 	c.wg.Wait()
 }

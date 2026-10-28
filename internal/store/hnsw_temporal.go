@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -27,7 +29,7 @@ func DefaultTemporalHNSWConfig() TemporalHNSWConfig {
 // TemporalHNSWIndex provides vector search capabilities with temporal partitioning, allowing for time-travel queries.
 type TemporalHNSWIndex struct {
 	mu           sync.RWMutex
-	hnsw         interface{}
+	hnsw         *index.ArrowHNSW
 	temporalTree *TemporalTree
 	dimension    int
 	config       TemporalHNSWConfig
@@ -37,10 +39,18 @@ type TemporalHNSWIndex struct {
 func NewTemporalHNSWIndex(dimension int, config TemporalHNSWConfig) *TemporalHNSWIndex {
 	// Create a dedicated arena for the temporal tree
 	arena := memory.NewSlabArena(1024 * 1024)
+	cfg := types.DefaultArrowHNSWConfig()
+	cfg.Dims = dimension
+	cfg.M = config.MaxM
+	cfg.EfConstruction = int32(config.EfConstruction)
+	cfg.EfSearch = int32(config.EfSearch)
+	hnsw := index.NewArrowHNSW(nil, &cfg, nil)
+
 	return &TemporalHNSWIndex{
 		dimension:    dimension,
 		config:       config,
 		temporalTree: NewTemporalTree(arena),
+		hnsw:         hnsw,
 	}
 }
 
@@ -50,6 +60,9 @@ func (thi *TemporalHNSWIndex) Add(id uint64, vector []float32, timestamp int64) 
 	defer thi.mu.Unlock()
 
 	thi.temporalTree.Insert(timestamp, id, 0.0)
+	if thi.hnsw != nil && len(vector) > 0 {
+		_ = thi.hnsw.InsertWithVector(uint32(id), vector, 0)
+	}
 
 	return nil
 }
@@ -134,7 +147,19 @@ func (thi *TemporalHNSWIndex) Size() int {
 	return thi.temporalTree.Len()
 }
 
+// GetHNSW returns the underlying ArrowHNSW index.
+func (thi *TemporalHNSWIndex) GetHNSW() *index.ArrowHNSW {
+	thi.mu.RLock()
+	defer thi.mu.RUnlock()
+	return thi.hnsw
+}
+
 // Close releases resources held by the temporal index.
 func (thi *TemporalHNSWIndex) Close() error {
+	thi.mu.Lock()
+	defer thi.mu.Unlock()
+	if thi.hnsw != nil {
+		return thi.hnsw.Close()
+	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package gpu
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"hash/fnv"
@@ -368,7 +369,7 @@ func (m *MultiGPUManager) SearchMergedPQ(lookupTable []float32, mSub int, k int)
 		wg.Add(1)
 		go func(idx int, d *GPUDevice) {
 			defer wg.Done()
-			if err := m.gpuSem.Acquire(nil, 1); err != nil {
+			if err := m.gpuSem.Acquire(context.Background(), 1); err != nil {
 				allErrors[idx] = fmt.Errorf("device %d: %w", d.ID, err)
 				return
 			}
@@ -409,7 +410,7 @@ func (m *MultiGPUManager) SearchAllDevices(query []float32, k int) ([][]int64, [
 		wg.Add(1)
 		go func(idx int, d *GPUDevice) {
 			defer wg.Done()
-			if err := m.gpuSem.Acquire(nil, 1); err != nil {
+			if err := m.gpuSem.Acquire(context.Background(), 1); err != nil {
 				allErrors[idx] = fmt.Errorf("device %d: %w", d.ID, err)
 				return
 			}
@@ -569,7 +570,7 @@ func (m *MultiGPUManager) ReplicateToAll(ids []int64, vectors []float32) error {
 		wg.Add(1)
 		go func(d *GPUDevice) {
 			defer wg.Done()
-			if err := m.gpuSem.Acquire(nil, 1); err != nil {
+			if err := m.gpuSem.Acquire(context.Background(), 1); err != nil {
 				errCh <- fmt.Errorf("device %d: semaphore: %w", d.ID, err)
 				return
 			}
@@ -670,7 +671,7 @@ func (m *MultiGPUManager) AddVectorsSharded(ids []int64, vectors []float32) erro
 		wg.Add(1)
 		go func(idx int, batchIDs []int64) {
 			defer wg.Done()
-			if err := m.gpuSem.Acquire(nil, 1); err != nil {
+			if err := m.gpuSem.Acquire(context.Background(), 1); err != nil {
 				errCh <- fmt.Errorf("device %d: semaphore: %w", idx, err)
 				return
 			}

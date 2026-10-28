@@ -508,7 +508,7 @@ func TestShardedCounter_EdgeCases(t *testing.T) {
 		assert.Equal(t, 1.0, sc.Pending())
 		sc.Add(0)
 		sc.AddInt(0)
-		sc.Add(-0.0)
+		sc.Add(math.Copysign(0.0, -1.0))
 		assert.Equal(t, 1.0, sc.Pending(), "zero must not change the accumulator")
 
 		assert.Equal(t, 1.0, sc.Flush())

@@ -14,7 +14,6 @@ import (
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"golang.org/x/sys/unix"
 )
 
@@ -449,11 +448,11 @@ func (idx *DiskBackedLearnedIndex) SearchBatch(queries [][]float32, k int) ([][]
 }
 
 // GetNeighbors retrieves the nearest neighbors for a given vector ID.
-func (idx *DiskBackedLearnedIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
+func (idx *DiskBackedLearnedIndex) GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error) {
 	neighbors := idx.getNeighbors(uint32(id))
-	res := make([]lbtypes.SearchResult, len(neighbors))
+	res := make([]types.SearchResult, len(neighbors))
 	for i, n := range neighbors {
-		res[i] = lbtypes.SearchResult{ID: lbtypes.VectorID(n)}
+		res[i] = types.SearchResult{ID: types.VectorID(n)}
 	}
 	return res, nil
 }
@@ -471,11 +470,11 @@ func (idx *DiskBackedLearnedIndex) AddByLocation(batchIdx, rowIdx int) error { r
 func (idx *DiskBackedLearnedIndex) GetVectorID(loc Location) (uint64, bool) { return 0, false }
 
 // SearchVectors performs a single vector search with optional filter parameters.
-func (idx *DiskBackedLearnedIndex) SearchVectors(query []float32, k int, options types.SearchOptions) []lbtypes.SearchResult {
+func (idx *DiskBackedLearnedIndex) SearchVectors(query []float32, k int, options types.SearchOptions) []types.SearchResult {
 	res, _ := idx.Search(query, k)
-	out := make([]lbtypes.SearchResult, len(res))
+	out := make([]types.SearchResult, len(res))
 	for i, r := range res {
-		out[i] = lbtypes.SearchResult{ID: lbtypes.VectorID(r.ID), Distance: r.Distance} // #nosec G115
+		out[i] = types.SearchResult{ID: types.VectorID(r.ID), Distance: r.Distance} // #nosec G115
 	}
 	return out
 }

@@ -185,7 +185,6 @@ const tqPrefetchCacheSize = 16
 
 type tqChunkCacheEntry struct {
 	id   int
-	span int
 	data []byte
 }
 

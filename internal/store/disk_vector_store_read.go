@@ -545,14 +545,6 @@ func extractTypedRows[T any](
 	return results, nil
 }
 
-func decodeTQRow(raw []byte, localIdx, dim int, tqEnc *index.TurboQuantEncoder) ([]float32, error) {
-	res := make([]float32, dim)
-	if err := decodeTQRowInto(raw, localIdx, dim, tqEnc, res); err != nil {
-		return nil, err
-	}
-	return res, nil
-}
-
 func decodeTQRowInto(raw []byte, localIdx, dim int, tqEnc *index.TurboQuantEncoder, dst []float32) error {
 	if tqEnc == nil {
 		return fmt.Errorf("turboquant block but no encoder available")

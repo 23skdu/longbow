@@ -1,7 +1,7 @@
 pyarrow>=18.0.0
 numpy>=1.26.0
 pandas>=2.2.0
-sentence-transformers>=2.2.2
+sentence-transformers>=6.2.0
 lorem-text>=2.1
 psutil>=5.9.8
 matplotlib>=3.8.4

@@ -227,7 +227,7 @@ fmt-check:
 
 markdown-lint:
 	@echo "Running markdown linting on documentation..."
-	-$(MARKDOWNLINT) -c .markdownlint-cli2.jsonc docs/**/*.md README.md CONTRIBUTING.md
+	-$(MARKDOWNLINT) -c .markdownlint.json docs/**/*.md README.md CONTRIBUTING.md
 
 # ==============================================================================
 # Security Analysis

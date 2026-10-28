@@ -1,4 +1,4 @@
-pyarrow>=18.0.0
+pyarrow>=26.0.0
 numpy>=1.26.0
 pandas>=2.2.0
 sentence-transformers>=2.2.2

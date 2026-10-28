@@ -19,8 +19,10 @@ CLANG         ?= $(shell which clang 2>/dev/null || echo /home/linuxbrew/.linuxb
 HELM          ?= $(shell which helm 2>/dev/null || echo /home/linuxbrew/.linuxbrew/bin/helm)
 MARKDOWNLINT  ?= $(shell which markdownlint 2>/dev/null || echo /home/linuxbrew/.linuxbrew/bin/markdownlint)
 PYTHON        ?= $(shell which python3 2>/dev/null || echo /home/linuxbrew/.linuxbrew/bin/python3)
+DOCKER        ?= $(shell which docker 2>/dev/null || echo docker)
+IMAGE_TAG     ?= latest
 
-.PHONY: all help ci build build-release build-debug build-race build-adbc build-bench build-verify clean \
+.PHONY: all help ci release build build-release build-debug build-race build-adbc build-bench build-verify clean \
 	deps deps-upgrade lint lint-fast lint-fix vet staticcheck deadcode fmt fmt-check \
 	security sec-gosec sec-vulncheck sec-audit \
 	mem-bench mem-escape mem-profile mem-asan mem-valgrind \
@@ -28,6 +30,7 @@ PYTHON        ?= $(shell which python3 2>/dev/null || echo /home/linuxbrew/.linu
 	test-adbc test-adbc-python test-adbc-so \
 	cross-compile check-simd test-bench-harness helm-lint markdown-lint bench-ci bench-ab \
 	accuracy-gate oracle-gate observability-inventory observability-check observability-rules \
+	docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-gpu docker-build-all \
 	install-commit-hook install-hooks pre-commit
 
 # Default target
@@ -98,6 +101,15 @@ help:
 	@echo "  check-simd           Verify generated SIMD kernels are byte-for-byte reproducible"
 	@echo "  pre-commit           Run full pre-commit gate suite"
 	@echo "  install-hooks        Install Git pre-commit hooks"
+	@echo ""
+	@echo "Container & Release Targets:"
+	@echo "  release              Run full CI pipeline and build release binaries"
+	@echo "  docker-build-cpu     Build CPU Docker container image"
+	@echo "  docker-build-tpu     Build TPU Docker container image"
+	@echo "  docker-build-nvidia  Build NVIDIA GPU Docker container image"
+	@echo "  docker-build-emlgo-cpu Build EMLGo CPU Docker container image"
+	@echo "  docker-build-emlgo-gpu Build EMLGo GPU Docker container image"
+	@echo "  docker-build-all     Build all Docker container images"
 
 # ==============================================================================
 # Combined Local CI Pipeline
@@ -368,3 +380,35 @@ install-hooks: install-commit-hook
 
 pre-commit:
 	@./scripts/pre-commit.sh
+
+# ==============================================================================
+# Container & Release Targets (mirrors release-containers in CI)
+# ==============================================================================
+
+docker-build-cpu:
+	@echo "Building Standard CPU Docker image..."
+	$(DOCKER) build -f Dockerfile.cpu -t longbow:$(IMAGE_TAG) .
+
+docker-build-tpu:
+	@echo "Building TPU Docker image..."
+	$(DOCKER) build -f Dockerfile.tpu -t longbow-tpu:$(IMAGE_TAG) .
+
+docker-build-nvidia:
+	@echo "Building NVIDIA GPU Docker image..."
+	$(DOCKER) build -f Dockerfile.nvidia -t longbow-nvidia:$(IMAGE_TAG) .
+
+docker-build-emlgo-cpu:
+	@echo "Building EMLGo CPU Docker image..."
+	$(DOCKER) build -f Dockerfile.emlgo-cpu -t longbow-emlgo-cpu:$(IMAGE_TAG) .
+
+docker-build-emlgo-gpu:
+	@echo "Building EMLGo GPU Docker image..."
+	$(DOCKER) build -f Dockerfile.emlgo-gpu -t longbow-emlgo-gpu:$(IMAGE_TAG) .
+
+docker-build-all: docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-gpu
+	@echo "All Docker container images built successfully."
+
+release: ci build-release build-adbc
+	@echo "=========================================================="
+	@echo " ✓ Release build and verification completed successfully!"
+	@echo "=========================================================="

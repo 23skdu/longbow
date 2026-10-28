@@ -21,7 +21,7 @@ DOCKERFILES = [
     },
     {
         "name": "Dockerfile.cpu",
-        "stages": ["golang:1.27.2-bookworm", "scratch"],
+        "stages": ["golang:1.27.3-bookworm", "scratch"],
         "runtime_user": "65534:65534",
         "ports": ["3000", "3001", "9090"],
         "volume_data": True,
@@ -30,7 +30,7 @@ DOCKERFILES = [
     },
     {
         "name": "Dockerfile.emlgo-cpu",
-        "stages": ["golang:1.27.2-bookworm", "scratch"],
+        "stages": ["golang:1.27.3-bookworm", "scratch"],
         "runtime_user": "65534:65534",
         "ports": ["3000", "3001", "9090"],
         "volume_data": True,
@@ -59,7 +59,7 @@ DOCKERFILES = [
     },
     {
         "name": "Dockerfile.tpu",
-        "stages": ["golang:1.27.2-bookworm", "debian:bookworm-slim"],
+        "stages": ["golang:1.27.3-bookworm", "debian:bookworm-slim"],
         "runtime_user": "65534:65534",
         "ports": ["3000", "3001", "9090"],
         "volume_data": True,

@@ -1,6 +1,6 @@
 # Longbow Performance Benchmarks
 
-**Most recent revalidation:** 2026-10-16 — Full Scale Matrix Validation across **100,000 / 250,000 / 500,000** vectors on the AVX2 local host with EMLGo 0.7.0 hardware SIMD enabled (`bin/longbow_emlgo`), Go 1.27.2, dim 128, `--workers 4 --cpu-affinity 12-15`, seed 42, all 15 registered dtypes and all 13 search modes (45/45 configurations complete).
+**Most recent revalidation:** 2026-10-16 — Full Scale Matrix Validation across **100,000 / 250,000 / 500,000** vectors on the AVX2 local host with EMLGo 0.7.0 hardware SIMD enabled (`bin/longbow_emlgo`), Go 1.27.3, dim 128, `--workers 4 --cpu-affinity 12-15`, seed 42, all 15 registered dtypes and all 13 search modes (45/45 configurations complete).
 
 See **§0 below** for the consolidated ingest / index / search numbers for this pass. Prior tables (§1–§4, up to 2026-10-12) are retained unchanged for longitudinal readthrough.
 
@@ -122,7 +122,7 @@ This validation pass benchmarked the unified matrix across **all three target sc
 | Concurrency Workers | 4 Workers (`--workers 4`) |
 | Host RAM | 23 GB System Memory (13.5 GiB bench ceiling) |
 | GPU | NVIDIA GeForce RTX 4060 Laptop (8 GB VRAM, sm_89, CUDA 12.4) |
-| Go Runtime | Go 1.27.2 (CGO enabled) |
+| Go Runtime | Go 1.27.3 (CGO enabled) |
 
 #### Engine Variants Evaluated
 

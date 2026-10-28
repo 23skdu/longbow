@@ -36,7 +36,7 @@ var allDockerfiles = []dockerfileMeta{
 	},
 	{
 		filename:      "Dockerfile.cpu",
-		stages:        []string{"golang:1.27.2-bookworm", "scratch"},
+		stages:        []string{"golang:1.27.3-bookworm", "scratch"},
 		runtimeUser:   "65534:65534",
 		exposedPorts:  []string{"3000", "3001", "9090"},
 		hasVolumeData: true,
@@ -50,7 +50,7 @@ var allDockerfiles = []dockerfileMeta{
 	},
 	{
 		filename:      "Dockerfile.emlgo-cpu",
-		stages:        []string{"golang:1.27.2-bookworm", "scratch"},
+		stages:        []string{"golang:1.27.3-bookworm", "scratch"},
 		runtimeUser:   "65534:65534",
 		exposedPorts:  []string{"3000", "3001", "9090"},
 		hasVolumeData: true,
@@ -96,7 +96,7 @@ var allDockerfiles = []dockerfileMeta{
 	},
 	{
 		filename:      "Dockerfile.tpu",
-		stages:        []string{"golang:1.27.2-bookworm", "debian:bookworm-slim"},
+		stages:        []string{"golang:1.27.3-bookworm", "debian:bookworm-slim"},
 		runtimeUser:   "65534:65534",
 		exposedPorts:  []string{"3000", "3001", "9090"},
 		hasVolumeData: true,

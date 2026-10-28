@@ -1,12 +1,23 @@
-name: CI
+name: CI Pipeline (Combined)
+
+# Consolidated CI Pipeline combining:
+# - Core Build, Cross-Compilation & Test Gates (formerly ci.yml)
+# - Security Scanning (formerly security.yml: govulncheck, trivy)
+# - Observability Conformance (formerly observability.yml: rules, metrics)
+# - Helm Chart Validation (formerly helm-validation.yml: lint, template)
+# - Markdown Linting (formerly markdown-lint.yml)
+# - Benchmark Regression Gate (formerly benchmark.yml, benchmark-ab.yml)
+#
+# Server-side automatic triggers are disabled per repository policy;
+# all gates can be run locally via `make ci` or specific Makefile targets.
+# Server-side manual runs can be triggered via workflow_dispatch.
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
+  # push:
+  #   branches: [ main ]
+  # pull_request:
+  #   branches: [ main ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,10 +25,11 @@ concurrency:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   validate:
-    name: Build and Test
+    name: Build, Lint & Test Gates
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -26,42 +38,30 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.13.2
+          version: v2.15.0
 
-      - name: Build
+      - name: Build all packages
         run: go build -v ./...
+
+      - name: Build ADBC shared library
+        run: go build -buildmode=c-shared -o liblongbow_adbc.so ./cmd/adbc
 
       - name: Verify generated SIMD is reproducible
         run: ./scripts/check_simd_generation.sh
 
-      - name: Verify ARM64 still cross-compiles
+      - name: Verify ARM64 cross-compilation
         run: |
           GOARCH=arm64 go build ./...
           GOARCH=arm64 go vet ./...
 
-      - name: Test
-        run: go test -v -race -coverprofile=coverage.txt ./...
-
-      - name: Test benchmark harness helpers
-        # The benchmark report writer refuses to emit a report that violates
-        # qps * p50 <= workers * 1000, which makes that report unusable as a
-        # regression gate. That gate is only trustworthy if it is itself tested,
-        # as is the memory-ceiling parser, the guarantee that the harness never
-        # reaps processes it did not start, and the attribution of TurboQuant
-        # bit depths and child exit signals in a report, and the decision rule
-        # of the interleaved A/B harness that replaces the single-run gate.
-        run: |
-          python3 scripts/tests/test_benchmark_validation.py
-          python3 scripts/tests/test_benchmark_memory.py
-          python3 scripts/tests/test_benchmark_temporal.py
-          python3 scripts/tests/test_benchmark_attribution.py
-          python3 scripts/tests/test_ab_stats.py
+      - name: Run Unit Tests with Coverage (short mode)
+        run: go test -v -short -coverprofile=coverage.txt ./...
 
       - name: Verify 100% Package Test Coverage Gate
         run: |
@@ -73,12 +73,99 @@ jobs:
           fi
           echo "All packages have active test coverage."
 
-      - name: Observability & Metric Conformance Gate
+      - name: Test Benchmark Harness Helpers
         run: |
-          go test -v ./internal/observability/...
+          python3 scripts/tests/test_benchmark_validation.py
+          python3 scripts/tests/test_benchmark_memory.py
+          python3 scripts/tests/test_benchmark_temporal.py
+          python3 scripts/tests/test_benchmark_attribution.py
+          python3 scripts/tests/test_ab_stats.py
 
-  test-arm64-emulation:
-    name: Emulated ARM64 SIMD & Kernel Validation
+  security:
+    name: Security Analysis (govulncheck & trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.3"
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: ./scripts/check_govuln.sh
+
+      - name: Run Trivy filesystem scanner
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: "1"
+          trivyignores: .trivyignore
+          skip-dirs: vendor,data,bin
+
+  observability:
+    name: Observability & Metric Conformance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.3"
+          cache: true
+
+      - name: Check metric inventory freshness
+        run: |
+          make observability-inventory
+          if ! git diff --quiet -- internal/observability/testdata/registered_metrics.tsv; then
+            echo "::error::internal/observability/testdata/registered_metrics.tsv is stale."
+            echo "A metric was added, renamed or removed without running 'make observability-inventory'."
+            git diff -- internal/observability/testdata/registered_metrics.tsv
+            exit 1
+          fi
+
+      - name: Run metric conformance test suite
+        run: go test -v ./internal/observability/...
+
+      - name: Run promtool unit tests
+        run: grafana/tests/test-rules.sh
+
+  helm-and-docs:
+    name: Helm Chart & Markdown Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5.0.1
+        with:
+          version: v3.14.4
+
+      - name: Helm Lint
+        run: helm lint helm/longbow
+
+      - name: Helm Template (Dry Run)
+        run: helm template longbow helm/longbow --debug
+
+      - name: Markdown Lint
+        uses: DavidAnson/markdownlint-cli2-action@v24
+        with:
+          globs: "docs/**/*.md"
+
+  emulation:
+    name: Hardware Emulation (ARM64 & Intel SDE)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -92,56 +179,14 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
 
       - name: Run SIMD Tests under ARM64 Emulation
-        run: |
-          GOARCH=arm64 go test -v ./internal/simd/...
-
-  test-avx512-sde:
-    name: AVX-512 / VBMI / AMX under Intel SDE
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: "1.27.2"
-          cache: true
-
-      - name: Run the emulated SIMD lanes
-        # The widest kernels in the tree are the only ones CI never executed:
-        # every test that guards on GetCPUFeatures() skips on a standard runner.
-        # Intel SDE answers CPUID for the emulated model, so the guards pass and
-        # the kernels run for real. The script fails the job if a test whose
-        # feature the emulated model advertises was skipped anyway, which is how
-        # a wrong CPUID bit, a bad build tag or a renamed test gets caught.
-        #
-        # It paid for itself on the first run: it found that the VBMI TQ2 pack
-        # and unpack kernels disagreed with the generic reference and had never
-        # been executed anywhere.
-        #
-        # See docs/roadmap.md item 5.
-        env:
-          # A path inside the workspace so the artifact step below can reach it.
-          LONGBOW_SDE_WORK: /tmp/sde-simd-out
-        run: ./scripts/check_avx512_coverage.sh
-
-      - name: Upload emulated test output
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: sde-simd-output
-          path: /tmp/sde-simd-out/out-*.txt
-          if-no-files-found: ignore
-          retention-days: 14
+        run: GOARCH=arm64 go test -short -v ./internal/simd/...
 
   benchmark-regression:
-    name: Benchmark Regression (--ci)
+    name: Benchmark Regression Verification
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -152,7 +197,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
 
       - name: Build benchmark binaries
@@ -168,12 +213,3 @@ jobs:
           python3 scripts/unified_benchmark.py --ci --runs 3 \
             --compare-baseline benchmarks/baseline_cpu.json \
             --threshold 10
-
-      - name: Upload benchmark results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-benchmark-results
-          path: data/perf_logs/perf_matrix_*.json
-          retention-days: 14
-

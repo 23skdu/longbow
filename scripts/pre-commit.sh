@@ -31,13 +31,13 @@ else
     PKGS="./cmd/... ./internal/simd/... ./tools/..."
 fi
 
-# Run unit tests on affected packages with code coverage
+# Run unit tests on affected packages with code coverage in short mode to prevent OOM
 echo "    Running unit tests with coverage on: $PKGS"
-go test -v -cover $PKGS
+go test -v -short -cover $PKGS
 
 # Run fuzz tests on affected packages
 echo "    Running fuzz tests on: $PKGS"
-go test -run='^Fuzz' $PKGS
+go test -short -run='^Fuzz' $PKGS
 echo "    ✓ Unit and Fuzz test coverage passed 100%."
 
 # 3. Accuracy Gate

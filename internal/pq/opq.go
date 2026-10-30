@@ -72,7 +72,7 @@ func (e *OPQEncoder) TrainOPQ(vectors [][]float32, iterations int) error {
 		}
 
 		// B. Train PQ codebooks on rotated vectors
-		if err := e.PQEncoder.Train(rotatedVectors); err != nil {
+		if err := e.Train(rotatedVectors); err != nil {
 			return err
 		}
 

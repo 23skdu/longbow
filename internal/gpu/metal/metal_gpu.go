@@ -1402,4 +1402,3 @@ func (idx *MetalIndex) startSyncTicker(cfg gputypes.GPUConfig) {
 		}
 	}()
 }
-

@@ -99,8 +99,6 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 			for _, neighborID := range allNeighbors {
 				isDel := h.deleted.Contains(neighborID)
-				if nid == 0 {
-				}
 				if isDel {
 					hasTombstone = true
 					knownTombstones = append(knownTombstones, neighborID)
@@ -108,8 +106,6 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			}
 
 			if !hasTombstone {
-				if nid%10 == 0 {
-				}
 				data.UnlockNode(lvl, nid, oldVer)
 				continue
 			} else {
@@ -186,9 +182,6 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				}
 
 				selected := h.selectNeighbors(poolCtx, candList, limitM, data)
-
-				if nid%10 == 0 {
-				}
 
 				// Write back
 				versChunk := data.GetVersionsChunk(lvl, cID)

@@ -405,8 +405,6 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 		shardTerms[shardIdx] = append(shardTerms[shardIdx], term)
 	}
 
-
-
 	// Pre-convert roaring filter to dense BitVector for O(1) cache-friendly access
 	var bvFilter BitVector
 	if filter != nil {

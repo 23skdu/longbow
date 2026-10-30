@@ -22,7 +22,7 @@ func GetSearchResultSlice(capacity int) []SearchResult {
 
 // PutSearchResultSlice returns a slice to the pool
 func PutSearchResultSlice(slice []SearchResult) {
-	searchResultPool.Put(slice[:0])
+	searchResultPool.Put(slice[:0]) //nolint:staticcheck
 }
 
 // ResultHeap implements heap.Interface for a stream of SearchResults

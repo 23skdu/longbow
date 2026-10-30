@@ -53,7 +53,7 @@ func TestProjection_Apply(t *testing.T) {
 	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3}, nil)
 	b.Field(1).(*array.StringBuilder).AppendValues([]string{"a", "b", "c"}, nil)
 	b.Field(2).(*array.Float64Builder).AppendValues([]float64{1.1, 2.2, 3.3}, nil)
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	t.Run("SelectTwoColumns", func(t *testing.T) {
@@ -136,7 +136,7 @@ func TestProjectionEvaluator(t *testing.T) {
 	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2}, nil)
 	b.Field(1).(*array.StringBuilder).AppendValues([]string{"a", "b"}, nil)
 	b.Field(2).(*array.Float64Builder).AppendValues([]float64{1.1, 2.2}, nil)
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	t.Run("ApplyToRecord", func(t *testing.T) {
@@ -182,7 +182,7 @@ func TestProjectRecord(t *testing.T) {
 	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3}, nil)
 	b.Field(1).(*array.StringBuilder).AppendValues([]string{"a", "b", "c"}, nil)
 	b.Field(2).(*array.Float64Builder).AppendValues([]float64{1.1, 2.2, 3.3}, nil)
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	t.Run("SelectColumns", func(t *testing.T) {
@@ -221,7 +221,7 @@ func BenchmarkProjection_Apply(b *testing.B) {
 			builder.Field(j).(*array.Float64Builder).AppendValues([]float64{float64(i)}, nil)
 		}
 	}
-	rec := builder.NewRecord()
+	rec := builder.NewRecordBatch()
 	defer rec.Release()
 
 	proj, _ := NewProjection(schema, []string{"id", "f1", "f2"})

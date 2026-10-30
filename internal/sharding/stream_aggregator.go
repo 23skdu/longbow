@@ -446,7 +446,7 @@ func (sa *StreamAggregator) sliceTable(tbl arrow.Table, k int) ([]arrow.RecordBa
 			for i := 0; i < int(rec.NumCols()); i++ {
 				slicedCols[i] = array.NewSlice(rec.Column(i), 0, takeRows)
 			}
-			slicedRec := array.NewRecord(schema, slicedCols, takeRows)
+			slicedRec := array.NewRecordBatch(schema, slicedCols, takeRows)
 			for _, c := range slicedCols {
 				c.Release() // slicedRec takes ownership
 			}

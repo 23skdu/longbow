@@ -592,7 +592,7 @@ func TestGraphStore_IPCRoundTrip(t *testing.T) {
 	defer reader.Release()
 
 	require.True(t, reader.Next(), "No records found in IPC stream")
-	recoveredRecord := reader.Record()
+	recoveredRecord := reader.RecordBatch()
 	require.NotNil(t, recoveredRecord)
 	require.Equal(t, int64(2), recoveredRecord.NumRows(), "recovered record should have 2 rows")
 

@@ -294,7 +294,7 @@ func (idx *IVFOPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k in
 	// (Actually, the OPQ rotation is part of the Encode process,
 	// but for ADC we need the query in the rotated space)
 	rotatedQuery := idx.opqEncoder.RotateVector(queryVec)
-	adt, err := idx.opqEncoder.PQEncoder.BuildADCTable(rotatedQuery)
+	adt, err := idx.opqEncoder.BuildADCTable(rotatedQuery)
 	if err != nil {
 		return nil, err
 	}

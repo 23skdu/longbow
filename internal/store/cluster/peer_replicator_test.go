@@ -10,7 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-func createTestRecord(t *testing.T) arrow.Record { //nolint:staticcheck
+func createTestRecord(t *testing.T) arrow.RecordBatch { //nolint:staticcheck
 	t.Helper()
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -21,7 +21,7 @@ func createTestRecord(t *testing.T) arrow.Record { //nolint:staticcheck
 	defer builder.Release()
 
 	builder.Field(0).(*array.Int64Builder).Append(1)
-	return builder.NewRecord() //nolint:staticcheck //nolint:staticcheck
+	return builder.NewRecordBatch() //nolint:staticcheck //nolint:staticcheck
 }
 
 func TestPeerReplicator_NewPeerReplicator(t *testing.T) {

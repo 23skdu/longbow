@@ -1,13 +1,13 @@
 # Longbow Roadmap
 
-**Last updated**: 2026-10-27  
+**Last updated**: 2026-10-29  
 **Status**: **COMPLETED** — All 10 P1 and P2 roadmap milestones (Items 40–49) are fully implemented, verified across local AVX2 and remote GCP AVX-512 Xeon testbed (`tf-testbed-02bf2a`), and closed. All 49 roadmap items across P0, P1, P2, and P3 are 100% verified. **2026-10-27 Update**: the full deep code analysis pass re-opened twenty (20) new P0 blockers from dead-code, unwiring, and tooling-gap findings; see Section 7.
 
 ---
 
 ## 1. Top Immediate Priorities (P0 Blockers & P1 Critical Path)
 
-*(All 49 roadmap milestones across P0, P1, P2, and P3 have been fully completed, verified with comprehensive test coverage, and closed. No active blockers or pending roadmap items remaining.)*
+(All 49 roadmap milestones across P0, P1, P2, and P3 have been fully completed, verified with comprehensive test coverage, and closed. No active blockers or pending roadmap items remaining.)
 
 | Status | Priority Tier | Subsystems Covered | Milestones Completed | Quality & Conformance Gate |
 |:---|:---|:---|:---|:---|
@@ -38,7 +38,7 @@ graph TD
 
 ## 2. P0 — Architectural God Module Blockers
 
-*(All identified God Modules—Items 35, 36, 37, 38, and 39—have been decomposed and verified. No active P0 blockers remaining.)*
+(All identified God Modules—Items 35, 36, 37, 38, and 39—have been decomposed and verified. No active P0 blockers remaining.)
 
 ---
 
@@ -50,13 +50,13 @@ graph TD
 
 ## 4. P2 — Algorithmic & Storage Optimizations
 
-*(All identified P2 algorithmic, topological, and quantization milestones—Items 45, 46, 47, 48, and 49—have been fully implemented, verified with 100% test coverage across all test distributions and benchmarks, and moved to the Completed Milestones changelog. No active P2 items remaining.)*
+(All identified P2 algorithmic, topological, and quantization milestones—Items 45, 46, 47, 48, and 49—have been fully implemented, verified with 100% test coverage across all test distributions and benchmarks, and moved to the Completed Milestones changelog. No active P2 items remaining.)
 
 ---
 
 ## 5. P3 — Observability, Alerting & CI Conformance
 
-*(All identified observability, alerting & CI conformance milestones—Items 18, 19/24, 20, 21, 22/23—have been completed and verified. No active P3 items remaining.)*
+(All identified observability, alerting & CI conformance milestones—Items 18, 19/24, 20, 21, 22/23—have been completed and verified. No active P3 items remaining.)
 
 ---
 
@@ -82,7 +82,7 @@ graph TD
 | **22/23** | Alertmanager Configuration, Runbook Links & Provisioning | 2026-10-16 | `4c7d2895` | Authored `grafana/alertmanager.yml` with multi-tier severity routing (`critical`, `warning`, `info`) and inhibition rules; created operational triage guide `docs/runbooks.md` with remediation steps across all alert families; wired `runbook_url` annotations across alerts in `grafana/rules.yml`; implemented declarative Grafana datasource (`grafana/provisioning/datasources/prometheus.yml`) and dashboard provisioning (`grafana/provisioning/dashboards/dashboards.yml`); added Prometheus (`prom/prometheus`), Alertmanager (`prom/alertmanager`), and Grafana (`grafana/grafana`) observability stack to `docker-compose.yml`; added Prometheus Operator `ServiceMonitor` and `PrometheusRule` templates and `monitoring` config values to `helm/longbow/`. |
 | **21** | Alert Coverage for Critical Failure Counters | 2026-10-16 | `4c7d2895` | Added Prometheus alert rules covering all 30 previously unmonitored exported failure/error counters across WAL (`longbow_wal_flush_errors_total`, `longbow_wal_write_errors_total`, `longbow_checkpoint_timeouts_total`), replication (`longbow_replication_queue_dropped_total`), index (`longbow_index_jobs_dropped_total`, `longbow_neighbor_selection_errors_total`, `longbow_graph_f16_conversion_errors_total`), memory (`longbow_memory_limit_rejects_total`), compaction (`longbow_compaction_errors_total`), system (`longbow_panic_total`, `longbow_log_errors_total`, `longbow_semaphore_timeouts_total`), storage (`longbow_dataset_export_failures_total`, `longbow_dataset_import_failures_total`, `longbow_store_dropped_datasets_total`), pipeline (`longbow_store_circuit_breaker_failures_total`, `longbow_do_exchange_errors_total`, `longbow_stream_termination_errors_total`, `longbow_validation_failures_total`, `longbow_vector_search_action_errors_total`, `longbow_trace_errors_total`), GPU (`longbow_multi_gpu_device_errors`, `longbow_onnx_inference_errors_total`, `longbow_onnx_metal_inference_errors_total`), SIMD JIT (`longbow_jit_kernel_errors_total`), bulk insert (`longbow_bulk_insert_dimension_errors_total`), and hybrid search (`longbow_reranker_errors_total`, `longbow_graphrag_expansion_errors_total`); verified 38 of 38 failure counters are actively watched (0 unwatched); verified 100% alert conformance in `internal/observability`. |
 | **19/24** | Metric-Existence & Docs-Code Consistency Conformance Gates in CI | 2026-10-16 | `d0fb6876` | Implemented `TestRegisteredMetricsInventoryFreshness` in `internal/observability/metrics_conformance_test.go` ensuring `testdata/registered_metrics.tsv` never drifts from AST-extracted metric declarations in Go source code; verified bidirectional consistency between `docs/metrics.md` and registered families via `TestMetricsDocMatchesRegistry`; wired dedicated `Observability & Metric Conformance Gate` step into `.github/workflows/ci.yml` running `go test -v ./internal/observability/...`; 100% of conformance tests pass. |
-| **18** | Repair Alert Rules Bound to Missing Metrics | 2026-10-16 | `84e36aa8` | Verified all 72 alerts across 28 rule groups in `grafana/rules.yml` resolve to registered Prometheus metrics in the Go binary; enhanced `internal/observability/metrics_conformance_test.go` (`referencedMetrics`) to parse multiline YAML alert rules (`expr: |`) preventing silent skip of multiline expressions; resolved divergence in `grafana/dashboards/index-storage.json` by updating unregistered `longbow_index_creation_failures_total` to `longbow_index_creations_total{status="failure"}`; verified 100% alert conformance in CI gate. |
+| **18** | Repair Alert Rules Bound to Missing Metrics | 2026-10-16 | `84e36aa8` | Verified all 72 alerts across 28 rule groups in `grafana/rules.yml` resolve to registered Prometheus metrics in the Go binary; enhanced `internal/observability/metrics_conformance_test.go` (`referencedMetrics`) to parse multiline YAML alert rules preventing silent skip of multiline expressions; resolved divergence in`grafana/dashboards/index-storage.json` by updating unregistered `longbow_index_creation_failures_total` to `longbow_index_creations_total{status="failure"}`; verified 100% alert conformance in CI gate. |
 | **3** | Pooled Row Buffers in `DiskVectorStore` | 2026-10-16 | `6274299a` | Decomposed `disk_vector_store.go` monolith (1,362 LOC down to 187 LOC) into modular sub-modules: `disk_vector_store_read.go` (575 LOC), `disk_vector_store_write.go` (611 LOC), and `disk_vector_store_block.go` (230 LOC); implemented pooled row buffers via `Float32RowPool` and `ByteRowPool` (`internal/store/index/buffer_pool.go` and `internal/store/disk_buffer_pool.go`); added zero-allocation decoding APIs: `GetVector`, `GetVectorInto`, `GetBatchInto`, `GetVectorAnyInto`, `ScanRows`, and `ScanRowsAny`; precomputed block LRU cache keys (`BlockEntry.HotKey`) eliminating string formatting allocations at read time; benchmark `GetBatchInto` improved from 1,490 ns/op (5,771 B/op, 19 allocs/op) to 370.8 ns/op (0 B/op, 0 allocs/op — 4x throughput, 100% allocation elimination); single vector `GetVectorInto` achieves 38.99 ns/op with 0 B/op and 0 allocs/op; 100% of store, index, and repo short tests pass. |
 | **13** | SIMD Fused BM25 Term Scoring & Posting List Intersection | 2026-10-16 | `f9557468` | Added `DocLens []int` parallel slice to `BM25PostingList`; fused document length indexing in contiguous memory; eliminated intermediate map allocations (`docLengths` map) and dynamic load per document; implemented vectorized batch scoring using native AVX-512 `simd.BM25ScoreBatch` for fast-path terms; replaced `sort.Slice` reflection calls with an inlined min-heap sift ($O(\log K)$, 0 allocs); benchmark multi-term latency reduced 209x (3,727,545 ns → 17,854 ns/op), heap churn reduced 99.6% (1,315,688 B → 5,496 B/op), allocations reduced 99.5% (8,392 → 39 allocs/op); 100% of unit, concurrency, and race tests pass. |
 | **10** | Iterative Stack Traversal for Geospatial Quadtree Queries | 2026-10-16 | `dfca2b0e` | Replaced recursive Quadtree quadrant subdivisions in `QueryRadius`, `QueryBox`, and `QueryBoxBitmap` with a fixed-depth stack traversal (`[128]*Quadtree`); introduced `QueryBoxAppend` to `GeoPointIndex` contract across `Quadtree` and `MortonGrid`; pooled candidate buffers via `geoCandidatePool` in `SearchRadius`, `SearchBoundingBox`, and `SearchNearest` to eliminate temporary slice allocations; modularized `geo_quadtree.go` (302 LOC) and `geo_utils.go` (97 LOC) bringing `geo_search.go` down to 756 LOC; 100% of unit, parity, concurrency, and race tests pass. |
@@ -146,6 +146,16 @@ The twenty (20) improvements accepted as P0 blockers from the deep code analysis
 | 18 | Add measured coverage gate | internal/store, internal/simd, internal/onnx | Documentation claims greater than 95 percent | Enforce statement coverage threshold in CI |
 | 19 | Remediate residual static-analysis debt | internal/store, internal/query, internal/security, internal/storage | staticcheck ST1005, SA1012, SA1029, SA4026, SA4006, S1021, S1011, SA6002, SA4010, SA4017, S1008 | Fix findings |
 | 20 | Remove dead or empty Python SDK module | longbowclientsdk | src/longbow/utils.py is empty | Remove module or fold into client |
+
+### 7.1a Resolution Progress (2026-10-29)
+
+The following blockers from the Section 7.1 backlog have been resolved in this cycle:
+
+| # | Improvement | Status |
+|---|---|---|
+| 1 | Re-activate disabled staticcheck and unused lint gates | Resolved — `staticcheck` and `unused` enabled in `.golangci.yml`; `make lint`/`make staticcheck` clean (0 issues) |
+| 12 | Migrate off Arrow v18 deprecated APIs | Resolved — `arrow.Record`/`.Record()`/`NewRecord` migrated to `RecordBatch` terminology across client, cmd, and internal packages |
+| 19 | Remediate residual static-analysis debt | Resolved — all reported `ST1005`, `SA9003`, `SA6002`, `S1008`, `S1011`, `S1021`, `QF*` findings fixed |
 
 ### 7.2 Deep Code Analysis Finding Buckets
 

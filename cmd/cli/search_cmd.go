@@ -98,7 +98,7 @@ func runSearch(ctx context.Context, args []string) {
 
 	var totalRows int64
 	for reader.Next() {
-		rec := reader.Record()
+		rec := reader.RecordBatch()
 		totalRows += rec.NumRows()
 		printResults(rec)
 	}
@@ -134,7 +134,7 @@ func parseFilterExpression(s string) (interface{}, error) {
 	return filter, nil
 }
 
-func printResults(rec arrow.Record) {
+func printResults(rec arrow.RecordBatch) {
 	for i := int64(0); i < rec.NumRows(); i++ {
 		for j := int64(0); j < rec.NumCols(); j++ {
 			col := rec.Column(int(j))
@@ -203,7 +203,7 @@ func runGeoSearch(ctx context.Context, args []string) {
 	defer reader.Release()
 
 	for reader.Next() {
-		printResults(reader.Record())
+		printResults(reader.RecordBatch())
 	}
 }
 
@@ -243,7 +243,7 @@ func runRecommend(ctx context.Context, args []string) {
 	defer reader.Release()
 
 	for reader.Next() {
-		printResults(reader.Record())
+		printResults(reader.RecordBatch())
 	}
 }
 

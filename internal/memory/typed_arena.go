@@ -261,4 +261,3 @@ func (ta *TypedArena[T]) GetPointerWithGeneration(ref SliceRef, maxGeneration ui
 	}
 	return a.GetPointerWithGeneration(ref.Offset, maxGeneration)
 }
-

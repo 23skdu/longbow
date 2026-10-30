@@ -233,19 +233,19 @@ func profStream(stream any) unsafe.Pointer {
 // report can be looked up in a profiler: l2_distance_kernel_v2_batched in this
 // table is that kernel in kernels.cu.
 var (
-	profL2BatchedLarge = registerOp("l2_distance_kernel_large_v2_batched")
-	profL2Batched      = registerOp("l2_distance_kernel_v2_batched")
-	profL2Complex64          = registerOp("l2_distance_complex64_kernel")
-	profL2Complex128         = registerOp("l2_distance_complex128_kernel")
-	profL2Complex128Batched  = registerOp("l2_distance_complex128_kernel_v2_batched")
-	profL2Candidates         = registerOp("l2_distance_candidates_kernel")
-	profTQDistant            = registerOp("turboquant_distance_kernel_v2_batched")
-	profTQDescent      = registerOp("turboquant_greedy_descent_kernel")
-	profGraphBFS       = registerOp("graph_bfs_expand_kernel")
-	profGraphActivate  = registerOp("graph_activation_propagate_kernel")
-	profPQDistance     = registerOp("pq_distance_kernel")
-	profCopyH2D        = registerOp("memcpy_host_to_device")
-	profCopyD2H        = registerOp("memcpy_device_to_host")
+	profL2BatchedLarge      = registerOp("l2_distance_kernel_large_v2_batched")
+	profL2Batched           = registerOp("l2_distance_kernel_v2_batched")
+	profL2Complex64         = registerOp("l2_distance_complex64_kernel")
+	profL2Complex128        = registerOp("l2_distance_complex128_kernel")
+	profL2Complex128Batched = registerOp("l2_distance_complex128_kernel_v2_batched")
+	profL2Candidates        = registerOp("l2_distance_candidates_kernel")
+	profTQDistant           = registerOp("turboquant_distance_kernel_v2_batched")
+	profTQDescent           = registerOp("turboquant_greedy_descent_kernel")
+	profGraphBFS            = registerOp("graph_bfs_expand_kernel")
+	profGraphActivate       = registerOp("graph_activation_propagate_kernel")
+	profPQDistance          = registerOp("pq_distance_kernel")
+	profCopyH2D             = registerOp("memcpy_host_to_device")
+	profCopyD2H             = registerOp("memcpy_device_to_host")
 
 	// The C helpers that launch a kernel internally. They are timed as a
 	// whole, from Go, so the name covers the kernel and the transfers inside

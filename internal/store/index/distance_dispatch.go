@@ -485,10 +485,8 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 	minHeap.PushCandidate(epCand)
 
 	// Only add to result set if it passes filters and isn't deleted
-	passes := true
-	if fm != nil && !fm.allows(entryPoint) {
-		passes = false
-	}
+	passes := fm == nil || fm.allows(entryPoint)
+
 	if passes && h.IsDeleted(entryPoint) {
 		passes = false
 	}

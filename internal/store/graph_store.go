@@ -730,7 +730,7 @@ const PackedRefOffShift = 32
 // ToArrowBatch exports the GraphStore's edges to an Arrow Record.
 // It uses Dictionary Encoding for the 'predicate' column to ensure the
 // predicate vocabulary is self-contained within the record.
-func (gs *GraphStore) ToArrowBatch() (arrow.Record, error) {
+func (gs *GraphStore) ToArrowBatch() (arrow.RecordBatch, error) {
 	if gs.edgeCount.Load() == 0 {
 		return nil, nil
 	}
@@ -772,7 +772,7 @@ func (gs *GraphStore) ToArrowBatch() (arrow.Record, error) {
 	}, nil)
 
 	numRows := subjectsArr.Len()
-	record := array.NewRecord(schema, []arrow.Array{
+	record := array.NewRecordBatch(schema, []arrow.Array{
 		subjectsArr.NewArray(),
 		predicatesArr.NewArray(),
 		objectsArr.NewArray(),
@@ -786,7 +786,7 @@ func (gs *GraphStore) ToArrowBatch() (arrow.Record, error) {
 // The record must have the schema: subject (uint32), predicate (dictionary), object (uint32), weight (float32).
 // This method automatically recovers the predicate vocabulary from the Arrow Dictionary.
 // The optional predicates parameter is kept for backward compatibility but is ignored if the record contains a dictionary.
-func (gs *GraphStore) FromArrowBatch(record arrow.Record, _ []string) error {
+func (gs *GraphStore) FromArrowBatch(record arrow.RecordBatch, _ []string) error {
 	if record == nil || record.NumRows() == 0 {
 		return nil
 	}
@@ -883,11 +883,11 @@ func (gs *GraphStore) FromArrowBatch(record arrow.Record, _ []string) error {
 }
 
 // ToArrowRecord is an alias for ToArrowBatch for API consistency.
-func (gs *GraphStore) ToArrowRecord() (arrow.Record, error) {
+func (gs *GraphStore) ToArrowRecord() (arrow.RecordBatch, error) {
 	return gs.ToArrowBatch()
 }
 
 // FromArrowRecord is an alias for FromArrowBatch for API consistency.
-func (gs *GraphStore) FromArrowRecord(record arrow.Record, predicates []string) error {
+func (gs *GraphStore) FromArrowRecord(record arrow.RecordBatch, predicates []string) error {
 	return gs.FromArrowBatch(record, predicates)
 }

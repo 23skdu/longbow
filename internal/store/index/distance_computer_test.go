@@ -181,4 +181,3 @@ func TestSearchContextTQReconCache(t *testing.T) {
 	require.True(t, hit)
 	require.Equal(t, float32(3.1415), d)
 }
-

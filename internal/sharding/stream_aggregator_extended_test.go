@@ -26,7 +26,7 @@ func TestStreamAggregator_MergeAndSort(t *testing.T) {
 	defer b1.Release()
 	b1.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2}, nil)
 	b1.Field(1).(*array.Float32Builder).AppendValues([]float32{0.1, 0.5}, nil)
-	rec1 := b1.NewRecord()
+	rec1 := b1.NewRecordBatch()
 	defer rec1.Release()
 
 	// Result from Shard 2
@@ -34,7 +34,7 @@ func TestStreamAggregator_MergeAndSort(t *testing.T) {
 	defer b2.Release()
 	b2.Field(0).(*array.Int64Builder).AppendValues([]int64{3, 4}, nil)
 	b2.Field(1).(*array.Float32Builder).AppendValues([]float32{0.05, 0.2}, nil)
-	rec2 := b2.NewRecord()
+	rec2 := b2.NewRecordBatch()
 	defer rec2.Release()
 
 	agg := NewStreamAggregator(pool, zerolog.Nop())

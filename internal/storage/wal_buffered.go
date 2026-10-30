@@ -266,10 +266,7 @@ func (w *BufferedWAL) runFlushLoop() {
 // tryFlushLocked attempts to flush if needed.
 // Must be called with w.mu held. The lock may be released and re-acquired during flush.
 func (w *BufferedWAL) tryFlushLocked() {
-	for {
-		if w.isFlushing || w.buf.Len() == 0 {
-			break
-		}
+	for !w.isFlushing && w.buf.Len() != 0 {
 
 		wb := w.swapBufferLocked()
 		if wb == nil {
@@ -312,9 +309,7 @@ func (w *BufferedWAL) tryFlushLocked() {
 			}
 		} else {
 			w.flushedSeq.Store(wb.maxSeq)
-			for i := range batch {
-				toSignal = append(toSignal, batch[i])
-			}
+			toSignal = append(toSignal, batch...)
 			var stillPending []syncWaiter
 			for _, wt := range w.pendingSyncs {
 				if wt.targetSeq <= wb.maxSeq {

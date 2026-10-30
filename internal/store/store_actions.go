@@ -729,7 +729,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		meta := arrow.MetadataFrom(metaMap)
 
-		var vectorType arrow.DataType = arrow.PrimitiveTypes.Float32
+		var vectorType = arrow.PrimitiveTypes.Float32
 		if req.Dimension > math.MaxInt32 || req.Dimension < 0 {
 			return fmt.Errorf("vector dimension %d out of range (max %d)", req.Dimension, math.MaxInt32)
 		}

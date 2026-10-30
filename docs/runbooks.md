@@ -7,6 +7,7 @@ This guide provides operational triage procedures, diagnosis steps, and mitigati
 ## 1. Triage Workflow
 
 When an alert fires in Longbow:
+
 1. Identify the alert severity (`critical`, `warning`, `info`).
 2. Inspect the dashboard associated with the alert domain (`search-query.json`, `index-storage.json`, `distributed-cluster.json`, `gpu-onnx-health.json`, or `temporal-realtime.json`).
 3. Check the affected nodes or datasets using label matching (`dataset`, `node`, `device`, `component`).
@@ -17,6 +18,7 @@ When an alert fires in Longbow:
 ## 2. WAL & Durability Alerts
 
 ### LongbowWALFlushErrors & LongbowWALDirectWriteErrors
+
 - **Severity**: Critical
 - **Symptoms**: WAL buffer flush operations or direct writes to disk fail. Ingestion requests may be blocked or fail to commit.
 - **Diagnosis**:
@@ -28,6 +30,7 @@ When an alert fires in Longbow:
   - If io_uring errors are logged, restart Longbow with `LONGBOW_STORAGE_USE_DIRECT_IO=false`.
 
 ### LongbowCheckpointTimeouts
+
 - **Severity**: Critical
 - **Symptoms**: Asynchronous WAL checkpoint operations are timing out.
 - **Diagnosis**:
@@ -38,6 +41,7 @@ When an alert fires in Longbow:
   - Stagger snapshot intervals (`LONGBOW_SNAPSHOT_INTERVAL`).
 
 ### LongbowHighWALQueueDepth & LongbowSlowWALFsync
+
 - **Severity**: Warning
 - **Symptoms**: Uncommitted entries in the WAL queue are growing; fsync operations exceed 500ms.
 - **Mitigation**:
@@ -49,6 +53,7 @@ When an alert fires in Longbow:
 ## 3. Replication, Mesh & Cluster Alerts
 
 ### LongbowSplitBrain & LongbowMemberFailure
+
 - **Severity**: Critical
 - **Symptoms**: Cluster node membership dropped below quorum. Partition risk detected.
 - **Diagnosis**:
@@ -59,6 +64,7 @@ When an alert fires in Longbow:
   - If a network partition occurred, the minority partition will fence itself automatically (`longbow_split_brain_fenced_state`). Restore network routing between nodes.
 
 ### LongbowReplicationQueueDropped & LongbowReplicationStalled
+
 - **Severity**: Warning
 - **Symptoms**: Outbound replication queue is full and dropping replication packets.
 - **Mitigation**:
@@ -66,6 +72,7 @@ When an alert fires in Longbow:
   - Increase replication buffer queue size or bandwidth between cluster replicas.
 
 ### LongbowQuorumFailures
+
 - **Severity**: Critical
 - **Symptoms**: Put operations failing to reach required quorum consistency.
 - **Mitigation**:
@@ -77,6 +84,7 @@ When an alert fires in Longbow:
 ## 4. Indexing & Graph Quality Alerts
 
 ### LongbowIndexJobsDropped
+
 - **Severity**: Critical
 - **Symptoms**: Ingestion worker queue is overflowing, dropping asynchronous indexing tasks.
 - **Mitigation**:
@@ -84,6 +92,7 @@ When an alert fires in Longbow:
   - Scale out ingestion across more cluster shards or increase CPU allocation.
 
 ### LongbowBulkInsertDimensionErrors & LongbowNeighborSelectionErrors
+
 - **Severity**: Warning
 - **Symptoms**: Vectors rejected due to dimensionality mismatch or errors while establishing graph adjacency links.
 - **Diagnosis**:
@@ -92,6 +101,7 @@ When an alert fires in Longbow:
   - Reject malformed client records before sending batch payloads.
 
 ### LongbowLowHNSWAverageDegree & LongbowBulkInsertFasterThanFloat32
+
 - **Severity**: Critical
 - **Symptoms**: Graph connectivity is defective, leading to low search recall or isolated nodes.
 - **Diagnosis**:
@@ -105,6 +115,7 @@ When an alert fires in Longbow:
 ## 5. Memory, GC & Eviction Alerts
 
 ### LongbowMemoryLimitRejections & LongbowHighBackpressureRejections
+
 - **Severity**: Critical
 - **Symptoms**: System memory limit reached; incoming writes or queries are being rejected with backpressure.
 - **Diagnosis**:
@@ -115,6 +126,7 @@ When an alert fires in Longbow:
   - Enable layer eviction: `LONGBOW_LAYER_EVICTION_ENABLED=true` with threshold `0.75`.
 
 ### LongbowProcessPanics
+
 - **Severity**: Critical
 - **Symptoms**: A panic was recovered in an internal engine component (`longbow_panic_total`).
 - **Diagnosis**:
@@ -128,6 +140,7 @@ When an alert fires in Longbow:
 ## 6. GPU & Acceleration Alerts
 
 ### LongbowMultiGPUDeviceErrors & LongbowGPUFailure
+
 - **Severity**: Critical
 - **Symptoms**: GPU hardware errors reported; vector searches falling back to CPU.
 - **Diagnosis**:
@@ -138,6 +151,7 @@ When an alert fires in Longbow:
   - If hardware bus error occurred, drain node traffic and restart the host.
 
 ### LongbowJITKernelErrors
+
 - **Severity**: Critical
 - **Symptoms**: Vector math JIT compilation or execution failure.
 - **Diagnosis**:
@@ -150,6 +164,7 @@ When an alert fires in Longbow:
 ## 7. Storage & Compaction Alerts
 
 ### LongbowDatasetExportFailures & LongbowDatasetImportFailures
+
 - **Severity**: Warning
 - **Symptoms**: Snapshot export/import operations failing for a dataset.
 - **Mitigation**:
@@ -157,6 +172,7 @@ When an alert fires in Longbow:
   - Verify local snapshot directory permissions (`LONGBOW_SNAPSHOT_PATH`).
 
 ### LongbowStoreDroppedDatasets
+
 - **Severity**: Critical
 - **Symptoms**: A dataset was removed or evicted from VectorStore.
 - **Mitigation**:

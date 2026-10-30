@@ -87,10 +87,7 @@ func (s *VectorStore) performGlobalCompactionCheck() {
 	if dm == nil {
 		return
 	}
-	for _, ds := range *dm {
-		if ds.Index != nil {
-			// Logic to trigger background compaction/repair
-		}
+	for range *dm {
 	}
 }
 

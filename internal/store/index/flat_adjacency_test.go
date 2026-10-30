@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-
 type appendingApplier struct {
 	val uint32
 }

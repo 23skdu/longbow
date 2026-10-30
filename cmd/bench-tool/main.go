@@ -224,7 +224,7 @@ func main() {
 
 			var uploader *StreamUploader
 			for i := 0; i < numRecords; i++ {
-				record, err := reader.Record(i)
+				record, err := reader.RecordBatch(i)
 				if err != nil {
 					log.Fatalf("Failed to read record %d: %v", i, err)
 				}
@@ -357,7 +357,7 @@ func main() {
 		}
 		type chunkOutput struct {
 			index  int
-			rec    arrow.Record
+			rec    arrow.RecordBatch
 			schema *arrow.Schema
 			err    error
 		}
@@ -402,7 +402,7 @@ func main() {
 		// Check for generation-only mode (saving to file) — must pre-generate
 		if *outputArrow != "" || *outputFbin != "" {
 			var genSchema *arrow.Schema
-			preGenerated := make([]arrow.Record, 0, numChunks)
+			preGenerated := make([]arrow.RecordBatch, 0, numChunks)
 
 			for idx := 0; idx < numChunks; idx++ {
 				out := <-chunkChans[idx]
@@ -896,7 +896,7 @@ func newStreamUploader(sc *client.SmartClient, dataset string, schema *arrow.Sch
 	}, nil
 }
 
-func (u *StreamUploader) Write(record arrow.Record) error {
+func (u *StreamUploader) Write(record arrow.RecordBatch) error {
 	return u.writer.Write(record)
 }
 
@@ -932,7 +932,7 @@ func downloadBatch(ctx context.Context, sc *client.SmartClient, dataset string) 
 
 		var total int64
 		for reader.Next() {
-			total += reader.Record().NumRows()
+			total += reader.RecordBatch().NumRows()
 		}
 		err = reader.Err()
 		// reader does not have Release
@@ -1177,7 +1177,7 @@ func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) ([
 	var hits []searchHit
 	// reader does not have Release
 	for reader.Next() {
-		hits = append(hits, collectSearchHits(reader.Record())...)
+		hits = append(hits, collectSearchHits(reader.RecordBatch())...)
 	}
 	return hits, reader.Err()
 }
@@ -1187,7 +1187,7 @@ func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) ([
 // type second. A record without a recognisable pair contributes nothing: a
 // digest taken over misread columns would look like a reproducibility failure
 // and would be worse than a gap in the digest.
-func collectSearchHits(rec arrow.Record) []searchHit {
+func collectSearchHits(rec arrow.RecordBatch) []searchHit {
 	if rec == nil || rec.NumRows() == 0 {
 		return nil
 	}
@@ -1491,7 +1491,7 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 }
 
 // generateRecord is a multi-type arrow table builder (backward compatible wrapper)
-func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record, *arrow.Schema, error) {
+func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.RecordBatch, *arrow.Schema, error) {
 	// R16: deterministic, unlike the time.Now() seed it replaces.
 	rng := rand.New(rand.NewSource(RunSeed)) // #nosec G404 -- benchmark data, not crypto
 	return generateRecordBatch(rng, 0, count, dim, dtype, tqBits)
@@ -1503,7 +1503,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 // the same corpus hash the same, and a corpus that moved with the scheduler
 // shows up as a different digest instead of as a mysterious search difference
 // (roadmap Item 31).
-func hashRecord(h hash.Hash, rec arrow.Record) error {
+func hashRecord(h hash.Hash, rec arrow.RecordBatch) error {
 	var buf bytes.Buffer
 	w := ipc.NewWriter(&buf, ipc.WithSchema(rec.Schema()))
 	if err := w.Write(rec); err != nil {
@@ -1516,7 +1516,7 @@ func hashRecord(h hash.Hash, rec arrow.Record) error {
 	return err
 }
 
-func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype string, tqBits int) (arrow.Record, *arrow.Schema, error) {
+func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype string, tqBits int) (arrow.RecordBatch, *arrow.Schema, error) {
 	pool := memory.NewGoAllocator()
 	var dt arrow.DataType
 

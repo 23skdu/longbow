@@ -105,7 +105,7 @@ func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend st
 		return 0, nil
 	}
 
-	schemaJSON, err := json.Marshal(ds.Schema)
+	schemaJSON, err := json.Marshal(ds.Schema) //nolint:staticcheck
 	if err != nil {
 		metrics.DatasetExportFailures.WithLabelValues(name).Inc()
 		return 0, fmt.Errorf("failed to marshal schema: %w", err)
@@ -497,7 +497,7 @@ func (d *DatasetIO) ImportFromArrowIPC(ctx context.Context, name string, backend
 
 	ds.dataMu.Lock()
 	for reader.Next() {
-		rec := reader.Record()
+		rec := reader.RecordBatch()
 		if rec == nil {
 			break
 		}

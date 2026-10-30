@@ -24,7 +24,7 @@ type complex64Computer struct {
 }
 
 func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
-	var lastCID int = -1
+	var lastCID = -1
 	var lastChunk []complex64
 
 	for i, id := range ids {
@@ -114,7 +114,7 @@ func (c *complex64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32
 		c.batchVecsF32 = c.batchVecsF32[:len(ids)]
 	}
 
-	var lastCID int = -1
+	var lastCID = -1
 	var lastChunk []complex64
 	for i, id := range ids {
 		cID := int(types.ChunkID(id))
@@ -178,7 +178,7 @@ type complex128Computer struct {
 }
 
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
-	var lastCID int = -1
+	var lastCID = -1
 	var lastChunk []complex128
 
 	for i, id := range ids {
@@ -304,7 +304,7 @@ func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 	// Track which entries need distance computation vs pruning
 	pruned := 0
 
-	var lastCID int = -1
+	var lastCID = -1
 	var lastChunk []complex128
 	for i, id := range ids {
 		// Triangle-inequality pruning: skip if |queryMag - storedMag| > threshold

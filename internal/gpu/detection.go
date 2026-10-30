@@ -484,11 +484,11 @@ func ValidateBackend(backend GPUBackend) error {
 
 	case BackendMetal:
 		if runtime.GOOS != "darwin" {
-			return fmt.Errorf("Metal is only supported on macOS (current: %s)", runtime.GOOS)
+			return fmt.Errorf("metal is only supported on macOS (current: %s)", runtime.GOOS)
 		}
 
 		if _, err := os.Stat("/System/Library/Frameworks/Metal.framework"); os.IsNotExist(err) {
-			return fmt.Errorf("Metal framework not found")
+			return fmt.Errorf("metal framework not found")
 		}
 
 		return nil

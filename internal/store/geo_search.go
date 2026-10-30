@@ -200,8 +200,6 @@ func (gi *GeoIndex) GetVectorIndex() VectorIndex {
 	return gi.ds.Index
 }
 
-
-
 // GetBounds computes and returns the centroid and max radius (in km) covering the index vectors.
 func (gi *GeoIndex) GetBounds() (GeoPoint, float64) {
 	var latSum, lonSum float64
@@ -351,7 +349,7 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 	} else {
 		results = results[:len(candidates)]
 	}
-	defer geoScoredResultPool.Put(results)
+	defer geoScoredResultPool.Put(results) //nolint:staticcheck
 
 	pool := internalcore.GetSharedPool()
 
@@ -362,7 +360,7 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 		} else {
 			distances = distances[:len(candidates)]
 		}
-		defer geoFloat32Pool.Put(distances)
+		defer geoFloat32Pool.Put(distances) //nolint:staticcheck
 
 		pts := geoPointPool.Get().([]lbcore.GeoPoint)
 		if cap(pts) < len(candidates) {
@@ -370,7 +368,7 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 		} else {
 			pts = pts[:len(candidates)]
 		}
-		defer geoPointPool.Put(pts)
+		defer geoPointPool.Put(pts) //nolint:staticcheck
 
 		// Parallel point preparation
 		pool.ParallelFor(len(candidates), 2048, func(start, end int) {
@@ -393,7 +391,7 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 			} else {
 				pointsF32 = pointsF32[:len(candidates)*2]
 			}
-			defer geoFloat32Pool.Put(pointsF32)
+			defer geoFloat32Pool.Put(pointsF32) //nolint:staticcheck
 
 			pool.ParallelFor(len(candidates), 2048, func(start, end int) {
 				for i := start; i < end; i++ {
@@ -592,7 +590,7 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	} else {
 		geoDistances = geoDistances[:len(candidates)]
 	}
-	defer geoFloat32Pool.Put(geoDistances)
+	defer geoFloat32Pool.Put(geoDistances) //nolint:staticcheck
 
 	points := geoFloat32Pool.Get().([]float32)
 	if cap(points) < len(candidates)*2 {
@@ -600,7 +598,7 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	} else {
 		points = points[:len(candidates)*2]
 	}
-	defer geoFloat32Pool.Put(points)
+	defer geoFloat32Pool.Put(points) //nolint:staticcheck
 
 	pool := internalcore.GetSharedPool()
 
@@ -627,7 +625,7 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 			} else {
 				pts = pts[:len(candidates)]
 			}
-			defer geoPointPool.Put(pts)
+			defer geoPointPool.Put(pts) //nolint:staticcheck
 
 			pool.ParallelFor(len(candidates), 2048, func(start, end int) {
 				for i := start; i < end; i++ {
@@ -645,7 +643,7 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 		} else {
 			pts = pts[:len(candidates)]
 		}
-		defer geoPointPool.Put(pts)
+		defer geoPointPool.Put(pts) //nolint:staticcheck
 
 		pool.ParallelFor(len(candidates), 2048, func(start, end int) {
 			for i := start; i < end; i++ {
@@ -663,7 +661,7 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	} else {
 		results = results[:len(candidates)]
 	}
-	defer geoScoredResultPool.Put(results)
+	defer geoScoredResultPool.Put(results) //nolint:staticcheck
 
 	pool = internalcore.GetSharedPool()
 
@@ -748,5 +746,3 @@ func (gi *GeoIndex) Delete(id uint64) {
 
 	gi.nearestCache.Store(&sync.Map{})
 }
-
-

@@ -49,7 +49,7 @@ func TestCoverage_NestedFieldResolution(t *testing.T) {
 	})
 
 	t.Run("ResolveFilterColumn", func(t *testing.T) {
-		rec := array.NewRecord(schema, []arrow.Array{arr}, 1)
+		rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 1)
 		defer rec.Release()
 
 		indices, col, err := resolveFilterColumn(*schema, rec, "nested.b.c")

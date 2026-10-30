@@ -48,7 +48,7 @@ type Ring struct {
 	sqEntriesCached  uint32
 	cqEntriesCached  uint32
 
-	onSubmit   func(opcode uint8)
+	onSubmit func(opcode uint8)
 }
 
 // NewRing creates a new io_uring instance

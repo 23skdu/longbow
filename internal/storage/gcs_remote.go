@@ -107,10 +107,6 @@ func (g *GCSRemoteStorage) Delete(ctx context.Context, key string) error {
 	obj := g.bucket.Object(key)
 	err := obj.Delete(ctx)
 	if err != nil {
-		if errors.Is(err, storage.ErrObjectNotExist) {
-			// Some interfaces consider deleting a non-existent object as a success, some as error.
-			// Let's pass the error up for standard behavior, but it could be ignored depending on caller.
-		}
 		status = "error"
 		return err
 	}

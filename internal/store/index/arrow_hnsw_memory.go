@@ -189,10 +189,7 @@ func (h *ArrowHNSW) ensureChunksLocked(startCID, endCID int, dims int) (*types.G
 	if data != nil {
 		data.AcquireReader()
 	}
-	needsGrow := false
-	if data == nil || (endCID+1)*types.ChunkSize > data.Capacity {
-		needsGrow = true
-	}
+	needsGrow := data == nil || (endCID+1)*types.ChunkSize > data.Capacity
 
 	if needsGrow {
 		newCap := (endCID + 1) * types.ChunkSize

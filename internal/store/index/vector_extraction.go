@@ -254,13 +254,7 @@ func (h *ArrowHNSW) getVectorWithCachedDisk(data *types.GraphData, dg *DiskGraph
 func (h *ArrowHNSW) mustGetVectorFromData(data *types.GraphData, id uint32) any {
 	vec, err := h.getVectorWithData(data, id)
 	if err != nil || vec == nil {
-		if id < 100 {
-		}
 		return nil
-	}
-	if id == 1 {
-		if v, ok := vec.([]float32); ok && len(v) >= 4 {
-		}
 	}
 	return vec
 }

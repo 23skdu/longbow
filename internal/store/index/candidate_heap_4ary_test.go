@@ -595,4 +595,3 @@ func TestCandidateHeapAdapter_InsertOrReplace(t *testing.T) {
 		})
 	}
 }
-

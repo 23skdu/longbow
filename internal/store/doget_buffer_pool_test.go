@@ -249,7 +249,7 @@ func TestPooledFlightWriter_RoundTripReadable(t *testing.T) {
 	total := int64(0)
 	batches := 0
 	for rdr.Next() {
-		out := rdr.Record()
+		out := rdr.RecordBatch()
 		total += out.NumRows()
 		batches++
 	}

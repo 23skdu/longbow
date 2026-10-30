@@ -11,7 +11,7 @@ import (
 // TestComprehensiveDistances tests all distance functions for all supported data types
 // to reach the >95% coverage requirement for the 0.1.9 release.
 func TestComprehensiveDistances(t *testing.T) {
-	rand.Seed(42)
+	rand.Seed(42) //nolint:staticcheck
 	dims := 128
 
 	t.Run("Float32", func(t *testing.T) {
@@ -301,7 +301,7 @@ func TestSIMDBitops(t *testing.T) {
 }
 
 func TestSIMDCentroidAndMatch(t *testing.T) {
-	rand.Seed(42)
+	rand.Seed(42) //nolint:staticcheck
 	dims := 128
 
 	t.Run("FindNearestCentroid", func(t *testing.T) {

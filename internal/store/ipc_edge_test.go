@@ -37,7 +37,7 @@ func TestStore_IPCEmptyRecords(t *testing.T) {
 	// Test Case 2: Record with zero rows
 	b := array.NewRecordBuilder(mem, schema)
 	defer b.Release()
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	err = s.StoreRecordBatch(ctx, "test_empty", rec)

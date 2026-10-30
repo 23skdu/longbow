@@ -141,9 +141,9 @@ func (t *NUMATopology) String() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%d NUMA nodes:\n", t.NumNodes))
+	fmt.Fprintf(&sb, "%d NUMA nodes:\n", t.NumNodes)
 	for i, cpus := range t.CPUs {
-		sb.WriteString(fmt.Sprintf("  Node %d: CPUs %v\n", i, cpus))
+		fmt.Fprintf(&sb, "  Node %d: CPUs %v\n", i, cpus)
 	}
 	return sb.String()
 }

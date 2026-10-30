@@ -48,8 +48,5 @@ func IsNotFoundError(err error) bool {
 		return false
 	}
 	var nfe *NotFoundError
-	if errors.As(err, &nfe) {
-		return true
-	}
-	return false
+	return errors.As(err, &nfe)
 }

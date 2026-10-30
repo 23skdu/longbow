@@ -1320,7 +1320,6 @@ const (
 	vecTypeC128 = C.VectorTypeGPU(3)
 )
 
-
 func (idx *MetalIndexOptimized) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	if len(vectors) == 0 {
 		return nil, nil, nil
@@ -1466,7 +1465,6 @@ func (idx *MetalIndexOptimized) EncodePQ(vectors []float32) ([]byte, error) {
 func (idx *MetalIndexOptimized) GetUtilization() (float32, error) {
 	return 50.0, nil
 }
-
 
 func (idx *MetalIndexOptimized) Sync() error {
 	return nil

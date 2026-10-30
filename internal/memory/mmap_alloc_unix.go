@@ -5,7 +5,6 @@ package memory
 
 import (
 	"os"
-	"reflect"
 	"strconv"
 	"sync/atomic"
 	"unsafe"
@@ -97,12 +96,7 @@ func (a *OffHeapAllocator) Allocated() int64 {
 
 // CastToSlice converts a pointer and length to a byte slice without allocation.
 func CastToSlice(ptr unsafe.Pointer, length int) []byte {
-	var sl []byte
-	header := (*reflect.SliceHeader)(unsafe.Pointer(&sl)) // #nosec G103
-	header.Data = uintptr(ptr)
-	header.Len = length
-	header.Cap = length
-	return sl
+	return unsafe.Slice((*byte)(ptr), length)
 }
 
 // Mmap maps a file into memory.

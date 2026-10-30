@@ -62,8 +62,8 @@ func TestRecordEvictionManager_PointerIdentity(t *testing.T) {
 	defer arr.Release() //nolint:gocritic // cleanup needed per iteration
 
 	schema := arrow.NewSchema([]arrow.Field{{Name: "vec", Type: arrow.PrimitiveTypes.Float32}}, nil)
-	rec := array.NewRecord(schema, []arrow.Array{arr}, 2) //nolint:staticcheck // arrow.Record is internal
-	defer rec.Release()                                   //nolint:gocritic // cleanup needed per iteration
+	rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 2) //nolint:staticcheck // arrow.RecordBatch is internal
+	defer rec.Release()                                        //nolint:gocritic // cleanup needed per iteration
 
 	// Register with TTL
 	mgr.Register(rec, 1*time.Hour)
@@ -88,8 +88,8 @@ func TestRecordEvictionManager_EvictExpired(t *testing.T) {
 	defer arr.Release() //nolint:gocritic // cleanup needed per iteration
 
 	schema := arrow.NewSchema([]arrow.Field{{Name: "vec", Type: arrow.PrimitiveTypes.Float32}}, nil)
-	rec := array.NewRecord(schema, []arrow.Array{arr}, 1) //nolint:staticcheck
-	defer rec.Release()                                   //nolint:gocritic // cleanup needed per iteration
+	rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 1) //nolint:staticcheck
+	defer rec.Release()                                        //nolint:gocritic // cleanup needed per iteration
 
 	// Register with short TTL
 	mgr.Register(rec, 50*time.Millisecond)
@@ -135,7 +135,7 @@ func TestRecordEvictionManager_LRU_SelectVictims(t *testing.T) {
 	mgr := NewRecordEvictionManager()
 
 	mem := memory.NewGoAllocator()
-	recs := make([]arrow.Record, 0, 5) //nolint:prealloc,staticcheck
+	recs := make([]arrow.RecordBatch, 0, 5) //nolint:prealloc,staticcheck
 
 	// Create 5 records with staggered access times
 	for i := 0; i < 5; i++ {
@@ -145,8 +145,8 @@ func TestRecordEvictionManager_LRU_SelectVictims(t *testing.T) {
 		defer arr.Release() //nolint:gocritic // cleanup needed per iteration
 
 		schema := arrow.NewSchema([]arrow.Field{{Name: "vec", Type: arrow.PrimitiveTypes.Float32}}, nil)
-		rec := array.NewRecord(schema, []arrow.Array{arr}, 1) //nolint:staticcheck
-		defer rec.Release()                                   //nolint:gocritic // cleanup needed per iteration
+		rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 1) //nolint:staticcheck
+		defer rec.Release()                                        //nolint:gocritic // cleanup needed per iteration
 
 		mgr.Register(rec, 0) // No TTL
 		recs = append(recs, rec)
@@ -199,7 +199,7 @@ func TestRecordEvictionManager_LFU_SelectVictims(t *testing.T) {
 	mgr := NewRecordEvictionManager()
 
 	mem := memory.NewGoAllocator()
-	recs := make([]arrow.Record, 0, 5) //nolint:prealloc,staticcheck
+	recs := make([]arrow.RecordBatch, 0, 5) //nolint:prealloc,staticcheck
 
 	// Create 5 records with different access frequencies
 	for i := 0; i < 5; i++ {
@@ -209,8 +209,8 @@ func TestRecordEvictionManager_LFU_SelectVictims(t *testing.T) {
 		defer arr.Release() //nolint:gocritic // cleanup needed per iteration
 
 		schema := arrow.NewSchema([]arrow.Field{{Name: "vec", Type: arrow.PrimitiveTypes.Float32}}, nil)
-		rec := array.NewRecord(schema, []arrow.Array{arr}, 1) //nolint:staticcheck
-		defer rec.Release()                                   //nolint:gocritic // cleanup needed per iteration
+		rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 1) //nolint:staticcheck
+		defer rec.Release()                                        //nolint:gocritic // cleanup needed per iteration
 
 		mgr.Register(rec, 0)
 		recs = append(recs, rec)
@@ -276,8 +276,8 @@ func TestRecordEvictionManager_Metrics(t *testing.T) {
 	defer arr.Release() //nolint:gocritic // cleanup needed per iteration
 
 	schema := arrow.NewSchema([]arrow.Field{{Name: "vec", Type: arrow.PrimitiveTypes.Float32}}, nil)
-	rec := array.NewRecord(schema, []arrow.Array{arr}, 1) //nolint:staticcheck
-	defer rec.Release()                                   //nolint:gocritic // cleanup needed per iteration
+	rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 1) //nolint:staticcheck
+	defer rec.Release()                                        //nolint:gocritic // cleanup needed per iteration
 
 	mgr.Register(rec, 10*time.Millisecond)
 	time.Sleep(50 * time.Millisecond)
@@ -312,8 +312,8 @@ func TestDataset_PerRecordEviction(t *testing.T) {
 		defer arr.Release() //nolint:gocritic // cleanup needed per iteration
 
 		schema := arrow.NewSchema([]arrow.Field{{Name: "vec", Type: arrow.PrimitiveTypes.Float32}}, nil)
-		rec := array.NewRecord(schema, []arrow.Array{arr}, 1) //nolint:staticcheck
-		defer rec.Release()                                   //nolint:gocritic // cleanup needed per iteration
+		rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 1) //nolint:staticcheck
+		defer rec.Release()                                        //nolint:gocritic // cleanup needed per iteration
 
 		// First record: short TTL, others: long TTL
 		ttl := 1 * time.Hour

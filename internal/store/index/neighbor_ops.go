@@ -291,8 +291,7 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 	countsChunk := data.GetCountsChunk(layer, cID)
 	neighborsChunk := data.GetNeighborsChunk(layer, cID)
 
-	var currentNeighbors []uint32
-	currentNeighbors = h.GetNeighborsCombinedManualLocked(data, layer, source, ctx.neighborBatch, math.MaxUint64)
+	currentNeighbors := h.GetNeighborsCombinedManualLocked(data, layer, source, ctx.neighborBatch, math.MaxUint64)
 
 	for _, n := range currentNeighbors {
 		if n == target {

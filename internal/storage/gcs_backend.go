@@ -37,7 +37,7 @@ func NewGCSBackend(ctx context.Context, cfg *GCSBackendConfig) (SnapshotBackend,
 
 	var opts []option.ClientOption
 	if cfg.CredentialsFile != "" {
-		opts = append(opts, option.WithCredentialsFile(cfg.CredentialsFile))
+		opts = append(opts, option.WithCredentialsFile(cfg.CredentialsFile)) //nolint:staticcheck
 	}
 
 	client, err := storage.NewClient(ctx, opts...)

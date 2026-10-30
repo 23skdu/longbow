@@ -45,7 +45,7 @@ func TestDatasetIO_ExportImportParquet(t *testing.T) {
 
 	b.Field(2).(*array.BinaryBuilder).AppendValues([][]byte{[]byte("m1"), []byte("m2"), []byte("m3")}, nil)
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	// Setup VectorStore and Dataset

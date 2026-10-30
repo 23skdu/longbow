@@ -362,7 +362,7 @@ func ParseGeoPoint(data []byte, pos int, point *core.GeoPoint) (int, error) {
 		pos = newPos
 		pos = SkipWhitespace(data, pos)
 		if data[pos] != ':' {
-			return pos, errors.New("expected :")
+			return pos, errors.New("expected colon")
 		}
 		pos++
 		pos = SkipWhitespace(data, pos)
@@ -420,7 +420,7 @@ func ParseGeoBoundingBox(data []byte, pos int, box *core.GeoBoundingBox) (int, e
 		pos = newPos
 		pos = SkipWhitespace(data, pos)
 		if data[pos] != ':' {
-			return pos, errors.New("expected :")
+			return pos, errors.New("expected colon")
 		}
 		pos++
 		pos = SkipWhitespace(data, pos)
@@ -1049,7 +1049,7 @@ func ParseWindowFunctionShared(data []byte, pos int) (core.WindowFunction, int, 
 		pos = newPos
 		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] != ':' {
-			return wf, pos, errors.New("expected :")
+			return wf, pos, errors.New("expected colon")
 		}
 		pos++
 		pos = SkipWhitespace(data, pos)
@@ -1117,7 +1117,7 @@ func ParseWindowSpecShared(data []byte, pos int) (core.WindowSpec, int, error) {
 		pos = newPos
 		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] != ':' {
-			return spec, pos, errors.New("expected :")
+			return spec, pos, errors.New("expected colon")
 		}
 		pos++
 		pos = SkipWhitespace(data, pos)
@@ -1211,7 +1211,7 @@ func ParseWindowOrderShared(data []byte, pos int) (core.WindowOrder, int, error)
 		pos = newPos
 		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] != ':' {
-			return order, pos, errors.New("expected :")
+			return order, pos, errors.New("expected colon")
 		}
 		pos++
 		pos = SkipWhitespace(data, pos)

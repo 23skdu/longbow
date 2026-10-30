@@ -282,7 +282,7 @@ func (rm *RingManager) RouteTemporal(dataset string, startTime, endTime int64) [
 
 	var matchedNodes []string
 	for nodeID, bounds := range boundsMap {
-		if !(bounds.Max < startTime || bounds.Min > endTime) {
+		if bounds.Max >= startTime && bounds.Min <= endTime {
 			matchedNodes = append(matchedNodes, nodeID)
 		}
 	}

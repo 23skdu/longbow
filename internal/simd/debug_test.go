@@ -10,7 +10,7 @@ import (
 )
 
 func TestDebugInt32(t *testing.T) {
-	rand.Seed(42)
+	rand.Seed(42) //nolint:staticcheck
 	for _, d := range []int{4, 8, 16} {
 		a := make([]int32, d)
 		b := make([]int32, d)

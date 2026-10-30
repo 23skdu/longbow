@@ -47,7 +47,7 @@ func TestQuery_EvaluatorBranches(t *testing.T) {
 
 	metaBld.Append(false) // NULL meta
 
-	rec := bld.NewRecord()
+	rec := bld.NewRecordBatch()
 	defer rec.Release()
 
 	t.Run("NestedResolution_Depth", func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestQuery_ProjectionApply(t *testing.T) {
 	bld := array.NewRecordBuilder(pool, schema)
 	defer bld.Release()
 	bld.Field(0).(*array.Int32Builder).AppendValues([]int32{1, 2}, nil)
-	rec := bld.NewRecord()
+	rec := bld.NewRecordBatch()
 	defer rec.Release()
 
 	proj, err := NewProjection(schema, []string{"a"})

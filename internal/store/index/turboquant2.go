@@ -69,7 +69,7 @@ func (e *TurboQuant2Encoder) Pow2() int {
 // PackedSizeBytes returns the encoded byte length for a vector:
 // [4 bytes radius] + [(pow2-1)*2 / 8 bytes angles] + [pow2 / 8 bytes residuals].
 func (e *TurboQuant2Encoder) PackedSizeBytes() int {
-	angleBytes := ((e.pow2 - 1) * 2 + 7) / 8
+	angleBytes := ((e.pow2-1)*2 + 7) / 8
 	residualBytes := (e.pow2 + 7) / 8
 	return 4 + angleBytes + residualBytes
 }
@@ -286,7 +286,6 @@ func (e *TurboQuant2Encoder) polarTransform(vec []float32, angles []float32, sta
 	simd.GetTurboQuantPolarTransformFunc()(vec, nextRadii, angles[:n/2])
 	return e.polarTransform(nextRadii, angles[n/2:], stack)
 }
-
 
 func (e *TurboQuant2Encoder) polarReconstructFromCodes(radius float32, codes []byte, dst []float32, stack []float32) {
 	n := len(dst)

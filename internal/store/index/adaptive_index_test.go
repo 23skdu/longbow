@@ -43,7 +43,7 @@ func TestAdaptiveIndex(t *testing.T) {
 	valBuilder.AppendValues([]float32{0, 1, 0, 0}, nil)
 	listBuilder.Append(true)
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	ds.Records = append(ds.Records, rec)
 
 	// 2. Initialize AdaptiveIndex with low threshold

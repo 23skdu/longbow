@@ -30,7 +30,7 @@ func NewProjection(schema *arrow.Schema, columns []string) (*Projection, error) 
 	return &Projection{Columns: validColumns, schema: schema}, nil
 }
 
-func (p *Projection) Apply(rec arrow.Record) (arrow.Record, error) {
+func (p *Projection) Apply(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	if p == nil || len(p.Columns) == 0 {
 		return rec, nil
 	}
@@ -57,7 +57,7 @@ func (p *Projection) Apply(rec arrow.Record) (arrow.Record, error) {
 	}
 
 	newSchema := arrow.NewSchema(newFields, nil)
-	record := array.NewRecord(newSchema, newCols, numRows)
+	record := array.NewRecordBatch(newSchema, newCols, numRows)
 	record.Retain()
 
 	return record, nil
@@ -121,7 +121,7 @@ func NewProjectionEvaluator(proj *Projection, schema *arrow.Schema) (*Projection
 	}, nil
 }
 
-func (pe *ProjectionEvaluator) ApplyToRecord(rec arrow.Record) (arrow.Record, error) {
+func (pe *ProjectionEvaluator) ApplyToRecord(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	if pe.proj == nil || len(pe.proj.Columns) == 0 {
 		return rec, nil
 	}
@@ -140,7 +140,7 @@ func (pe *ProjectionEvaluator) ApplyToRecord(rec arrow.Record) (arrow.Record, er
 	}
 
 	newSchema := arrow.NewSchema(newFields, nil)
-	record := array.NewRecord(newSchema, newCols, numRows)
+	record := array.NewRecordBatch(newSchema, newCols, numRows)
 	record.Retain()
 
 	return record, nil
@@ -171,7 +171,7 @@ func (pe *ProjectionEvaluator) ApplyToBatch(rec arrow.RecordBatch) (arrow.Record
 	return batch, nil
 }
 
-func ProjectRecord(mem memory.Allocator, rec arrow.Record, columns []string) (arrow.Record, error) {
+func ProjectRecord(mem memory.Allocator, rec arrow.RecordBatch, columns []string) (arrow.RecordBatch, error) {
 	if len(columns) == 0 {
 		return rec, nil
 	}
@@ -199,7 +199,7 @@ func ProjectRecord(mem memory.Allocator, rec arrow.Record, columns []string) (ar
 	}
 
 	newSchema := arrow.NewSchema(newFields, nil)
-	newRecord := array.NewRecord(newSchema, newCols, numRows)
+	newRecord := array.NewRecordBatch(newSchema, newCols, numRows)
 	newRecord.Retain()
 
 	return newRecord, nil

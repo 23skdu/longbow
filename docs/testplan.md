@@ -41,7 +41,6 @@ Longbow maintains two primary validation environments:
 | **Go Runtime** | Go 1.27.1 with CGO enabled |
 | **Role** | Production AVX-512 kernel validation, EMLGo parity, high-concurrency scaling (8+ workers, unpinned) |
 
-
 ---
 
 ## 3. Test Configuration Matrix
@@ -204,7 +203,6 @@ Profiling on AVX-512 hardware revealed key architectural hotspots that guide opt
 
 ---
 
-
 ## 5. Regression Analysis & Acceptance Criteria
 
 - **Regression Threshold**: Performance drops exceeding **10%** compared to the baseline require root-cause analysis.
@@ -304,7 +302,6 @@ Note what this does *not* excuse: it excuses a delta whose magnitude is inside
 the spread. A TurboQuant QPS row that was 4× too high while the graph was 92%
 unreachable is not noise, and no number of reps would have hidden it. Reachability
 and recall are the checks that catch a fast-but-wrong build, and they are exact.
-
 
 ---
 

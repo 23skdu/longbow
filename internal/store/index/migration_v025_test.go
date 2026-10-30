@@ -65,7 +65,7 @@ func TestArrowHNSW_SharedVectorSpace_Integration(t *testing.T) {
 		vValBuilder.AppendValues([]float32{3.0, 4.0}, nil)
 		idBuilder.Append(2)
 
-		rec := b.NewRecord()
+		rec := b.NewRecordBatch()
 		defer rec.Release()
 
 		provider := &MockProvider{recs: []arrow.RecordBatch{rec}}
@@ -136,7 +136,7 @@ func TestArrowHNSW_RelocateToOffHeap_Full(t *testing.T) {
 		vValBuilder.AppendValues(vec, nil)
 		idBuilder.Append(int64(i))
 	}
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	provider := &MockProvider{recs: []arrow.RecordBatch{rec}}

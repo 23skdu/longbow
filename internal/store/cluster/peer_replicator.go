@@ -59,7 +59,7 @@ type PeerReplicationResult struct {
 // ReplicationTask represents an async replication task
 type ReplicationTask struct {
 	Dataset string
-	Record  arrow.Record //nolint:staticcheck
+	Record  arrow.RecordBatch //nolint:staticcheck
 	Ctx     context.Context
 }
 
@@ -139,7 +139,7 @@ func (r *PeerReplicator) GetCircuitBreaker(peerID string) *CircuitBreaker {
 // ReplicateRecord replicates a record to all peers synchronously
 //
 //nolint:staticcheck
-func (r *PeerReplicator) ReplicateRecord(ctx context.Context, dataset string, record arrow.Record) []PeerReplicationResult {
+func (r *PeerReplicator) ReplicateRecord(ctx context.Context, dataset string, record arrow.RecordBatch) []PeerReplicationResult {
 	peers := r.GetPeers()
 	results := make([]PeerReplicationResult, 0, len(peers))
 
@@ -164,7 +164,7 @@ func (r *PeerReplicator) ReplicateRecord(ctx context.Context, dataset string, re
 // replicateToPeer handles replication to a single peer with retry and circuit breaker
 //
 //nolint:staticcheck
-func (r *PeerReplicator) replicateToPeer(ctx context.Context, peer *ReplicatorPeerInfo, dataset string, record arrow.Record) PeerReplicationResult {
+func (r *PeerReplicator) replicateToPeer(ctx context.Context, peer *ReplicatorPeerInfo, dataset string, record arrow.RecordBatch) PeerReplicationResult {
 	start := time.Now()
 	result := PeerReplicationResult{
 		PeerID: peer.ID,
@@ -226,7 +226,7 @@ func (r *PeerReplicator) replicateToPeer(ctx context.Context, peer *ReplicatorPe
 // sendToPeer performs the actual Arrow Flight DoPut to a peer
 //
 //nolint:staticcheck
-func (r *PeerReplicator) sendToPeer(ctx context.Context, peer *ReplicatorPeerInfo, dataset string, record arrow.Record) error {
+func (r *PeerReplicator) sendToPeer(ctx context.Context, peer *ReplicatorPeerInfo, dataset string, record arrow.RecordBatch) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, r.config.Timeout)
 	defer cancel()
 
@@ -270,7 +270,7 @@ func (r *PeerReplicator) sendToPeer(ctx context.Context, peer *ReplicatorPeerInf
 // ReplicateWithQuorum replicates to peers and waits for quorum
 //
 //nolint:staticcheck
-func (r *PeerReplicator) ReplicateWithQuorum(ctx context.Context, dataset string, record arrow.Record) []PeerReplicationResult {
+func (r *PeerReplicator) ReplicateWithQuorum(ctx context.Context, dataset string, record arrow.RecordBatch) []PeerReplicationResult {
 	peers := r.GetPeers()
 	results := make([]PeerReplicationResult, 0, len(peers))
 
@@ -343,7 +343,7 @@ func (r *PeerReplicator) asyncWorker() {
 }
 
 // ReplicateAsync queues a record for async replication
-func (r *PeerReplicator) ReplicateAsync(ctx context.Context, dataset string, record arrow.Record) bool { //nolint:staticcheck
+func (r *PeerReplicator) ReplicateAsync(ctx context.Context, dataset string, record arrow.RecordBatch) bool { //nolint:staticcheck
 	task := ReplicationTask{
 		Dataset: dataset,
 		Record:  record,

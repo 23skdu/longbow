@@ -325,7 +325,7 @@ func (idx *IVFHNSWCompositeIndex) SearchVectorsWithBitmap(ctx context.Context, q
 
 	// 2. Build ADC table for OPQ
 	rotatedQuery := idx.opqEncoder.RotateVector(queryVec)
-	adt, err := idx.opqEncoder.PQEncoder.BuildADCTable(rotatedQuery)
+	adt, err := idx.opqEncoder.BuildADCTable(rotatedQuery)
 	if err != nil {
 		return nil, err
 	}

@@ -93,7 +93,6 @@ type candidateResult struct {
 	index    int // Original position in GPU results
 }
 
-
 // deduplicateCandidates removes duplicate vector IDs from candidates
 // Returns unique candidates preserving best (lowest) distances
 func deduplicateCandidates(candidates []candidateResult) []candidateResult {

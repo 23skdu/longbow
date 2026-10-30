@@ -159,10 +159,10 @@ type ArrowHNSW struct {
 	levelMultiplier   float64
 
 	// Graph Navigation
-	navigator     *GraphNavigator
-	tqDecodeCache atomic.Pointer[tqDecodeCache]  // pre-decoded TQ vectors (non-nil during batch insert for fast construction)
-	tqArena       atomic.Pointer[TQScratchArena] // ephemeral chunked scratch arena for caching reconstructed vectors during indexing
-	gpuTrained    atomic.Bool
+	navigator      *GraphNavigator
+	tqDecodeCache  atomic.Pointer[tqDecodeCache]  // pre-decoded TQ vectors (non-nil during batch insert for fast construction)
+	tqArena        atomic.Pointer[TQScratchArena] // ephemeral chunked scratch arena for caching reconstructed vectors during indexing
+	gpuTrained     atomic.Bool
 	topo           *memory.NUMATopology
 	efTuner        *PIDTuner
 	multiCentroids *MultiCentroidTracker
@@ -486,8 +486,6 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	return h
 }
 
-
-
 // SetDisableNodeCountMetric prevents this ArrowHNSW from reporting HNSWNodeCount.
 func (h *ArrowHNSW) SetDisableNodeCountMetric(disable bool) {
 	h.disableNodeCountMetric.Store(disable)
@@ -698,8 +696,6 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 	return total + locMemory
 }
 
-
-
 // RemapLocations updates the vector ID to location mapping.
 func (h *ArrowHNSW) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
 	if h.locationStore == nil {
@@ -733,4 +729,3 @@ func (h *ArrowHNSW) RelocateToOffHeap() error {
 	}
 	return gd.RelocateToOffHeap()
 }
-

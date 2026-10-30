@@ -86,7 +86,6 @@ func (g *GraphData) GetVectorsChunkBasePtrWithGen(chunkID int, maxGen uint64) (u
 	return nil, 0
 }
 
-
 // GetVectorsTQChunkFast returns a TurboQuant chunk using a non-atomic offset read.
 func (g *GraphData) GetVectorsTQChunkFast(chunkID int) []byte {
 	if chunkID < len(g.VectorsTQ) && g.Uint8Arena != nil {

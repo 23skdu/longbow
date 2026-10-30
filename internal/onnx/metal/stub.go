@@ -30,22 +30,22 @@ func NewEngine() (*Engine, error) {
 
 // LoadModel returns an error on non-Metal platforms
 func (e *Engine) LoadModel(path string) error {
-	return errors.New("Metal not available on this platform")
+	return errors.New("metal not available on this platform")
 }
 
 // Score returns an error on non-Metal platforms
 func (e *Engine) Score(ctx context.Context, query string, documents []string) ([]float32, error) {
-	return nil, errors.New("Metal not available on this platform")
+	return nil, errors.New("metal not available on this platform")
 }
 
 // ScoreBatch returns an error on non-Metal platforms
 func (e *Engine) ScoreBatch(ctx context.Context, queries, documents []string) ([][]float32, error) {
-	return nil, errors.New("Metal not available on this platform")
+	return nil, errors.New("metal not available on this platform")
 }
 
 // Embed returns an error on non-Metal platforms
 func (e *Engine) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	return nil, errors.New("Metal not available on this platform")
+	return nil, errors.New("metal not available on this platform")
 }
 
 // Warmup is a no-op on non-Metal platforms
@@ -55,7 +55,7 @@ func (e *Engine) Warmup() error {
 
 // ModelInfo returns an error on non-Metal platforms
 func (e *Engine) ModelInfo() (*ModelInfo, error) {
-	return nil, errors.New("Metal not available on this platform")
+	return nil, errors.New("metal not available on this platform")
 }
 
 // Close is a no-op on non-Metal platforms

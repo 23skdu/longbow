@@ -255,11 +255,11 @@ func testScalarAccessors() error {
 
 	v10 := atFloat64(t, 0, 0)
 	if v10 != 10.0 {
-		return fmt.Errorf("At(0,0) failed: got %v", v10)
+		return fmt.Errorf("at(0,0) failed: got %v", v10)
 	}
 	v40 := atFloat64(t, 1, 1)
 	if v40 != 40.0 {
-		return fmt.Errorf("At(1,1) failed: got %v", v40)
+		return fmt.Errorf("at(1,1) failed: got %v", v40)
 	}
 	return nil
 }
@@ -291,7 +291,7 @@ func testIndexLabels() error {
 	t := tensor.New(tensor.DtypeFloat32, tensor.Shape{2, 3})
 	t.SetLabels([]string{"i", "j"})
 	if len(t.Labels()) != 2 || t.Labels()[0] != "i" || t.Labels()[1] != "j" {
-		return fmt.Errorf("Labels mismatch: %v", t.Labels())
+		return fmt.Errorf("labels mismatch: %v", t.Labels())
 	}
 	return nil
 }
@@ -306,22 +306,22 @@ func testElementwiseBinary() error {
 
 	sum, err := tensor.Add(a, b)
 	if err != nil || sum.Float32s()[0] != 11.0 {
-		return fmt.Errorf("Add failed: %v", err)
+		return fmt.Errorf("add failed: %v", err)
 	}
 
 	prod, err := tensor.Mul(a, b)
 	if err != nil || prod.Float32s()[0] != 10.0 || prod.Float32s()[3] != 40.0 {
-		return fmt.Errorf("Mul failed: %v", err)
+		return fmt.Errorf("mul failed: %v", err)
 	}
 
 	diff, err := tensor.Sub(b, a)
 	if err != nil || diff.Float32s()[0] != 9.0 {
-		return fmt.Errorf("Sub failed: %v", err)
+		return fmt.Errorf("sub failed: %v", err)
 	}
 
 	div, err := tensor.Div(b, a)
 	if err != nil || div.Float32s()[0] != 10.0 {
-		return fmt.Errorf("Div failed: %v", err)
+		return fmt.Errorf("div failed: %v", err)
 	}
 	return nil
 }
@@ -358,15 +358,15 @@ func testElementwiseUnary() error {
 
 	sinT, err := tensor.Sin(t)
 	if err != nil {
-		return fmt.Errorf("Sin failed: %v", err)
+		return fmt.Errorf("sin failed: %v", err)
 	}
 	if math.Abs(float64(sinT.Float32s()[0])) > 1e-4 || math.Abs(float64(sinT.Float32s()[1]-1.0)) > 1e-4 || math.Abs(float64(sinT.Float32s()[2])) > 1e-4 {
-		return fmt.Errorf("Sin output mismatch: %v", sinT.Float32s())
+		return fmt.Errorf("sin output mismatch: %v", sinT.Float32s())
 	}
 
 	expT, err := tensor.Exp(tensor.New(tensor.DtypeFloat32, tensor.Shape{1}))
 	if err != nil || math.Abs(float64(expT.Float32s()[0]-1.0)) > 1e-4 {
-		return fmt.Errorf("Exp(0) != 1.0: %v", err)
+		return fmt.Errorf("exp(0) != 1.0: %v", err)
 	}
 	return nil
 }
@@ -377,17 +377,17 @@ func testHyperbolicAndErf() error {
 
 	sinhT, err := tensor.Sinh(t)
 	if err != nil || math.Abs(float64(sinhT.Float32s()[0])) > 1e-4 {
-		return fmt.Errorf("Sinh(0) != 0: %v", err)
+		return fmt.Errorf("sinh(0) != 0: %v", err)
 	}
 
 	coshT, err := tensor.Cosh(t)
 	if err != nil || math.Abs(float64(coshT.Float32s()[0]-1.0)) > 1e-4 {
-		return fmt.Errorf("Cosh(0) != 1: %v", err)
+		return fmt.Errorf("cosh(0) != 1: %v", err)
 	}
 
 	erfT, err := tensor.Erf(t)
 	if err != nil || math.Abs(float64(erfT.Float32s()[0])) > 1e-4 {
-		return fmt.Errorf("Erf(0) != 0: %v", err)
+		return fmt.Errorf("erf(0) != 0: %v", err)
 	}
 	return nil
 }
@@ -400,11 +400,11 @@ func testTensorReductions() error {
 
 	sumAxis0, err := tensor.ReduceSum(t, 0)
 	if err != nil || len(sumAxis0.Float32s()) != 3 {
-		return fmt.Errorf("ReduceSum axis 0 failed: %v", err)
+		return fmt.Errorf("reduceSum axis 0 failed: %v", err)
 	}
 	// [1+4, 2+5, 3+6] = [5, 7, 9]
 	if sumAxis0.Float32s()[0] != 5.0 || sumAxis0.Float32s()[1] != 7.0 || sumAxis0.Float32s()[2] != 9.0 {
-		return fmt.Errorf("ReduceSum axis 0 output mismatch: %v", sumAxis0.Float32s())
+		return fmt.Errorf("reduceSum axis 0 output mismatch: %v", sumAxis0.Float32s())
 	}
 
 	totalSum, err := tensor.ReduceSum(sumAxis0, 0)
@@ -429,7 +429,7 @@ func testMatMul() error {
 
 	c, err := tensor.MatMul(a, b)
 	if err != nil {
-		return fmt.Errorf("MatMul failed: %v", err)
+		return fmt.Errorf("matMul failed: %v", err)
 	}
 	if !shapeEqual(c.Shape(), tensor.Shape{2, 2}) {
 		return fmt.Errorf("expected shape [2, 2], got %v", c.Shape())
@@ -437,7 +437,7 @@ func testMatMul() error {
 	// Each element is 1*2 + 1*2 + 1*2 = 6
 	for _, val := range c.Float32s() {
 		if val != 6.0 {
-			return fmt.Errorf("MatMul expected 6.0, got %f", val)
+			return fmt.Errorf("matMul expected 6.0, got %f", val)
 		}
 	}
 	return nil
@@ -451,15 +451,15 @@ func testDotAndOuter() error {
 
 	dot, err := tensor.Einsum("i,i->", u, v)
 	if err != nil || dot.Float32s()[0] != 32.0 {
-		return fmt.Errorf("Dot product expected 32.0, got %v (err: %v)", dot.Float32s(), err)
+		return fmt.Errorf("dot product expected 32.0, got %v (err: %v)", dot.Float32s(), err)
 	}
 
 	outer, err := tensor.Einsum("i,j->ij", u, v)
 	if err != nil || !shapeEqual(outer.Shape(), tensor.Shape{3, 3}) {
-		return fmt.Errorf("Outer product failed: %v", err)
+		return fmt.Errorf("outer product failed: %v", err)
 	}
 	if outer.Float32s()[0] != 4.0 || outer.Float32s()[8] != 18.0 {
-		return fmt.Errorf("Outer product output mismatch: %v", outer.Float32s())
+		return fmt.Errorf("outer product output mismatch: %v", outer.Float32s())
 	}
 	return nil
 }
@@ -478,7 +478,7 @@ func testTensorContract() error {
 
 	c, err := tensor.TensorContract(a, b, []string{"j"}, []string{"i", "k"})
 	if err != nil {
-		return fmt.Errorf("TensorContract failed: %v", err)
+		return fmt.Errorf("tensorContract failed: %v", err)
 	}
 	if !shapeEqual(c.Shape(), tensor.Shape{2, 4}) {
 		return fmt.Errorf("expected shape [2, 4], got %v", c.Shape())
@@ -501,10 +501,10 @@ func testEinsumMatMul() error {
 
 	c, err := tensor.Einsum("ij,jk->ik", a, b)
 	if err != nil || !shapeEqual(c.Shape(), tensor.Shape{2, 2}) {
-		return fmt.Errorf("Einsum matmul failed: %v", err)
+		return fmt.Errorf("einsum matmul failed: %v", err)
 	}
 	if c.Float32s()[0] != 6.0 {
-		return fmt.Errorf("Einsum matmul expected 6.0, got %f", c.Float32s()[0])
+		return fmt.Errorf("einsum matmul expected 6.0, got %f", c.Float32s()[0])
 	}
 	return nil
 }
@@ -518,7 +518,7 @@ func testEinsumDot() error {
 	}
 	dot, err := tensor.Einsum("i,i->", a, b)
 	if err != nil || dot.Float32s()[0] != 10.0 {
-		return fmt.Errorf("Einsum dot expected 10.0, got %v", dot.Float32s())
+		return fmt.Errorf("einsum dot expected 10.0, got %v", dot.Float32s())
 	}
 	return nil
 }
@@ -531,7 +531,7 @@ func testEinsumOuter() error {
 
 	res, err := tensor.Einsum("i,j->ij", a, b)
 	if err != nil || !shapeEqual(res.Shape(), tensor.Shape{2, 3}) {
-		return fmt.Errorf("Einsum outer failed: %v", err)
+		return fmt.Errorf("einsum outer failed: %v", err)
 	}
 	return nil
 }
@@ -543,7 +543,7 @@ func testEinsumTranspose() error {
 	}
 	at, err := tensor.Einsum("ij->ji", a)
 	if err != nil || !shapeEqual(at.Shape(), tensor.Shape{3, 2}) {
-		return fmt.Errorf("Einsum transpose failed: %v", err)
+		return fmt.Errorf("einsum transpose failed: %v", err)
 	}
 	return nil
 }
@@ -555,7 +555,7 @@ func testEinsumDiagonal() error {
 
 	diag, err := tensor.Einsum("ii->i", a)
 	if err != nil {
-		return fmt.Errorf("Einsum diagonal failed: %v", err)
+		return fmt.Errorf("einsum diagonal failed: %v", err)
 	}
 	if !shapeEqual(diag.Shape(), tensor.Shape{3}) {
 		return fmt.Errorf("expected shape [3], got %v", diag.Shape())
@@ -573,7 +573,7 @@ func testEinsumTrace() error {
 
 	tr, err := tensor.Einsum("ii->", a)
 	if err != nil {
-		return fmt.Errorf("Einsum trace failed: %v", err)
+		return fmt.Errorf("einsum trace failed: %v", err)
 	}
 	if tr.Float32s()[0] != 45.0 {
 		return fmt.Errorf("trace expected 45.0, got %f", tr.Float32s()[0])
@@ -597,7 +597,7 @@ func testEinsumMultiChain() error {
 
 	res, err := tensor.Einsum("ij,jk,kl->il", a, b, c)
 	if err != nil {
-		return fmt.Errorf("Einsum contraction chain failed: %v", err)
+		return fmt.Errorf("einsum contraction chain failed: %v", err)
 	}
 	if !shapeEqual(res.Shape(), tensor.Shape{2, 2}) {
 		return fmt.Errorf("expected shape [2, 2], got %v", res.Shape())
@@ -611,7 +611,7 @@ func testEinsumMultiChain() error {
 func testEinsumOptimizePath() error {
 	op, err := tensor.ParseEinsum("ij,jk,kl->il")
 	if err != nil {
-		return fmt.Errorf("ParseEinsum failed: %v", err)
+		return fmt.Errorf("parseEinsum failed: %v", err)
 	}
 	shapes := []tensor.Shape{{10, 100}, {100, 5}, {5, 50}}
 	path := op.OptimizePath(shapes)
@@ -629,7 +629,7 @@ func testDAGConstruction() error {
 	n3 := tensor.NewContract(inA, inB, []string{"j"}, []string{"i", "k"})
 	g := tensor.NewGraph(n3)
 	if g.Root == nil || !shapeEqual(g.Root.Shape, tensor.Shape{2, 4}) {
-		return fmt.Errorf("DAG contract construction failed: got shape %v", g.Root.Shape)
+		return fmt.Errorf("dAG contract construction failed: got shape %v", g.Root.Shape)
 	}
 	return nil
 }
@@ -647,7 +647,7 @@ func testOptimizerCSE() error {
 	optG := opt.Optimize(g)
 
 	if optG.Root.Children[0] != optG.Root.Children[1] {
-		return fmt.Errorf("CSE failed to identify duplicate subexpression")
+		return fmt.Errorf("cSE failed to identify duplicate subexpression")
 	}
 	return nil
 }
@@ -685,7 +685,7 @@ func testRewriteMulZero() error {
 	opt := tensor.NewOptimizer()
 	g := opt.Optimize(tensor.NewGraph(mul))
 	if g.Root.Kind != tensor.OpConstant {
-		return fmt.Errorf("A * 0 was not rewritten to OpConstant")
+		return fmt.Errorf("a * 0 was not rewritten to OpConstant")
 	}
 	return nil
 }
@@ -698,7 +698,7 @@ func testRewriteAddZero() error {
 	opt := tensor.NewOptimizer()
 	g := opt.Optimize(tensor.NewGraph(add))
 	if g.Root.Kind != tensor.OpInput {
-		return fmt.Errorf("A + 0 was not rewritten to OpInput")
+		return fmt.Errorf("a + 0 was not rewritten to OpInput")
 	}
 	return nil
 }
@@ -724,7 +724,7 @@ func testRewriteDoubleTranspose() error {
 	opt := tensor.NewOptimizer()
 	g := opt.Optimize(tensor.NewGraph(t2))
 	if g.Root.Kind != tensor.OpInput {
-		return fmt.Errorf("T(T(A)) was not rewritten to OpInput")
+		return fmt.Errorf("t(T(A)) was not rewritten to OpInput")
 	}
 	return nil
 }
@@ -732,7 +732,7 @@ func testRewriteDoubleTranspose() error {
 func testLeviCivita3D() error {
 	lc, err := tensor.LeviCivita(3, tensor.DtypeFloat64)
 	if err != nil {
-		return fmt.Errorf("LeviCivita(3) failed: %v", err)
+		return fmt.Errorf("leviCivita(3) failed: %v", err)
 	}
 	if lc.Rank() != 3 || !shapeEqual(lc.Shape(), tensor.Shape{3, 3, 3}) {
 		return fmt.Errorf("invalid shape for 3D Levi-Civita: %v", lc.Shape())
@@ -762,7 +762,7 @@ func testLeviCivita3D() error {
 func testLeviCivita4D() error {
 	lc, err := tensor.LeviCivita(4, tensor.DtypeFloat64)
 	if err != nil {
-		return fmt.Errorf("LeviCivita(4) failed: %v", err)
+		return fmt.Errorf("leviCivita(4) failed: %v", err)
 	}
 	if lc.Rank() != 4 || !shapeEqual(lc.Shape(), tensor.Shape{4, 4, 4, 4}) {
 		return fmt.Errorf("invalid shape for 4D Levi-Civita: %v", lc.Shape())
@@ -798,7 +798,7 @@ func testMetricInversion() error {
 
 	invEta, err := tensor.InvertMetric2D(eta)
 	if err != nil {
-		return fmt.Errorf("InvertMetric2D failed: %v", err)
+		return fmt.Errorf("invertMetric2D failed: %v", err)
 	}
 
 	invF := invEta.Float64s()
@@ -821,7 +821,7 @@ func testIndexRaisingLowering() error {
 
 	pContra, err := tensor.MetricRaise(pCov, invEta, 0)
 	if err != nil {
-		return fmt.Errorf("MetricRaise failed: %v", err)
+		return fmt.Errorf("metricRaise failed: %v", err)
 	}
 	contraF := pContra.Float64s()
 	if contraF[0] != 10.0 || contraF[1] != 1.0 || contraF[2] != 2.0 || contraF[3] != 3.0 {
@@ -830,7 +830,7 @@ func testIndexRaisingLowering() error {
 
 	pLowered, err := tensor.MetricLower(pContra, eta, 0)
 	if err != nil {
-		return fmt.Errorf("MetricLower failed: %v", err)
+		return fmt.Errorf("metricLower failed: %v", err)
 	}
 	loweredF := pLowered.Float64s()
 	if loweredF[0] != -10.0 || loweredF[1] != 1.0 || loweredF[2] != 2.0 || loweredF[3] != 3.0 {
@@ -871,11 +871,11 @@ func testChristoffelFlat() error {
 
 	gamma, err := tensor.ChristoffelSymbols(metric, dG)
 	if err != nil {
-		return fmt.Errorf("ChristoffelSymbols failed: %v", err)
+		return fmt.Errorf("christoffelSymbols failed: %v", err)
 	}
 	for _, v := range gamma.Float64s() {
 		if v != 0 {
-			return fmt.Errorf("Christoffel symbol in flat space must be 0, got %f", v)
+			return fmt.Errorf("christoffel symbol in flat space must be 0, got %f", v)
 		}
 	}
 	return nil
@@ -888,21 +888,21 @@ func testRiemannFlat() error {
 
 	riemann, err := tensor.RiemannCurvature(gamma, dGamma)
 	if err != nil {
-		return fmt.Errorf("RiemannCurvature failed: %v", err)
+		return fmt.Errorf("riemannCurvature failed: %v", err)
 	}
 	for _, v := range riemann.Float64s() {
 		if v != 0 {
-			return fmt.Errorf("Riemann curvature in flat space must be 0, got %f", v)
+			return fmt.Errorf("riemann curvature in flat space must be 0, got %f", v)
 		}
 	}
 
 	ricci, err := tensor.RicciTensor(riemann)
 	if err != nil {
-		return fmt.Errorf("RicciTensor failed: %v", err)
+		return fmt.Errorf("ricciTensor failed: %v", err)
 	}
 	for _, v := range ricci.Float64s() {
 		if v != 0 {
-			return fmt.Errorf("Ricci curvature in flat space must be 0, got %f", v)
+			return fmt.Errorf("ricci curvature in flat space must be 0, got %f", v)
 		}
 	}
 
@@ -912,7 +912,7 @@ func testRiemannFlat() error {
 	}
 	scalar, err := tensor.RicciScalar(ricci, invG)
 	if err != nil || scalar.Float64s()[0] != 0.0 {
-		return fmt.Errorf("Ricci scalar in flat space must be 0, got %v", scalar.Float64s())
+		return fmt.Errorf("ricci scalar in flat space must be 0, got %v", scalar.Float64s())
 	}
 	return nil
 }
@@ -925,11 +925,11 @@ func testWedgeProduct() error {
 
 	ab, err := tensor.WedgeProduct(a, b)
 	if err != nil {
-		return fmt.Errorf("WedgeProduct failed: %v", err)
+		return fmt.Errorf("wedgeProduct failed: %v", err)
 	}
 	ba, err := tensor.WedgeProduct(b, a)
 	if err != nil {
-		return fmt.Errorf("WedgeProduct(B,A) failed: %v", err)
+		return fmt.Errorf("wedgeProduct(B,A) failed: %v", err)
 	}
 
 	for i := range ab.Float64s() {
@@ -941,11 +941,11 @@ func testWedgeProduct() error {
 
 	aa, err := tensor.WedgeProduct(a, a)
 	if err != nil {
-		return fmt.Errorf("WedgeProduct(A,A) failed: %v", err)
+		return fmt.Errorf("wedgeProduct(A,A) failed: %v", err)
 	}
 	for _, v := range aa.Float64s() {
 		if math.Abs(v) > 1e-6 {
-			return fmt.Errorf("A ^ A != 0, got %f", v)
+			return fmt.Errorf("a ^ A != 0, got %f", v)
 		}
 	}
 	return nil
@@ -961,10 +961,10 @@ func testMultiDtypeFloat64() error {
 
 	res, err := tensor.MatMul(a, b)
 	if err != nil {
-		return fmt.Errorf("Float64 MatMul failed: %v", err)
+		return fmt.Errorf("float64 MatMul failed: %v", err)
 	}
 	if res.Float64s()[0] != 8.0 || res.Float64s()[3] != 15.0 {
-		return fmt.Errorf("Float64 MatMul output mismatch: %v", res.Float64s())
+		return fmt.Errorf("float64 MatMul output mismatch: %v", res.Float64s())
 	}
 	return nil
 }
@@ -981,7 +981,7 @@ func testMultiDtypeComplex() error {
 
 	c, err := tensor.MatMul(a, b)
 	if err != nil {
-		return fmt.Errorf("Complex128 MatMul failed: %v", err)
+		return fmt.Errorf("complex128 MatMul failed: %v", err)
 	}
 	if cmplx.Abs(c.Complex128s()[0]-complex(-1, 0)) > 1e-6 {
 		return fmt.Errorf("i * i != -1, got %v", c.Complex128s()[0])
@@ -1002,10 +1002,10 @@ func testMultiDtypeInt() error {
 
 	c, err := tensor.MatMul(a, b)
 	if err != nil {
-		return fmt.Errorf("Int64 MatMul failed: %v", err)
+		return fmt.Errorf("int64 MatMul failed: %v", err)
 	}
 	if c.Int64s()[0] != 80 {
-		return fmt.Errorf("Int64 MatMul expected 80, got %d", c.Int64s()[0])
+		return fmt.Errorf("int64 MatMul expected 80, got %d", c.Int64s()[0])
 	}
 	return nil
 }
@@ -1023,11 +1023,11 @@ func testGemmAVX2() error {
 
 	c, err := tensor.MatMul(a, b)
 	if err != nil {
-		return fmt.Errorf("AVX2 MatMul failed: %v", err)
+		return fmt.Errorf("aVX2 MatMul failed: %v", err)
 	}
 	for _, v := range c.Float32s() {
 		if v != 128.0 {
-			return fmt.Errorf("AVX2 MatMul expected 128.0, got %f", v)
+			return fmt.Errorf("aVX2 MatMul expected 128.0, got %f", v)
 		}
 	}
 	return nil
@@ -1041,10 +1041,10 @@ func testMathDispatch() error {
 
 	res, err := tensor.Sin(t)
 	if err != nil {
-		return fmt.Errorf("Sin with fast math failed: %v", err)
+		return fmt.Errorf("sin with fast math failed: %v", err)
 	}
 	if len(res.Float32s()) != 4 {
-		return fmt.Errorf("Sin length mismatch: %d", len(res.Float32s()))
+		return fmt.Errorf("sin length mismatch: %d", len(res.Float32s()))
 	}
 	return nil
 }

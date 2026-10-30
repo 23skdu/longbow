@@ -14,6 +14,7 @@ package main
 import (
 	"bufio"
 	"context"
+	crand "crypto/rand"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -218,7 +219,7 @@ func runWriteBenchmark(dir string, _ int, blockSize int, workers int, duration t
 
 	// Pre-generate a data block to avoid measuring generation time
 	data := make([]byte, blockSize)
-	rand.Read(data) // #nosec G404
+	_, _ = crand.Read(data) // #nosec G404
 
 	var wg sync.WaitGroup
 	var totalOps uint64
@@ -348,7 +349,7 @@ func prepFile(dir string, sizeMB int, _ int) int64 {
 
 	// Fill with random-ish data
 	chunk := make([]byte, 1024*1024) // 1MB chunk
-	rand.Read(chunk)                 // #nosec G404
+	_, _ = crand.Read(chunk)         // #nosec G404
 
 	written := int64(0)
 	for written < targetSize {
@@ -575,7 +576,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 				reader, err := flight.NewRecordReader(stream)
 				if err == nil {
 					for reader.Next() {
-						reader.Record()
+						reader.RecordBatch()
 					}
 					reader.Release()
 				}
@@ -643,7 +644,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 	}
 }
 
-func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.Record, sch *arrow.Schema) error {
+func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.RecordBatch, sch *arrow.Schema) error {
 	schema := sch
 	if schema == nil {
 		schema = rec.Schema()

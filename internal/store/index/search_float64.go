@@ -77,10 +77,8 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 	epCand := types.Candidate{ID: entryPoint, Dist: epDist}
 	minHeap.PushCandidate(epCand)
 
-	passes := true
-	if fm != nil && !fm.allows(entryPoint) {
-		passes = false
-	}
+	passes := fm == nil || fm.allows(entryPoint)
+
 	if passes && h.IsDeleted(entryPoint) {
 		passes = false
 	}

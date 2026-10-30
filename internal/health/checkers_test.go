@@ -6,7 +6,7 @@ import (
 	"time"
 
 	zerolog "github.com/rs/zerolog"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestComponentHealth_JSON(t *testing.T) {
@@ -45,7 +45,7 @@ func TestHealthStatus_String(t *testing.T) {
 
 func TestNewDatabaseChecker(t *testing.T) {
 	logger := zerolog.New(nil)
-	tracer := trace.NewNoopTracerProvider().Tracer("test")
+	tracer := noop.NewTracerProvider().Tracer("test")
 
 	checker := NewDatabaseChecker(&logger, tracer)
 	if checker == nil {
@@ -67,7 +67,7 @@ func TestNewDatabaseChecker(t *testing.T) {
 
 func TestNewStorageChecker(t *testing.T) {
 	logger := zerolog.New(nil)
-	tracer := trace.NewNoopTracerProvider().Tracer("test")
+	tracer := noop.NewTracerProvider().Tracer("test")
 
 	checker := NewStorageChecker(logger, tracer)
 	if checker == nil {
@@ -86,7 +86,7 @@ func TestNewStorageChecker(t *testing.T) {
 
 func TestNewMetricsChecker(t *testing.T) {
 	logger := zerolog.New(nil)
-	tracer := trace.NewNoopTracerProvider().Tracer("test")
+	tracer := noop.NewTracerProvider().Tracer("test")
 
 	checker := NewMetricsChecker(logger, tracer)
 	if checker == nil {
@@ -105,7 +105,7 @@ func TestNewMetricsChecker(t *testing.T) {
 
 func TestNewLoggingChecker(t *testing.T) {
 	logger := zerolog.New(nil)
-	tracer := trace.NewNoopTracerProvider().Tracer("test")
+	tracer := noop.NewTracerProvider().Tracer("test")
 
 	checker := NewLoggingChecker(logger, tracer)
 	if checker == nil {

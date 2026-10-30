@@ -403,7 +403,7 @@ func runExport(ctx context.Context, args []string) {
 	start := time.Now()
 	totalRows := int64(0)
 	for reader.Next() {
-		rec := reader.Record()
+		rec := reader.RecordBatch()
 		if err := writer.Write(rec); err != nil {
 			log.Fatalf("Failed to write record batch: %v\n", err)
 		}

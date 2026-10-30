@@ -147,12 +147,6 @@ func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memo
 	go pr.cleanup()
 
 	// IMPORTANT: The first message might already contain a record batch!
-	if len(data.DataBody) > 0 || len(data.DataHeader) > 0 {
-		// Re-decode the first message too if it has data
-		// Wait, DeserializeSchema already used DataHeader.
-		// If it also had data, we'd need to be careful.
-		// For now, assume first message is just schema for bench-tool.
-	}
 
 	return pr, nil
 }
@@ -251,7 +245,7 @@ func (pr *ParallelRecordReader) decodePayload(data *flight.FlightData) (arrow.Re
 	defer reader.Release()
 
 	if reader.Next() {
-		rec := reader.Record()
+		rec := reader.RecordBatch()
 		rec.Retain()
 		return rec, nil
 	}

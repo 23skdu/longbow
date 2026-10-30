@@ -170,7 +170,7 @@ func (p *IndexPerformancePredictor) Predict(features QueryFeatures) IndexPredict
 	metrics.LearnedIndexKNNDurationSeconds.Observe(time.Since(knnStart).Seconds())
 
 	var bestIndex IndexType
-	var bestScore float64 = -math.MaxFloat64
+	var bestScore = -math.MaxFloat64
 
 	for idx, score := range scores {
 		if score > bestScore {
@@ -453,7 +453,7 @@ func (p *IndexPerformancePredictor) getDefaultPrediction(features QueryFeatures)
 
 func (p *IndexPerformancePredictor) calculateConfidence(scores map[IndexType]float64) float64 {
 	var sum float64
-	var maxScore float64 = -math.MaxFloat64
+	var maxScore = -math.MaxFloat64
 
 	for _, score := range scores {
 		sum += score

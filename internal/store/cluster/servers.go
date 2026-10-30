@@ -91,7 +91,7 @@ func (s *DataServer) GetSchema(ctx context.Context, desc *flight.FlightDescripto
 // DoAction handles actions on DataServer. Supports VectorSearch for data plane.
 func (s *DataServer) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	if action != nil && action.Type == "VectorSearch" {
-		return s.FlightBackend.HandleVectorSearchAction(action, stream)
+		return s.HandleVectorSearchAction(action, stream)
 	}
 	// Delegate to base VectorStore for other actions (like "delete", "cluster-status")
 	return s.FlightBackend.DoAction(action, stream)
@@ -164,5 +164,5 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 		"type": action.Type,
 	})
 
-	return s.FlightBackend.DoMetaAction(action, stream)
+	return s.DoMetaAction(action, stream)
 }

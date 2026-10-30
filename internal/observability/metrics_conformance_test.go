@@ -461,4 +461,3 @@ func TestRuleGroupsHaveUnitTests(t *testing.T) {
 		t.Errorf("%s", b.String())
 	}
 }
-

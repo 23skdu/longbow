@@ -40,8 +40,7 @@ See **§0 below** for the consolidated ingest / index / search numbers for this 
 > fully connected graph", is itself an artefact of the same defect: a graph with
 > 8% reachability terminates the beam almost immediately, so a broken index
 > reports *fast*. Corrected 100k figures are in §3a.
-  
-
+>
 > [!WARNING]
 > **The TurboQuant rows at 250k and 500k still predate `a955a0c1`.** The 50k and 100k
 > rows have been re-measured with full provenance, paired index times, and all 13 search modes.
@@ -85,7 +84,7 @@ See **§0 below** for the consolidated ingest / index / search numbers for this 
 >
 > - The old 2026-09-26 rows also lacked provenance; older configurations routed complex128 and TurboQuant to EMLGo for 50k ≤ N < 500k, whereas current rows reflect the native engine with EMLGo disabled.
 
-### Methodology changes in the 2026-10-09 rows
+## Methodology changes in the 2026-10-09 rows
 
 These differ from the 2026-09-26 rows in ways that matter when comparing them:
 
@@ -253,7 +252,6 @@ Throughput (queries/second) and median latency (milliseconds) across all 13 sear
 - **Scale-Adaptive HNSW Construction**: At 500k scale, `efConstruction` automatically transitions to 100, avoiding combinatorial candidate explosions and keeping index construction time strictly sub-linear. `float32` 500k indexed in 111.5s; `int8` in 57.5s.
 - **Quantized & Integer Efficiency**: Integer dtypes (`int8`, `uint8`, `int16`, `uint16`) achieve top search throughput exceeding 3,300–4,200 QPS with median latencies <1.0ms.
 - **Memory Headroom**: Peak RSS at 500,000 vectors remained well within safe operational thresholds across all dtypes (7.1 GB for `float32`, 7.0 GB for `turboquant4`, 7.1 GB for `int8`), with the highest footprint being `complex128` at 11.3 GB, cleanly under the 13.5 GB ceiling.
-
 
 ---
 

@@ -125,7 +125,7 @@ func TestDiskVectorStore_Fallback_Float64(t *testing.T) {
 	vValBuilder.AppendValues([]float64{9.0, 10.0, 11.0, 12.0}, nil)
 	idBuilder.Append(2)
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	dvs, err := NewDiskVectorStore(path, 4)
@@ -195,7 +195,7 @@ func TestDiskVectorStore_Fallback_Float32(t *testing.T) {
 	vValBuilder.AppendValues([]float32{9.0, 10.0, 11.0, 12.0}, nil)
 	idBuilder.Append(2)
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	dvs, err := NewDiskVectorStore(path, 4)

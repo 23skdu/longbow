@@ -148,7 +148,7 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 Every bulk-inserted batch is measured and logged, whether or not the guard
 enforces:
 
-```
+```text
 [HNSW] bulk batch nodes=100000 reachable=99794/100000 sampled=100.0% mean_degree=5.46 hops=3.1/6.2 addbatch_inflight=1 fallback=false
 ```
 

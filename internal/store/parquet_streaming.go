@@ -24,7 +24,7 @@ type StreamingParquetWriter struct {
 	mu       sync.Mutex
 	closed   bool
 	slabSize int
-	writer   *parquet.Writer
+	writer   *parquet.Writer //nolint:staticcheck
 }
 
 // NewStreamingParquetWriter creates a new Parquet writer
@@ -51,7 +51,7 @@ func (p *StreamingParquetWriter) WriteBatch(gd *types.GraphData) error {
 	}()
 
 	if p.writer == nil {
-		p.writer = parquet.NewWriter(p.w, parquet.SchemaOf(ParquetRow{}))
+		p.writer = parquet.NewWriter(p.w, parquet.SchemaOf(ParquetRow{})) //nolint:staticcheck
 	}
 
 	// Iterate through vectors and stream to Parquet

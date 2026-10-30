@@ -17,7 +17,7 @@ func TestAutoShardingGetNeighbors(t *testing.T) {
 
 	idx := store.NewAutoShardingIndex(ds, config)
 
-	var _ store.VectorIndex = idx
+	var _ = idx
 
 	// Check GetNeighbors signature
 	// Cast to uint32

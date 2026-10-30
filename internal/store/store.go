@@ -49,11 +49,11 @@ type VectorStore struct {
 	dataPath string
 	engine   atomic.Pointer[storage.StorageEngine] // Manages WAL and Snapshots
 
-	indexQueue          *IndexJobQueueLockFree // Integrated HNSW background indexing queue (global fallback).
+	indexQueue          *IndexJobQueueLockFree   // Integrated HNSW background indexing queue (global fallback).
 	numaIndexQueues     []*IndexJobQueueLockFree // NUMA-local indexing queues for per-socket workers.
-	ingestionQueue      *IngestionRingBuffer   // Lock-free ring buffer for high-throughput ingestion.
-	persistenceQueue    chan persistenceJob    // Async persistence queue
-	pendingOverflowJobs atomic.Int64           // Jobs spinning in applyBatchToMemory
+	ingestionQueue      *IngestionRingBuffer     // Lock-free ring buffer for high-throughput ingestion.
+	persistenceQueue    chan persistenceJob      // Async persistence queue
+	pendingOverflowJobs atomic.Int64             // Jobs spinning in applyBatchToMemory
 
 	// Background hybrid text/BM25 indexing (lazily started, see text_index_worker.go).
 	textQueueOnce sync.Once
@@ -65,10 +65,10 @@ type VectorStore struct {
 	textIndexDrainBudget atomic.Int64 // time.Duration; zero means "do not wait"
 
 	// Lifecycle
-	stopChan           chan struct{}
-	stopOnce           sync.Once      // Protects stopChan closure
-	indexWg            sync.WaitGroup // For background workers
-	datasets           atomic.Pointer[map[string]*Dataset]
+	stopChan chan struct{}
+	stopOnce sync.Once      // Protects stopChan closure
+	indexWg  sync.WaitGroup // For background workers
+	datasets atomic.Pointer[map[string]*Dataset]
 
 	// configMu protects configuration fields
 	configMu sync.RWMutex
@@ -525,13 +525,10 @@ func (vs *VectorStore) GetDatasetIndexStats(name string) (nodeCount int64, maxLe
 		return 0, 0, false, true
 	}
 	snap := hnsw.GetMetadataSnapshot()
-	isOff := false
-	if hnsw.GetData() != nil && len(hnsw.GetData().PackedNeighbors) > 0 {
-		isOff = true
-	}
+	isOff := hnsw.GetData() != nil && len(hnsw.GetData().PackedNeighbors) > 0
+
 	return snap.NodeCount, snap.MaxLevel, isOff, true
 }
-
 
 // IndexRecordColumns indexes specific columns for fast equality lookups
 func (vs *VectorStore) IndexRecordColumns(datasetName string, rec arrow.RecordBatch, batchIdx int) {

@@ -157,4 +157,3 @@ func (idx *MetalIndex) searchFloat32(vector []float32, k int) ([]int64, []float3
 
 	return resultIDs, resultDistances, nil
 }
-

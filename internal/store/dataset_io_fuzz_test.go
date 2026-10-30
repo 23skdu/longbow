@@ -64,7 +64,7 @@ func FuzzDatasetIOExportImport(f *testing.F) {
 			createdBldr.Append(int64(i * 1000))
 		}
 
-		rec := b.NewRecord()
+		rec := b.NewRecordBatch()
 		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 		ds.BatchNodes.UpdateInPlace(append(append([]int{}, ds.BatchNodes.Read()...), -1))
 		vs := NewVectorStore(pool, zerolog.Nop(), 1<<30, 0, 0)

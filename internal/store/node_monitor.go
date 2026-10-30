@@ -11,9 +11,9 @@ import (
 
 // NodeMonitor tracks local resource usage to provide load balancing hints.
 type NodeMonitor struct {
-	cpuLoad     atomic.Uint32 // Percentage 0-100
-	memLoad     atomic.Uint32 // Percentage 0-100
-	queueDepth  atomic.Int64
+	cpuLoad    atomic.Uint32 // Percentage 0-100
+	memLoad    atomic.Uint32 // Percentage 0-100
+	queueDepth atomic.Int64
 
 	stopChan chan struct{}
 }

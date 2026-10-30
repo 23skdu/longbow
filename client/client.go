@@ -386,12 +386,12 @@ func (c *SmartClient) NewStreamUploader(ctx context.Context, dataset string, sch
 }
 
 // Write writes a single Arrow record batch to the upload stream.
-func (u *StreamUploader) Write(record arrow.Record) error {
+func (u *StreamUploader) Write(record arrow.RecordBatch) error {
 	return u.writer.Write(record)
 }
 
 // WriteChunked writes a record batch, automatically splitting it into smaller chunks if it exceeds maxChunkSize.
-func (u *StreamUploader) WriteChunked(record arrow.Record, maxChunkSize int64) error {
+func (u *StreamUploader) WriteChunked(record arrow.RecordBatch, maxChunkSize int64) error {
 	if maxChunkSize <= 0 {
 		maxChunkSize = 10000
 	}
@@ -443,7 +443,7 @@ func (c *SmartClient) UploadTable(ctx context.Context, dataset string, tbl arrow
 	defer tr.Release()
 
 	for tr.Next() {
-		rec := tr.Record()
+		rec := tr.RecordBatch()
 		if err := uploader.Write(rec); err != nil {
 			return err
 		}

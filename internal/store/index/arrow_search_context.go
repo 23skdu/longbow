@@ -230,14 +230,14 @@ type ArrowSearchContext struct {
 	MaxGeneration    uint64
 
 	// Chunk cache for zero-overhead vector dereferencing during search (roadmap Item 7)
-	chunkEpoch        uint32
-	cachedChunksF32   []cachedChunkF32
-	cachedChunksF64   []cachedChunkF64
-	cachedChunksInt8  []cachedChunkInt8
-	cachedChunksF16   []cachedChunkF16
-	cachedChunksC128  []cachedChunkC128
-	cachedChunksTQ    []cachedChunkBytes
-	cachedChunksSQ8   []cachedChunkBytes
+	chunkEpoch       uint32
+	cachedChunksF32  []cachedChunkF32
+	cachedChunksF64  []cachedChunkF64
+	cachedChunksInt8 []cachedChunkInt8
+	cachedChunksF16  []cachedChunkF16
+	cachedChunksC128 []cachedChunkC128
+	cachedChunksTQ   []cachedChunkBytes
+	cachedChunksSQ8  []cachedChunkBytes
 
 	// Ephemeral reconstructed TQ vector memoization across search hops (roadmap Item 26)
 	tqReconEpoch uint32
@@ -971,4 +971,3 @@ func (ctx *ArrowSearchContext) GetVectorC128(data *types.GraphData, id uint32, d
 	}
 	return nil
 }
-

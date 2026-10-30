@@ -240,9 +240,6 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	ep := meta.EntryPoint
 	maxLevel := meta.MaxLevel
 
-	if ep%10 == 0 {
-	}
-
 	if ep >= uint32(data.Capacity) { // #nosec G115 -- intentional comparison
 		// During initial bulk ingestion, ep might be 0 while data is empty.
 		// If data is empty, just return nil.

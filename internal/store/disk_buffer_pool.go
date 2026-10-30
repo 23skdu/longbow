@@ -76,4 +76,3 @@ func PutByteRowBuffer(b []byte) {
 	}
 	getBytePool(len(b)).Put(b)
 }
-

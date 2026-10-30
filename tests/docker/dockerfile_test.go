@@ -15,17 +15,17 @@ import (
 
 // dockerfileMeta defines expectations for each Dockerfile flavor.
 type dockerfileMeta struct {
-	filename      string
-	isSymlink     bool
-	symlinkTarget string
-	stages        []string
-	runtimeUser   string
-	exposedPorts  []string
-	hasVolumeData bool
-	expectedTags  []string
-	envVars       map[string]string
+	filename       string
+	isSymlink      bool
+	symlinkTarget  string
+	stages         []string
+	runtimeUser    string
+	exposedPorts   []string
+	hasVolumeData  bool
+	expectedTags   []string
+	envVars        map[string]string
 	hasHealthCheck bool
-	entrypoint    string
+	entrypoint     string
 }
 
 var allDockerfiles = []dockerfileMeta{
@@ -64,12 +64,12 @@ var allDockerfiles = []dockerfileMeta{
 		entrypoint: `["/longbow"]`,
 	},
 	{
-		filename:       "Dockerfile.emlgo-gpu",
-		stages:         []string{"nvidia/cuda:13.4.3-devel-ubuntu24.04", "nvidia/cuda:13.4.3-runtime-ubuntu24.04"},
-		runtimeUser:    "longbow:longbow",
-		exposedPorts:   []string{"3000", "3001", "9090"},
-		hasVolumeData:  true,
-		expectedTags:   []string{"gpu", "emlgo"},
+		filename:      "Dockerfile.emlgo-gpu",
+		stages:        []string{"nvidia/cuda:13.4.3-devel-ubuntu24.04", "nvidia/cuda:13.4.3-runtime-ubuntu24.04"},
+		runtimeUser:   "longbow:longbow",
+		exposedPorts:  []string{"3000", "3001", "9090"},
+		hasVolumeData: true,
+		expectedTags:  []string{"gpu", "emlgo"},
 		envVars: map[string]string{
 			"LONGBOW_GPU_ENABLED":         "true",
 			"LONGBOW_STORAGE_USE_IOURING": "false",
@@ -80,12 +80,12 @@ var allDockerfiles = []dockerfileMeta{
 		entrypoint:     `["/app/longbow"]`,
 	},
 	{
-		filename:       "Dockerfile.nvidia",
-		stages:         []string{"nvidia/cuda:13.4.3-devel-ubuntu24.04", "nvidia/cuda:13.4.3-runtime-ubuntu24.04"},
-		runtimeUser:    "longbow:longbow",
-		exposedPorts:   []string{"3000", "3001", "9090"},
-		hasVolumeData:  true,
-		expectedTags:   []string{"gpu"},
+		filename:      "Dockerfile.nvidia",
+		stages:        []string{"nvidia/cuda:13.4.3-devel-ubuntu24.04", "nvidia/cuda:13.4.3-runtime-ubuntu24.04"},
+		runtimeUser:   "longbow:longbow",
+		exposedPorts:  []string{"3000", "3001", "9090"},
+		hasVolumeData: true,
+		expectedTags:  []string{"gpu"},
 		envVars: map[string]string{
 			"LONGBOW_GPU_ENABLED":         "true",
 			"LONGBOW_STORAGE_USE_IOURING": "false",

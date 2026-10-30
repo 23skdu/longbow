@@ -37,6 +37,7 @@ TurboQuant is Longbow's proprietary two-stage vector compression algorithm that 
 #### TurboQuant2 (2-Bit Quantization)
 
 Version 0.2.4 introduces **TurboQuant2** (`TurboQuant2Encoder` in `internal/store/index/turboquant2.go`). Standard polar quantization loses directional accuracy below 4 bits per angle; TurboQuant2 bridges this gap via:
+
 1. **Random Coordinate Rotation**: Rotates the vector to spread information evenly across all dimensions.
 2. **2-Bit Polar Coordinate Packing**: Quantizes angles to 2 bits per coordinate.
 3. **QJL 1-Bit Residual Correction**: Stores sign bits of the reconstruction residual, guaranteeing ~0.75+ cosine similarity and enabling retrievable ANN search at **16x compression**.
@@ -276,18 +277,21 @@ Adjacency lists (neighbors) use a 2-level packed reference system alongside a **
 ### 2MB Hugepages Allocation
 
 For large memory working sets (>16GB), Longbow integrates a native **2MB Hugepages Allocator** (`internal/memory/hugepages.go`):
+
 - Allocates memory with `MAP_HUGETLB` / `madvise(MADV_HUGEPAGE)` on supported Linux kernels.
 - Drastically reduces TLB (Translation Lookaside Buffer) misses during random graph traversals, yielding up to 40% latency reduction at scale.
 
 ### Vectorized Visited Bitmask
 
 During HNSW graph search, candidate tracking relies on a high-throughput **Vectorized Bitmask**:
+
 - Utilizes 64-bit word arrays with SIMD bit-manipulation primitives (AVX2/AVX-512 popcount and bit scans).
 - Avoids heap-allocated hash sets or sparse maps in the search hot loop.
 
 ### Multi-Centroid HNSW Entry Points
 
 To mitigate graph disconnectivity in clustered or multi-modal datasets, Longbow maintains **Multi-Centroid Entry Points**:
+
 - Instead of descending from a single global entry point, the index tracks top-layer centroid nodes across clusters.
 - Eliminates graph partition reachability traps where isolated components are missed by standard greedy search.
 

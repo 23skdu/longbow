@@ -128,7 +128,7 @@ func runImportParquet(ctx context.Context, sc *client.SmartClient, dataset, inpu
 
 	totalRows := int64(0)
 	for tr.Next() {
-		rec := tr.Record()
+		rec := tr.RecordBatch()
 		if err := writer.Write(rec); err != nil {
 			log.Fatalf("Failed to write record batch: %v\n", err)
 		}
@@ -214,7 +214,7 @@ func runImportNpy(ctx context.Context, sc *client.SmartClient, dataset, inputPat
 	fmt.Printf("Successfully imported %d rows in %v\n", count, time.Since(start))
 }
 
-func generateDemoData(dim, count int) (arrow.Record, *arrow.Schema) {
+func generateDemoData(dim, count int) (arrow.RecordBatch, *arrow.Schema) {
 	mem := memory.NewGoAllocator()
 
 	sch := arrow.NewSchema([]arrow.Field{
@@ -267,7 +267,7 @@ func generateDemoData(dim, count int) (arrow.Record, *arrow.Schema) {
 	return rec, sch
 } // #nosec G404
 
-func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.Record, sch *arrow.Schema) error {
+func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.RecordBatch, sch *arrow.Schema) error {
 	uploader, err := sc.NewStreamUploader(ctx, dataset, sch)
 	if err != nil {
 		return err
@@ -349,7 +349,7 @@ func runImportS3(ctx context.Context, sc *client.SmartClient, dataset, s3Path st
 
 	totalRows := int64(0)
 	for tr.Next() {
-		rec := tr.Record()
+		rec := tr.RecordBatch()
 		if err := writer.Write(rec); err != nil {
 			log.Fatalf("Failed to write record batch: %v\n", err)
 		}
@@ -440,7 +440,7 @@ func runImportArrow(ctx context.Context, sc *client.SmartClient, dataset, inputP
 
 	totalRows := int64(0)
 	for i := 0; i < rdr.NumRecords(); i++ {
-		rec, err := rdr.Record(i)
+		rec, err := rdr.RecordBatch(i)
 		if err != nil {
 			log.Fatalf("Failed to read record %d: %v\n", i, err)
 		}
@@ -541,7 +541,7 @@ func runImportArrowFromReader(ctx context.Context, sc *client.SmartClient, datas
 
 	totalRows := int64(0)
 	for reader.Next() {
-		rec := reader.Record()
+		rec := reader.RecordBatch()
 		if err := uploader.WriteChunked(rec, 10000); err != nil {
 			log.Fatalf("Failed to write record batch: %v\n", err)
 		}

@@ -21,7 +21,7 @@ func TestGCSRemoteStorage_Integration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	gcsr, err := NewGCSRemoteStorage(ctx, bucket, option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")))
+	gcsr, err := NewGCSRemoteStorage(ctx, bucket, option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))) //nolint:staticcheck
 	require.NoError(t, err)
 	defer gcsr.Close()
 

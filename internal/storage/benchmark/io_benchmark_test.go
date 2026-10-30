@@ -17,7 +17,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-func createTestBatch() arrow.Record {
+func createTestBatch() arrow.RecordBatch {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -31,7 +31,7 @@ func createTestBatch() arrow.Record {
 
 	builder.Field(0).(*array.BinaryBuilder).Append([]byte("test-data"))
 
-	return builder.NewRecord()
+	return builder.NewRecordBatch()
 }
 
 func writeWALEntries(backend storage.WALBackend, count int) error {

@@ -43,7 +43,7 @@ func TestVectorIndexInterfaceSharded(t *testing.T) {
 	sharded := NewShardedHNSW(cfg, ds)
 
 	// Should implement VectorIndex interface
-	var _ VectorIndex = sharded
+	var _ = sharded
 
 	if sharded.Len() != 0 {
 		t.Errorf("expected empty index, got %d", sharded.Len())

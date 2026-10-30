@@ -65,7 +65,7 @@ func TestRace_ConcurrentSearchAndInsert(t *testing.T) {
 					}
 					vBuilder.AppendValues(v, nil)
 				}
-				rec := builder.NewRecord()
+				rec := builder.NewRecordBatch()
 				builder.Release()
 
 				if err := s.StoreRecordBatch(ctx, datasetName, rec); err != nil {

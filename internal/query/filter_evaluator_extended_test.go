@@ -30,7 +30,7 @@ func TestFilterEvaluator_VariousTypes(t *testing.T) {
 	b.Field(2).(*array.Float64Builder).AppendValues([]float64{1.1, 2.2, 3.3}, nil)
 	b.Field(3).(*array.StringBuilder).AppendValues([]string{"apple", "banana", "cherry"}, nil)
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	tests := []struct {
@@ -96,7 +96,7 @@ func TestFilterEvaluator_NestedFields(t *testing.T) {
 		`{"user": {"id": 2, "name": "bob"}}`,
 	}, nil)
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	// Testing nested field resolution

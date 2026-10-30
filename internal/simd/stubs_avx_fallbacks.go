@@ -183,7 +183,8 @@ func dotFloat64AVX512(a, b []float64) (float32, error)       { return dotFloat64
 func l2SquaredFloat64AVX512(a, b []float64) (float32, error) { return l2SquaredFloat64Unrolled4x(a, b) }
 func cosineFloat64AVX512(a, b []float64) (float32, error)    { return cosineFloat64Unrolled4x(a, b) }
 
-func euclideanInt8AVX512(a, b []int8) (float32, error)     { return euclideanInt8Unrolled4x(a, b) }
+func euclideanInt8AVX512(a, b []int8) (float32, error) { return euclideanInt8Unrolled4x(a, b) }
+
 // l2SquaredInt8AVX512 is a non-AVX-512 fallback; uses the unrolled 4x path.
 func l2SquaredInt8AVX512(a, b []int8) (float32, error) {
 	return l2SquaredInt8Unrolled4x(a, b)
@@ -229,8 +230,8 @@ func l2SquaredUint8AVX512(a, b []uint8) (float32, error) {
 	d, err := euclideanUint8Unrolled4x(a, b)
 	return d * d, err
 }
-func cosineInt8AVX512(a, b []int8) (float32, error)     { return cosineDistanceInt8Unrolled4x(a, b) }
-func cosineUint8AVX512(a, b []uint8) (float32, error)   { return cosineDistanceUint8Unrolled4x(a, b) }
+func cosineInt8AVX512(a, b []int8) (float32, error)      { return cosineDistanceInt8Unrolled4x(a, b) }
+func cosineUint8AVX512(a, b []uint8) (float32, error)    { return cosineDistanceUint8Unrolled4x(a, b) }
 func euclideanInt16AVX2(a, b []int16) (float32, error)   { return euclideanInt16Unrolled4x(a, b) }
 func euclideanUint16AVX2(a, b []uint16) (float32, error) { return euclideanUint16Unrolled4x(a, b) }
 func dotInt16AVX2(a, b []int16) (float32, error)         { return dotInt16Unrolled4x(a, b) }

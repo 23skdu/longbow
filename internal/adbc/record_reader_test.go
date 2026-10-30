@@ -39,8 +39,8 @@ func TestAdbcRecordReader_Empty(t *testing.T) {
 	if r.RecordBatch() != nil {
 		t.Errorf("empty reader: RecordBatch() = %v, want nil", r.RecordBatch())
 	}
-	if r.Record() != nil {
-		t.Errorf("empty reader: Record() = %v, want nil", r.Record())
+	if r.RecordBatch() != nil {
+		t.Errorf("empty reader: Record() = %v, want nil", r.RecordBatch())
 	}
 	if r.Err() != nil {
 		t.Errorf("empty reader: Err() = %v, want nil", r.Err())
@@ -85,7 +85,7 @@ func TestAdbcRecordReader_Iteration(t *testing.T) {
 	} else if got.NumRows() != 3 {
 		t.Errorf("after first Next, RecordBatch().NumRows() = %d, want 3", got.NumRows())
 	}
-	if got := r.Record(); got == nil {
+	if got := r.RecordBatch(); got == nil {
 		t.Error("after first Next, Record() = nil")
 	} else if got.NumRows() != 3 {
 		t.Errorf("after first Next, Record().NumRows() = %d, want 3", got.NumRows())

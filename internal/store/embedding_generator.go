@@ -550,7 +550,7 @@ func (g *huggingFaceEmbeddingGenerator) Generate(ctx context.Context, texts []st
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	modelURL := strings.Replace(g.model, " ", "%20", -1)
+	modelURL := strings.ReplaceAll(g.model, " ", "%20")
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api-inference.huggingface.co/pipeline/feature-extraction/"+modelURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

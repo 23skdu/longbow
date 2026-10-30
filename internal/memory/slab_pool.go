@@ -378,7 +378,7 @@ func pct(a, b int64) float64 {
 func DebugSlabPoolsSnapshot() string {
 	var b strings.Builder
 	b.WriteString("--- SlabPool Debug Snapshot ---\n")
-	b.WriteString(fmt.Sprintf("globalOffHeap: %.1f MB\n", mb(offHeapAlloc.Allocated())))
+	fmt.Fprintf(&b, "globalOffHeap: %.1f MB\n", mb(offHeapAlloc.Allocated()))
 	b.WriteString(global4MBPool.DebugSnapshot())
 	b.WriteByte('\n')
 	b.WriteString(global8MBPool.DebugSnapshot())
@@ -388,7 +388,7 @@ func DebugSlabPoolsSnapshot() string {
 	b.WriteString(global32MBPool.DebugSnapshot())
 	b.WriteByte('\n')
 	unused := GetGlobalSlabPoolUnusedMemory()
-	b.WriteString(fmt.Sprintf("pooled unused total: %.1f MB\n", mb(unused)))
+	fmt.Fprintf(&b, "pooled unused total: %.1f MB\n", mb(unused))
 	return b.String()
 }
 

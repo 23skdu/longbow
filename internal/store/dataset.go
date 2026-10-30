@@ -1092,7 +1092,7 @@ func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 		}
 	}
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 
 	batchIdx := d.appendRecordLocked(rec, -1)
 

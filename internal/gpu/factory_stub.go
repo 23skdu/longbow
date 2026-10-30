@@ -17,5 +17,5 @@ func NewIndexWithConfig(_ GPUConfig) (Index, error) {
 
 // NewMetalIndexImpl is maintained for backward compatibility (stub)
 func NewMetalIndexImpl(_ GPUConfig) (Index, error) {
-	return nil, fmt.Errorf("Metal support not compiled in: build with -tags gpu on macOS arm64")
+	return nil, fmt.Errorf("metal support not compiled in: build with -tags gpu on macOS arm64")
 }

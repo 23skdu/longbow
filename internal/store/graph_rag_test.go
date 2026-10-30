@@ -58,7 +58,7 @@ func TestGraphRAG_SearchHybrid(t *testing.T) {
 		idB.Append(uint32(i))
 	}
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	// 2. Ingest
@@ -143,7 +143,7 @@ func TestGraphRAG_Stability_Large(t *testing.T) {
 		idB.Append(uint32(i))
 	}
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	ds, _ := s.getOrCreateDataset(datasetName, func() *Dataset {

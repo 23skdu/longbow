@@ -441,4 +441,3 @@ func (idx *MetalIndexOptimized) PruneNeighbors(candidateIds []uint32, candidateD
 
 	return pruned, nil
 }
-

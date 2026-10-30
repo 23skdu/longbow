@@ -80,10 +80,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 	// Namespace quota check (will be done per-flush in the loop below)
 	nsName, _ := ParseNamespacedPath(name)
-	var ns *Namespace
-	if ns = s.GetNamespace(nsName); ns != nil {
-		// Check initial quota on first batch
-	}
+	ns := s.GetNamespace(nsName)
 
 	// Schema Evolution & Validation
 	// Validate compatibility and evolve if additive changes are present

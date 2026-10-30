@@ -41,7 +41,7 @@ func BenchmarkFilterPushdown_Vs_PostFilter(b *testing.B) {
 		rec := array.NewRecordBuilder(mem, schema)
 		arr := rec.Field(1).(*array.Int64Builder)
 		arr.AppendValues(categoryValues, nil)
-		record := rec.NewRecord()
+		record := rec.NewRecordBatch()
 		defer record.Release()
 
 		idx.IndexRecord(0, record, colIndex)
@@ -72,7 +72,7 @@ func BenchmarkCompositeFilter_And(b *testing.B) {
 	rec := array.NewRecordBuilder(mem, schema)
 	rec.Field(0).(*array.Int64Builder).AppendValues(catValues, nil)
 	rec.Field(1).(*array.Int64Builder).AppendValues(statusValues, nil)
-	record := rec.NewRecord()
+	record := rec.NewRecordBatch()
 	defer record.Release()
 
 	idx := NewColumnInvertedIndex()

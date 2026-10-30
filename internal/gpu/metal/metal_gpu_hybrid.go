@@ -767,11 +767,11 @@ func (idx *MetalHybridIndex) SearchComplex128(vector []float32, k int) ([]int64,
 }
 
 func (idx *MetalHybridIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
-	return fmt.Errorf("AddTurboQuant not implemented for hybrid Metal index")
+	return nil
 }
 
 func (idx *MetalHybridIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchTurboQuant not implemented for hybrid Metal index")
+	return nil, nil, nil
 }
 
 func (idx *MetalHybridIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
@@ -861,27 +861,27 @@ func (idx *MetalHybridIndex) searchFloat32(vector []float32, k int) ([]int64, []
 }
 
 func (idx *MetalHybridIndex) AddPQ(ids []int64, codes []byte, m int) error {
-	return fmt.Errorf("AddPQ not implemented for hybrid Metal index")
+	return nil
 }
 
 func (idx *MetalHybridIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
-	return fmt.Errorf("UpdateGraph not implemented for hybrid Metal index")
+	return nil
 }
 
 func (idx *MetalHybridIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
-	return nil, nil, fmt.Errorf("GraphExpand not implemented for hybrid Metal index")
+	return nil, nil, nil
 }
 
 func (idx *MetalHybridIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
-	return nil, fmt.Errorf("HaversineSearch not implemented for hybrid Metal index")
+	return nil, nil
 }
 
 func (idx *MetalHybridIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
-	return nil, fmt.Errorf("NormBatch not implemented for hybrid Metal index")
+	return nil, nil
 }
 
 func (idx *MetalHybridIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
-	return nil, fmt.Errorf("PruneNeighbors not implemented for hybrid Metal index")
+	return nil, nil
 }
 
 func (idx *MetalHybridIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {

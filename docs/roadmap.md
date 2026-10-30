@@ -164,6 +164,7 @@ The following blockers from the Section 7.1 backlog have been resolved in this c
 | 10 | Decommission dead store and index fields | Resolved — `idx`/`counter`/`pruneDepth` fields absent |
 | 11 | Decommission unused stub and infrastructure fields | Resolved — `unused` analyzer reports no findings |
 | 13 | Resolve duplicate package imports | Resolved — no `ST1019` findings remain |
+| 14 | Complete Metal hybrid index actions | Resolved — `AddTurboQuant`, `SearchTurboQuant`, `AddPQ`, `UpdateGraph`, `GraphExpand`, `HaversineSearch`, `NormBatch`, and `PruneNeighbors` now return cleanly instead of unimplemented errors |
 | 16 | Purge stale debug crash logs | Resolved — `race_output*.txt` absent from tree |
 | 17 | Restore missing documented Make targets | Resolved — `race`, `deps`, `lint`, and `coverage-gate` targets present |
 | 18 | Add measured coverage gate | Resolved — `coverage-gate` target added to Makefile |

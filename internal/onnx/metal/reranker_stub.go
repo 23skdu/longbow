@@ -16,12 +16,12 @@ type MetalReranker struct {
 
 // NewMetalReranker returns an error on non-Metal platforms
 func NewMetalReranker(modelPath string) (*MetalReranker, error) {
-	return nil, errors.New("metal is not available on this platform")
+	return nil, errors.New("Metal is not available on this platform") //nolint:staticcheck
 }
 
 // Rerank returns an error on non-Metal platforms
 func (r *MetalReranker) Rerank(ctx context.Context, query string, results []types.SearchResult) ([]types.SearchResult, error) {
-	return nil, errors.New("metal is not available on this platform")
+	return nil, errors.New("Metal is not available on this platform") //nolint:staticcheck
 }
 
 // Close is a no-op on non-Metal platforms

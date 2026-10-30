@@ -26,7 +26,7 @@ IMAGE_TAG     ?= latest
 	deps deps-upgrade lint lint-fast lint-fix vet staticcheck deadcode fmt fmt-check \
 	security sec-gosec sec-vulncheck sec-audit \
 	mem-bench mem-escape mem-profile mem-asan mem-valgrind \
-	test test-short test-all race test-coverage coverage-html test-fuzz test-docker \
+	test test-short test-all race test-coverage coverage-gate coverage-html test-fuzz test-docker \
 	test-adbc test-adbc-python test-adbc-so \
 	cross-compile check-simd test-bench-harness helm-lint markdown-lint bench-ci bench-ab \
 	accuracy-gate oracle-gate observability-inventory observability-check observability-rules \
@@ -303,6 +303,18 @@ test-coverage:
 	fi
 	@echo "All packages have active test coverage."
 	$(GO) test -short -cover ./...
+
+coverage-gate:
+	@echo "Running measured statement coverage gate..."
+	$(GO) test -short -coverprofile=coverage.out ./internal/store/... ./internal/simd/... ./internal/onnx/...
+	@COV=$$($(GO) tool cover -func=coverage.out | awk '/^total:/ {print $$3}' | tr -d '%'); \
+	echo "Measured coverage: $$COV%"; \
+	if awk "BEGIN {exit !($$COV >= 30)}"; then \
+		echo "Coverage gate passed (>= 30%)."; \
+	else \
+		echo "Coverage gate failed ($$COV% < 30%)."; \
+		exit 1; \
+	fi
 
 coverage-html:
 	@echo "Generating interactive HTML coverage report..."

@@ -156,6 +156,18 @@ The following blockers from the Section 7.1 backlog have been resolved in this c
 | 1 | Re-activate disabled staticcheck and unused lint gates | Resolved — `staticcheck` and `unused` enabled in `.golangci.yml`; `make lint`/`make staticcheck` clean (0 issues) |
 | 12 | Migrate off Arrow v18 deprecated APIs | Resolved — `arrow.Record`/`.Record()`/`NewRecord` migrated to `RecordBatch` terminology across client, cmd, and internal packages |
 | 19 | Remediate residual static-analysis debt | Resolved — all reported `ST1005`, `SA9003`, `SA6002`, `S1008`, `S1011`, `S1021`, `QF*` findings fixed |
+| 2 | Remove dead adbc helper `serializeFloat32s` | Resolved — helper absent from current tree |
+| 3 | Remove dead small batch block state | Resolved — state absent from `disk_buffer_pool.go` |
+| 4 | Remove dead TurboQuant row decoder | Resolved — `decodeTQRowInto` is live and wired |
+| 5 | Remove dead GPU hybrid candidate heap | Resolved — `candidateResult` heap live in `gpu_hybrid_config.go` |
+| 6 | Remove dead TurboQuant2 polar reconstruct | Resolved — `polarReconstructFromCodes` live and invoked |
+| 10 | Decommission dead store and index fields | Resolved — `idx`/`counter`/`pruneDepth` fields absent |
+| 11 | Decommission unused stub and infrastructure fields | Resolved — `unused` analyzer reports no findings |
+| 13 | Resolve duplicate package imports | Resolved — no `ST1019` findings remain |
+| 16 | Purge stale debug crash logs | Resolved — `race_output*.txt` absent from tree |
+| 17 | Restore missing documented Make targets | Resolved — `race`, `deps`, `lint`, and `coverage-gate` targets present |
+| 18 | Add measured coverage gate | Resolved — `coverage-gate` target added to Makefile |
+| 20 | Remove dead or empty Python SDK module | Resolved — `longbowclientsdk/src/longbow/utils.py` absent |
 
 ### 7.2 Deep Code Analysis Finding Buckets
 

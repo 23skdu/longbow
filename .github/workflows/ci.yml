@@ -165,7 +165,7 @@ jobs:
         run: helm template longbow helm/longbow --debug
 
       - name: Markdown Lint
-        uses: DavidAnson/markdownlint-cli2-action@v24
+        uses: DavidAnson/markdownlint-cli2-action@v25
         with:
           globs: "docs/**/*.md"
 

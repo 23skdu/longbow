@@ -177,3 +177,13 @@ The following blockers from the Section 7.1 backlog have been resolved in this c
 - Residual static-analysis debt: style and correctness findings including error-string capitalization, nil context handling, built-in map keys, negative-zero literals, unused error values and allocation hygiene findings.
 
 These twenty (20) P0 blockers were re-opened by the deep code analysis pass of 2026-10-27 and should be scheduled into the next planning cycle.
+
+---
+
+## 8. Validation Findings (2026-10-29)
+
+Docker builds (`make docker-build-cpu`, `make docker-build-emlgo-cpu`) succeeded. CPU, EMLGo (`-tags emlgo`), and GPU (`-tags gpu`) short test suites all pass on amd64 Linux.
+
+| # | Finding | Severity | Remediation |
+|---|---|---|---|
+| P0-21 | Measured statement coverage for `internal/store`, `internal/simd`, and `internal/onnx` is 37.6%, below the documented >95% claim. | P0 | Add targeted unit tests or revise the documented coverage claim; `coverage-gate` currently enforces a 30% floor. |

@@ -129,7 +129,7 @@ func main() {
 			seedFlagDefault = s
 			seedSource = "LONGBOW_BENCH_SEED"
 		} else {
-			log.Printf("Warning: LONGBOW_BENCH_SEED=%q is not an integer, using default seed %d\n", v, defaultSeed)
+			log.Printf("Warning: LONGBOW_BENCH_SEED=%q is not an integer, using default seed %d\n", v, defaultSeed) // #nosec G706 -- %q quotes and escapes control characters
 		}
 	}
 	seed := flag.Int64("seed", seedFlagDefault,

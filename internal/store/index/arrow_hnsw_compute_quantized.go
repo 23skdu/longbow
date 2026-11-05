@@ -412,21 +412,15 @@ func (c *float32ToSQ8Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * paddedDims
 		if start+c.dims <= len(chunk) {
 			v := chunk[start : start+c.dims]
-			var sum float32
-			for i, val := range c.q {
-				deq := c.minV + float32(v[i])*c.scale
-				diff := val - deq
-				sum += diff * diff
-			}
+			d := simd.DequantizeL2Float32Uint8(c.q, v, c.minV, c.scale)
 			if c.squared {
-				return sum, nil
+				return d * d, nil
 			}
-			return float32(math.Sqrt(float64(sum))), nil
+			return d, nil
 		}
 	}
 
-	// Fallback to explicit retrieval
-	return c.h.distFuncSquared(c.q, c.q) // Mock fallback error, shouldn't hit
+	return math.MaxFloat32, nil
 }
 
 func (c *float32ToSQ8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {

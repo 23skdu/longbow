@@ -53,7 +53,7 @@ func DequantizeL2Uint8Uint8(q8, v8 []uint8, scale float32) float32 {
 	}
 	dist, err := EuclideanDistanceSQ8(q8[:n], v8[:n])
 	if err == nil {
-		return float32(dist) * scale
+		return float32(math.Sqrt(float64(dist))) * scale
 	}
 	var sum float32
 	for i := 0; i < n; i++ {

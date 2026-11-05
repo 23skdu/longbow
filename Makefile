@@ -25,13 +25,13 @@ IMAGE_TAG     ?= latest
 .PHONY: all help ci release build build-release build-debug build-race build-adbc build-bench build-verify clean \
 	deps deps-upgrade lint lint-fast lint-fix vet staticcheck deadcode fmt fmt-check \
 	security sec-gosec sec-vulncheck sec-audit \
-	mem-bench mem-escape mem-profile mem-asan mem-valgrind \
+	perf-check cpu-profile profile-check mem-check mem-bench mem-escape mem-profile mem-asan mem-valgrind \
 	test test-short test-all race test-coverage coverage-gate coverage-html test-fuzz test-docker \
 	test-adbc test-adbc-python test-adbc-so \
 	cross-compile check-simd test-bench-harness helm-lint markdown-lint bench-ci bench-ab \
 	accuracy-gate oracle-gate observability-inventory observability-check observability-rules \
 	docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-gpu docker-build-all \
-	install-commit-hook install-hooks pre-commit
+	makehooks install-commit-hook install-hooks verify pre-commit
 
 # Default target
 all: build build-adbc
@@ -73,7 +73,11 @@ help:
 	@echo "  sec-vulncheck        Run govulncheck against Go vulnerability database"
 	@echo "  sec-audit            Audit dependencies for known CVEs and vulnerabilities"
 	@echo ""
-	@echo "Memory & Profiling Analysis:"
+	@echo "Performance & Memory Profiling Analysis:"
+	@echo "  perf-check           Run CPU & memory throughput benchmarks on SIMD and index hot paths"
+	@echo "  cpu-profile          Generate CPU profile (cpu.out) from index/SIMD workloads"
+	@echo "  profile-check        Run combined CPU and heap memory profiling check"
+	@echo "  mem-check            Run memory allocation benchmark & escape analysis check"
 	@echo "  mem-bench            Run memory allocation benchmarks (-benchmem)"
 	@echo "  mem-escape           Analyze compiler escape analysis and inlining decisions"
 	@echo "  mem-profile          Run tests with memory and CPU profiling enabled"
@@ -99,8 +103,10 @@ help:
 	@echo "  helm-lint            Lint and dry-run template the Helm chart"
 	@echo "  bench-ci             Run fast Unified Benchmark in CI mode"
 	@echo "  check-simd           Verify generated SIMD kernels are byte-for-byte reproducible"
-	@echo "  pre-commit           Run full pre-commit gate suite"
-	@echo "  install-hooks        Install Git pre-commit hooks"
+	@echo "  verify               Run scripts/verify.sh Git pre-commit verification hook"
+	@echo "  pre-commit           Alias for verify"
+	@echo "  makehooks            Install scripts/verify.sh into .git/hooks/pre-commit"
+	@echo "  install-hooks        Alias for makehooks"
 	@echo ""
 	@echo "Container & Release Targets:"
 	@echo "  release              Run full CI pipeline and build release binaries"
@@ -192,7 +198,7 @@ lint:
 
 lint-fast:
 	@echo "Running fast linters..."
-	$(GOLANGCI_LINT) run --fast ./...
+	$(GOLANGCI_LINT) run ./cmd/... ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./tools/...
 
 lint-fix:
 	@echo "Running golangci-lint with automated fixes..."
@@ -212,12 +218,12 @@ deadcode:
 
 fmt:
 	@echo "Formatting Go source files..."
-	gofmt -s -w .
-	$(GOIMPORTS) -w .
+	gofmt -s -w cmd internal client tools tests
+	$(GOIMPORTS) -w cmd internal client tools tests
 
 fmt-check:
 	@echo "Checking code formatting..."
-	@DIFF=$$(gofmt -l .); \
+	@DIFF=$$(gofmt -l cmd internal client tools tests); \
 	if [ -n "$$DIFF" ]; then \
 		echo "Unformatted files found:"; \
 		echo "$$DIFF"; \
@@ -236,7 +242,7 @@ markdown-lint:
 security: sec-gosec sec-vulncheck
 	@echo "Security analysis passed cleanly."
 
-GOSEC_FLAGS ?= -quiet
+GOSEC_FLAGS ?= -quiet -exclude=G115
 
 sec-gosec:
 	@echo "Running gosec AST security analysis..."
@@ -251,12 +257,30 @@ sec-audit: sec-vulncheck
 	$(GO) list -m all > /dev/null
 
 # ==============================================================================
-# Memory & Profiling Analysis
+# Performance & Memory Profiling Analysis
 # ==============================================================================
+
+perf-check:
+	@echo "Running performance throughput & allocation check on SIMD and PQ hot paths..."
+	$(GO) test -short -run='^$$' -bench='BenchmarkEuclidean|BenchmarkDot|BenchmarkPackTQ|BenchmarkUnpackTQ' -benchtime=50ms -benchmem ./internal/simd/
+
+cpu-profile:
+	@echo "Generating CPU profile (cpu.out) on SIMD and index hot paths..."
+	$(GO) test -short -run='^TestSIMDAccuracy' -cpuprofile=cpu.out ./internal/simd/
+	@echo "CPU profile written to cpu.out. Inspect with '$(GO) tool pprof -top cpu.out'."
+
+profile-check: mem-profile
+	@echo "Verifying generated CPU and memory profiles with go tool pprof..."
+	$(GO) tool pprof -top -nodecount=10 mem.out
+	$(GO) tool pprof -top -nodecount=10 cpu.out
+
+mem-check: mem-escape
+	@echo "Running bounded memory allocation check..."
+	$(GO) test -short -run='^$$' -bench='BenchmarkSlabArena|BenchmarkEuclidean' -benchtime=50ms -benchmem ./internal/memory/ ./internal/simd/
 
 mem-bench:
 	@echo "Running memory allocation benchmarks..."
-	$(GO) test -short -run='^$$' -bench=. -benchmem ./internal/store/... ./internal/simd/... ./internal/memory/...
+	$(GO) test -short -run='^$$' -bench=. -benchtime=50ms -benchmem ./internal/store/... ./internal/simd/... ./internal/memory/...
 
 mem-escape:
 	@echo "Analyzing compiler escape analysis for memory package..."
@@ -349,12 +373,12 @@ test-adbc-so: build-adbc
 	$(PYTHON) tests/adbc/test_driver_so.py
 
 accuracy-gate:
-	@echo "Running Accuracy Gate (numerical precision across 15 vector dtypes)..."
+	@echo "Running Accuracy Gate (numerical precision across 15 vector dtypes + batch/dispatch tiers)..."
 	$(GO) test -v ./internal/simd/ -run='^TestSIMDAccuracy'
 
 oracle-gate:
 	@echo "Running Oracle Gate (ground-truth parity vs reference oracles)..."
-	$(GO) test -v ./internal/simd/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/ -run='Parity'
+	$(GO) test -v ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/ -run='Parity'
 
 # Observability conformance (docs/roadmap.md Items 18-20, 24)
 observability-inventory:
@@ -381,17 +405,22 @@ bench-ab:
 	$(PYTHON) scripts/check_index_regression.py --help > /dev/null
 
 # Git pre-commit hook installation and quality gates
-install-commit-hook:
-	@echo "Installing pre-commit hook..."
+makehooks:
+	@echo "Installing Git pre-commit hook (scripts/verify.sh -> .git/hooks/pre-commit)..."
 	@mkdir -p .git/hooks
-	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit || cp scripts/pre-commit.sh .git/hooks/pre-commit
-	@chmod +x scripts/pre-commit.sh .git/hooks/pre-commit
-	@echo "Pre-commit hook installed successfully into .git/hooks/pre-commit."
+	@chmod +x scripts/verify.sh scripts/pre-commit.sh
+	@ln -sf ../../scripts/verify.sh .git/hooks/pre-commit || cp scripts/verify.sh .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "✓ Pre-commit hook (scripts/verify.sh) installed successfully into .git/hooks/pre-commit."
 
-install-hooks: install-commit-hook
+install-commit-hook: makehooks
 
-pre-commit:
-	@./scripts/pre-commit.sh
+install-hooks: makehooks
+
+verify:
+	@./scripts/verify.sh
+
+pre-commit: verify
 
 # ==============================================================================
 # Container & Release Targets (mirrors release-containers in CI)

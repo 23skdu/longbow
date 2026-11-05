@@ -135,6 +135,11 @@ func newGenericDispatch() *ImplementationDispatch {
 			ChebyshevDistance:     ChebyshevDistanceFloat32,
 			BrayCurtisDistance:    BrayCurtisDistanceFloat32,
 			L2SquaredDistance:     L2SquaredFloat32,
+			L2SquaredDistance128:  L2SquaredFloat32,
+			L2SquaredDistance384:  L2SquaredFloat32,
+			L2SquaredDistance768:  L2SquaredFloat32,
+			L2SquaredDistance1024: L2SquaredFloat32,
+			L2SquaredDistance3072: L2SquaredFloat32,
 		},
 		BatchDispatch: BatchDispatch{
 			EuclideanDistanceBatch:     euclideanBatchGeneric,
@@ -235,6 +240,8 @@ func layerAVX2(base *ImplementationDispatch) *ImplementationDispatch {
 	d.Exp = expAVX2
 	d.Log = logAVX2
 	d.UnpackTQ8 = UnpackTQ8AVX2
+	d.PackTQ2 = PackTQ2AVX2
+	d.PackTQ4 = PackTQ4AVX2
 	d.PackTQ8 = PackTQ8AVX2
 
 	d.Sum = sumAVX2
@@ -305,19 +312,6 @@ func layerAVX512(avx2 *ImplementationDispatch) *ImplementationDispatch {
 	d.PackTQ2 = PackTQ2AVX512
 	d.PackTQ4 = PackTQ4AVX512
 	d.PackTQ8 = PackTQ8AVX512
-
-	d.MatMul = matMulGeneric
-	d.BrayCurtisDistance = BrayCurtisDistanceFloat32
-	d.Sum = sumGeneric
-	d.Max = maxGeneric
-	d.Min = minGeneric
-	d.Sin = sinFloat32Generic
-	d.Cos = cosFloat32Generic
-	d.Sincos = sincosFloat32Generic
-	d.Sqrt = sqrtFloat32Generic
-	d.Atan2 = atan2Float32Generic
-	d.ArgMax = argMaxGeneric
-	d.ArgMin = argMinGeneric
 
 	return &d
 }

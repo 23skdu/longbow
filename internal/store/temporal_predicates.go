@@ -1,7 +1,5 @@
 package store
 
-import ()
-
 type TemporalPredicate struct {
 	minTs  int64
 	maxTs  int64

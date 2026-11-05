@@ -584,3 +584,105 @@ func TestSIMDAccuracy_NumericalIdentityEdgeCases(t *testing.T) {
 		assert.Equal(t, float32(0), l2Sq, "Uint8 L2Squared self-distance must be identically 0")
 	})
 }
+
+// TestSIMDAccuracy_BatchOperationsAcrossDims validates EuclideanDistanceBatch,
+// L2SquaredDistanceBatch, CosineDistanceBatch, DotProductBatch, and
+// EuclideanDistanceBatchFlat across all fast-path and fallback dimensions
+// (64, 128, 384, 768, 1024, 1536, 3072) against a float64 ground-truth oracle.
+func TestSIMDAccuracy_BatchOperationsAcrossDims(t *testing.T) {
+	dimsList := []int{64, 128, 384, 768, 1024, 1536, 3072}
+	batchSize := 6
+
+	for _, dim := range dimsList {
+		t.Run(fmt.Sprintf("Dim_%d", dim), func(t *testing.T) {
+			rng := rand.New(rand.NewSource(int64(dim * 1337))) // #nosec G404
+			query := make([]float32, dim)
+			var normQ float64
+			for i := 0; i < dim; i++ {
+				query[i] = float32(rng.Float64()*2 - 1)
+				normQ += float64(query[i]) * float64(query[i])
+			}
+
+			vectors := make([][]float32, batchSize)
+			flatVectors := make([]float32, batchSize*dim)
+			gtEuc := make([]float64, batchSize)
+			gtL2Sq := make([]float64, batchSize)
+			gtDot := make([]float64, batchSize)
+			gtCos := make([]float64, batchSize)
+
+			for b := 0; b < batchSize; b++ {
+				v := make([]float32, dim)
+				var dot, l2Sq, normV float64
+				for i := 0; i < dim; i++ {
+					v[i] = float32(rng.Float64()*2 - 1)
+					flatVectors[b*dim+i] = v[i]
+					dot += float64(query[i]) * float64(v[i])
+					diff := float64(query[i]) - float64(v[i])
+					l2Sq += diff * diff
+					normV += float64(v[i]) * float64(v[i])
+				}
+				vectors[b] = v
+				gtL2Sq[b] = l2Sq
+				gtEuc[b] = math.Sqrt(l2Sq)
+				gtDot[b] = dot
+				gtCos[b] = 1.0 - (dot / (math.Sqrt(normQ) * math.Sqrt(normV)))
+			}
+
+			resEuc := make([]float32, batchSize)
+			require.NoError(t, EuclideanDistanceBatch(query, vectors, resEuc))
+			resFlat := make([]float32, batchSize)
+			require.NoError(t, EuclideanDistanceBatchFlat(query, flatVectors, batchSize, dim, resFlat))
+			resL2Sq := make([]float32, batchSize)
+			require.NoError(t, L2SquaredDistanceBatch(query, vectors, resL2Sq))
+			resDot := make([]float32, batchSize)
+			require.NoError(t, DotProductBatch(query, vectors, resDot))
+			resCos := make([]float32, batchSize)
+			require.NoError(t, CosineDistanceBatch(query, vectors, resCos))
+
+			for b := 0; b < batchSize; b++ {
+				assert.InDelta(t, gtEuc[b], resEuc[b], gtEuc[b]*float32RelativeTol+1e-4, "EuclideanDistanceBatch dim=%d idx=%d", dim, b)
+				assert.InDelta(t, gtEuc[b], resFlat[b], gtEuc[b]*float32RelativeTol+1e-4, "EuclideanDistanceBatchFlat dim=%d idx=%d", dim, b)
+				assert.InDelta(t, gtL2Sq[b], resL2Sq[b], gtL2Sq[b]*float32RelativeTol+1e-3, "L2SquaredDistanceBatch dim=%d idx=%d", dim, b)
+				assert.InDelta(t, gtDot[b], resDot[b], math.Abs(gtDot[b])*float32RelativeTol+1e-4, "DotProductBatch dim=%d idx=%d", dim, b)
+				assert.InDelta(t, gtCos[b], resCos[b], float32RelativeTol*20, "CosineDistanceBatch dim=%d idx=%d", dim, b)
+			}
+		})
+	}
+}
+
+// TestSIMDAccuracy_DispatchLayersParity verifies that layered dispatch tables
+// (Generic -> AVX2 -> AVX-512) preserve SIMD kernel bindings for reductions,
+// transcendental math, and matrix operations and match reference tolerances.
+func TestSIMDAccuracy_DispatchLayersParity(t *testing.T) {
+	gen := newGenericDispatch()
+	avx2 := layerAVX2(gen)
+	avx512 := layerAVX512(avx2)
+
+	dim := 128
+	rng := rand.New(rand.NewSource(777)) // #nosec G404
+	vec := make([]float32, dim)
+	posVec := make([]float32, dim)
+	vecB := make([]float32, dim)
+	for i := range vec {
+		vec[i] = float32(rng.Float64()*4 - 2)
+		posVec[i] = float32(rng.Float64()*4 + 0.1)
+		vecB[i] = float32(rng.Float64()*4 - 2)
+	}
+
+	assert.InDelta(t, gen.Sum(vec), avx2.Sum(vec), 1e-4, "Sum AVX2 vs Generic")
+	assert.InDelta(t, gen.Sum(vec), avx512.Sum(vec), 1e-4, "Sum AVX512 vs Generic")
+	assert.Equal(t, gen.Max(vec), avx2.Max(vec), "Max AVX2 vs Generic")
+	assert.Equal(t, gen.Max(vec), avx512.Max(vec), "Max AVX512 vs Generic")
+	assert.Equal(t, gen.Min(vec), avx2.Min(vec), "Min AVX2 vs Generic")
+	assert.Equal(t, gen.Min(vec), avx512.Min(vec), "Min AVX512 vs Generic")
+	assert.Equal(t, gen.ArgMax(vec), avx2.ArgMax(vec), "ArgMax AVX2 vs Generic")
+	assert.Equal(t, gen.ArgMax(vec), avx512.ArgMax(vec), "ArgMax AVX512 vs Generic")
+	assert.Equal(t, gen.ArgMin(vec), avx2.ArgMin(vec), "ArgMin AVX2 vs Generic")
+	assert.Equal(t, gen.ArgMin(vec), avx512.ArgMin(vec), "ArgMin AVX512 vs Generic")
+
+	bcGen, err := gen.BrayCurtisDistance(posVec, vecB)
+	require.NoError(t, err)
+	bcAVX512, err := avx512.BrayCurtisDistance(posVec, vecB)
+	require.NoError(t, err)
+	assert.InDelta(t, bcGen, bcAVX512, 1e-4, "BrayCurtis AVX512 vs Generic")
+}

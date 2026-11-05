@@ -96,7 +96,7 @@ func (a *OffHeapAllocator) Allocated() int64 {
 
 // CastToSlice converts a pointer and length to a byte slice without allocation.
 func CastToSlice(ptr unsafe.Pointer, length int) []byte {
-	return unsafe.Slice((*byte)(ptr), length)
+	return unsafe.Slice((*byte)(ptr), length) // #nosec G103 -- intentional zero-copy mmap slice header construction
 }
 
 // Mmap maps a file into memory.

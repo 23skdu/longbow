@@ -38,9 +38,40 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 
 	// Special handling for common dimensions to bypass generic batch overhead if possible
 	dims := len(query)
-	switch dims {
-	case 128, 384, 768:
+	if implementation == "generic" && (dims == 128 || dims == 384 || dims == 768) {
 		euclideanDistanceBatch4Way(query, vectors, results, dims, false)
+		return nil
+	}
+	switch dims {
+	case 128:
+		for i, v := range vectors {
+			if v == nil || len(v) != 128 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.EuclideanDistance128(query, v)
+			results[i] = d
+		}
+		return nil
+	case 384:
+		for i, v := range vectors {
+			if v == nil || len(v) != 384 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.EuclideanDistance384(query, v)
+			results[i] = d
+		}
+		return nil
+	case 768:
+		for i, v := range vectors {
+			if v == nil || len(v) != 768 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.EuclideanDistance768(query, v)
+			results[i] = d
+		}
 		return nil
 	case 1024:
 		for i, v := range vectors {
@@ -191,9 +222,60 @@ func DotProductBatch(query []float32, vectors [][]float32, results []float32) er
 	metrics.SimdDispatchTotal.WithLabelValues(implementation, "dot_batch").Inc()
 
 	dims := len(query)
-	switch dims {
-	case 128, 384, 768:
+	if implementation == "generic" && (dims == 128 || dims == 384 || dims == 768) {
 		dotProductBatch4Way(query, vectors, results, dims)
+		return nil
+	}
+	switch dims {
+	case 128:
+		for i, v := range vectors {
+			if v == nil || len(v) != 128 {
+				results[i] = 0
+				continue
+			}
+			d, _ := currentDispatch.DotProduct128(query, v)
+			results[i] = d
+		}
+		return nil
+	case 384:
+		for i, v := range vectors {
+			if v == nil || len(v) != 384 {
+				results[i] = 0
+				continue
+			}
+			d, _ := currentDispatch.DotProduct384(query, v)
+			results[i] = d
+		}
+		return nil
+	case 768:
+		for i, v := range vectors {
+			if v == nil || len(v) != 768 {
+				results[i] = 0
+				continue
+			}
+			d, _ := currentDispatch.DotProduct768(query, v)
+			results[i] = d
+		}
+		return nil
+	case 1024:
+		for i, v := range vectors {
+			if v == nil || len(v) != 1024 {
+				results[i] = 0
+				continue
+			}
+			d, _ := currentDispatch.DotProduct1024(query, v)
+			results[i] = d
+		}
+		return nil
+	case 3072:
+		for i, v := range vectors {
+			if v == nil || len(v) != 3072 {
+				results[i] = 0
+				continue
+			}
+			d, _ := currentDispatch.DotProduct3072(query, v)
+			results[i] = d
+		}
 		return nil
 	}
 
@@ -229,9 +311,40 @@ func L2SquaredDistanceBatch(query []float32, vectors [][]float32, results []floa
 	}
 	metrics.SimdDispatchTotal.WithLabelValues(implementation, "l2squared_batch").Inc()
 	dims := len(query)
-	switch dims {
-	case 128, 384, 768:
+	if implementation == "generic" && (dims == 128 || dims == 384 || dims == 768) {
 		euclideanDistanceBatch4Way(query, vectors, results, dims, true)
+		return nil
+	}
+	switch dims {
+	case 128:
+		for i, v := range vectors {
+			if v == nil || len(v) != 128 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.L2SquaredDistance128(query, v)
+			results[i] = d
+		}
+		return nil
+	case 384:
+		for i, v := range vectors {
+			if v == nil || len(v) != 384 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.L2SquaredDistance384(query, v)
+			results[i] = d
+		}
+		return nil
+	case 768:
+		for i, v := range vectors {
+			if v == nil || len(v) != 768 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.L2SquaredDistance768(query, v)
+			results[i] = d
+		}
 		return nil
 	case 1024:
 		for i, v := range vectors {
@@ -239,7 +352,7 @@ func L2SquaredDistanceBatch(query []float32, vectors [][]float32, results []floa
 				results[i] = math.MaxFloat32
 				continue
 			}
-			d, _ := currentDispatch.L2SquaredDistance128(query, v)
+			d, _ := currentDispatch.L2SquaredDistance1024(query, v)
 			results[i] = d
 		}
 		return nil

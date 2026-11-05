@@ -1,190 +1,274 @@
-# Longbow Roadmap
+# Longbow Deep Code Analysis: 20 Performance & Accuracy Improvements, Quality Gates, and Verification Roadmap
 
-**Last updated**: 2026-10-29  
-**Status**: **COMPLETED** — All 10 P1 and P2 roadmap milestones (Items 40–49) are fully implemented, verified across local AVX2 and remote GCP AVX-512 Xeon testbed (`tf-testbed-02bf2a`), and closed. All 49 roadmap items across P0, P1, P2, and P3 are 100% verified. **2026-10-27 Update**: the full deep code analysis pass re-opened twenty (20) new P0 blockers from dead-code, unwiring, and tooling-gap findings; see Section 7.
+This document supersedes the previous roadmap with a new set of **20 source-grounded performance and numerical accuracy improvements**, an expanded **Unit & Fuzz Testing architecture**, mandatory **Accuracy Gate (`accuracy-gate`)** and **Oracle Gate (`oracle-gate`)** code quality gates, and a unified **`Makefile` + `scripts/verify.sh` (`make makehooks`)** verification workflow.
 
 ---
 
-## 1. Top Immediate Priorities (P0 Blockers & P1 Critical Path)
+## 1. Executive Summary & Immediate P0 Fixes Landed
 
-(All 49 roadmap milestones across P0, P1, P2, and P3 have been fully completed, verified with comprehensive test coverage, and closed. No active blockers or pending roadmap items remaining.)
+During deep code analysis of the `internal/simd`, `internal/store/index`, `internal/store`, `internal/pq`, `internal/tensor`, `internal/memory`, and `internal/adbc` subsystems, 20 concrete performance and accuracy gaps were identified. Four critical P0 accuracy and dispatch regressions were fixed immediately and locked down by the expanded Accuracy and Oracle gates:
 
-| Status | Priority Tier | Subsystems Covered | Milestones Completed | Quality & Conformance Gate |
-|:---|:---|:---|:---|:---|
-| **CLOSED** | **P0 Blockers** | Architectural Decomposition | Items 35, 36, 37, 38, 39 | 100% God modules decomposed (<800 LOC ceiling maintained) |
-| **CLOSED** | **P1 Critical Path** | AVX-512, AMX, ARM SVE2, PQ ADC, HugePage | Items 40, 41, 42, 43, 44 | 100% verified on local AVX2 and GCP AVX-512 Xeon testbed |
-| **CLOSED** | **P2 Optimizations** | Visited Bitmask, SQ8 Calibration, Multi-Centroid, TQ2, Cache Layout | Items 45, 46, 47, 48, 49 | 100% parity across dense, hybrid, and filtered search modes |
-| **CLOSED** | **P3 Observability** | Metrics, Alerting, Promtool, Dashboards, CI | Items 18, 19/24, 20, 21, 22/23 | 28/28 rule groups unit-tested; 0 unwatched failure counters |
+1. **Fixed `L2SquaredDistanceBatch` 1024-Dim Silent Truncation (`internal/simd/batch_operations.go`)**: `case 1024:` previously invoked `currentDispatch.L2SquaredDistance128(query, v)`, discarding 87.5% of the vector (`dims[128:1024]`). Fixed to dispatch `currentDispatch.L2SquaredDistance1024(query, v)`.
+2. **Fixed Scalar 4-Way Loop Shadowing SIMD Batch Dispatch for Dims 128, 384, 768 (`internal/simd/batch_operations.go`)**: `EuclideanDistanceBatch`, `L2SquaredDistanceBatch`, and `DotProductBatch` previously intercepted `dims == 128, 384, 768` and routed them unconditionally to scalar Go loops (`euclideanDistanceBatch4Way` / `dotProductBatch4Way`), bypassing AVX2, AVX-512, NEON, and AMX kernels. Fixed to dispatch directly to `currentDispatch` dimension-specialized SIMD kernels whenever hardware acceleration is active.
+3. **Fixed `layerAVX512` Clobbering 12 AVX2 Math & Reduction Kernels (`internal/simd/dispatch_tables.go`)**: `layerAVX512` copied the `avx2` dispatch struct and then overwrote `MatMul`, `BrayCurtisDistance`, `Sum`, `Max`, `Min`, `Sin`, `Cos`, `Sincos`, `Sqrt`, `Atan2`, `ArgMax`, and `ArgMin` back to `*Generic` scalar functions, and `layerAVX2` omitted `PackTQ2AVX2` and `PackTQ4AVX2`. Fixed so `layerAVX512` preserves AVX2 kernels and `layerAVX2` wires `PackTQ2AVX2` and `PackTQ4AVX2`.
+4. **Fixed `DequantizeL2Uint8Uint8` Missing Square Root & `float32ToSQ8Computer` False-Zero Fallback (`internal/simd/dequant_distance.go`, `internal/store/index/arrow_hnsw_compute_quantized.go`)**: `DequantizeL2Uint8Uint8` multiplied the squared integer L2 accumulator from `EuclideanDistanceSQ8` by `scale` without taking `math.Sqrt`, and `float32ToSQ8Computer.ComputeSingle` returned `0.0` (`distFuncSquared(c.q, c.q)`) on missing chunks instead of `math.MaxFloat32` and used a scalar loop instead of `simd.DequantizeL2Float32Uint8`. Both are now fixed and covered by `TestOracleParity_AllBatchKernels`.
 
-```mermaid
-graph TD
-    subgraph Complete["Completed Foundation (100% Quality Pass)"]
-        ALL["All 49 Milestones Verified & Closed"]
-        P0["P0: Architecture & God Modules (Items 35–39)"]
-        P1["P1: Core Performance & Hardware Acceleration (Items 40–44)"]
-        P2["P2: Algorithmic & Storage Optimizations (Items 45–49)"]
-        P3["P3: Observability & Conformance (Items 18–24)"]
-        FOUNDATION["Core Foundation & EMLGo Integration (Items 1–34)"]
-    end
+---
 
-    ALL --> P0
-    ALL --> P1
-    ALL --> P2
-    ALL --> P3
-    ALL --> FOUNDATION
+## 2. Top 20 Performance & Accuracy Improvements
+
+### Summary Matrix
+
+| # | Category | Subsystem & Location | Issue Summary | Target Impact | Gate |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1** | Accuracy | `internal/simd/batch_operations.go:305-330` | `L2SquaredDistanceBatch` 1024-dim truncation (`L2SquaredDistance128` called instead of `1024`) | Restores 100% 1024-dim L2Squared accuracy (**Fixed**) | `accuracy-gate` |
+| **2** | Performance | `internal/simd/batch_operations.go:40-92, 220-275` | Scalar 4-way loop shadows AVX2/AVX-512/NEON batch kernels for dims 128, 384, 768 | 3.5x-6.2x batch distance speedup (**Fixed**) | `perf-check` |
+| **3** | Performance | `internal/simd/dispatch_tables.go:134-142, 237-240, 304-310` | `layerAVX512` resets 12 AVX2 math/reduction kernels to Generic scalar; `PackTQ2/4` unwired on AVX2 | 2.8x-5.0x reduction/math speedup on AVX-512 (**Fixed**) | `accuracy-gate` |
+| **4** | Accuracy & Perf | `internal/simd/dequant_distance.go:54-57`, `internal/store/index/arrow_hnsw_compute_quantized.go:406-430` | `DequantizeL2Uint8Uint8` omits `math.Sqrt`; `float32ToSQ8Computer` returns `0.0` on missing chunk and runs scalar loop | Exact SQ8 L2 parity + 4x faster SQ8 HNSW scoring (**Fixed**) | `oracle-gate` |
+| **5** | Accuracy & Perf | `internal/store/index/turboquant.go:208-236` | `TurboQuantEncoder.Encode` computes QJL residual sign bits against unquantized `angles` instead of quantized angle codes | +6-11% Recall@10 for TQ4/TQ8 + 3x faster encoding via LUT | `oracle-gate` |
+| **6** | Accuracy & Perf | `internal/store/index/turboquant2.go:188-190, 304-311` | `TurboQuant2Encoder` 2-bit angle LUT aliases `q=0 (-pi)` and `q=3 (+pi)` to the same Cartesian point and locks `rngMu` per dimension | Restores full 4-state 2-bit codebook (+12% recall) & eliminates mutex contention | `oracle-gate` |
+| **7** | Performance | `internal/store/index/arrow_hnsw_compute_float16.go:26-50`, `arrow_hnsw_compute_complex.go:60-85, 248-271` | `float16Computer`, `complex64Computer`, and `complex128Computer` allocate via `getVectorWithCachedDisk` before checking zero-copy `*ChunkFast` | Eliminates 1 heap alloc/copy per HNSW hop (0 allocs/op) | `mem-check` |
+| **8** | Accuracy | `internal/store/hybrid_search.go:126, 257-303, 350-366` | `ReciprocalRankFusion` ignores `alpha` parameter, has non-deterministic tie order, and `HybridSearchWithBitmap` leaks unfiltered BM25 hits | Enforces `alpha`-weighted RRF, deterministic tie-breaking, and strict bitmap filtering | `oracle-gate` |
+| **9** | Accuracy & Perf | `internal/store/index/ivf_opq_index.go:304-328, 409-454, 488-490, 800-839` | `IVFOPQIndex.SearchBatch` passes cluster ID as VectorID in `refineBatch`; `SearchVectorsWithBitmap` uses scalar loop + full sort instead of `ADCDistanceBatch` + top-K heap | Fixes batch recall corruption & 4x faster filtered IVF-OPQ search | `oracle-gate` |
+| **10** | Accuracy & Perf | `internal/store/index/scalar_quantization.go:208-223, 263-308` | `SQ8Encoder.EncodeInto` truncates via `uint8(normalized)` instead of nearest rounding `uint8(normalized + 0.5)` and uses scalar distance loops | Halves max quantization bias (`-0.5 LSB` -> `0 LSB`) + SIMD SQ8 distance | `oracle-gate` |
+| **11** | Performance | `internal/pq/opq.go:122-190` | `OPQEncoder.Encode`, `Decode`, and `RotateVector` convert `float32` <-> `float64` and allocate two `gonum/mat.VecDense` per call | 8x faster OPQ rotation, 0 heap allocations in steady state | `mem-bench` |
+| **12** | Accuracy & Perf | `internal/pq/kmeans.go:80-102, 160-188` | `TrainKMeans` uses uniform random centroid seeding (`rand.Perm`) and `MetricEuclidean` (`sqrt` per centroid in E-step) instead of K-Means++ and `FindNearestCentroid` | 15-25% lower PQ distortion + 3x faster codebook training | `oracle-gate` |
+| **13** | Performance | `internal/tensor/ops.go:174-208` | `contractNumeric` allocates `cIndices := make([]int, len(aAxes))` on every outer iteration and recomputes `totalIter` and `div/mod` inside the inner loop | Zero-alloc inner contraction loop + SIMD `DotProduct` fast path for 2D `MatMul` | `mem-bench` |
+| **14** | Accuracy | `internal/memory/arena.go:162-187, 201-230, 319` | `SlabArena.Alloc` and `AllocDirty` lock-free `allocFast` path omits `a.stats.UsedBytes.Add` and `metrics.ArenaFastPathTotal.Inc()` | 100% accurate `ArenaStats.UsedBytes` accounting across fast and slow paths | `oracle-gate` |
+| **15** | Accuracy | `internal/store/hnsw_temporal.go:70-136` | `TemporalHNSWIndex.SearchAsOf`, `SearchRange`, and `SearchSlidingWindow` return raw B-tree IDs with `Score: 0` without executing HNSW vector search | Full temporal-filtered ANN search with exact distance scores | `oracle-gate` |
+| **16** | Performance | `internal/store/index/bm25_arena.go:49, 100-140, 222-286` | `BM25ArenaIndex` leaves `postingArena` unused, allocates per-doc maps, scans postings in `O(P^2)`, and stores all TFs in a global `map[uint64]uint32` | Arena-backed contiguous postings + `simd.BM25ScoreBatch` (5x faster scoring) | `mem-bench` |
+| **17** | Performance | `internal/store/index/bm25_inverted_index.go:588-634` | `BM25InvertedIndex.SearchBM25` recomputes `blockMaxScores` over the entire posting list on every multi-term query instead of caching per-block max TF/min DocLen | Eliminates `O(N_postings)` pre-scan per query in Block-Max WAND | `perf-check` |
+| **18** | Performance | `internal/store/index/arrow_hnsw_compute_float32.go:241-274` | `float32Computer.ComputeBatch` iterates element-by-element calling `distFunc(c.q, v)` instead of batch SIMD (`L2SquaredDistanceBatch` / `DotProductBatch` / `CosineDistanceBatch`) | 2.5x-4.0x faster `float32Computer` batch candidate evaluation | `perf-check` |
+| **19** | Performance | `internal/store/store.go:161`, `internal/store/cluster/cdc.go:158, 182-186` | `VectorStore.hnsw2Config` is unwired during dataset creation and `ChangeDataCapture` bypasses its initialized `batchAggregator` | Enables HNSW2 dataset config propagation and batched CDC replication | `test-short` |
+| **20** | Accuracy | `internal/adbc/statement.go:358-410` | `Statement.executeScan` synthesizes a dummy query vector and runs `SearchHybrid` returning `(id, score)` instead of iterating dataset `RecordBatch`es matching `ExecuteSchema` | Schema-consistent Arrow `RecordBatch` table scan in ADBC driver | `test-adbc` |
+
+---
+
+### Detailed Specification of the 20 Improvements
+
+#### Improvement 1: Fix `L2SquaredDistanceBatch` 1024-Dimension Silent Truncation
+
+- **Location**: `internal/simd/batch_operations.go:305-330`
+- **Root Cause**: In `L2SquaredDistanceBatch`, the fast-path switch for `case 1024:` called `currentDispatch.L2SquaredDistance128(query, v)` instead of `currentDispatch.L2SquaredDistance1024(query, v)`, silently ignoring dimensions `128..1023` (87.5% of every 1024-dim embedding).
+- **Remediation**: Route `case 1024:` to `currentDispatch.L2SquaredDistance1024(query, v)` and ensure `newGenericDispatch()` populates `L2SquaredDistance128..3072`. (**Completed & Verified**)
+
+#### Improvement 2: Route 128, 384, and 768 Batch Operations Through Hardware SIMD Dispatch
+
+- **Location**: `internal/simd/batch_operations.go:40-92, 220-275, 296-332`
+- **Root Cause**: `EuclideanDistanceBatch`, `DotProductBatch`, and `L2SquaredDistanceBatch` intercepted `dims == 128, 384, 768` and called scalar Go helpers `euclideanDistanceBatch4Way` and `dotProductBatch4Way` even when AVX2, AVX-512, NEON, or AMX was active.
+- **Remediation**: Restrict `euclideanDistanceBatch4Way` and `dotProductBatch4Way` to `implementation == "generic"` and dispatch `128, 384, 768, 1024, 3072` directly to `currentDispatch` SIMD kernels. (**Completed & Verified**)
+
+#### Improvement 3: Preserve AVX2 Math & Reduction Kernels in `layerAVX512` and Wire `PackTQ2/4AVX2`
+
+- **Location**: `internal/simd/dispatch_tables.go:237-240, 304-322`
+- **Root Cause**: `layerAVX512` started from `d := *avx2` and then overwrote `MatMul`, `BrayCurtisDistance`, `Sum`, `Max`, `Min`, `Sin`, `Cos`, `Sincos`, `Sqrt`, `Atan2`, `ArgMax`, and `ArgMin` back to `*Generic` scalar implementations. In addition, `layerAVX2` only wired `PackTQ8AVX2` and omitted `PackTQ2AVX2` and `PackTQ4AVX2`.
+- **Remediation**: Remove the 12 scalar overrides in `layerAVX512` so AVX-512 inherits AVX2 kernels when dedicated 512-bit kernels are not present, and wire `PackTQ2AVX2` and `PackTQ4AVX2` in `layerAVX2`. (**Completed & Verified**)
+
+#### Improvement 4: Fix `DequantizeL2Uint8Uint8` Missing `math.Sqrt` and `float32ToSQ8Computer` False-Zero Fallback
+
+- **Location**: `internal/simd/dequant_distance.go:54-57`, `internal/store/index/arrow_hnsw_compute_quantized.go:406-430`
+- **Root Cause**: `DequantizeL2Uint8Uint8` called `EuclideanDistanceSQ8` (which returns squared `int32` L2 distance) and multiplied by `scale` without `math.Sqrt`, contradicting its docstring and its own fallback branch. Meanwhile, `float32ToSQ8Computer.ComputeSingle` returned `c.h.distFuncSquared(c.q, c.q)` (`0.0`) when `chunk == nil` and used a scalar loop instead of `simd.DequantizeL2Float32Uint8`.
+- **Remediation**: Apply `math.Sqrt(float64(dist)) * scale` in `DequantizeL2Uint8Uint8`, use `simd.DequantizeL2Float32Uint8` in `float32ToSQ8Computer.ComputeSingle`, and return `math.MaxFloat32, nil` when a chunk is absent. (**Completed & Verified**)
+
+#### Improvement 5: Reconstruct From Quantized Angle Codes in `TurboQuantEncoder.Encode`
+
+- **Location**: `internal/store/index/turboquant.go:208-236`
+- **Root Cause**: Step 4 of `TurboQuantEncoder.Encode` calls `e.polarReconstructRecursive(radius, angles, recon, stack)` using continuous *unquantized* `angles` before packing. As a result, `work - recon` in Step 5 measures only `float32` `Sincos` rounding noise (`~1e-7`) rather than the angle quantization residual, rendering the 1-bit QJL residual correction ineffective and paying `pow2 - 1` scalar `math.Sincos` calls per encoded vector.
+- **Remediation**: Pack angle codes first (or quantize angle indices in-place) and reconstruct `recon` via `e.polarReconstructCodes(radius, packedAngles, recon, stack)` using the precomputed `Sincos` LUT before computing QJL sign bits `work[i] > recon[i]`.
+
+#### Improvement 6: Fix Degenerate 2-Bit Angle Grid and Per-Dimension Mutex Lock in `TurboQuant2Encoder`
+
+- **Location**: `internal/store/index/turboquant2.go:188-190, 304-311`, `internal/simd/simd_turboquant.go:32-58, 147-167`
+- **Root Cause**: `TurboQuant2Encoder` quantizes angles to 4 levels with `scale = 2*pi/3, bias = -pi`, producing angles `{-pi, -pi/3, +pi/3, +pi}`. Because `cos(-pi) == cos(+pi) == -1` and `sin(-pi) == sin(+pi) == 0`, codes `0` and `3` map to the identical Cartesian vector, collapsing a 2-bit (4-state) quantizer into 3 distinct points on the unit circle. Additionally, `Encode` locks `e.rngMu` inside the per-dimension `for i := 0; i < e.pow2; i++` loop.
+- **Remediation**: Shift the 2-bit angle grid to cell midpoints `{-3*pi/4, -pi/4, +pi/4, +3*pi/4}` (`scale = pi/2, bias = -3*pi/4`) so all 4 codes represent orthogonal quadrants on the unit circle, and hoist RNG state into a pooled per-worker PRNG or lock once per vector.
+
+#### Improvement 7: Restore Zero-Copy Chunk Fast Path in `float16Computer`, `complex64Computer`, and `complex128Computer`
+
+- **Location**: `internal/store/index/arrow_hnsw_compute_float16.go:26-50`, `internal/store/index/arrow_hnsw_compute_complex.go:60-85, 248-271`
+- **Root Cause**: `ComputeSingle` calls `c.h.getVectorWithCachedDisk(c.data, c.cachedDiskGraph, id)` *before* checking `GetVectorsF16ChunkFast` / `GetVectorsComplex64ChunkFast` / `GetVectorsComplex128ChunkFast`. Because `getVectorWithCachedDisk` allocates and copies a new slice on every call, the zero-copy chunk fast path below it is dead code whenever `getVectorWithCachedDisk` succeeds.
+- **Remediation**: Check `GetVectorsF16ChunkFast` / `GetVectorsComplex64ChunkFast` / `GetVectorsComplex128ChunkFast` first (matching `float32Computer` and `float64Computer`), falling back to `getVectorWithCachedDisk` only when the in-memory chunk is nil.
+
+#### Improvement 8: Honour `alpha` Weighting, Deterministic Tie-Breaking, and Bitmap Filtering in `HybridSearch`
+
+- **Location**: `internal/store/hybrid_search.go:126, 257-303, 350-366`
+- **Root Cause**: `SearchHybrid` accepts `alpha` (`0..1` dense vs. sparse weight) but `ReciprocalRankFusion` weights both legs equally (`1.0 / (k + rank + 1)`). When RRF scores tie, map iteration order causes non-deterministic top-K ordering. Furthermore, `HybridSearchWithBitmap` passes `req.Bitset` to dense search but passes `nil` to `searchBM25Arena` and `bm25Legacy.SearchBM25`, leaking filtered-out documents into hybrid results.
+- **Remediation**: Weight dense RRF contributions by `alpha` and sparse contributions by `1.0 - alpha`, break score ties deterministically by ascending `VectorID`, and pass `req.Bitset` into both BM25 search paths in `HybridSearchWithBitmap`.
+
+#### Improvement 9: Fix `IVFOPQIndex.SearchBatch` ID Mixup and Vectorize `SearchVectorsWithBitmap`
+
+- **Location**: `internal/store/index/ivf_opq_index.go:304-328, 409-454, 488-490, 800-839`
+- **Root Cause**: In `IVFOPQIndex`, `refineBatch` passes coarse `clusterDist.id` (cluster index) to `decodeVector` as a `VectorID`, and `computeResidualScore` treats `queryIdx` (`0..B-1`) as a `VectorID` and compares against a zero slice `make([]float32, idx.dim)`. Meanwhile, `SearchVectorsWithBitmap` evaluates candidates with a scalar loop and `sort.Slice` over all cluster items instead of `ADCDistanceBatch` and a bounded top-K max-heap.
+- **Remediation**: Rewrite `SearchBatch` to probe `nprobe` clusters per query using `ADCDistanceBatch` and refine top-R vector IDs against the actual rotated query vector; vectorize `SearchVectorsWithBitmap` with `ADCDistanceBatch` and a bounded `k`-heap.
+
+#### Improvement 10: Eliminate Truncation Bias and Vectorize Distance Kernels in `SQ8Encoder`
+
+- **Location**: `internal/store/index/scalar_quantization.go:208-223, 263-308`
+- **Root Cause**: `SQ8Encoder.EncodeInto` converts `normalized` via `uint8(normalized)` (floor truncation), introducing a systematic `-0.5 * invScale` bias per dimension, and `SQ8EuclideanDistance`, `SQ8DistanceFast`, and `SQ8CosineDistance` execute scalar per-element loops.
+- **Remediation**: Round to nearest integer via `uint8(normalized + 0.5)` (matching `QuantizeSQ8Adaptive`) and dispatch uniform/isotropic SQ8 distances through `simd.EuclideanDistanceSQ8` and `simd.DotDistanceSQ8`.
+
+#### Improvement 11: Replace `gonum/mat` Float64 Conversions in `OPQEncoder` with Flat Float32 SIMD MatMul
+
+- **Location**: `internal/pq/opq.go:122-190`
+- **Root Cause**: Every `OPQEncoder.Encode`, `Decode`, and `RotateVector` call converts `[]float32` to `[]float64`, allocates two `mat.VecDense` wrappers, runs float64 matrix-vector multiplication, and converts back to `[]float32`.
+- **Remediation**: Store pre-transposed `[]float32` rotation matrices `R_flat` and `R_T_flat` (`dims * dims`) on `OPQEncoder` after training and compute rotations via `simd.MatMul` or `simd.DotProduct` into pooled scratch buffers with zero heap allocations.
+
+#### Improvement 12: Upgrade `pq.TrainKMeans` to K-Means++ Initialization and `simd.FindNearestCentroid`
+
+- **Location**: `internal/pq/kmeans.go:80-102, 160-188`
+- **Root Cause**: `TrainKMeans` initializes centroids via uniform random permutation (`rand.Perm(n)[:k]`) and configures `GetKernel[float32](MetricEuclidean, dims)` in `runCPUEstep`, computing an unnecessary `math.Sqrt` on every `(vector, centroid)` pair instead of using `simd.FindNearestCentroid` (`L2Squared`).
+- **Remediation**: Implement $D^2$-weighted K-Means++ initialization and replace the scalar centroid loop in `runCPUEstep` with `simd.FindNearestCentroid`.
+
+#### Improvement 13: Eliminate Inner-Loop Slice Allocation and Modulo Division in `tensor.contractNumeric`
+
+- **Location**: `internal/tensor/ops.go:174-208`
+- **Root Cause**: `contractNumeric` allocates `cIndices := make([]int, len(aAxes))` on every outer free-index iteration and recomputes `totalIter` and `rem % dim` / `rem / dim` inside the innermost contraction loop.
+- **Remediation**: Pre-allocate `cIndices` and stride tables outside the outer loop, increment offsets with odometer carry addition, and add a direct `simd.MatMul` fast path for rank-2 `float32` contractions.
+
+#### Improvement 14: Fix Lock-Free Fast-Path Byte Accounting in `SlabArena`
+
+- **Location**: `internal/memory/arena.go:162-187, 201-230, 319`
+- **Root Cause**: When `SlabArena.Alloc` or `AllocDirty` succeeds on the initial lock-free `allocFast` call (lines 166 and 182), it returns immediately without updating `a.stats.UsedBytes.Add(int64(alignedSize))` or `metrics.ArenaFastPathTotal.Inc()`. Those counters are only updated when `allocFast` is called a second time inside `allocCommon`.
+- **Remediation**: Move `a.stats.UsedBytes.Add(int64(alignedSize))` and `metrics.ArenaFastPathTotal.Inc()` into `allocFast` itself so all fast-path allocations are accurately tracked.
+
+#### Improvement 15: Wire HNSW Vector Similarity Search into `TemporalHNSWIndex`
+
+- **Location**: `internal/store/hnsw_temporal.go:70-136`
+- **Root Cause**: `TemporalHNSWIndex.Add` inserts vectors into `thi.hnsw`, but `SearchAsOf`, `SearchRange`, and `SearchSlidingWindow` never query `thi.hnsw`—they return the first `k` IDs from `temporalTree` with `Score: 0`, and `Delete` only deletes from `temporalTree`.
+- **Remediation**: Build a roaring bitmap of valid IDs from `temporalTree` for the requested timestamp/window and pass that bitmap into `thi.hnsw.SearchVectorsWithBitmap(ctx, vector, k, bitset, options)`.
+
+#### Improvement 16: Refactor `BM25ArenaIndex` to Use `postingArena` and `simd.BM25ScoreBatch`
+
+- **Location**: `internal/store/index/bm25_arena.go:49, 100-140, 222-286`
+- **Root Cause**: `BM25ArenaIndex` initializes `postingArena` (`memory.NewTypedArena[uint32]`) but never uses it; `IndexDocuments` allocates a map per document, scans `postings` linearly to deduplicate (`O(P^2)`), and stores all term frequencies in a single giant `map[uint64]uint32`.
+- **Remediation**: Store parallel `(docID, tf)` slices in `postingArena` sorted by `docID` and evaluate posting blocks with `simd.BM25ScoreBatch`.
+
+#### Improvement 17: Cache Block-Max Scores on `BM25PostingList` in `BM25InvertedIndex`
+
+- **Location**: `internal/store/index/bm25_inverted_index.go:588-634`
+- **Root Cause**: `BM25InvertedIndex.SearchBM25` allocates and recomputes `blockMaxScores` by scanning every posting's `TF` and `DocLen` on every multi-term query.
+- **Remediation**: Precompute per-128-doc block `(maxTF, minDocLen)` metadata on `BM25PostingList` during `AddBatch` / compaction so multi-term Block-Max WAND computes block upper bounds in `O(N_blocks)` instead of `O(N_postings)`.
+
+#### Improvement 18: Vectorize `float32Computer.ComputeBatch` Using Batch SIMD Dispatch
+
+- **Location**: `internal/store/index/arrow_hnsw_compute_float32.go:241-274`
+- **Root Cause**: Unlike `float32ToFloat32Computer.ComputeBatch` (which gathers a slice of candidate vector pointers and calls `simd.L2SquaredDistanceBatch` / `EuclideanDistanceBatch` / `CosineDistanceBatch` / `DotProductBatch`), `float32Computer.ComputeBatch` loops one ID at a time calling `c.h.distFunc(c.q, v)`.
+- **Remediation**: Gather non-nil candidate vectors into a scratch `batchVecs` slice on `float32Computer` and dispatch to the batch SIMD kernels.
+
+#### Improvement 19: Wire `VectorStore.hnsw2Config` and `ChangeDataCapture.batchAggregator`
+
+- **Location**: `internal/store/store.go:161`, `internal/store/cluster/cdc.go:158, 182-186`
+- **Root Cause**: `VectorStore.hnsw2Config` is stored on `VectorStore` but never applied when initializing dataset indexes, and `ChangeDataCapture` creates `batchAggregator` in `NewChangeDataCapture` but `RecordChange` bypasses it when `len(batches) == 1`.
+- **Remediation**: Apply `s.hnsw2Config` during dataset index creation in `VectorStore` and route single-batch CDC events through `cdc.batchAggregator.AddBatch` when batch aggregation is enabled.
+
+#### Improvement 20: Implement Real Arrow `RecordBatch` Iteration in ADBC `Statement.executeScan`
+
+- **Location**: `internal/adbc/statement.go:97-110, 358-410`
+- **Root Cause**: `Statement.ExecuteSchema` returns the dataset's full Arrow schema (`ds.GetSchema()`), whereas `Statement.executeScan` fabricates a dummy query vector `queryVec[i] = 1.0 / float32(i+1)` and runs `vs.SearchHybrid`, returning a 2-column `(id, score)` record that contradicts `ExecuteSchema`.
+- **Remediation**: Iterate the dataset's stored Arrow `RecordBatch` slices under `ds.RLock()`, retaining and streaming native dataset records (with optional row limit) through an `array.RecordReader`.
+
+---
+
+## 3. Expanded Unit & Fuzz Testing Scope
+
+Longbow enforces **100% per-package test file presence** across all Go packages in `cmd/`, `internal/`, `client/`, and `tools/`, coupled with deterministic unit tests and property-based fuzz targets (`Fuzz*`).
+
+### Fuzz Testing Matrix
+
+| Package | Fuzz Target | Invariants & Oracle Properties Verified |
+| :--- | :--- | :--- |
+| `internal/simd` | `FuzzBatchDistancesOracleParity` | Fuzzes `EuclideanDistanceBatch`, `L2SquaredDistanceBatch`, and `DotProductBatch` across dims `{16, 128, 384, 768, 1024}` against a 64-bit `float64` reference oracle |
+| `internal/simd` | `FuzzDequantizeL2OracleParity` | Fuzzes `DequantizeL2Float32Uint8` across arbitrary `minV`, `scale`, and lengths `8..512` against `dequantL2Float32Uint8Generic` |
+| `internal/simd` | `FuzzSQ8AdaptiveOracleParity` | Fuzzes `CalibrateSQ8Channels`, `QuantizeSQ8Adaptive`, `DequantizeSQ8Adaptive`, and `EuclideanDistanceSQ8Adaptive` self-distance identity |
+| `internal/simd` | `FuzzDistances` | Fuzzes single-vector `EuclideanDistance`, `CosineDistance`, and `DotProduct` for non-negativity, symmetry, and NaN/Inf safety |
+| `internal/simd` | `FuzzDotInt4` | Fuzzes packed 4-bit integer dot product kernels against unpacked scalar reference |
+| `internal/simd` | `FuzzTurboQuantDistanceBatch` | Fuzzes `TurboQuantDistanceBatch` across 2-bit, 4-bit, and 8-bit codebooks against scalar `TurboQuantDistance` |
+| `internal/pq` | `FuzzPQEncodeDecodeADCOracleParity` | Fuzzes `PQEncoder.Encode`, `Decode`, `BuildADCTable`, and `ADCDistance` against explicit `Decode` + `float64` L2-squared oracle |
+| `internal/pq` | `FuzzPQEncoder_TrainAndEncode` | Fuzzes K-Means PQ codebook training and encoding across arbitrary input distributions |
+| `internal/tensor` | `FuzzTensorContractOracleParity` | Fuzzes 2D `MatMul` / `TensorContract` against a 64-bit `float64` triple-loop matrix multiplication oracle |
+| `internal/store/index` | `FuzzSQ8EncoderOracleParity` | Fuzzes `TrainSQ8Encoder`, `Encode`, `Decode`, and round-trip reconstruction error bounds |
+| `internal/store/index` | `FuzzTurboQuantEncodeDecode` / `FuzzTurboQuantCompression` | Fuzzes polar coordinate transform, angle packing, QJL residual bit packing, and `DecodeInto` reconstruction |
+| `internal/store/index` | `FuzzHNSWSearch` / `FuzzDiskGraphSerialization` | Fuzzes HNSW insertion/search invariants and binary disk-graph serialization round-trips |
+| `internal/query` | `FuzzFilterParser` / `FuzzVectorSearchRequestParser` | Fuzzes JSON/structured filter expression parsing and request validation against malformed inputs |
+| `internal/memory` | `FuzzSlabArena` | Fuzzes concurrent and sequential `SlabArena` allocations, alignments, and slice header safety |
+
+---
+
+## 4. Code Quality Gates: Accuracy Gate & Oracle Gate
+
+### 4.1 Accuracy Gate (`make accuracy-gate`)
+
+The **Accuracy Gate** (`go test -v ./internal/simd/ -run='^TestSIMDAccuracy'`) enforces strict numerical precision bounds across both `Standard` and `EMLGo` math backends:
+
+- **`TestSIMDAccuracy_All15DTypes`**: Validates `EuclideanDistance`, `L2Squared`, `DotProduct`, and `CosineDistance` across all **15 supported vector data types** (`Float32`, `Float64`, `Float16`, `Complex64`, `Complex128`, `Int8`, `Int16`, `Int32`, `Int64`, `Uint8`, `Uint16`, `Uint32`, `Uint64`, `TurboQuant4`, `TurboQuant8`) at dimensions `128, 384, 768`:
+  - `Float64` relative tolerance: $\le 10^{-6}$
+  - `Float32` relative tolerance: $\le 10^{-5}$
+  - `Float16` relative tolerance: $\le 2 \times 10^{-3}$
+  - Integer types (`Int8..Uint64`): exact parity within `float32` representation ($\le 10^{-5}$)
+  - `TurboQuant4` / `TurboQuant8`: bounded angular reconstruction error ($\le 0.45\text{ rad}$ for TQ4, $\le 0.05\text{ rad}$ for TQ8)
+- **`TestSIMDAccuracy_BatchOperationsAcrossDims`**: Validates `EuclideanDistanceBatch`, `EuclideanDistanceBatchFlat`, `L2SquaredDistanceBatch`, `DotProductBatch`, and `CosineDistanceBatch` across dimensions `{64, 128, 384, 768, 1024, 1536, 3072}`.
+- **`TestSIMDAccuracy_DispatchLayersParity`**: Validates that layered dispatch tables (`newGenericDispatch` $\to$ `layerAVX2` $\to$ `layerAVX512`) agree on `Sum`, `Max`, `Min`, `ArgMax`, `ArgMin`, and `BrayCurtisDistance`.
+- **`TestSIMDAccuracy_NumericalIdentityEdgeCases`**: Validates exact `0.0` self-distance invariants.
+
+### 4.2 Oracle Gate (`make oracle-gate`)
+
+The **Oracle Gate** (`go test -v ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/ -run='Parity'`) verifies every hardware-accelerated kernel and compressed index path against a simple, unoptimized **64-bit `float64` or pure-Go scalar reference oracle**:
+
+- **SIMD Batch & Dequantization Parity** (`TestOracleParity_AllBatchKernels`): Compares all batch distance kernels, `DequantizeL2Float32Uint8`, and `DequantizeL2Uint8Uint8` against `float64` scalar loops across dimensions `{17, 64, 128, 256, 384, 512, 768, 1024, 1536, 3072}`.
+- **TurboQuant Pack/Unpack & Distance Parity** (`TestPackTQ2AVX2MatchesGeneric`, `TestPackTQ4AVX2MatchesGeneric`, `TestPackTQ2AVX512MatchesGeneric`, `TestPackTQ4AVX512MatchesGeneric`, `TestPackTQ8AVX512MatchesGeneric`, `TestTurboQuantDistanceBatchParity`): Requires bit-identical packing codes and exact distance parity between AVX2/AVX-512/NEON and generic scalar implementations.
+- **Product Quantization ADC Parity** (`TestPQOracleParity_ADCvsDecodedL2Squared`): Verifies that `PQEncoder.ADCDistance` and `ADCDistanceBatch` match explicit `Decode()` followed by `float64` L2 distance.
+- **Tensor Contraction Parity** (`TestTensorOracleParity_ContractAndTranspose`, `TestEinsumOracleParity`): Verifies tensor contractions and Einstein summations against `float64` reference accumulators.
+- **SQ8 Quantization Parity** (`TestSQ8OracleParity_EncodeDecodeDistance`): Verifies trained SQ8 encoding/decoding and distance bounds against `float64` references.
+
+---
+
+## 5. Makefile Targets & `scripts/verify.sh` Pre-Commit Hook
+
+### 5.1 Git Pre-Commit Hook (`scripts/verify.sh` & `make makehooks`)
+
+Install the Git pre-commit hook into `.git/hooks/pre-commit` with:
+
+```bash
+make makehooks
 ```
 
----
+Every `git commit` (or manual `make verify` / `./scripts/verify.sh` invocation) executes 6 sequential verification gates:
 
-## 2. P0 — Architectural God Module Blockers
+1. **Gate 1 — Formatting & Linting**: Checks `gofmt -l` on staged Go files, runs `go vet`, and runs `golangci-lint run` (`staticcheck`, `unused`) on affected packages.
+2. **Gate 2 — Go Security Check**: Runs `gosec -quiet -exclude=G115` AST security analysis on affected packages.
+3. **Gate 3 — 100% Package Test Presence**: Verifies zero Go packages report `[no test files]`.
+4. **Gate 4 — Unit & Fuzz Testing (Short Mode)**: Runs `go test -short -cover` and `go test -short -run='^Fuzz'` across staged and core packages.
+5. **Gate 5 — Accuracy Gate**: Runs `go test -v ./internal/simd/ -run='^TestSIMDAccuracy'`.
+6. **Gate 6 — Oracle Gate**: Runs `go test -v ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/ -run='Parity'`.
 
-(All identified God Modules—Items 35, 36, 37, 38, and 39—have been decomposed and verified. No active P0 blockers remaining.)
+### 5.2 Reference of Makefile Verification Targets
 
----
-
-## 3. P1 — Core Performance & Hardware Acceleration
-
-*(All identified P1 performance and hardware acceleration milestones—Items 40, 41, 42, 43, and 44—have been fully implemented, verified with 100% test coverage across local AVX2 and remote Google Cloud AVX-512 Xeon testbeds (`tf-testbed-02bf2a`), and moved to the Completed Milestones changelog. No active P1 items remaining.)*
-
----
-
-## 4. P2 — Algorithmic & Storage Optimizations
-
-(All identified P2 algorithmic, topological, and quantization milestones—Items 45, 46, 47, 48, and 49—have been fully implemented, verified with 100% test coverage across all test distributions and benchmarks, and moved to the Completed Milestones changelog. No active P2 items remaining.)
-
----
-
-## 5. P3 — Observability, Alerting & CI Conformance
-
-(All identified observability, alerting & CI conformance milestones—Items 18, 19/24, 20, 21, 22/23—have been completed and verified. No active P3 items remaining.)
-
----
-
-## 6. Verified & Removed Completed Items (Changelog)
-
-| # | Item | Verified Completion Date | Key Commit | Verification Evidence |
-|:---|:---|:---|:---|:---|
-| **40** | Native `AVX512_FP16` Fused Distance Kernels | 2026-10-16 | `7772c9a4` | Implemented native Plan 9 assembly in `internal/simd/distance_fp16_avx512fp16_amd64.s` using `VFMADD213PH`/`VFMADD231PH` operating on 32 half-precision floats per ZMM vector; wired hardware capability detection into `internal/simd/cpu_detection.go` and registered kernel in `internal/simd/dispatch_tables.go` under `layerGranite` and `layerEmerald`; verified numerical parity on GCP Xeon AVX-512 testbed (`tf-testbed-02bf2a`) via `TestFloat16DistanceParity_AVX512FP16` with 100% bit-exact parity across Euclidean, DotProduct, and Cosine distances. |
-| **41** | Intel AMX TMM Tiled GEMM Batch Dispatch ($B \ge 32$) | 2026-10-16 | `7772c9a4` | Integrated AMX hardware profile awareness and dynamic threshold routing via `ShouldDispatchBatchAMX(batchSize)` in `internal/tensor/math_dispatch_env.go` and `internal/tensor/math_dispatch_env_stubs.go`; verified batch threshold calculation across all hardware tiers and dynamic runtime state. |
-| **42** | ARM SVE2 Native Kernels for Graviton 3/4 & AArch64 | 2026-10-16 | `7772c9a4` | Authored `internal/simd/distance_sve2_arm64.s` implementing vector-length-agnostic (VLA) SVE loops via Plan 9 raw instruction words (`PTRUE`, `WHILELT`, `LD1W`, `FSUB`, `FMLA`, `FADDV`); wired HWCAP detection in `internal/simd/cpu_detection.go` and SVE2 tier in `internal/simd/dispatch_tables.go`; verified clean ARM64 cross-compilation with `GOARCH=arm64 go build ./...` and `GOARCH=arm64 go vet ./...`. |
-| **43** | Asymmetric Distance Computation (ADC) In-Register SIMD Fast-Path | 2026-10-16 | `7772c9a4` | Implemented `DistanceDirectADC` in `internal/simd/adc_kernels.go` and 8-way unrolled `adcBatchAVX512` in `internal/simd/adc_kernels_amd64.go`; eliminated DRAM table lookups from inner candidate evaluation loop; validated parity and accuracy across both local host (AVX2) and remote GCP testbed (AVX-512) via `TestDirectADCAVX2` and `TestDirectADCAVX512` with 100% passing tests. |
-| **44** | Transparent Huge Page (2MB/1GB) Backing for `SlabArena` & `TypedArena` | 2026-10-16 | `7772c9a4` | Added 2MB boundary alignment and `madvise(..., MADV_HUGEPAGE)` backing in `internal/memory/mmap_alloc_unix.go` and `internal/memory/numa_pin_linux.go`; authored unit test suite `internal/memory/arena_hugepage_test.go` verifying 2MB chunk alignment and transparent huge page advising; passes 100% on Linux. |
-| **45** | Vectorized Visited Bitmask in HNSW Beam Search | 2026-10-16 | `7772c9a4` | Implemented `FilterAndMarkUnvisited` in `internal/store/types/arrow_bitset.go` processing candidate batches without branching; wired into beam traversal in `internal/store/index/search_float32.go` and `internal/store/index/search_float64.go`; verified bit-level parity via `TestArrowBitset_FilterAndMarkUnvisitedParity` passing 100%. |
-| **46** | Adaptive Non-Uniform SQ8 Channel Calibration | 2026-10-16 | `7772c9a4` | Implemented per-channel percentile calibration with outlier clipping ($\mu \pm 3\sigma$) in `internal/simd/sq8_calibration.go`; authored `internal/simd/sq8_calibration_test.go` verifying NMSE < 0.005 and 100% parity across skewed high-dimensional embedding distributions. |
-| **47** | Multi-Centroid HNSW Entry Point Selection for Clustered Topologies | 2026-10-16 | `7772c9a4` | Implemented `CentroidTable` and `SelectBestEntryPoint` in `internal/store/index/entry_points.go`; wired multi-centroid scanning into `arrow_hnsw.go` and `bulk_linker.go`; validated via `TestMultiCentroid_EntrySelection` passing 100%. |
-| **48** | 2-Bit TurboQuant Polar Quantization (`turboquant2`) with Stochastic Residuals | 2026-10-16 | `7772c9a4` | Implemented 2-bit polar tree quantization with 4-level polar angle codes and 1-bit stochastic residual correction in `internal/store/index/turboquant2.go`; registered `turboquant2` and `tq2` in `internal/store/types/types.go`; verified accuracy, deterministic reconstruction, and benchmark metrics across 128d, 384d, 768d, and 1536d in `internal/store/index/turboquant2_test.go`. |
-| **49** | Cache-Conscious Graph Layout Permutation (Morton / BFS Node Reordering) | 2026-10-16 | `7772c9a4` | Implemented `ComputeBFSPermutation`, `CompactGraphLayout`, and 2D/3D Morton space-filling curve index encoders in `internal/store/index/compact_layout.go`; verified exact graph search parity and neighbor list compaction in `internal/store/index/compact_layout_test.go` (`TestHNSW_CompactGraphLayoutParity` passes 100%). |
-| **32** | Per-Dtype Index-Time Regression Guard at 250k and 500k | 2026-10-16 | `1a9453df` | Populated deterministic `config_seed` across all 90 configurations in `benchmarks/baseline_emlgo_avx2_20261015.json` using `derive_config_seed(42, label)`; re-cut per-scale canonical baseline files `benchmarks/baseline_25k.json`, `benchmarks/baseline_100k.json`, and `benchmarks/baseline_250k.json`; updated `scripts/check_index_regression.py` to support interleaved A/B verdict files (`--verdict`) alongside `--before`/`--after` comparisons with robust metric and threshold handling; wired dedicated index-time regression CI gate into `.github/workflows/benchmark-ab.yml` with a 5.0% threshold; authored comprehensive unit test suite in `scripts/tests/test_check_index_regression.py` verifying zero false-positive self-noise, permitted drift, regression detection, setup error handling, and verdict parsing; 100% test pass. |
-| **20** | Extend Promtool Unit-Test Coverage Beyond 4 of 28 Rule Groups | 2026-10-16 | `7689e1c9` | Authored comprehensive Promtool unit test suites across all 28 rule groups (27 alert groups + 1 recording rules group) in `grafana/tests/` covering healthy/quiet states and firing/recovery states with full label and annotation assertions; enhanced `grafana/tests/test-rules.sh` to extract and test `*_test.yml` across all 28 groups; updated `TestRuleGroupsHaveUnitTests` in `internal/observability/metrics_conformance_test.go` to enforce 100% test coverage gate (28 of 28 groups tested, 0 uncovered); 100% of Promtool unit tests and Go observability tests pass. |
-| **30** | EMLGo 0.7 Accuracy Gating Across All 15 DTypes | 2026-10-16 | `58fa5872` | Implemented comprehensive numerical accuracy gating suite (`internal/simd/simd_accuracy_test.go`) validating strict precision bounds across all 15 vector dtypes (`Float32`, `Float64`, `Float16`, `Complex64`, `Complex128`, `Int8`, `Int16`, `Int32`, `Int64`, `Uint8`, `Uint16`, `Uint32`, `Uint64`, `TurboQuant4`, `TurboQuant8`) against double-precision ground truths; verified Euclidean, DotProduct, Cosine, L2Squared, and quantized reconstruction error bounds across dimensions 128, 384, and 768; verified 100% numerical parity across `mathutil.BackendStandard` and `mathutil.BackendEML` engines; verified numerical identity edge cases (zero self-distance); 100% test pass on standard and `-tags emlgo` builds and under race detector. |
-| **11** | Dynamic Hardware-Aware EMLGo Math Dispatch Threshold Calibration | 2026-10-16 | `026db985` | Implemented `CalibrateThresholds` and `DetectHardwareProfile` in `internal/tensor/math_dispatch_env.go` and `internal/tensor/math_dispatch_env_stubs.go`; dynamically calibrates minimum vector thresholds and complex/TQ maximum cutoffs across 4 hardware tiers based on detected CPU vector/matrix extensions (`HasAVX512`, `HasAVX512VNNI`, `HasAMX`) and cache sizes (`L2CacheBytes`, `L3CacheBytes`); wired lock-free dynamic dispatch thresholds into `ResolveBackend` via `atomic.Pointer[DispatchThresholds]`; added environment variable overrides (`LONGBOW_MATH_DISPATCH_MIN_VECTORS`, `LONGBOW_MATH_DISPATCH_COMPLEX64_MAX`, `LONGBOW_MATH_DISPATCH_COMPLEX128_MAX`); added unit tests verifying calibration tiers and env overrides; verified 100% test pass on default and `-tags emlgo` builds and under race detector. |
-| **2** | ARM NEON Dequant Kernel & Remaining Scalar SQ8 Fallbacks | 2026-10-16 | `d58bc4d9` | Implemented native ARM NEON assembly (`internal/simd/dequant_arm64.s`) for fused dequantization and L2 distance calculation (`dequantL2Float32Uint8NEON`) using unsigned widening (`USHLL`), integer-to-float conversion (`UCVTF`), and vector fused multiply-accumulate (`FMLA`); implemented `internal/simd/dequant_arm64.go` wiring kernel to `dequantL2Float32Uint8Impl`; constrained scalar fallback in `internal/simd/dequant_other.go` to `!amd64 && !arm64`; verified under QEMU ARM64 user-mode emulation (`qemu-aarch64`) with 100% test pass on `TestDequantizeL2`; verified ARM64 cross-compilation (`GOARCH=arm64 go build ./...` and `GOARCH=arm64 go vet ./...`) passes cleanly with 0 errors. |
-| **22/23** | Alertmanager Configuration, Runbook Links & Provisioning | 2026-10-16 | `4c7d2895` | Authored `grafana/alertmanager.yml` with multi-tier severity routing (`critical`, `warning`, `info`) and inhibition rules; created operational triage guide `docs/runbooks.md` with remediation steps across all alert families; wired `runbook_url` annotations across alerts in `grafana/rules.yml`; implemented declarative Grafana datasource (`grafana/provisioning/datasources/prometheus.yml`) and dashboard provisioning (`grafana/provisioning/dashboards/dashboards.yml`); added Prometheus (`prom/prometheus`), Alertmanager (`prom/alertmanager`), and Grafana (`grafana/grafana`) observability stack to `docker-compose.yml`; added Prometheus Operator `ServiceMonitor` and `PrometheusRule` templates and `monitoring` config values to `helm/longbow/`. |
-| **21** | Alert Coverage for Critical Failure Counters | 2026-10-16 | `4c7d2895` | Added Prometheus alert rules covering all 30 previously unmonitored exported failure/error counters across WAL (`longbow_wal_flush_errors_total`, `longbow_wal_write_errors_total`, `longbow_checkpoint_timeouts_total`), replication (`longbow_replication_queue_dropped_total`), index (`longbow_index_jobs_dropped_total`, `longbow_neighbor_selection_errors_total`, `longbow_graph_f16_conversion_errors_total`), memory (`longbow_memory_limit_rejects_total`), compaction (`longbow_compaction_errors_total`), system (`longbow_panic_total`, `longbow_log_errors_total`, `longbow_semaphore_timeouts_total`), storage (`longbow_dataset_export_failures_total`, `longbow_dataset_import_failures_total`, `longbow_store_dropped_datasets_total`), pipeline (`longbow_store_circuit_breaker_failures_total`, `longbow_do_exchange_errors_total`, `longbow_stream_termination_errors_total`, `longbow_validation_failures_total`, `longbow_vector_search_action_errors_total`, `longbow_trace_errors_total`), GPU (`longbow_multi_gpu_device_errors`, `longbow_onnx_inference_errors_total`, `longbow_onnx_metal_inference_errors_total`), SIMD JIT (`longbow_jit_kernel_errors_total`), bulk insert (`longbow_bulk_insert_dimension_errors_total`), and hybrid search (`longbow_reranker_errors_total`, `longbow_graphrag_expansion_errors_total`); verified 38 of 38 failure counters are actively watched (0 unwatched); verified 100% alert conformance in `internal/observability`. |
-| **19/24** | Metric-Existence & Docs-Code Consistency Conformance Gates in CI | 2026-10-16 | `d0fb6876` | Implemented `TestRegisteredMetricsInventoryFreshness` in `internal/observability/metrics_conformance_test.go` ensuring `testdata/registered_metrics.tsv` never drifts from AST-extracted metric declarations in Go source code; verified bidirectional consistency between `docs/metrics.md` and registered families via `TestMetricsDocMatchesRegistry`; wired dedicated `Observability & Metric Conformance Gate` step into `.github/workflows/ci.yml` running `go test -v ./internal/observability/...`; 100% of conformance tests pass. |
-| **18** | Repair Alert Rules Bound to Missing Metrics | 2026-10-16 | `84e36aa8` | Verified all 72 alerts across 28 rule groups in `grafana/rules.yml` resolve to registered Prometheus metrics in the Go binary; enhanced `internal/observability/metrics_conformance_test.go` (`referencedMetrics`) to parse multiline YAML alert rules preventing silent skip of multiline expressions; resolved divergence in`grafana/dashboards/index-storage.json` by updating unregistered `longbow_index_creation_failures_total` to `longbow_index_creations_total{status="failure"}`; verified 100% alert conformance in CI gate. |
-| **3** | Pooled Row Buffers in `DiskVectorStore` | 2026-10-16 | `6274299a` | Decomposed `disk_vector_store.go` monolith (1,362 LOC down to 187 LOC) into modular sub-modules: `disk_vector_store_read.go` (575 LOC), `disk_vector_store_write.go` (611 LOC), and `disk_vector_store_block.go` (230 LOC); implemented pooled row buffers via `Float32RowPool` and `ByteRowPool` (`internal/store/index/buffer_pool.go` and `internal/store/disk_buffer_pool.go`); added zero-allocation decoding APIs: `GetVector`, `GetVectorInto`, `GetBatchInto`, `GetVectorAnyInto`, `ScanRows`, and `ScanRowsAny`; precomputed block LRU cache keys (`BlockEntry.HotKey`) eliminating string formatting allocations at read time; benchmark `GetBatchInto` improved from 1,490 ns/op (5,771 B/op, 19 allocs/op) to 370.8 ns/op (0 B/op, 0 allocs/op — 4x throughput, 100% allocation elimination); single vector `GetVectorInto` achieves 38.99 ns/op with 0 B/op and 0 allocs/op; 100% of store, index, and repo short tests pass. |
-| **13** | SIMD Fused BM25 Term Scoring & Posting List Intersection | 2026-10-16 | `f9557468` | Added `DocLens []int` parallel slice to `BM25PostingList`; fused document length indexing in contiguous memory; eliminated intermediate map allocations (`docLengths` map) and dynamic load per document; implemented vectorized batch scoring using native AVX-512 `simd.BM25ScoreBatch` for fast-path terms; replaced `sort.Slice` reflection calls with an inlined min-heap sift ($O(\log K)$, 0 allocs); benchmark multi-term latency reduced 209x (3,727,545 ns → 17,854 ns/op), heap churn reduced 99.6% (1,315,688 B → 5,496 B/op), allocations reduced 99.5% (8,392 → 39 allocs/op); 100% of unit, concurrency, and race tests pass. |
-| **10** | Iterative Stack Traversal for Geospatial Quadtree Queries | 2026-10-16 | `dfca2b0e` | Replaced recursive Quadtree quadrant subdivisions in `QueryRadius`, `QueryBox`, and `QueryBoxBitmap` with a fixed-depth stack traversal (`[128]*Quadtree`); introduced `QueryBoxAppend` to `GeoPointIndex` contract across `Quadtree` and `MortonGrid`; pooled candidate buffers via `geoCandidatePool` in `SearchRadius`, `SearchBoundingBox`, and `SearchNearest` to eliminate temporary slice allocations; modularized `geo_quadtree.go` (302 LOC) and `geo_utils.go` (97 LOC) bringing `geo_search.go` down to 756 LOC; 100% of unit, parity, concurrency, and race tests pass. |
-| **12** | Lock-Free Concurrent Map for Metadata & ID Translation | 2026-10-16 | `b012180a` | Replaced naive Copy-On-Write cloning in `MapRCU` (which repeatedly allocated `make(map[K]V, ...)` copying thousands of keys on every batch write and causing >1,200 MB of heap churn) with a 64-way sharded zero-reallocation concurrent map; implemented typed hashers for string/integers; eliminated snapshot allocations in BM25 index and query paths; 100% of unit, concurrency, race, and BM25 tests pass. |
-| **8** | Lock-Free Adjacency Updates & NUMA-Local Index Worker Queueing | 2026-10-16 | `58adf7ca` | Replaced 65,536 striped `sync.Mutex` array in `FlatAdjacency` with a 64-bit generation-stamped lock-free CAS seqlock; implemented linearizable un-torn reads in `GetNeighbors` and `GetNeighborsWithGen`; implemented lock-free `CASNeighbors` and `UpdateNeighbors` with exponential backoff; sharded incoming ingestion batches into NUMA-local worker queues (`VectorStore.numaIndexQueues`) with work-stealing fallback to global queue; 100% of unit, concurrency, and race tests pass. |
-| **39** | Modularize `simd/dispatch.go` Function Tables | 2026-10-16 | `f2b2d5e7` | Decomposed `dispatch.go` (1,513 LOC down to 143 LOC); extracted sub-dispatchers (`MetricDispatch`, `BatchDispatch`, `ConversionDispatch`, `ActivationDispatch`, `MathDispatch`, `QuantDispatch`) into `dispatch_tables.go` (439 LOC) with layered tier inheritance (`newGenericDispatch` -> `layerAVX2` -> `layerAVX512` -> `layerEmerald` -> `layerGranite` / `layerNEON`); separated auxiliary bindings into `dispatch_initializers.go` (324 LOC) and dynamic registry into `registry_init.go` (127 LOC); all files strictly <450 LOC; 100% of SIMD & repo tests pass. |
-| **38** | Decouple `VectorStore` Ingestion Coordinator & Dataset Registry | 2026-10-16 | `350eb1de` | Extracted worker pool (`StartIndexingWorkers`, `runIndexWorker`, autoscaling) into `index_worker_pool.go` (444 LOC) and dataset mapping / RCU CAS loops into `dataset_registry.go` (263 LOC); reduced `store_lifecycle.go` from 885 LOC down to 198 LOC (<300 LOC target); 100% of store & repository tests pass. |
-| **37** | Decompose `arrow_hnsw_bulk.go` & `arrow_hnsw.go` Graph Monolith | 2026-10-16 | `6b9f2f67` | Monolith decomposed into modular sub-packages: `arrow_hnsw_bulk.go` (343 LOC coordinator), `bulk_column_reader.go` (304 LOC), `bulk_linker.go` (650 LOC), `bulk_repair.go` (353 LOC), `arrow_hnsw.go` (735 LOC), `arrow_hnsw_turboquant.go` (199 LOC), `arrow_hnsw_disk.go` (88 LOC), `arrow_hnsw_parallel.go` (173 LOC), `candidate_pool.go` (71 LOC), `arrow_hnsw_distance_any.go` (109 LOC); all files strictly <800 LOC; 100% of index & repo short tests pass. |
-| **35** | Decompose `distance_computer.go` Monolith into Typed Computers | 2026-10-16 | `b9419bff` | Monolith decomposed from 1,405 LOC down to 30 LOC; clean modular separation into `arrow_hnsw_compute_quantized.go` (pq, tq, sq8), `arrow_hnsw_compute_float32.go` (float32, shared), and `arrow_hnsw_compute_int8.go` (int8, shared); 100% of index tests pass. |
-| **36** | Eliminate Multi-Slab Ghost Scanning & Decouple `SlabArena` Storage | 2026-10-16 | `b9419bff` | Stored direct parent slab reference and primary index on multi-slab placeholder entries; eliminated $O(N)$ linear backward scan from `Get`, `GetWithGeneration`, `GetPointer`, `GetPointerWithGeneration`, and `SlabBatch.Get` down to $O(1)$ direct access; decoupled persistence into `arena_storage.go`; verified by `TestSlabArena_MultiSlab_DirectParentResolution`. |
-| **1** | End-to-End GPU Search Dispatch & Complex128 Bottleneck | 2026-10-16 | `d855f554` | `CUDAIndex.SearchBatchDistances` batched candidate kernel; complex128 batched coalesced kernel; end-to-end dataset auto-sharding & bulk ingest GPU sync wired. |
-| **6/27** | AVX-512 VNNI & Saturated Int8/Uint8 Dispatch | 2026-10-16 | `c204cea0` | Native 64-byte `VPDPBUSD` dot product and saturated AVX-512 int8/uint8 kernels in `int8_kernels_avx512_amd64.s`; wired in dispatch table for emerald, granite, and avx512 tiers; parity verified with 100% bit identity. |
-| **7** | Direct Base Pointer Caching in SearchContext for SlabArena & TypedArena | 2026-10-16 | `89ecd910` | Direct chunk slice & base pointer cache with generational epoch bump in `ArrowSearchContext`; zero-division vector access across Float32, Float64, Int8, Uint8, Float16, Complex128, TQ, and SQ8. |
-| **25/26** | TurboQuant 4-Lane Polar Reconstruction & Cross-Hop Caching | 2026-10-16 | `62643d37` | Native Plan 9 AVX2 kernel `tqPolarReconstructLevelAVX2Kernel` with 4-lane parallel decoding; branchless QJL correction; 2-way associative ephemeral cross-hop reconstruction cache in `ArrowSearchContext`; 42%–50% latency drop on TurboQuant distance computation with 100% bit identity. |
-| **9** | Inlined 4-Ary Candidate Heap & Branchless Struct Swapping | 2026-10-16 | `33edad0a` | Branchless 4-way child selection with cmov comparisons, single-pass shifting in `up`/`down` eliminating redundant swaps, `ReplaceCandidate` and `InsertOrReplace` root replacement; SearchLayerTrim latency reduced 72%–84% (19.8 ns → 3.1 ns at ef=64; 25.9 ns → 7.2 ns at ef=256); wired into `search_float32`, `search_float64`, and `distance_dispatch`. |
-| **4** | BM25 Inverted Index COW Elimination | 2026-10-15 | `5514faf9` | `BM25InvertedIndex.AddBatch` and `BM25ArenaIndex` eliminate per-doc map copying; >12 GB heap churn removed during ingest. |
-| **5** | Native L2-Squared Integer SIMD Kernels | 2026-10-15 | `cb6c2712` | Native AVX-512 `l2SquaredInt8AVX512Kernel` implemented; eliminates redundant terminal `VSQRTSS` and `d * d` squaring. |
-| **14** | Ingestion Zero-Copy & Timer Elimination | 2026-10-11 | `1b3927e4` | Geometric slice growth in `LockFreeSlice.Append`; wake channels replace polling timers. |
-| **15** | Eliminate Synchronous BM25 Double-Indexing | 2026-10-11 | `ca764e14` | Removed redundant indexing pass in index worker; bounded background text queue added. |
-| **16** | Bulk Linkage Candidate Buffer Pooling | 2026-10-11 | `9d8d60af` | Pooled search context buffers in `AddConnectionsBatch`; pre-resolved Arrow offsets. |
-| **17** | TurboQuant Indexing Scalability & Dequant Caching | 2026-10-11 | `cf88f68e` | Capped `TQScratchArena` residency at 64 chunks; fixed geometric chunk table growth. |
-| **28** | uint8 Neighbour Selection Parity on All Corpora | 2026-10-15 | `01c46e2f` | `VectorTypeUint8` diversity branch added; `TestUint8GraphReachabilityAcrossDistributions` passes ≥99.9% across 5 distributions. |
-| **29** | uint8 Connection-Degree Invariant under Bulk | 2026-10-16 | `23ca00bf` | `selectNeighbors` made single entry point for all paths; `TestBulkInsert_Uint8MeanDegreeFloor` verifies 16.00 mean degree. |
-| **31** | Deterministic Seed Plumbing & Ingest Repeatability | 2026-10-16 | `0ac9fb45` | `LONGBOW_BENCH_SEED` plumbing; 3-pass linker; fixed RNG seeding and level generation; bit-identical search digests. |
-| **33** | Graph-Linker Heap Churn Reduction | 2026-10-16 | `9d8d60af` | Heap allocations cut 76% (4,289 MB → 1,015 MB); resident memory reduced by 34.5% on 100k ingest. |
-| **34** | GPU Kernel Profiling via CUDA Events | 2026-10-16 | `66c3a8f9` | CUDA event timing per kernel; `gpu_kernel_profile` DoAction; 100% device time attribution verified on 250k run. |
-
----
-
-## 7. Deep Code Analysis Backlog — Newly Identified P0 Blockers
-
-**Audit date**: 2026-10-27
-
-**Audit method**: staticcheck (`honnef.co/go/tools` v0.8.2), `go vet ./...`, dead-symbol cross-referencing, and manual artifact review.
-
-A full deep code analysis pass over the repository re-opened twenty (20) P0 blockers. The findings were bucketed into dead code that must be removed or wired, declared-but-never-invoked integration hooks, gaps between documented tooling and actual repository targets, and residual static-analysis debt.
-
-### 7.1 Newly Identified P0 Blocker Improvement Backlog
-
-The twenty (20) improvements accepted as P0 blockers from the deep code analysis:
-
-| # | Improvement | Subsystem | Evidence | Required Action |
-|---|---|---|---|---|
-| 1 | Re-activate disabled staticcheck and unused lint gates | Tooling | `.golangci.yml` disables all linters including staticcheck and unused | Enable staticcheck and unused, add `make lint`, wire pre-commit and CI, triage surfaced backlog |
-| 2 | Remove dead adbc helper serializeFloat32s | internal/adbc | staticcheck U1000 at internal/adbc/statement.go:343 | Delete unused helper |
-| 3 | Remove dead small batch block state | internal/store | staticcheck U1000 at internal/store/disk_buffer_pool.go:82 | Delete unused type and method |
-| 4 | Remove dead TurboQuant row decoder | internal/store | staticcheck U1000 at internal/store/disk_vector_store_read.go:548 | Delete unused decoder |
-| 5 | Remove dead GPU hybrid candidate heap | internal/store/index | staticcheck U1000 at internal/store/index/gpu_hybrid_config.go:97 | Delete unused heap type |
-| 6 | Remove dead TurboQuant2 polar reconstruct | internal/store/index | staticcheck U1000 at internal/store/index/turboquant2.go:290 | Delete unused method |
-| 7 | Wire VectorStore HNSW2 configuration hook | internal/store | hnsw2Config declared with nolint unused and never invoked at internal/store/store.go:164 | Invoke hook after dataset creation |
-| 8 | Wire TemporalHNSW backend | internal/store | TemporalHNSWIndex hnsw field never initialized | Initialize HNSW backend |
-| 9 | Wire CDC batch aggregator | internal/store/cluster | ChangeDataCapture batchAggregator never initialized | Wire aggregator |
-| 10 | Decommission dead store and index fields | internal/store | ParallelSearchResult idx and counter, scoredResult score, ArrowSearchContext pruneDepth, compute fields | Remove or wire fields |
-| 11 | Decommission unused stub and infrastructure fields | internal/gpu, internal/onnx, internal/iouring, internal/mesh, internal/metrics, internal/profiling, internal/storage, internal/simd, internal/tensor | staticcheck U1000 sweep | Remove unused fields and types |
-| 12 | Migrate off Arrow v18 deprecated APIs | client, cmd, internal | staticcheck SA1019 across client, cmd and internal packages | Switch to RecordBatch terminology |
-| 13 | Resolve duplicate package imports | internal/store/index | staticcheck ST1019 in adaptive, BM25, diskANN, IVF and pluggable index files | Consolidate type imports |
-| 14 | Complete Metal hybrid index actions | internal/gpu/metal | Unimplemented errors reported for hybrid Metal index | Implement missing actions |
-| 15 | Extend ADBC driver beyond stub surface | internal/adbc, cmd/adbc | NotImplemented conformance surface | Implement remaining ADBC methods |
-| 16 | Purge stale debug crash logs | repository | internal/store/race_output.txt and race_output_2 tracked | Remove from version control |
-| 17 | Restore missing documented Make targets | Makefile, docs | race, deps and lint targets do not exist | Add targets |
-| 18 | Add measured coverage gate | internal/store, internal/simd, internal/onnx | Documentation claims greater than 95 percent | Enforce statement coverage threshold in CI |
-| 19 | Remediate residual static-analysis debt | internal/store, internal/query, internal/security, internal/storage | staticcheck ST1005, SA1012, SA1029, SA4026, SA4006, S1021, S1011, SA6002, SA4010, SA4017, S1008 | Fix findings |
-| 20 | Remove dead or empty Python SDK module | longbowclientsdk | src/longbow/utils.py is empty | Remove module or fold into client |
-
-### 7.1a Resolution Progress (2026-10-29)
-
-The following blockers from the Section 7.1 backlog have been resolved in this cycle:
-
-| # | Improvement | Status |
-|---|---|---|
-| 1 | Re-activate disabled staticcheck and unused lint gates | Resolved — `staticcheck` and `unused` enabled in `.golangci.yml`; `make lint`/`make staticcheck` clean (0 issues) |
-| 12 | Migrate off Arrow v18 deprecated APIs | Resolved — `arrow.Record`/`.Record()`/`NewRecord` migrated to `RecordBatch` terminology across client, cmd, and internal packages |
-| 19 | Remediate residual static-analysis debt | Resolved — all reported `ST1005`, `SA9003`, `SA6002`, `S1008`, `S1011`, `S1021`, `QF*` findings fixed |
-| 2 | Remove dead adbc helper `serializeFloat32s` | Resolved — helper absent from current tree |
-| 3 | Remove dead small batch block state | Resolved — state absent from `disk_buffer_pool.go` |
-| 4 | Remove dead TurboQuant row decoder | Resolved — `decodeTQRowInto` is live and wired |
-| 5 | Remove dead GPU hybrid candidate heap | Resolved — `candidateResult` heap live in `gpu_hybrid_config.go` |
-| 6 | Remove dead TurboQuant2 polar reconstruct | Resolved — `polarReconstructFromCodes` live and invoked |
-| 10 | Decommission dead store and index fields | Resolved — `idx`/`counter`/`pruneDepth` fields absent |
-| 11 | Decommission unused stub and infrastructure fields | Resolved — `unused` analyzer reports no findings |
-| 13 | Resolve duplicate package imports | Resolved — no `ST1019` findings remain |
-| 14 | Complete Metal hybrid index actions | Resolved — `AddTurboQuant`, `SearchTurboQuant`, `AddPQ`, `UpdateGraph`, `GraphExpand`, `HaversineSearch`, `NormBatch`, and `PruneNeighbors` now return cleanly instead of unimplemented errors |
-| 16 | Purge stale debug crash logs | Resolved — `race_output*.txt` absent from tree |
-| 17 | Restore missing documented Make targets | Resolved — `race`, `deps`, `lint`, and `coverage-gate` targets present |
-| 18 | Add measured coverage gate | Resolved — `coverage-gate` target added to Makefile |
-| 20 | Remove dead or empty Python SDK module | Resolved — `longbowclientsdk/src/longbow/utils.py` absent |
-
-### 7.2 Deep Code Analysis Finding Buckets
-
-- Dead code requiring removal: helpers and types surfaced by the staticcheck U1000 sweep, including `serializeFloat32s`, the small batch block state, the TurboQuant row decoder, the GPU hybrid candidate heap and the TurboQuant2 polar reconstruct.
-- Dead code requiring wiring: the `VectorStore` HNSW2 configuration hook, the `TemporalHNSWIndex` backend field and the `ChangeDataCapture` batch aggregator.
-- Tooling and documentation gaps: the disabled linter set, the missing `make race`, `make deps` and `make lint` targets, and the unenforced greater-than-95-percent coverage claim.
-- Residual static-analysis debt: style and correctness findings including error-string capitalization, nil context handling, built-in map keys, negative-zero literals, unused error values and allocation hygiene findings.
-
-These twenty (20) P0 blockers were re-opened by the deep code analysis pass of 2026-10-27 and should be scheduled into the next planning cycle.
-
----
-
-## 8. Validation Findings (2026-10-29)
-
-Docker builds (`make docker-build-cpu`, `make docker-build-emlgo-cpu`) succeeded. CPU, EMLGo (`-tags emlgo`), and GPU (`-tags gpu`) short test suites all pass on amd64 Linux.
-
-| # | Finding | Severity | Remediation |
-|---|---|---|---|
-| P0-21 | Measured statement coverage for `internal/store`, `internal/simd`, and `internal/onnx` is 37.6%, below the documented >95% claim. | P0 | Add targeted unit tests or revise the documented coverage claim; `coverage-gate` currently enforces a 30% floor. |
+| Category | Target | Command / Purpose |
+| :--- | :--- | :--- |
+| **Git Hooks** | `make makehooks` | Installs `scripts/verify.sh` as executable `.git/hooks/pre-commit` hook (aliases: `make install-hooks`, `make install-commit-hook`) |
+| **Git Hooks** | `make verify` | Executes `./scripts/verify.sh` (alias: `make pre-commit`) |
+| **Security Checks** | `make security` | Runs full Go security suite (`sec-gosec` + `sec-vulncheck`) |
+| **Security Checks** | `make sec-gosec` | Runs `gosec -quiet -exclude=G115 ./...` AST security scanner |
+| **Security Checks** | `make sec-vulncheck` | Runs `govulncheck ./...` against the Go vulnerability database |
+| **Security Checks** | `make sec-audit` | Audits module dependencies and runs `govulncheck` |
+| **Perf & Memory Profiling** | `make perf-check` | Runs CPU & allocation throughput benchmarks on SIMD and quantization hot paths |
+| **Perf & Memory Profiling** | `make cpu-profile` | Generates `cpu.out` CPU profile from SIMD accuracy workloads |
+| **Perf & Memory Profiling** | `make profile-check` | Generates `mem.out` and `cpu.out` and prints top-10 `go tool pprof` summaries |
+| **Perf & Memory Profiling** | `make mem-check` | Runs compiler escape analysis (`mem-escape`) + bounded arena/SIMD allocation benchmarks |
+| **Perf & Memory Profiling** | `make mem-bench` | Runs `-benchmem` benchmarks across `internal/store`, `internal/simd`, and `internal/memory` |
+| **Perf & Memory Profiling** | `make mem-escape` | Runs `go build -gcflags="-m -m" ./internal/memory/...` escape & inlining analysis |
+| **Perf & Memory Profiling** | `make mem-profile` | Runs index tests producing `mem.out` and `cpu.out` pprof profiles |
+| **Perf & Memory Profiling** | `make mem-asan` | Runs `internal/memory/...` tests under Clang AddressSanitizer (`-asan`) |
+| **Perf & Memory Profiling** | `make mem-valgrind` | Runs ADBC C-shared library (`liblongbow_adbc.so`) under Valgrind `--leak-check=full` |
+| **Linting Checks** | `make lint` | Runs full `golangci-lint run ./...` across the repository |
+| **Linting Checks** | `make lint-fast` | Runs `golangci-lint run` on core critical packages |
+| **Linting Checks** | `make lint-fix` | Runs `golangci-lint run --fix ./...` |
+| **Linting Checks** | `make vet` | Runs `go vet ./...` |
+| **Linting Checks** | `make staticcheck` | Runs `golangci-lint run -E staticcheck,unused ./...` |
+| **Linting Checks** | `make deadcode` | Runs `deadcode ./cmd/... ./internal/...` |
+| **Linting Checks** | `make fmt-check` | Verifies all Go files are formatted with `gofmt` |
+| **Linting Checks** | `make markdown-lint` | Lints `docs/**/*.md`, `README.md`, and `CONTRIBUTING.md` with `markdownlint` |
+| **Quality & Fuzz Gates** | `make accuracy-gate` | Runs `TestSIMDAccuracy*` across all 15 vector dtypes, batch dims, and dispatch layers |
+| **Quality & Fuzz Gates** | `make oracle-gate` | Runs `*Parity*` ground-truth oracle suites across `simd`, `pq`, `tensor`, `memory`, and `index` |
+| **Quality & Fuzz Gates** | `make test-fuzz` | Runs all `Fuzz*` targets across the repository in bounded short mode |
+| **Quality & Fuzz Gates** | `make test-coverage` | Verifies 100% package test presence and runs `go test -short -cover ./...` |
+| **Quality & Fuzz Gates** | `make coverage-gate` | Enforces $\ge 30\%$ statement coverage across core packages |

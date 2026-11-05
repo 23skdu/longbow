@@ -76,7 +76,7 @@ func main() {
 	var regs []registration
 
 	for _, root := range roots {
-		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error { // #nosec G703 -- CLI developer tool walking local source directories
 			if err != nil {
 				return err
 			}

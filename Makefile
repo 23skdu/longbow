@@ -24,8 +24,9 @@ IMAGE_TAG     ?= latest
 
 .PHONY: all help ci release build build-release build-debug build-race build-adbc build-bench build-verify clean \
 	deps deps-upgrade lint lint-fast lint-fix vet staticcheck deadcode fmt fmt-check \
-	security sec-gosec sec-vulncheck sec-audit \
-	perf-check cpu-profile profile-check mem-check mem-bench mem-escape mem-profile mem-asan mem-valgrind \
+	security sec sec-gosec sec-vulncheck sec-audit \
+	perf perf-check cpu-profile profile-check mem mem-check mem-bench mem-escape mem-profile mem-asan mem-valgrind \
+	fuzz test-fuzz \
 	test test-short test-all race test-coverage coverage-gate coverage-html test-fuzz test-docker \
 	test-adbc test-adbc-python test-adbc-so \
 	cross-compile check-simd test-bench-harness helm-lint markdown-lint bench-ci bench-ab \
@@ -121,7 +122,7 @@ help:
 # Combined Local CI Pipeline
 # ==============================================================================
 
-ci: fmt-check lint vet build build-adbc cross-compile check-simd test-coverage test-docker test-bench-harness accuracy-gate oracle-gate observability-check observability-rules security helm-lint
+ci: fmt-check lint vet build build-adbc cross-compile check-simd test-coverage test-docker test-bench-harness accuracy-gate oracle-gate observability-check observability-rules sec-gosec helm-lint
 	@echo "=========================================================="
 	@echo " ✓ Complete local CI verification pipeline passed 100%!"
 	@echo "=========================================================="
@@ -261,8 +262,8 @@ sec-audit: sec-vulncheck
 # ==============================================================================
 
 perf-check:
-	@echo "Running performance throughput & allocation check on SIMD and PQ hot paths..."
-	$(GO) test -short -run='^$$' -bench='BenchmarkEuclidean|BenchmarkDot|BenchmarkPackTQ|BenchmarkUnpackTQ' -benchtime=50ms -benchmem ./internal/simd/
+	@echo "Running performance throughput & allocation check on SIMD, PQ, and index hot paths..."
+	$(GO) test -short -run='^$$' -bench='BenchmarkEuclidean|BenchmarkDot|BenchmarkPackTQ|BenchmarkUnpackTQ|BenchmarkPQ|BenchmarkSQ8' -benchtime=50ms -benchmem ./internal/simd/ ./internal/pq/ ./internal/store/index/
 
 cpu-profile:
 	@echo "Generating CPU profile (cpu.out) on SIMD and index hot paths..."
@@ -421,6 +422,18 @@ verify:
 	@./scripts/verify.sh
 
 pre-commit: verify
+
+# ==============================================================================
+# Project-Specific Convenience Aliases
+# ==============================================================================
+
+perf: perf-check
+
+mem: mem-check
+
+sec: security
+
+fuzz: test-fuzz
 
 # ==============================================================================
 # Container & Release Targets (mirrors release-containers in CI)

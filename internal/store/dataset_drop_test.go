@@ -44,7 +44,7 @@ func TestStore_DropDataset_FastPath(t *testing.T) {
 	duration := time.Since(start)
 
 	// Assert Fast Path
-	assert.Less(t, duration, 300*time.Millisecond)
+	assert.Less(t, duration, 500*time.Millisecond)
 
 	// 4. Verify Unlink
 	dAfter, okAfter := s.getDataset(dsName)

@@ -187,8 +187,8 @@ Longbow enforces **100% per-package test file presence** across all Go packages 
 | `internal/tensor` | `FuzzTensorContractOracleParity` | Fuzzes 2D `MatMul` / `TensorContract` against a 64-bit `float64` triple-loop matrix multiplication oracle |
 | `internal/store/index` | `FuzzSQ8EncoderOracleParity` | Fuzzes `TrainSQ8Encoder`, `Encode`, `Decode`, and round-trip reconstruction error bounds |
 | `internal/store/index` | `FuzzTurboQuantEncodeDecode` / `FuzzTurboQuantCompression` | Fuzzes polar coordinate transform, angle packing, QJL residual bit packing, and `DecodeInto` reconstruction |
-| `internal/store/index` | `FuzzHNSWSearch` / `FuzzDiskGraphSerialization` | Fuzzes HNSW insertion/search invariants and binary disk-graph serialization round-trips |
-| `internal/query` | `FuzzFilterParser` / `FuzzVectorSearchRequestParser` | Fuzzes JSON/structured filter expression parsing and request validation against malformed inputs |
+| `internal/store/index` | `FuzzHNSWSearch` / `FuzzPackedAdjacency` | Fuzzes HNSW insertion/search invariants and packed adjacency serialization round-trips |
+| `internal/query` | `FuzzFilterEvaluator_MatchesAll` / `FuzzZeroAllocTicketParser_Parse` | Fuzzes JSON/structured filter expression parsing and request validation against malformed inputs |
 | `internal/memory` | `FuzzSlabArena` | Fuzzes concurrent and sequential `SlabArena` allocations, alignments, and slice header safety |
 
 ---

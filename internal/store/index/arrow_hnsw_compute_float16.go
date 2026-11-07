@@ -24,13 +24,6 @@ func (c *float16Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-	if err == nil {
-		if v, ok := vecAny.([]float16.Num); ok {
-			return c.h.distFuncF16(c.q, v)
-		}
-	}
-
 	cID := types.ChunkID(id)
 	var chunk []float16.Num
 	if c.maxGen == math.MaxUint64 {
@@ -44,6 +37,13 @@ func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
 			return c.h.distFuncF16(c.q, chunk[start:start+c.dims])
+		}
+	}
+
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err == nil {
+		if v, ok := vecAny.([]float16.Num); ok {
+			return c.h.distFuncF16(c.q, v)
 		}
 	}
 

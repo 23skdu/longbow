@@ -358,53 +358,63 @@ func (s *Statement) executeVectorSearch(ctx context.Context, vs *store.VectorSto
 func (s *Statement) executeScan(ctx context.Context, vs *store.VectorStore, tableName string) (array.RecordReader, int64, error) {
 	k := parseKFromSQL(s.query)
 
-	dim := 128
-	var foundDim int
-	vs.IterateDatasets(func(name string, ds *store.Dataset) {
-		if name == tableName && ds.GetSchema() != nil {
-			for _, f := range ds.GetSchema().Fields() {
-				if f.Name == "vector" {
-					if fsl, ok := f.Type.(*arrow.FixedSizeListType); ok {
-						foundDim = int(fsl.Len())
-					}
-				}
-			}
+	var ds *store.Dataset
+	vs.IterateDatasets(func(name string, d *store.Dataset) {
+		if name == tableName {
+			ds = d
 		}
 	})
-	if foundDim > 0 {
-		dim = foundDim
+	if ds == nil {
+		return nil, -1, adbc.Error{
+			Code: adbc.StatusNotFound,
+			Msg:  fmt.Sprintf("dataset %q not found", tableName),
+		}
 	}
 
-	queryVec := make([]float32, dim)
-	for i := range queryVec {
-		queryVec[i] = 1.0 / float32(i+1)
+	schema := ds.GetSchema()
+	if schema == nil {
+		return nil, -1, adbc.Error{
+			Code: adbc.StatusInternal,
+			Msg:  "dataset has no schema",
+		}
 	}
 
-	results, err := vs.SearchHybrid(ctx, tableName, queryVec, "", k, 1.0, 60, 0, 0, false)
+	ds.RLockData()
+	records := ds.Records.Read()
+	// Collect up to k rows
+	var out []arrow.RecordBatch
+	remaining := k
+	if k <= 0 {
+		remaining = -1
+	}
+	for _, rec := range records {
+		if remaining == 0 {
+			break
+		}
+		if remaining < 0 || int(rec.NumRows()) <= remaining {
+			out = append(out, rec)
+			if remaining > 0 {
+				remaining -= int(rec.NumRows())
+			}
+		} else {
+			sliced := rec.NewSlice(0, int64(remaining))
+			out = append(out, sliced)
+			remaining = 0
+		}
+	}
+	ds.RUnlockData()
+
+	var total int64
+	for _, r := range out {
+		total += r.NumRows()
+	}
+
+	reader, err := array.NewRecordReader(schema, out)
 	if err != nil {
 		return nil, -1, adbc.Error{
 			Code: adbc.StatusInternal,
 			Msg:  fmt.Sprintf("scan failed: %v", err),
 		}
 	}
-
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "id", Type: arrow.PrimitiveTypes.Uint32},
-		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
-	}, nil)
-
-	builder := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
-	defer builder.Release()
-
-	idBuilder := builder.Field(0).(*array.Uint32Builder)
-	scoreBuilder := builder.Field(1).(*array.Float32Builder)
-
-	for _, r := range results {
-		idBuilder.Append(uint32(r.ID))
-		scoreBuilder.Append(r.Score)
-	}
-
-	rec := builder.NewRecordBatch()
-	reader, err := array.NewRecordReader(schema, []arrow.RecordBatch{rec})
-	return reader, -1, err
+	return reader, total, nil
 }

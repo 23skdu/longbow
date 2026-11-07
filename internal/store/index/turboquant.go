@@ -205,10 +205,22 @@ func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 		return nil, err
 	}
 
-	// 4. Reconstruction (to calculate residuals)
-	// Use the second section of the workspace for recon, isolated from work and stack
+	// 4. Quantize angles to codes and reconstruct from quantized codes.
+	codesPtr := e.getCodesScratch(len(angles))
+	codes := *codesPtr
+	defer e.putCodesScratch(codesPtr)
+	maxVal := float32((uint32(1) << uint(e.params.BitsPerAngle)) - 1)
+	for i, angle := range angles {
+		norm := (angle + math.Pi) * (1.0 / (2 * math.Pi))
+		if norm < 0 {
+			norm = 0
+		} else if norm > 1 {
+			norm = 1
+		}
+		codes[i] = byte(norm*maxVal + 0.5)
+	}
 	recon := workspace[e.pow2 : e.pow2*2]
-	e.polarReconstructRecursive(radius, angles, recon, stack)
+	e.polarReconstructCodes(radius, codes, recon, stack)
 
 	// 5. Stage 2: QJL (Sign bit of residual)
 	// residual = work - recon
@@ -251,32 +263,6 @@ func (e *TurboQuantEncoder) polarTransformRecursive(vec []float32, angles []floa
 
 	// Recursive call on the radii
 	return e.polarTransformRecursive(nextRadii, angles[n/2:], stack)
-}
-
-// polarReconstructRecursive rebuilds the Cartesian vector from a radius and a
-// continuous angle list. Encode feeds it the raw atan2 output, which is not a
-// quantized grid point, so it must stay on math.Sincos: a code-indexed table
-// cannot represent it.
-func (e *TurboQuantEncoder) polarReconstructRecursive(radius float32, angles []float32, dst []float32, stack []float32) {
-	n := len(dst)
-	if n == 1 {
-		dst[0] = radius
-		return
-	}
-
-	stackOffset := e.pow2 - n
-	nextRadii := stack[stackOffset : stackOffset+n/2]
-
-	e.polarReconstructRecursive(radius, angles[n/2:], nextRadii, stack)
-
-	// Now expand each radius to a pair (x, y) using the first n/2 angles
-	for i := 0; i < n/2; i++ {
-		r := nextRadii[i]
-		theta := angles[i]
-		sin, cos := math.Sincos(float64(theta))
-		dst[2*i] = r * float32(cos)
-		dst[2*i+1] = r * float32(sin)
-	}
 }
 
 // polarReconstructCodes is the LUT counterpart of polarReconstructRecursive for
@@ -470,7 +456,7 @@ func unpackAngleValues(bits int, src []byte, dst []float32) {
 	}
 
 	if bits == 2 {
-		simd.UnpackTQ2(src, dst, 2*math.Pi/maxVal, -math.Pi)
+		simd.UnpackTQ2(src, dst, math.Pi/2, -3*math.Pi/4)
 		return
 	}
 

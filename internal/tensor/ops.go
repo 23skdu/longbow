@@ -171,6 +171,12 @@ func contractNumeric[T float32 | float64 | complex64 | complex128 | int32 | int6
 	bIdx := make([]int, len(bShape))
 	outIdx := make([]int, totalFree)
 
+	totalIter := 1
+	for _, ax := range aAxes {
+		totalIter *= aShape[ax]
+	}
+	cIndices := make([]int, len(aAxes))
+
 	for {
 		for i := 0; i < aFreeCount; i++ {
 			aIdx[aFree[i]] = indices[i]
@@ -182,18 +188,10 @@ func contractNumeric[T float32 | float64 | complex64 | complex128 | int32 | int6
 		outOff := offsetFromIndices(outIdx, outStrides, elemSize)
 
 		var sum T
-		totalIter := 1
-		for _, ax := range aAxes {
-			totalIter *= aShape[ax]
+		for ci := 0; ci < len(cIndices); ci++ {
+			cIndices[ci] = 0
 		}
-		cIndices := make([]int, len(aAxes))
 		for ci := 0; ci < totalIter; ci++ {
-			rem := ci
-			for k := len(aAxes) - 1; k >= 0; k-- {
-				dim := aShape[aAxes[k]]
-				cIndices[k] = rem % dim
-				rem /= dim
-			}
 			for k, ax := range aAxes {
 				aIdx[ax] = cIndices[k]
 				bIdx[bAxes[k]] = cIndices[k]
@@ -202,6 +200,16 @@ func contractNumeric[T float32 | float64 | complex64 | complex128 | int32 | int6
 			aOff := offsetFromIndices(aIdx, aStrides, elemSize)
 			bOff := offsetFromIndices(bIdx, bStrides, elemSize)
 			sum += a[aOff/elemSize] * b[bOff/elemSize]
+
+			// odometer increment
+			for k := len(aAxes) - 1; k >= 0; k-- {
+				dim := aShape[aAxes[k]]
+				cIndices[k]++
+				if cIndices[k] < dim {
+					break
+				}
+				cIndices[k] = 0
+			}
 		}
 
 		out[outOff/elemSize] = sum

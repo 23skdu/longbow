@@ -145,20 +145,20 @@ func PackTQ8(src []float32, dst []byte) {
 }
 
 func PackTQ2Generic(src []float32, dst []byte) {
-	maxVal := float32(3)
-	inv2Pi := float32(1.0 / (2 * math.Pi))
-	pi32 := float32(math.Pi)
+	// New grid: theta = q*pi/2 - 3*pi/4  =>  q = (theta + 3*pi/4) * 2/pi
+	invScale := float32(2.0 / math.Pi)
+	offset := float32(3.0 * math.Pi / 4.0)
 	for i := 0; i < len(src); i += 4 {
 		var b byte
 		for j := 0; j < 4; j++ {
 			if i+j < len(src) {
-				norm := (src[i+j] + pi32) * inv2Pi
-				if norm < 0 {
-					norm = 0
-				} else if norm > 1 {
-					norm = 1
+				qf := (src[i+j] + offset) * invScale
+				if qf < 0 {
+					qf = 0
+				} else if qf > 3 {
+					qf = 3
 				}
-				q := byte(norm*maxVal + 0.5)
+				q := byte(qf + 0.5)
 				b |= (q << (uint(j) * 2))
 			}
 		}

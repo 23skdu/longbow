@@ -226,6 +226,8 @@ func (a *SlabArena) allocFast(size int) (uint64, bool) {
 
 	oldOffset := newOffset - totalNeeded
 	globalOffset := (uint64(active.id-1) * uint64(a.slabCap)) + uint64(oldOffset)
+	a.stats.UsedBytes.Add(int64(totalNeeded))
+	metrics.ArenaFastPathTotal.Inc()
 	return globalOffset, true
 }
 
@@ -315,8 +317,6 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	if size <= 16384 && align <= 8 {
 		if offset, ok := a.allocFast(size); ok {
 			a.mu.Unlock()
-			metrics.ArenaFastPathTotal.Inc()
-			a.stats.UsedBytes.Add(int64(size))
 			return offset, nil
 		}
 		fastPathFailed = true

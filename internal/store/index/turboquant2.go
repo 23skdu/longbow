@@ -175,25 +175,30 @@ func (e *TurboQuant2Encoder) Encode(vec []float32) ([]byte, error) {
 	stddev := radius / float32(math.Sqrt(float64(e.pow2)))
 	thresh := stddev * 0.4
 
+	stochastic := e.params.Stochastic && thresh > 0
+	if stochastic {
+		e.rngMu.Lock()
+	}
 	for i := 0; i < e.pow2; i++ {
 		res := work[i] - recon[i]
 		bit := false
-		if e.params.Stochastic && thresh > 0 {
+		if stochastic {
 			prob := 0.5 + float64(res/(2.0*thresh))
 			if prob > 1.0 {
 				prob = 1.0
 			} else if prob < 0.0 {
 				prob = 0.0
 			}
-			e.rngMu.Lock()
 			bit = e.rng.Float64() < prob
-			e.rngMu.Unlock()
 		} else {
 			bit = res > 0
 		}
 		if bit {
 			qjlBits[i/8] |= (byte(1) << (i % 8))
 		}
+	}
+	if stochastic {
+		e.rngMu.Unlock()
 	}
 
 	// 6. Packing: [Radius (4B)][2-bit Packed Angles][1-bit Residuals]
@@ -301,12 +306,12 @@ func (e *TurboQuant2Encoder) polarReconstructFromCodes(radius float32, codes []b
 	// 2-bit LUT entries
 	lookup := simd.GetTurboQuantAngleInnerProductMatrix(2)
 	_ = lookup // Precomputed LUT
-	// Use 4-level polar angles: theta_q = (q / 3) * 2pi - pi
+	// Use 4-level polar angles at cell midpoints: theta_q = q*pi/2 - 3*pi/4
 	lut := [8]float32{
-		float32(math.Cos(-math.Pi)), float32(math.Sin(-math.Pi)),
-		float32(math.Cos(-math.Pi / 3)), float32(math.Sin(-math.Pi / 3)),
-		float32(math.Cos(math.Pi / 3)), float32(math.Sin(math.Pi / 3)),
-		float32(math.Cos(math.Pi)), float32(math.Sin(math.Pi)),
+		float32(math.Cos(-3 * math.Pi / 4)), float32(math.Sin(-3 * math.Pi / 4)),
+		float32(math.Cos(-math.Pi / 4)), float32(math.Sin(-math.Pi / 4)),
+		float32(math.Cos(math.Pi / 4)), float32(math.Sin(math.Pi / 4)),
+		float32(math.Cos(3 * math.Pi / 4)), float32(math.Sin(3 * math.Pi / 4)),
 	}
 
 	for i := 0; i < n/2; i++ {

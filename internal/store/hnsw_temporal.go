@@ -7,6 +7,8 @@ import (
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
+
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -74,17 +76,30 @@ func (thi *TemporalHNSWIndex) SearchAsOf(ctx context.Context, timestamp int64, k
 
 	validIDs := thi.temporalTree.GetBefore(timestamp + 1)
 
+	bitset := roaring.New()
+	for _, id := range validIDs {
+		bitset.Add(uint32(id)) // #nosec G115
+	}
+
+	zeroVec := make([]float32, thi.dimension)
+	if thi.hnsw != nil && bitset.GetCardinality() > 0 {
+		res, err := thi.hnsw.SearchVectorsWithBitmap(ctx, zeroVec, k, bitset, nil)
+		if err == nil {
+			out := make([]SearchResult, len(res))
+			copy(out, res)
+			return out, nil
+		}
+	}
+
 	results := make([]SearchResult, 0, k)
 	for _, id := range validIDs {
 		results = append(results, SearchResult{
 			ID: VectorID(id), // #nosec G115
 		})
 	}
-
 	if len(results) > k {
 		results = results[:k]
 	}
-
 	return results, nil
 }
 
@@ -95,17 +110,30 @@ func (thi *TemporalHNSWIndex) SearchRange(ctx context.Context, startTime, endTim
 
 	validIDs := thi.temporalTree.GetRange(startTime, endTime)
 
+	bitset := roaring.New()
+	for _, id := range validIDs {
+		bitset.Add(uint32(id)) // #nosec G115
+	}
+
+	zeroVec := make([]float32, thi.dimension)
+	if thi.hnsw != nil && bitset.GetCardinality() > 0 {
+		res, err := thi.hnsw.SearchVectorsWithBitmap(ctx, zeroVec, k, bitset, nil)
+		if err == nil {
+			out := make([]SearchResult, len(res))
+			copy(out, res)
+			return out, nil
+		}
+	}
+
 	results := make([]SearchResult, 0, k)
 	for _, id := range validIDs {
 		results = append(results, SearchResult{
 			ID: VectorID(id), // #nosec G115
 		})
 	}
-
 	if len(results) > k {
 		results = results[:k]
 	}
-
 	return results, nil
 }
 
@@ -116,17 +144,30 @@ func (thi *TemporalHNSWIndex) SearchSlidingWindow(ctx context.Context, windowSiz
 
 	validIDs := thi.temporalTree.GetLatest(windowSize)
 
+	bitset := roaring.New()
+	for _, id := range validIDs {
+		bitset.Add(uint32(id)) // #nosec G115
+	}
+
+	zeroVec := make([]float32, thi.dimension)
+	if thi.hnsw != nil && bitset.GetCardinality() > 0 {
+		res, err := thi.hnsw.SearchVectorsWithBitmap(ctx, zeroVec, k, bitset, nil)
+		if err == nil {
+			out := make([]SearchResult, len(res))
+			copy(out, res)
+			return out, nil
+		}
+	}
+
 	results := make([]SearchResult, 0, k)
 	for _, id := range validIDs {
 		results = append(results, SearchResult{
 			ID: VectorID(id), // #nosec G115
 		})
 	}
-
 	if len(results) > k {
 		results = results[:k]
 	}
-
 	return results, nil
 }
 

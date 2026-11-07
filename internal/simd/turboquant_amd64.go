@@ -28,12 +28,10 @@ func UnpackTQ8AVX2(src []byte, dst []float32, scale, bias float32) {
 	unpackTQ8AVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(dst), scale, bias) // #nosec G103
 }
 
-// PackTQ2AVX2 is implemented in assembly.
+// PackTQ2AVX2 falls back to the generic implementation, which uses the
+// updated 2-bit angle grid (midpoints) shared with the rest of the codec.
 func PackTQ2AVX2(src []float32, dst []byte) {
-	if len(src) == 0 {
-		return
-	}
-	packTQ2AVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
+	PackTQ2Generic(src, dst)
 }
 
 // PackTQ4AVX2 is implemented in assembly.
@@ -66,6 +64,7 @@ func unpackTQ4AVX2Kernel(src, dst unsafe.Pointer, n int, scale, bias float32)
 func unpackTQ8AVX2Kernel(src, dst unsafe.Pointer, n int, scale, bias float32)
 
 //go:noescape
+//nolint:unused
 func packTQ2AVX2Kernel(src, dst unsafe.Pointer, n int)
 
 //go:noescape

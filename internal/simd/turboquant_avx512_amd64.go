@@ -17,14 +17,7 @@ func UnpackTQ8AVX512(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ8AVX2(src, dst, scale, bias)
 }
 func PackTQ2AVX512(src []float32, dst []byte) {
-	if len(src) == 0 {
-		return
-	}
-	if !features.HasAVX512 {
-		PackTQ2AVX2(src, dst)
-		return
-	}
-	packTQ2AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
+	PackTQ2Generic(src, dst)
 }
 
 func PackTQ4AVX512(src []float32, dst []byte) {
@@ -114,6 +107,7 @@ var (
 )
 
 //go:noescape
+//nolint:unused
 func packTQ2AVX512Kernel(src, dst unsafe.Pointer, n int) // #nosec G103
 
 //go:noescape

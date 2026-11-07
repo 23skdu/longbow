@@ -79,11 +79,40 @@ func TrainKMeansWithOptions(data []float32, n, dim, k int, opts KMeansOptions) (
 
 	centroids := make([]float32, k*dim)
 
-	// 1. Initialization: Randomly select k centroids from data
-	perm := rand.Perm(n) // #nosec G404
-	for i := 0; i < k; i++ {
-		idx := perm[i]
-		copy(centroids[i*dim:(i+1)*dim], data[idx*dim:(idx+1)*dim])
+	// 1. K-Means++ initialization
+	first := rand.Intn(n) // #nosec G404
+	copy(centroids[0*dim:(0+1)*dim], data[first*dim:(first+1)*dim])
+
+	dists := make([]float32, n)
+	for i := range dists {
+		dists[i] = math.MaxFloat32
+	}
+	for c := 1; c < k; c++ {
+		// update distances to nearest chosen centroid
+		newCent := centroids[(c-1)*dim : c*dim]
+		for i := 0; i < n; i++ {
+			vec := data[i*dim : (i+1)*dim]
+			d, _ := simd.L2Squared(vec, newCent)
+			if d < dists[i] {
+				dists[i] = d
+			}
+		}
+		// choose next centroid with probability proportional to dists
+		var sum float64
+		for i := 0; i < n; i++ {
+			sum += float64(dists[i])
+		}
+		target := rand.Float64() * sum // #nosec G404
+		cum := 0.0
+		chosen := n - 1
+		for i := 0; i < n; i++ {
+			cum += float64(dists[i])
+			if cum >= target {
+				chosen = i
+				break
+			}
+		}
+		copy(centroids[c*dim:(c+1)*dim], data[chosen*dim:(chosen+1)*dim])
 	}
 
 	// Get buffers from pool (reduces allocations for repeated training)
@@ -161,17 +190,7 @@ func runCPUEstep(data, centroids []float32, assignments, counts []int, sums []fl
 	changed := 0
 	for i := 0; i < n; i++ {
 		vec := data[i*dim : (i+1)*dim]
-		bestDist := float32(math.MaxFloat32)
-		bestC := -1
-
-		for c := 0; c < k; c++ {
-			cent := centroids[c*dim : (c+1)*dim]
-			dist, _ := kernel(vec, cent)
-			if dist < bestDist {
-				bestDist = dist
-				bestC = c
-			}
-		}
+		bestC, _ := simd.FindNearestCentroid(vec, centroids, dim, k)
 
 		if assignments[i] != bestC {
 			changed++

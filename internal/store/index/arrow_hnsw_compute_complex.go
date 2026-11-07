@@ -58,14 +58,6 @@ func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-	if err == nil {
-		if v, ok := vecAny.([]complex64); ok {
-			return c.h.distFuncC64(c.q, v)
-		}
-	}
-
-	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
 	var chunk []complex64
 	if c.maxGen == 18446744073709551615 {
@@ -79,6 +71,13 @@ func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
 			return c.h.distFuncC64(c.q, chunk[start:start+c.dims])
+		}
+	}
+
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err == nil {
+		if v, ok := vecAny.([]complex64); ok {
+			return c.h.distFuncC64(c.q, v)
 		}
 	}
 
@@ -245,14 +244,6 @@ func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-	if err == nil {
-		if v, ok := vecAny.([]complex128); ok {
-			return c.h.distFuncC128(c.q, v)
-		}
-	}
-
-	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
 	var chunk []complex128
 	if c.maxGen == 18446744073709551615 {
@@ -266,6 +257,13 @@ func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
 			return c.h.distFuncC128(c.q, chunk[start:start+c.dims])
+		}
+	}
+
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err == nil {
+		if v, ok := vecAny.([]complex128); ok {
+			return c.h.distFuncC128(c.q, v)
 		}
 	}
 

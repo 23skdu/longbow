@@ -305,21 +305,44 @@ func (idx *IVFOPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k in
 		clusterID := dists[i].id
 		cluster := &idx.clusters[clusterID]
 		cluster.mu.RLock()
+		// Collect filtered entries
+		var entries []IVFIndexEntry
 		for _, entry := range cluster.Entries {
 			if filter != nil && !filter.Contains(entry.VectorID) {
 				continue
 			}
-			// Compute ADC distance
-			var dist float32
-			for m := 0; m < idx.config.M; m++ {
-				dist += adt[m*idx.config.K+int(entry.PQCode[m])]
-			}
-			candidates = append(candidates, types.SearchResult{
-				ID:       types.VectorID(entry.VectorID),
-				Distance: dist,
-			})
+			entries = append(entries, entry)
 		}
 		cluster.mu.RUnlock()
+		if len(entries) == 0 {
+			continue
+		}
+		// Build flat codes
+		flatCodes := make([]byte, len(entries)*idx.config.M)
+		for ei, entry := range entries {
+			copy(flatCodes[ei*idx.config.M:], entry.PQCode)
+		}
+		results := make([]float32, len(entries))
+		if err := idx.opqEncoder.ADCDistanceBatch(adt, flatCodes, results); err == nil {
+			for ei, entry := range entries {
+				candidates = append(candidates, types.SearchResult{
+					ID:       types.VectorID(entry.VectorID),
+					Distance: results[ei],
+				})
+			}
+		} else {
+			// Fallback scalar
+			for _, entry := range entries {
+				var dist float32
+				for m := 0; m < idx.config.M; m++ {
+					dist += adt[m*idx.config.K+int(entry.PQCode[m])]
+				}
+				candidates = append(candidates, types.SearchResult{
+					ID:       types.VectorID(entry.VectorID),
+					Distance: dist,
+				})
+			}
+		}
 	}
 
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Distance < candidates[j].Distance })
@@ -340,117 +363,38 @@ func (idx *IVFOPQIndex) SearchBatch(ctx context.Context, queries [][]float32, k 
 		return make([]types.BatchCandidates, len(queries)), nil
 	}
 
-	// Pre-compute cluster distances for all queries
-	type clusterResult struct {
-		queryIdx int
-		dists    []clusterDist
+	var filter *roaring.Bitmap
+	if rb, ok := f.(*roaring.Bitmap); ok {
+		filter = rb
 	}
-	results := make([]clusterResult, len(queries))
 
-	// Parallelize cluster distance computation
+	batchCandidates := make([]types.BatchCandidates, len(queries))
 	var wg sync.WaitGroup
 	errs := make([]error, len(queries))
-	resultsCh := make(chan clusterResult, len(queries))
 
-	for qi, queryVec := range queries {
+	for qi, qv := range queries {
+		qi := qi
+		qv := qv
 		wg.Add(1)
-		go func(qi int, qv []float32) {
+		go func() {
 			defer wg.Done()
-			var dists []clusterDist
-			if idx.coarseHNSW != nil {
-				hnswResults, err := idx.coarseHNSW.Search(qv, idx.config.Nprobe)
-				if err == nil {
-					dists = make([]clusterDist, len(hnswResults))
-					for i, res := range hnswResults {
-						dists[i] = clusterDist{id: int(res.ID), dist: float32(res.Distance)} // #nosec G115 -- res.ID is within int range
-					}
-				}
-			}
-			if dists == nil {
-				dists = makeClusterDists(qv, idx.coarseCentroids, idx.config.Nlist, idx.dim)
-			}
-			resultsCh <- clusterResult{qi, dists}
-		}(qi, queryVec)
-	}
-
-	wg.Wait()
-	close(resultsCh)
-
-	for res := range resultsCh {
-		results[res.queryIdx] = res
-		if res.dists == nil {
-			errs[res.queryIdx] = errors.New("failed to compute cluster distances")
-		}
-	}
-
-	// Process results in parallel
-	batchCandidates := make([]types.BatchCandidates, len(queries))
-	var batchWg sync.WaitGroup
-	batchErrs := make([]error, len(queries))
-
-	for qi, res := range results {
-		if res.dists == nil {
-			continue
-		}
-		batchWg.Add(1)
-		go func(qi int, dists []clusterDist) {
-			defer batchWg.Done()
-			candidates, err := idx.refineBatch(qi, k, dists)
-			batchCandidates[qi] = types.BatchCandidates{Candidates: candidates}
-			batchErrs[qi] = err
-		}(qi, res.dists)
-	}
-
-	batchWg.Wait()
-	return batchCandidates, combineErrors(batchErrs)
-}
-
-// refineBatch processes a single query against pre-computed cluster distances
-func (idx *IVFOPQIndex) refineBatch(queryIdx int, k int, dists []clusterDist) ([]types.Candidate, error) {
-	sort.Slice(dists, func(i, j int) bool {
-		return dists[i].dist < dists[j].dist
-	})
-
-	candidateChan := make(chan types.Candidate, k)
-	var refineWg sync.WaitGroup
-	limit := min(k, len(dists))
-
-	for i := 0; i < limit; i++ {
-		refineWg.Add(1)
-		go func(d clusterDist) {
-			defer refineWg.Done()
-			// Decode and refine the candidate vector
-			vec, err := idx.decodeVector(d.id)
+			res, err := idx.SearchVectorsWithBitmap(ctx, qv, k, filter, nil)
 			if err != nil {
+				errs[qi] = err
 				return
 			}
-			score := idx.computeResidualScore(queryIdx, vec)
-			candidateChan <- types.Candidate{
-				ID:   uint32(d.id), // #nosec G115 -- d.id is within uint32 range
-				Dist: score,
+			cands := make([]types.Candidate, 0, len(res))
+			for _, r := range res {
+				cands = append(cands, types.Candidate{
+					ID:   uint32(r.ID),
+					Dist: r.Distance,
+				})
 			}
-		}(dists[i])
+			batchCandidates[qi] = types.BatchCandidates{Candidates: cands}
+		}()
 	}
-
-	go func() {
-		refineWg.Wait()
-		close(candidateChan)
-	}()
-
-	var candidates []types.Candidate
-	for c := range candidateChan {
-		candidates = append(candidates, c)
-	}
-
-	// Sort final results
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].Dist < candidates[j].Dist
-	})
-
-	if len(candidates) > k {
-		candidates = candidates[:k]
-	}
-	return candidates, nil
+	wg.Wait()
+	return batchCandidates, combineErrors(errs)
 }
 
 // AddByLocation is not directly supported on IVF-OPQ (use Add).

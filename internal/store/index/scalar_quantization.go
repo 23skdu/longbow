@@ -218,7 +218,7 @@ func (e *SQ8Encoder) EncodeInto(vec []float32, dst []uint8) {
 		normalized := (v - e.config.Min[i]) * e.scale[i]
 
 		// Convert to uint8 with floor
-		dst[i] = uint8(normalized)
+		dst[i] = uint8(normalized + 0.5)
 	}
 }
 

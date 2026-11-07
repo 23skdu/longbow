@@ -16,6 +16,8 @@ import (
 type OPQEncoder struct {
 	*PQEncoder
 	RotationMatrix *mat.Dense // Dims * Dims rotation matrix
+	R_flat         []float32  // flattened rotation matrix (row-major)
+	R_T_flat       []float32  // flattened transpose (row-major)
 }
 
 // NewOPQEncoder creates a new OPQ encoder.
@@ -118,22 +120,36 @@ func (e *OPQEncoder) TrainOPQ(vectors [][]float32, iterations int) error {
 	return nil
 }
 
+// ensureFlat flattens RotationMatrix into R_flat and R_T_flat if needed.
+func (e *OPQEncoder) ensureFlat() {
+	if len(e.R_flat) == e.Dims*e.Dims {
+		return
+	}
+	e.R_flat = make([]float32, e.Dims*e.Dims)
+	e.R_T_flat = make([]float32, e.Dims*e.Dims)
+	for i := 0; i < e.Dims; i++ {
+		for j := 0; j < e.Dims; j++ {
+			v := float32(e.RotationMatrix.At(i, j))
+			e.R_flat[i*e.Dims+j] = v
+			e.R_T_flat[j*e.Dims+i] = v
+		}
+	}
+}
+
 // RotateVector rotates a single vector using the trained rotation matrix.
 func (e *OPQEncoder) RotateVector(vector []float32) []float32 {
 	if len(vector) != e.Dims {
 		return nil
 	}
-	v := mat.NewVecDense(e.Dims, nil)
-	for i, val := range vector {
-		v.SetVec(i, float64(val))
-	}
-
-	var vRot mat.VecDense
-	vRot.MulVec(e.RotationMatrix, v)
-
+	e.ensureFlat()
 	rotated := make([]float32, e.Dims)
 	for i := 0; i < e.Dims; i++ {
-		rotated[i] = float32(vRot.AtVec(i))
+		var sum float32
+		row := e.R_flat[i*e.Dims:]
+		for j := 0; j < e.Dims; j++ {
+			sum += row[j] * vector[j]
+		}
+		rotated[i] = sum
 	}
 	return rotated
 }
@@ -145,18 +161,15 @@ func (e *OPQEncoder) Encode(vector []float32) ([]byte, error) {
 	}
 
 	// 1. Rotate vector: v_rot = R * v
-	v := mat.NewVecDense(e.Dims, nil)
-	for i, val := range vector {
-		v.SetVec(i, float64(val))
-	}
-
-	var vRot mat.VecDense
-	vRot.MulVec(e.RotationMatrix, v)
-
-	// Convert back to float32
+	e.ensureFlat()
 	rotated := make([]float32, e.Dims)
 	for i := 0; i < e.Dims; i++ {
-		rotated[i] = float32(vRot.AtVec(i))
+		var sum float32
+		row := e.R_flat[i*e.Dims:]
+		for j := 0; j < e.Dims; j++ {
+			sum += row[j] * vector[j]
+		}
+		rotated[i] = sum
 	}
 
 	// 2. Delegate to PQEncoder
@@ -172,18 +185,14 @@ func (e *OPQEncoder) Decode(codes []byte) ([]float32, error) {
 	}
 
 	// 2. Inverse rotate: v = R^T * v_rot (since R is orthogonal, R^-1 = R^T)
-	vRot := mat.NewVecDense(e.Dims, nil)
-	for i, val := range rotated {
-		vRot.SetVec(i, float64(val))
-	}
-
-	var v mat.VecDense
-	v.MulVec(e.RotationMatrix.T(), vRot)
-
-	// Convert back to float32
+	e.ensureFlat()
 	original := make([]float32, e.Dims)
 	for i := 0; i < e.Dims; i++ {
-		original[i] = float32(v.AtVec(i))
+		var sum float32
+		for j := 0; j < e.Dims; j++ {
+			sum += e.R_T_flat[i*e.Dims+j] * rotated[j]
+		}
+		original[i] = sum
 	}
 
 	return original, nil

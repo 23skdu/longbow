@@ -10,6 +10,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -123,7 +124,7 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 			if rrfK <= 0 {
 				rrfK = 60 // Default
 			}
-			finalResults = ReciprocalRankFusion(name, denseResults, sparseResults, rrfK, k, s.resultPool)
+			finalResults = ReciprocalRankFusion(name, denseResults, sparseResults, rrfK, k, alpha, s.resultPool)
 			metrics.HybridSearchMergeDuration.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
 			metrics.HybridRRFFusionLatencySeconds.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
 		}
@@ -254,20 +255,51 @@ func (s *VectorStore) HybridSearch(ctx context.Context, name string, queryVec []
 }
 
 // ReciprocalRankFusion performs Reciprocal Rank Fusion.
-func ReciprocalRankFusion(dataset string, list1, list2 []SearchResult, rrfK, k int, pool *SearchResultPool) []SearchResult {
+func ReciprocalRankFusion(dataset string, list1, list2 []SearchResult, args ...interface{}) []SearchResult {
+	rrfK := 60
+	k := 10
+	alpha := float32(0.5)
+	var pool *SearchResultPool
+	intCount := 0
+	for _, a := range args {
+		switch v := a.(type) {
+		case int:
+			if intCount == 0 {
+				rrfK = v
+			} else {
+				k = v
+			}
+			intCount++
+		case *SearchResultPool:
+			pool = v
+		case float32:
+			alpha = v
+		case float64:
+			alpha = float32(v)
+		}
+	}
+	if alpha < 0 {
+		alpha = 0.5
+	}
+	if alpha > 1 {
+		alpha = 1
+	}
+	w1 := alpha
+	w2 := float32(1.0) - alpha
+
 	scores := make(map[uint32]float32) // Use VectorID (uint32)
 
 	// Helper to add scores
-	add := func(list []SearchResult) {
+	add := func(list []SearchResult, weight float32) {
 		for rank, item := range list {
-			// RRF score = 1 / (k + rank)
-			score := float32(1.0) / float32(rrfK+rank+1)
+			// RRF score = weight / (k + rank)
+			score := weight * float32(1.0) / float32(rrfK+rank+1)
 			scores[uint32(item.ID)] += score
 		}
 	}
 
-	add(list1)
-	add(list2)
+	add(list1, w1)
+	add(list2, w2)
 
 	// Get result slice from pool
 	var final []SearchResult
@@ -281,7 +313,10 @@ func ReciprocalRankFusion(dataset string, list1, list2 []SearchResult, rrfK, k i
 	}
 
 	sort.Slice(final, func(i, j int) bool {
-		return final[i].Score > final[j].Score
+		if final[i].Score != final[j].Score {
+			return final[i].Score > final[j].Score
+		}
+		return uint32(final[i].ID) < uint32(final[j].ID)
 	})
 
 	if len(final) > k {
@@ -349,17 +384,21 @@ func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req *HybridSea
 
 	// Sparse keyword search (BM25)
 	if req.Alpha < 1.0 && req.QueryText != "" {
+		var filterBitmap *roaring.Bitmap
+		if req.Bitset != nil {
+			filterBitmap = req.Bitset.AsRoaring()
+		}
 		if bm25Arena != nil {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				sparseResults = searchBM25Arena(bm25Arena, req.QueryText, req.K*2, nil)
+				sparseResults = searchBM25Arena(bm25Arena, req.QueryText, req.K*2, filterBitmap)
 			}()
 		} else if bm25Legacy != nil {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				sparseResults = bm25Legacy.SearchBM25(req.QueryText, req.K*2, nil, s.resultPool)
+				sparseResults = bm25Legacy.SearchBM25(req.QueryText, req.K*2, filterBitmap, s.resultPool)
 			}()
 		}
 	}
@@ -379,7 +418,7 @@ func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req *HybridSea
 		finalResults = sparseResults
 	default:
 		rrfK := 60
-		finalResults = ReciprocalRankFusion(req.Dataset, denseResults, sparseResults, rrfK, req.K, s.resultPool)
+		finalResults = ReciprocalRankFusion(req.Dataset, denseResults, sparseResults, rrfK, req.K, req.Alpha, s.resultPool)
 	}
 
 	if len(finalResults) > req.K {

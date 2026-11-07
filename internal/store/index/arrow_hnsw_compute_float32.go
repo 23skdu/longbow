@@ -22,6 +22,7 @@ type float32Computer struct {
 	diskGraph *DiskGraph
 	maxGen    uint64
 	sctx      *ArrowSearchContext
+	batchVecs [][]float32
 }
 
 func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
@@ -248,6 +249,13 @@ func (c *float32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 	// Resolve the arena slab table and the generation policy once for the whole
 	// batch instead of once per vector.
 	batch := c.data.BeginFloat32ChunkBatch(c.maxGen)
+	if cap(c.batchVecs) < len(ids) {
+		c.batchVecs = make([][]float32, len(ids))
+	}
+	c.batchVecs = c.batchVecs[:len(ids)]
+
+	var vecs [][]float32
+	var idxs []int
 	for i, id := range ids {
 		v := batch.Vector(types.ChunkID(id), int(id)%types.ChunkSize, c.dims)
 		if v == nil {
@@ -256,19 +264,32 @@ func (c *float32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 				return nil, err
 			}
 			dst[i] = dist
+			c.batchVecs[i] = nil
 			continue
 		}
-		var dist float32
+		c.batchVecs[i] = v
+		vecs = append(vecs, v)
+		idxs = append(idxs, i)
+	}
+
+	if len(vecs) > 0 {
+		subDst := make([]float32, len(vecs))
 		var err error
 		if c.squared {
-			dist, err = c.h.distFuncSquared(c.q, v)
+			err = simd.L2SquaredDistanceBatch(c.q, vecs, subDst)
+		} else if c.h.config.Metric == lbcore.MetricCosine {
+			err = simd.CosineDistanceBatch(c.q, vecs, subDst)
+		} else if c.h.config.Metric == lbcore.MetricDotProduct {
+			err = simd.DotProductBatch(c.q, vecs, subDst)
 		} else {
-			dist, err = c.h.distFunc(c.q, v)
+			err = simd.EuclideanDistanceBatch(c.q, vecs, subDst)
 		}
 		if err != nil {
 			return nil, err
 		}
-		dst[i] = dist
+		for j, i := range idxs {
+			dst[i] = subDst[j]
+		}
 	}
 	return dst, nil
 }

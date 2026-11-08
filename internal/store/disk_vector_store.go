@@ -60,7 +60,7 @@ func NewDiskVectorStoreWithConfig(path string, dim int, useUring, useDirect bool
 		return nil, err
 	}
 
-	z, _ := zstd.NewWriter(nil)
+	z, _ := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest))
 	zd, _ := zstd.NewReader(nil)
 
 	dvs := &DiskVectorStore{

@@ -305,7 +305,7 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 		go func(s, e int) {
 			defer wg.Done()
 			for i := s; i < e; i++ {
-				if len(vectors[i]) == ti.dimension {
+				if i < len(vectors) && len(vectors[i]) == ti.dimension {
 					norms[i] = ti.computeNorm(vectors[i])
 				}
 			}
@@ -315,7 +315,7 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 
 	ti.mu.Lock()
 	for i := range ids {
-		if len(vectors[i]) != ti.dimension {
+		if i >= len(vectors) || len(vectors[i]) != ti.dimension {
 			continue
 		}
 		var m []byte

@@ -471,3 +471,72 @@ func dotProductBatch4Way(query []float32, vectors [][]float32, results []float32
 		}
 	}
 }
+
+// EuclideanDistanceFloat64Batch computes Euclidean distances between one float64 query and multiple float64 vectors.
+func EuclideanDistanceFloat64Batch(query []float64, vectors [][]float64, results []float32) error {
+	if len(vectors) != len(results) {
+		return errors.New("simd: vectors and results length mismatch")
+	}
+	if len(vectors) == 0 {
+		return nil
+	}
+	dims := len(query)
+	for i, v := range vectors {
+		if v == nil || len(v) != dims {
+			results[i] = math.MaxFloat32
+			continue
+		}
+		d, err := EuclideanDistanceFloat64(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
+	}
+	return nil
+}
+
+// DotProductFloat64Batch computes dot products between one float64 query and multiple float64 vectors.
+func DotProductFloat64Batch(query []float64, vectors [][]float64, results []float32) error {
+	if len(vectors) != len(results) {
+		return errors.New("simd: vectors and results length mismatch")
+	}
+	if len(vectors) == 0 {
+		return nil
+	}
+	dims := len(query)
+	for i, v := range vectors {
+		if v == nil || len(v) != dims {
+			results[i] = 0
+			continue
+		}
+		d, err := DotProductF64(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
+	}
+	return nil
+}
+
+// CosineDistanceFloat64Batch computes cosine distances between one float64 query and multiple float64 vectors.
+func CosineDistanceFloat64Batch(query []float64, vectors [][]float64, results []float32) error {
+	if len(vectors) != len(results) {
+		return errors.New("simd: vectors and results length mismatch")
+	}
+	if len(vectors) == 0 {
+		return nil
+	}
+	dims := len(query)
+	for i, v := range vectors {
+		if v == nil || len(v) != dims {
+			results[i] = 1.0
+			continue
+		}
+		d, err := CosineDistanceFloat64(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
+	}
+	return nil
+}

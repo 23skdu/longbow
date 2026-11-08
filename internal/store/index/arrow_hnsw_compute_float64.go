@@ -127,12 +127,8 @@ func (c *float64Computer) prefetchChunk(chunk []float64, cOff, pd int) {
 		return
 	}
 	start := cOff * pd
-	if start+c.dims <= len(chunk) {
-		base := unsafe.Pointer(&chunk[start]) // #nosec G103
-		byteLen := uintptr(c.dims * 8)
-		for off := uintptr(0); off < byteLen; off += 64 {
-			simd.Prefetch(unsafe.Add(base, off)) // #nosec G103
-		}
+	if start < len(chunk) {
+		simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
 	}
 }
 
@@ -148,12 +144,8 @@ func (c *float64Computer) Prefetch(id uint32) {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
 		start := cOff * pd
-		if start+c.dims <= len(chunk) {
-			base := unsafe.Pointer(&chunk[start]) // #nosec G103
-			byteLen := uintptr(c.dims * 8)
-			for off := uintptr(0); off < byteLen; off += 64 {
-				simd.Prefetch(unsafe.Add(base, off)) // #nosec G103
-			}
+		if start < len(chunk) {
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
 		}
 	}
 }

@@ -137,11 +137,30 @@ func EuclideanDistanceComplex128Batch(query []complex128, vectors [][]complex128
 		f64Vecs[i] = unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
 	}
 
-	for i, vF64 := range f64Vecs {
-		if vF64 == nil {
+	i := 0
+	for ; i+4 <= len(f64Vecs); i += 4 {
+		if f64Vecs[i] != nil {
+			d, _ := EuclideanDistanceFloat64(qF64, f64Vecs[i])
+			results[i] = d
+		}
+		if f64Vecs[i+1] != nil {
+			d, _ := EuclideanDistanceFloat64(qF64, f64Vecs[i+1])
+			results[i+1] = d
+		}
+		if f64Vecs[i+2] != nil {
+			d, _ := EuclideanDistanceFloat64(qF64, f64Vecs[i+2])
+			results[i+2] = d
+		}
+		if f64Vecs[i+3] != nil {
+			d, _ := EuclideanDistanceFloat64(qF64, f64Vecs[i+3])
+			results[i+3] = d
+		}
+	}
+	for ; i < len(f64Vecs); i++ {
+		if f64Vecs[i] == nil {
 			continue
 		}
-		d, _ := EuclideanDistanceFloat64(qF64, vF64)
+		d, _ := EuclideanDistanceFloat64(qF64, f64Vecs[i])
 		results[i] = d
 	}
 	return nil
@@ -176,11 +195,30 @@ func DotProductComplex128Batch(query []complex128, vectors [][]complex128, resul
 		f64Vecs[i] = unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
 	}
 
-	for i, vF64 := range f64Vecs {
-		if vF64 == nil {
+	i := 0
+	for ; i+4 <= len(f64Vecs); i += 4 {
+		if f64Vecs[i] != nil {
+			d, _ := DotProductF64(qF64, f64Vecs[i])
+			results[i] = d
+		}
+		if f64Vecs[i+1] != nil {
+			d, _ := DotProductF64(qF64, f64Vecs[i+1])
+			results[i+1] = d
+		}
+		if f64Vecs[i+2] != nil {
+			d, _ := DotProductF64(qF64, f64Vecs[i+2])
+			results[i+2] = d
+		}
+		if f64Vecs[i+3] != nil {
+			d, _ := DotProductF64(qF64, f64Vecs[i+3])
+			results[i+3] = d
+		}
+	}
+	for ; i < len(f64Vecs); i++ {
+		if f64Vecs[i] == nil {
 			continue
 		}
-		d, _ := DotProductF64(qF64, vF64)
+		d, _ := DotProductF64(qF64, f64Vecs[i])
 		results[i] = d
 	}
 	return nil
@@ -215,11 +253,30 @@ func CosineDistanceComplex128Batch(query []complex128, vectors [][]complex128, r
 		f64Vecs[i] = unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
 	}
 
-	for i, vF64 := range f64Vecs {
-		if vF64 == nil {
+	i := 0
+	for ; i+4 <= len(f64Vecs); i += 4 {
+		if f64Vecs[i] != nil {
+			d, _ := CosineDistanceFloat64(qF64, f64Vecs[i])
+			results[i] = d
+		}
+		if f64Vecs[i+1] != nil {
+			d, _ := CosineDistanceFloat64(qF64, f64Vecs[i+1])
+			results[i+1] = d
+		}
+		if f64Vecs[i+2] != nil {
+			d, _ := CosineDistanceFloat64(qF64, f64Vecs[i+2])
+			results[i+2] = d
+		}
+		if f64Vecs[i+3] != nil {
+			d, _ := CosineDistanceFloat64(qF64, f64Vecs[i+3])
+			results[i+3] = d
+		}
+	}
+	for ; i < len(f64Vecs); i++ {
+		if f64Vecs[i] == nil {
 			continue
 		}
-		d, _ := CosineDistanceFloat64(qF64, vF64)
+		d, _ := CosineDistanceFloat64(qF64, f64Vecs[i])
 		results[i] = d
 	}
 	return nil

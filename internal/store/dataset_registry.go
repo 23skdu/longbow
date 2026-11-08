@@ -174,6 +174,9 @@ func (s *VectorStore) ShouldSpillToDisk(ds *Dataset, schema *arrow.Schema) bool 
 	if ds != nil && ds.GetPreferredVectorType() != types.VectorTypeUnknown {
 		dt = ds.GetPreferredVectorType()
 	}
+	if (dt == types.VectorTypeComplex64 || dt == types.VectorTypeComplex128) && dim > 1 && dim%2 == 0 {
+		dim /= 2
+	}
 
 	rowCount := int64(0)
 	if ds != nil {
@@ -193,11 +196,14 @@ func (s *VectorStore) ShouldSpillToDisk(ds *Dataset, schema *arrow.Schema) bool 
 	}
 
 	evalCount := rowCount
-	if evalCount < 50000 && maxRAM <= 24*1024*1024*1024 {
-		if dt == types.VectorTypeFloat64 || dt == types.VectorTypeComplex64 ||
-			dt == types.VectorTypeComplex128 || dt == types.VectorTypeInt64 {
-			evalCount = 500000
+	if evalCount == 0 {
+		if maxRAM <= 1024*1024*1024 {
+			evalCount = 50000
+		} else {
+			return false
 		}
+	} else if maxRAM > 1024*1024*1024 && os.Getenv("LONGBOW_USE_DISK") != "1" {
+		return false
 	}
 
 	return ShouldSpillToDisk(evalCount, dim, dt, maxRAM, thresholdRatio)

@@ -292,9 +292,13 @@ func (gi *GeoIndex) AddBatch(ids []uint64, vectors [][]float32, points []GeoPoin
 		if i < len(metadata) {
 			m = metadata[i]
 		}
+		var v []float32
+		if i < len(vectors) {
+			v = vectors[i]
+		}
 		geoVec := &GeoIndexedVector{
 			ID:        ids[i],
-			Vector:    vectors[i],
+			Vector:    v,
 			GeoPoint:  points[i],
 			Timestamp: 0,
 			Metadata:  m,
@@ -443,8 +447,17 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 		if res.distance < 0 {
 			continue // Skip invalid distances
 		}
+		// Spatial annulus filtering: only keep candidates inside the requested radius.
+		if res.distance > radiusKm {
+			continue
+		}
+		// k-NN early termination: once k results are retained, skip candidates that
+		// cannot beat the worst (largest distance / lowest score) retained result.
+		if k > 0 && h.Len() >= k && res.distance >= float64((*h)[0].Distance) {
+			continue
+		}
 		score := float32(1.0 / (1.0 + res.distance))
-		if h.Len() < k {
+		if h.Len() < k || k <= 0 {
 			heap.Push(h, lbtypes.SearchResult{
 				ID:       lbtypes.VectorID(res.id), // #nosec G115
 				Distance: float32(res.distance),

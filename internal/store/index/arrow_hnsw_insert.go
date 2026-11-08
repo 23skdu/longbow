@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"math"
 	"runtime"
-	"slices"
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
@@ -54,6 +55,15 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 	if data.Type == types.VectorTypeFloat32 {
 		return h.selectNeighborsFloat32(ctx, candidates, m, data)
 	}
+	if data.Type == types.VectorTypeFloat64 {
+		return h.selectNeighborsFloat64(ctx, candidates, m, data)
+	}
+	if data.Type == types.VectorTypeComplex64 {
+		return h.selectNeighborsComplex64(ctx, candidates, m, data)
+	}
+	if data.Type == types.VectorTypeComplex128 {
+		return h.selectNeighborsComplex128(ctx, candidates, m, data)
+	}
 
 	// Generic path for other types (Int8, Int16, etc.)
 	var selected []types.Candidate
@@ -67,13 +77,31 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 		return nil
 	}
 
-	extracted := make([]any, len(candidates))
+	var extracted []any
+	if ctx != nil {
+		if cap(ctx.scratchExtractedAny) >= len(candidates) {
+			extracted = ctx.scratchExtractedAny[:len(candidates)]
+			for i := range extracted {
+				extracted[i] = nil
+			}
+		} else {
+			extracted = make([]any, len(candidates))
+			ctx.scratchExtractedAny = extracted
+		}
+	} else {
+		extracted = make([]any, len(candidates))
+	}
 	for i, cand := range candidates {
 		vecAny, _ := data.GetVector(cand.ID)
 		extracted[i] = vecAny
 	}
 
-	selectedVecs := make([]any, 0, m)
+	var selectedVecs []any
+	if ctx != nil {
+		selectedVecs = ctx.scratchSelectedVecsAny[:0]
+	} else {
+		selectedVecs = make([]any, 0, m)
+	}
 
 	// For non-float32, we use a cached diversity check
 	// We use specialized loops for each type to avoid type assertions in the hot path
@@ -490,6 +518,8 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 
 	if ctx != nil {
 		ctx.scratchSelected = selected
+		ctx.scratchExtractedAny = extracted
+		ctx.scratchSelectedVecsAny = selectedVecs
 	}
 	return selected
 }
@@ -869,7 +899,13 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 
 						newCap := int(startID) + n
 						if data != nil && data.Capacity > 0 {
-							newCap = int(math.Max(float64(newCap), float64(data.Capacity*2)))
+							grown := data.Capacity * 2
+							if data.Capacity >= 256*types.ChunkSize {
+								grown = data.Capacity + data.Capacity/4
+							}
+							if grown > newCap {
+								newCap = grown
+							}
 						}
 						newCap = (newCap + types.ChunkSize - 1) & ^(types.ChunkSize - 1)
 						_ = h.growInternal(newCap, dims)
@@ -1021,27 +1057,43 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			case types.VectorTypeUint8:
 				u8s := make([][]uint8, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint8); ok {
-						u8s[i] = slices.Clone(v)
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint8); ok {
+							u8s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = u8s
 			case types.VectorTypeFloat16:
 				f16s := make([][]float16.Num, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float16.Num); ok {
-						f16s[i] = v
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float16.Num); ok {
+							f16s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = f16s
 			case types.VectorTypeInt8:
@@ -1118,118 +1170,190 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			case types.VectorTypeFloat64:
 				f64s := make([][]float64, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float64); ok {
-						f64s[i] = slices.Clone(v)
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float64); ok {
+							f64s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = f64s
 			case types.VectorTypeComplex64:
 				c64s := make([][]complex64, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]complex64); ok {
-						c64s[i] = slices.Clone(v)
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]complex64); ok {
+							c64s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = c64s
 			case types.VectorTypeComplex128:
 				c128s := make([][]complex128, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]complex128); ok {
-						c128s[i] = slices.Clone(v)
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]complex128); ok {
+							c128s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = c128s
 			case types.VectorTypeUint32:
 				u32s := make([][]uint32, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint32); ok {
-						u32s[i] = slices.Clone(v)
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint32); ok {
+							u32s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = u32s
 			case types.VectorTypeInt32:
 				i32s := make([][]int32, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int32); ok {
-						i32s[i] = slices.Clone(v)
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int32); ok {
+							i32s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = i32s
 			case types.VectorTypeInt16:
 				i16s := make([][]int16, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int16); ok {
-						i16s[i] = slices.Clone(v)
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int16); ok {
+							i16s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = i16s
 			case types.VectorTypeUint16:
 				u16s := make([][]uint16, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint16); ok {
-						u16s[i] = slices.Clone(v)
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint16); ok {
+							u16s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = u16s
 			case types.VectorTypeInt64:
 				i64s := make([][]int64, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int64); ok {
-						i64s[i] = slices.Clone(v)
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int64); ok {
+							i64s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = i64s
 			case types.VectorTypeUint64:
 				u64s := make([][]uint64, n)
 				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint64); ok {
-						u64s[i] = slices.Clone(v)
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
 					}
+					if rec != nil {
+						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint64); ok {
+							u64s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+							continue
+						}
+					}
+					supported = false
+					break
 				}
 				vecs = u64s
 			default:
@@ -1298,7 +1422,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	// Publish the populated snapshot
-	h.compareAndSwapData(h.data.Load(), data.Clone())
+	h.publishDataClone(data)
 
 	// Phase 1.5: Sequential Bootstrap
 	// If the index is empty or very small, we must insert some nodes sequentially
@@ -1352,4 +1476,368 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	return ids, nil
+}
+
+// selectNeighborsFloat64 is a specialized diversity check for float64 vectors using typed scratch slices.
+func (h *ArrowHNSW) selectNeighborsFloat64(ctx *ArrowSearchContext, candidates []types.Candidate, m int, data *types.GraphData) []types.Candidate {
+	var selected []types.Candidate
+	if ctx != nil {
+		selected = ctx.scratchSelected[:0]
+	} else {
+		selected = make([]types.Candidate, 0, m)
+	}
+
+	var extracted [][]float64
+	if ctx != nil {
+		if cap(ctx.scratchExtractedF64) >= len(candidates) {
+			extracted = ctx.scratchExtractedF64[:len(candidates)]
+			for i := range extracted {
+				extracted[i] = nil
+			}
+		} else {
+			extracted = make([][]float64, len(candidates))
+			ctx.scratchExtractedF64 = extracted
+		}
+	} else {
+		extracted = make([][]float64, len(candidates))
+	}
+
+	maxGen := uint64(math.MaxUint64)
+	if ctx != nil {
+		maxGen = ctx.MaxGeneration
+	}
+	pd := data.GetPaddedDimsForType(types.VectorTypeFloat64)
+	for i, cand := range candidates {
+		cID := int(cand.ID) / types.ChunkSize
+		cOff := int(cand.ID) % types.ChunkSize
+		var chunk []float64
+		if maxGen == math.MaxUint64 {
+			chunk = data.GetVectorsFloat64ChunkFast(cID)
+		} else {
+			chunk = data.GetVectorsFloat64ChunkWithGen(cID, maxGen)
+		}
+		if chunk != nil {
+			start := cOff * pd
+			if start+data.Dims <= len(chunk) {
+				extracted[i] = chunk[start : start+data.Dims]
+			}
+		}
+	}
+
+	var selectedVecs [][]float64
+	if ctx != nil {
+		selectedVecs = ctx.scratchSelectedVecsF64[:0]
+	} else {
+		selectedVecs = make([][]float64, 0, m)
+	}
+
+	for i, cand := range candidates {
+		if len(selected) >= m {
+			break
+		}
+		v1 := extracted[i]
+		if v1 == nil {
+			continue
+		}
+		isDiverse := true
+		if len(selectedVecs) > 0 {
+			var dists []float32
+			if ctx != nil {
+				if cap(ctx.scratchDists) < len(selectedVecs) {
+					ctx.scratchDists = make([]float32, len(selectedVecs))
+				} else {
+					ctx.scratchDists = ctx.scratchDists[:len(selectedVecs)]
+				}
+				dists = ctx.scratchDists
+			} else {
+				dists = make([]float32, len(selectedVecs))
+			}
+			switch h.config.Metric {
+			case core.MetricCosine:
+				_ = simd.CosineDistanceFloat64Batch(v1, selectedVecs, dists)
+			case core.MetricDotProduct:
+				_ = simd.DotProductFloat64Batch(v1, selectedVecs, dists)
+				for j := range dists {
+					dists[j] = -dists[j]
+				}
+			default:
+				_ = simd.EuclideanDistanceFloat64Batch(v1, selectedVecs, dists)
+			}
+			for j := range selectedVecs {
+				if dists[j] < cand.Dist {
+					isDiverse = false
+					break
+				}
+			}
+		}
+		if isDiverse {
+			selected = append(selected, cand)
+			selectedVecs = append(selectedVecs, v1)
+		}
+	}
+
+	if len(selected) < m {
+		for i, cand := range candidates {
+			if len(selected) >= m {
+				break
+			}
+			alreadySelected := false
+			for _, s := range selected {
+				if s.ID == cand.ID {
+					alreadySelected = true
+					break
+				}
+			}
+			if !alreadySelected && extracted[i] != nil {
+				selected = append(selected, cand)
+				selectedVecs = append(selectedVecs, extracted[i])
+			}
+		}
+	}
+	if len(selected) == 0 && len(candidates) > 0 {
+		selected = append(selected, candidates[0])
+	}
+	if ctx != nil {
+		ctx.scratchSelected = selected
+		ctx.scratchExtractedF64 = extracted
+		ctx.scratchSelectedVecsF64 = selectedVecs
+	}
+	return selected
+}
+
+// selectNeighborsComplex64 is a specialized diversity check for complex64 vectors using typed scratch slices.
+func (h *ArrowHNSW) selectNeighborsComplex64(ctx *ArrowSearchContext, candidates []types.Candidate, m int, data *types.GraphData) []types.Candidate {
+	var selected []types.Candidate
+	if ctx != nil {
+		selected = ctx.scratchSelected[:0]
+	} else {
+		selected = make([]types.Candidate, 0, m)
+	}
+
+	var extracted [][]complex64
+	if ctx != nil {
+		if cap(ctx.scratchExtractedC64) >= len(candidates) {
+			extracted = ctx.scratchExtractedC64[:len(candidates)]
+			for i := range extracted {
+				extracted[i] = nil
+			}
+		} else {
+			extracted = make([][]complex64, len(candidates))
+			ctx.scratchExtractedC64 = extracted
+		}
+	} else {
+		extracted = make([][]complex64, len(candidates))
+	}
+
+	maxGen := uint64(math.MaxUint64)
+	if ctx != nil {
+		maxGen = ctx.MaxGeneration
+	}
+	pd := data.GetPaddedDimsForType(types.VectorTypeComplex64)
+	for i, cand := range candidates {
+		cID := int(cand.ID) / types.ChunkSize
+		cOff := int(cand.ID) % types.ChunkSize
+		var chunk []complex64
+		if maxGen == math.MaxUint64 {
+			chunk = data.GetVectorsComplex64ChunkFast(cID)
+		} else {
+			chunk = data.GetVectorsComplex64ChunkWithGen(cID, maxGen)
+		}
+		if chunk != nil {
+			start := cOff * pd
+			if start+data.Dims <= len(chunk) {
+				extracted[i] = chunk[start : start+data.Dims]
+			}
+		}
+	}
+
+	var selectedVecs [][]complex64
+	if ctx != nil {
+		selectedVecs = ctx.scratchSelectedVecsC64[:0]
+	} else {
+		selectedVecs = make([][]complex64, 0, m)
+	}
+
+	for i, cand := range candidates {
+		if len(selected) >= m {
+			break
+		}
+		v1 := extracted[i]
+		if v1 == nil {
+			continue
+		}
+		isDiverse := true
+		if len(selectedVecs) > 0 {
+			dists := make([]float32, len(selectedVecs))
+			var f32Vecs [][]float32
+			_ = ctx
+			switch h.config.Metric {
+			case core.MetricCosine:
+				_ = simd.CosineDistanceComplex64Batch(v1, selectedVecs, dists, f32Vecs)
+			case core.MetricDotProduct:
+				_ = simd.DotProductComplex64Batch(v1, selectedVecs, dists, f32Vecs)
+				for j := range dists {
+					dists[j] = -dists[j]
+				}
+			default:
+				_ = simd.EuclideanDistanceComplex64Batch(v1, selectedVecs, dists, f32Vecs)
+			}
+			for j := range selectedVecs {
+				if dists[j] < cand.Dist {
+					isDiverse = false
+					break
+				}
+			}
+		}
+		if isDiverse {
+			selected = append(selected, cand)
+			selectedVecs = append(selectedVecs, v1)
+		}
+	}
+
+	if len(selected) < m {
+		for i, cand := range candidates {
+			if len(selected) >= m {
+				break
+			}
+			alreadySelected := false
+			for _, s := range selected {
+				if s.ID == cand.ID {
+					alreadySelected = true
+					break
+				}
+			}
+			if !alreadySelected && extracted[i] != nil {
+				selected = append(selected, cand)
+				selectedVecs = append(selectedVecs, extracted[i])
+			}
+		}
+	}
+	if len(selected) == 0 && len(candidates) > 0 {
+		selected = append(selected, candidates[0])
+	}
+	if ctx != nil {
+		ctx.scratchSelected = selected
+		ctx.scratchExtractedC64 = extracted
+		ctx.scratchSelectedVecsC64 = selectedVecs
+	}
+	return selected
+}
+
+// selectNeighborsComplex128 is a specialized diversity check for complex128 vectors using typed scratch slices.
+func (h *ArrowHNSW) selectNeighborsComplex128(ctx *ArrowSearchContext, candidates []types.Candidate, m int, data *types.GraphData) []types.Candidate {
+	var selected []types.Candidate
+	if ctx != nil {
+		selected = ctx.scratchSelected[:0]
+	} else {
+		selected = make([]types.Candidate, 0, m)
+	}
+
+	var extracted [][]complex128
+	if ctx != nil {
+		if cap(ctx.scratchExtractedC128) >= len(candidates) {
+			extracted = ctx.scratchExtractedC128[:len(candidates)]
+			for i := range extracted {
+				extracted[i] = nil
+			}
+		} else {
+			extracted = make([][]complex128, len(candidates))
+			ctx.scratchExtractedC128 = extracted
+		}
+	} else {
+		extracted = make([][]complex128, len(candidates))
+	}
+
+	maxGen := uint64(math.MaxUint64)
+	if ctx != nil {
+		maxGen = ctx.MaxGeneration
+	}
+	pd := data.GetPaddedDimsForType(types.VectorTypeComplex128)
+	for i, cand := range candidates {
+		cID := int(cand.ID) / types.ChunkSize
+		cOff := int(cand.ID) % types.ChunkSize
+		var chunk []complex128
+		if maxGen == math.MaxUint64 {
+			chunk = data.GetVectorsComplex128ChunkFast(cID)
+		} else {
+			chunk = data.GetVectorsComplex128ChunkWithGen(cID, maxGen)
+		}
+		if chunk != nil {
+			start := cOff * pd
+			if start+data.Dims <= len(chunk) {
+				extracted[i] = chunk[start : start+data.Dims]
+			}
+		}
+	}
+
+	var selectedVecs [][]complex128
+	if ctx != nil {
+		selectedVecs = ctx.scratchSelectedVecsC128[:0]
+	} else {
+		selectedVecs = make([][]complex128, 0, m)
+	}
+
+	for i, cand := range candidates {
+		if len(selected) >= m {
+			break
+		}
+		v1 := extracted[i]
+		if v1 == nil {
+			continue
+		}
+		isDiverse := true
+		if len(selectedVecs) > 0 {
+			dists := make([]float32, len(selectedVecs))
+			var f64Vecs [][]float64
+			switch h.config.Metric {
+			case core.MetricCosine:
+				_ = simd.CosineDistanceComplex128Batch(v1, selectedVecs, dists, f64Vecs)
+			case core.MetricDotProduct:
+				_ = simd.DotProductComplex128Batch(v1, selectedVecs, dists, f64Vecs)
+				for j := range dists {
+					dists[j] = -dists[j]
+				}
+			default:
+				_ = simd.EuclideanDistanceComplex128Batch(v1, selectedVecs, dists, f64Vecs)
+			}
+			for j := range selectedVecs {
+				if dists[j] < cand.Dist {
+					isDiverse = false
+					break
+				}
+			}
+		}
+		if isDiverse {
+			selected = append(selected, cand)
+			selectedVecs = append(selectedVecs, v1)
+		}
+	}
+
+	if len(selected) < m {
+		for i, cand := range candidates {
+			if len(selected) >= m {
+				break
+			}
+			alreadySelected := false
+			for _, s := range selected {
+				if s.ID == cand.ID {
+					alreadySelected = true
+					break
+				}
+			}
+			if !alreadySelected && extracted[i] != nil {
+				selected = append(selected, cand)
+				selectedVecs = append(selectedVecs, extracted[i])
+			}
+		}
+	}
+	if len(selected) == 0 && len(candidates) > 0 {
+		selected = append(selected, candidates[0])
+	}
+	if ctx != nil {
+		ctx.scratchSelected = selected
+		ctx.scratchExtractedC128 = extracted
+		ctx.scratchSelectedVecsC128 = selectedVecs
+	}
+	return selected
 }

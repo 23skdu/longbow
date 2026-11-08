@@ -1,8 +1,8 @@
 # Longbow Performance Benchmarks
 
-**Most recent revalidation:** 2026-10-16 — Full Scale Matrix Validation across **100,000 / 250,000 / 500,000** vectors on the AVX2 local host with EMLGo 0.7.0 hardware SIMD enabled (`bin/longbow_emlgo`), Go 1.27.3, dim 128, `--workers 4 --cpu-affinity 12-15`, seed 42, all 15 registered dtypes and all 13 search modes (45/45 configurations complete).
+**Most recent revalidation:** 2026-11-07 — High-Dimensional & Multi-Scale CPU Standard (non-EMLGo) Validation across **10,000 / 25,000 / 50,000 / 100,000 / 250,000 / 500,000** vectors and **128 / 384** dimensions on the AVX2 local host (`bin/longbow`, Go 1.27.3), covering `uint8`, `float64`, `complex64`, `complex128` at 100k–500k and `float32`, `float16`, `int8` at 10k–100k across all 13 search modes (48/48 configurations complete, 0 failures, 0 panics).
 
-See **§0 below** for the consolidated ingest / index / search numbers for this pass. Prior tables (§1–§4, up to 2026-10-12) are retained unchanged for longitudinal readthrough.
+See **§0a below** for the 2026-11-07 multi-dimension (128d & 384d) validation tables and P0 regression root-cause analysis, and **§0** for the 2026-10-16 128d EMLGo pass. Prior tables (§1–§4, up to 2026-10-12) are retained unchanged for longitudinal readthrough.
 
 **Date (legacy tables):** 2026-10-12 (CPU AVX2 rows re-measured at 100k, 15 dtypes × 13 search modes, standard and EMLGo; TurboQuant rows corrected — see the warning below)  
 **Baseline Release Candidate:** `v0.2.5-rc1` → emlgo 0.7.0 revalidation pass
@@ -95,6 +95,90 @@ These differ from the 2026-09-26 rows in ways that matter when comparing them:
 - **The R8 graph-quality gate is active** and may rebuild a degraded batch
   sequentially. That is the shipped behaviour and it is what the baseline should
   reflect, but it costs index time that §2 does not report.
+
+## 0a. Multi-Dimension (128d & 384d) 100k / 250k / 500k Validation Matrix (2026-11-07, CPU Standard Non-EMLGo)
+
+This validation pass benchmarked `uint8`, `float64`, `complex64`, and `complex128` across **128 and 384 dimensions** and **100,000 / 250,000 / 500,000** vectors (24 configurations × 13 search modes = 312 search rows), alongside `float32`, `float16`, and `int8` across **128 and 384 dimensions** and **10,000 / 25,000 / 50,000 / 100,000** vectors (24 configurations × 13 search modes = 312 search rows), on the standard CPU non-EMLGo binary (`bin/longbow`).
+
+### 0a.1 Regressions Identified & Fixed During Validation
+
+1. **`Float16` 0.0 QPS Search Failure at 50k+ Concurrent `AddBatch` (`internal/store/types/graph_data_offheap.go`, `internal/store/types/graph_data_clone.go`)**:
+   - **Symptom**: `float16` at 50k and 100k (including the legacy `0.0 QPS` row in §0.2/§0.5) failed with `entry point vector not found for id <ep>` followed by `circuit breaker is open`.
+   - **Root Cause**: `GraphData.PreAllocate` called `g.GrowMetadataSlices(numChunks)` (growing `len(g.VectorsF16)` to `numChunks` with `0` offsets) and then looped `for i := len(g.VectorsF16); i < numChunks; i++`, executing 0 iterations. When concurrent `AddBatch` workers cloned `GraphData` and published via `compareAndSwapData`, earlier snapshots overwrote sibling batches' `VectorsF16`, `Neighbors`, and `Levels` offsets back to `0`.
+   - **Fix**: Fixed `PreAllocate` to iterate `0..numChunks-1` for `VectorTypeFloat16`, added `(*GraphData).MergeFrom` to preserve non-zero chunk offsets, arenas, `Levels`, and `Complex128Magnitudes` across concurrent publishes, and removed redundant per-sub-batch `Clone()` publishes in `linkRemainingNodes`. `float16` 128d now achieves **3,674.0 QPS** at 50k and **3,842.2 QPS** at 100k (up from `0.0 QPS`).
+
+2. **`growInternal` CAS Race & `Neighbors[0] slice too small` Index Worker Panic at 100k/200k/400k Growth Boundaries (`internal/store/index/arrow_hnsw_memory.go`)**:
+   - **Symptom**: At 250k and 500k vectors (`float64`, `complex64`, `complex128`), index workers panicked with `Neighbors[0] slice too small: 196 <= 196 (capacity: 200000)` inside `EnsureChunks`, dropping 10k-vector batches from HNSW linkage and collapsing `float64` dense QPS to `309.0–322.0 QPS`.
+   - **Root Cause**: `growInternal` executed a single `h.compareAndSwapData(oldData, newData)` after `PreAllocate`. If another worker published a snapshot while `PreAllocate` was running, the CAS failed and silently discarded `newData`, leaving `h.data` at the old capacity (`49`, `98`, or `196` chunks).
+   - **Fix**: Added `installData` with a CAS retry loop that merges concurrent chunk/level state into `newData` and guarantees capacity installation before `growInternal` returns, and switched post-256k capacity growth from `2.0x` to `1.25x` (capping 500k capacity at `512,000` instead of `655,360` and saving ~950 MB of `Complex128Arena` RAM). `float64` 250k 384d dense QPS increased from **322.0 QPS to 2,911.9 QPS (9.04×)** and 500k 128d dense QPS increased from **309.0 QPS to 3,366.3 QPS (10.9×)**.
+
+3. **Multi-GB Redundant Heap Allocations & `SharedWorkerPool` Starvation During High-Dimensional Ingest (`internal/store/index/arrow_hnsw_data_extract.go`, `arrow_hnsw_insert.go`, `internal/store/store_ingest.go`, `dataset_registry.go`)**:
+   - **Root Cause**: (a) `extractVector` allocated a new `[]complex64` / `[]complex128` slice per row and `AddBatch` called `slices.Clone(v)` on top of it (6.14 GB of redundant heap allocations at 500k 384d `complex128`); (b) `store_ingest.go` allocated duplicate `[]float32` vector copies for `TemporalIndex` and `GeoIndex` (+3.08 GB at 500k 384d) and submitted trivial ID/timestamp loops into `index.GetSharedPool()`, blocking behind 15-second HNSW `linkRemainingNodes` tasks; (c) `ShouldSpillToDisk` read `fst.Len()` (`2 * dim` for complex types) and forced `evalCount = 500000` at `rowCount = 0`, prematurely engaging Zstd disk compression on 100k `complex128` 384d.
+   - **Fix**: Replaced complex vector extraction with zero-copy `unsafe.Slice` over the retained Arrow buffer, removed redundant `slices.Clone` in `AddBatch`, eliminated duplicate `[]float32` allocations and `SharedWorkerPool` contention in the `TemporalIndex`/`GeoIndex` ingest hooks, and fixed complex dimension normalization in `ShouldSpillToDisk`. `complex128` 100k 384d index time dropped from **176.50s to 32.50s (5.4× faster)** and dense QPS rose from **1,543.1 to 2,778.2 QPS (+80%)**.
+
+4. **Excessive Non-Inlined Assembly Prefetch Calls in `searchLayerFloat64` (`internal/store/index/search_float64.go`, `arrow_hnsw_compute_float64.go`)**:
+   - **Root Cause**: `searchLayerFloat64` prefetched `neighbors[i+2]` and `neighbors[i+4]` before filtering visited nodes, and `float64Computer.Prefetch` looped 48 times (`3072 / 64` cache lines at 384d) calling the non-inlined assembly stub `simd.Prefetch`, issuing ~2,000 `CALL` instructions per visited node.
+   - **Fix**: Removed the pre-filter double-prefetch loop in `searchLayerFloat64` and prefetched the leading cache line per unvisited candidate in `float64Computer`.
+
+### 0a.2 Ingestion, Index Time, Peak RSS & Core Search Throughput (100k / 250k / 500k, Dims 128 & 384)
+
+| Scale | Dim | Dtype | Engine | Ingestion (vec/s) | Index Time (s) | Peak RSS (MB) | Dense QPS (P50) | Hybrid QPS (P50) | Filtered QPS (P50) | Sparse QPS (P50) | ByID QPS (P50) | Recommend QPS (P50) | Temporal QPS (P50) | LearnedIndex QPS (P50) |
+|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100,000 | 128 | `uint8` | cpu | 524,683.4 | 3.50s | 2,727.9 MB | 3,953.9 (2.01ms) | 4,677.3 (1.69ms) | 2,888.6 (2.01ms) | 9,757.1 (0.81ms) | 4,484.5 (1.76ms) | 4,748.0 (1.66ms) | 7,288.7 (0.96ms) | 3,772.6 (1.99ms) |
+| 100,000 | 384 | `uint8` | cpu | 391,588.6 | 6.00s | 2,830.2 MB | 3,665.8 (2.16ms) | 4,189.4 (1.90ms) | 2,496.3 (2.14ms) | 10,309.2 (0.75ms) | 3,991.2 (1.98ms) | 4,234.1 (1.87ms) | 7,497.4 (0.87ms) | 3,722.4 (2.09ms) |
+| 100,000 | 128 | `float64` | cpu | 207,603.3 | 8.50s | 3,282.8 MB | 3,690.9 (2.14ms) | 4,356.4 (1.81ms) | 2,688.9 (2.12ms) | 9,678.7 (0.81ms) | 3,816.0 (2.07ms) | 4,103.1 (1.92ms) | 7,073.3 (0.94ms) | 3,688.1 (2.10ms) |
+| 100,000 | 384 | `float64` | cpu | 101,834.1 | 31.50s | 4,410.8 MB | 3,896.8 (2.00ms) | 3,629.2 (2.19ms) | 2,668.4 (2.07ms) | 8,820.9 (0.88ms) | 3,726.3 (2.08ms) | 3,785.9 (2.08ms) | 6,871.2 (0.95ms) | 3,272.2 (2.36ms) |
+| 100,000 | 128 | `complex64` | cpu | 223,333.7 | 9.00s | 3,231.3 MB | 3,697.4 (2.13ms) | 4,187.9 (1.86ms) | 2,504.5 (2.08ms) | 9,187.5 (0.85ms) | 3,903.6 (2.01ms) | 3,719.3 (2.05ms) | 6,712.8 (0.97ms) | 3,602.6 (2.13ms) |
+| 100,000 | 384 | `complex64` | cpu | 87,499.6 | 18.50s | 4,270.7 MB | 3,277.5 (2.40ms) | 3,316.9 (2.34ms) | 2,316.1 (2.43ms) | 6,177.5 (1.22ms) | 3,356.5 (2.25ms) | 3,693.8 (2.08ms) | 6,242.1 (1.07ms) | 2,913.6 (2.65ms) |
+| 100,000 | 128 | `complex128` | cpu | 122,118.8 | 12.00s | 3,755.3 MB | 3,571.5 (2.20ms) | 3,998.1 (1.98ms) | 2,341.3 (2.20ms) | 8,272.4 (0.96ms) | 3,652.0 (2.14ms) | 3,792.7 (2.10ms) | 6,074.9 (1.07ms) | 3,056.2 (2.43ms) |
+| 100,000 | 384 | `complex128` | cpu | 72,251.6 | 32.50s | 6,854.0 MB | 2,778.2 (2.81ms) | 2,458.3 (3.23ms) | 1,662.2 (3.29ms) | 6,630.2 (1.20ms) | 2,990.5 (2.56ms) | 3,335.1 (2.32ms) | 4,898.1 (1.31ms) | 2,128.1 (3.57ms) |
+| 250,000 | 128 | `uint8` | cpu | 650,449.1 | 27.50s | 4,571.3 MB | 3,460.4 (2.28ms) | 3,064.1 (2.35ms) | 1,624.7 (2.30ms) | 6,199.8 (1.27ms) | 3,437.8 (2.32ms) | 3,301.5 (2.40ms) | 2,915.3 (1.46ms) | 1,891.8 (3.84ms) |
+| 250,000 | 384 | `uint8` | cpu | 322,806.0 | 55.50s | 4,865.2 MB | 3,196.1 (2.47ms) | 2,920.1 (2.71ms) | 1,276.7 (2.72ms) | 5,584.2 (1.41ms) | 3,110.4 (2.52ms) | 2,626.1 (2.96ms) | 3,780.4 (1.25ms) | 1,901.3 (4.09ms) |
+| 250,000 | 128 | `float64` | cpu | 86,113.8 | 90.00s | 5,871.5 MB | 2,818.6 (2.60ms) | 3,362.7 (2.37ms) | 1,607.4 (2.22ms) | 5,023.5 (1.56ms) | 3,092.8 (2.52ms) | 763.9 (10.03ms) | 3,844.1 (1.23ms) | 1,751.4 (4.39ms) |
+| 250,000 | 384 | `float64` | cpu | 67,014.1 | 273.50s | 8,314.9 MB | 2,911.9 (2.70ms) | 2,480.5 (3.21ms) | 1,359.9 (2.99ms) | 5,297.0 (1.49ms) | 2,229.5 (3.46ms) | 2,866.8 (2.71ms) | 2,893.0 (1.50ms) | 1,964.0 (3.85ms) |
+| 250,000 | 128 | `complex64` | cpu | 117,621.2 | 85.00s | 5,855.9 MB | 2,705.7 (2.90ms) | 2,360.6 (3.40ms) | 1,038.0 (3.11ms) | 4,589.5 (1.75ms) | 2,598.4 (2.98ms) | 1,116.5 (6.83ms) | 3,532.0 (1.17ms) | 2,311.2 (3.22ms) |
+| 250,000 | 384 | `complex64` | cpu | 28,531.0 | 191.50s | 8,056.5 MB | 2,175.7 (3.53ms) | 2,165.8 (3.60ms) | 1,289.0 (3.01ms) | 4,164.2 (1.85ms) | 2,838.6 (2.64ms) | 3,035.6 (2.46ms) | 4,048.8 (1.14ms) | 2,398.3 (3.19ms) |
+| 250,000 | 128 | `complex128` | cpu | 24,519.6 | 126.50s | 7,026.1 MB | 2,390.8 (3.26ms) | 2,050.9 (3.83ms) | 650.7 (6.12ms) | 5,370.5 (1.47ms) | 3,309.4 (2.36ms) | 3,426.3 (2.29ms) | 729.3 (6.96ms) | 344.6 (22.92ms) |
+| 250,000 | 384 | `complex128` | cpu | 13,364.0 | 253.50s | 11,144.5 MB | 2,259.1 (3.35ms) | 1,359.2 (5.44ms) | 1,181.3 (3.17ms) | 2,685.7 (2.91ms) | 642.4 (12.18ms) | 3,590.4 (2.11ms) | 3,615.6 (1.23ms) | 1,929.1 (3.90ms) |
+| 500,000 | 128 | `uint8` | cpu | 654,937.3 | 52.00s | 7,118.9 MB | 3,440.1 (2.29ms) | 3,579.4 (2.23ms) | 1,005.0 (2.34ms) | 3,750.3 (2.03ms) | 2,057.4 (3.69ms) | 2,320.6 (3.32ms) | 3,101.1 (0.90ms) | 2,815.3 (2.79ms) |
+| 500,000 | 384 | `uint8` | cpu | 183,823.7 | 107.00s | 7,327.9 MB | 2,317.8 (3.27ms) | 2,950.9 (2.67ms) | 1,030.7 (2.56ms) | 3,996.7 (1.95ms) | 3,070.7 (2.54ms) | 2,954.1 (2.67ms) | 2,484.0 (1.19ms) | 1,544.5 (5.04ms) |
+| 500,000 | 128 | `float64` | cpu | 118,492.4 | 115.00s | 9,293.4 MB | 3,366.3 (2.34ms) | 3,558.1 (2.22ms) | 1,138.5 (2.14ms) | 5,479.0 (1.43ms) | 3,312.3 (2.38ms) | 3,271.3 (2.42ms) | 3,433.5 (0.85ms) | 2,676.7 (2.84ms) |
+| 500,000 | 384 | `float64` | cpu | 26,115.6 | 433.50s | 11,378.3 MB | 1,408.3 (5.11ms) | 1,635.2 (4.74ms) | 817.4 (3.58ms) | 2,731.5 (1.84ms) | 3,444.6 (2.27ms) | 2,638.8 (2.95ms) | 2,673.7 (1.06ms) | 2,165.7 (3.57ms) |
+| 500,000 | 128 | `complex64` | cpu | 64,688.8 | 151.00s | 8,984.8 MB | 1,698.7 (4.55ms) | 2,060.4 (3.81ms) | 1,019.8 (2.38ms) | 3,278.5 (2.32ms) | 2,758.9 (2.87ms) | 2,485.9 (3.10ms) | 2,457.9 (1.10ms) | 2,427.4 (3.19ms) |
+| 500,000 | 384 | `complex64` | cpu | 33,674.0 | 316.00s | 10,795.6 MB | 2,341.9 (3.30ms) | 1,723.6 (4.56ms) | 766.9 (3.76ms) | 3,943.3 (1.98ms) | 1,283.9 (5.92ms) | 2,215.5 (3.42ms) | 2,694.2 (1.03ms) | 803.3 (6.69ms) |
+| 500,000 | 128 | `complex128` | cpu | 32,158.0 | 206.00s | 10,285.2 MB | 3,191.1 (2.47ms) | 2,844.1 (2.83ms) | 1,017.6 (2.37ms) | 5,431.8 (1.44ms) | 3,079.4 (2.55ms) | 2,575.9 (2.99ms) | 3,201.5 (0.85ms) | 2,442.6 (3.13ms) |
+| 500,000 | 384 | `complex128` | cpu | 8,943.0 | 413.50s | 11,523.3 MB | 951.7 (7.23ms) | 1,514.4 (5.17ms) | 801.6 (3.83ms) | 2,957.5 (2.48ms) | 1,990.4 (3.82ms) | 2,139.7 (3.39ms) | 742.2 (2.01ms) | 1,778.5 (4.29ms) |
+
+### 0a.3 Full 13-Mode Search Matrix for `uint8`, `float64`, `complex64`, `complex128` (100k / 250k / 500k, Dims 128 & 384)
+
+| Scale | Dim | Dtype | dense | hybrid | filtered | filteredbool | filteredstring | sparse | byid | graphrag | globalgraphrag | recommend | geo | temporal | learnedindex |
+|---:|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **100k** | 128 | `uint8` | 3,954 (2.01ms) | 4,677 (1.69ms) | 2,889 (2.01ms) | 3,465 (2.06ms) | 3,420 (1.96ms) | 9,757 (0.81ms) | 4,485 (1.76ms) | 3,791 (2.01ms) | 3,596 (2.06ms) | 4,748 (1.66ms) | 559 (13.41ms) | 7,289 (0.96ms) | 3,773 (1.99ms) |
+| **100k** | 384 | `uint8` | 3,666 (2.16ms) | 4,189 (1.90ms) | 2,496 (2.14ms) | 3,352 (2.14ms) | 3,159 (2.06ms) | 10,309 (0.75ms) | 3,991 (1.98ms) | 3,569 (2.12ms) | 3,574 (2.12ms) | 4,234 (1.87ms) | 551 (13.54ms) | 7,497 (0.87ms) | 3,722 (2.09ms) |
+| **100k** | 128 | `float64` | 3,691 (2.14ms) | 4,356 (1.81ms) | 2,689 (2.12ms) | 3,463 (2.04ms) | 3,255 (2.06ms) | 9,679 (0.81ms) | 3,816 (2.07ms) | 3,487 (2.23ms) | 3,253 (2.27ms) | 4,103 (1.92ms) | 550 (13.49ms) | 7,073 (0.94ms) | 3,688 (2.10ms) |
+| **100k** | 384 | `float64` | 3,897 (2.00ms) | 3,629 (2.19ms) | 2,668 (2.07ms) | 2,838 (2.45ms) | 2,102 (3.27ms) | 8,821 (0.88ms) | 3,726 (2.08ms) | 2,812 (2.71ms) | 2,821 (2.74ms) | 3,786 (2.08ms) | 564 (13.21ms) | 6,871 (0.95ms) | 3,272 (2.36ms) |
+| **100k** | 128 | `complex64` | 3,697 (2.13ms) | 4,188 (1.86ms) | 2,505 (2.08ms) | 3,307 (2.13ms) | 3,181 (2.06ms) | 9,188 (0.85ms) | 3,904 (2.01ms) | 3,396 (2.25ms) | 3,349 (2.28ms) | 3,719 (2.05ms) | 553 (13.49ms) | 6,713 (0.97ms) | 3,603 (2.13ms) |
+| **100k** | 384 | `complex64` | 3,278 (2.40ms) | 3,317 (2.34ms) | 2,316 (2.43ms) | 2,763 (2.48ms) | 2,129 (3.13ms) | 6,178 (1.22ms) | 3,357 (2.25ms) | 2,433 (3.06ms) | 2,568 (3.00ms) | 3,694 (2.08ms) | 513 (14.50ms) | 6,242 (1.07ms) | 2,914 (2.65ms) |
+| **100k** | 128 | `complex128` | 3,572 (2.20ms) | 3,998 (1.98ms) | 2,341 (2.20ms) | 3,232 (2.09ms) | 2,509 (2.61ms) | 8,272 (0.96ms) | 3,652 (2.14ms) | 2,573 (2.88ms) | 2,776 (2.77ms) | 3,793 (2.10ms) | 483 (15.49ms) | 6,075 (1.07ms) | 3,056 (2.43ms) |
+| **100k** | 384 | `complex128` | 2,778 (2.81ms) | 2,458 (3.23ms) | 1,662 (3.29ms) | 1,884 (3.62ms) | 1,260 (5.43ms) | 6,630 (1.20ms) | 2,991 (2.56ms) | 1,898 (4.07ms) | 1,734 (4.28ms) | 3,335 (2.32ms) | 385 (18.68ms) | 4,898 (1.31ms) | 2,128 (3.57ms) |
+| **250k** | 128 | `uint8` | 3,460 (2.28ms) | 3,064 (2.35ms) | 1,625 (2.30ms) | 2,417 (2.28ms) | 1,936 (2.47ms) | 6,200 (1.27ms) | 3,438 (2.32ms) | 2,235 (3.43ms) | 1,534 (5.00ms) | 3,302 (2.40ms) | 62 (100.68ms) | 2,915 (1.46ms) | 1,892 (3.84ms) |
+| **250k** | 384 | `uint8` | 3,196 (2.47ms) | 2,920 (2.71ms) | 1,277 (2.72ms) | 1,773 (3.04ms) | 1,406 (3.51ms) | 5,584 (1.41ms) | 3,110 (2.52ms) | 1,424 (5.11ms) | 1,245 (5.97ms) | 2,626 (2.96ms) | 55 (151.12ms) | 3,780 (1.25ms) | 1,901 (4.09ms) |
+| **250k** | 128 | `float64` | 2,819 (2.60ms) | 3,363 (2.37ms) | 1,607 (2.22ms) | 2,041 (2.58ms) | 1,568 (3.29ms) | 5,024 (1.56ms) | 3,093 (2.52ms) | 1,200 (5.58ms) | 367 (21.47ms) | 764 (10.03ms) | 82 (65.48ms) | 3,844 (1.23ms) | 1,751 (4.39ms) |
+| **250k** | 384 | `float64` | 2,912 (2.70ms) | 2,481 (3.21ms) | 1,360 (2.99ms) | 1,565 (3.59ms) | 809 (7.00ms) | 5,297 (1.49ms) | 2,230 (3.46ms) | 1,013 (7.03ms) | 1,123 (6.80ms) | 2,867 (2.71ms) | 62 (121.60ms) | 2,893 (1.50ms) | 1,964 (3.85ms) |
+| **250k** | 128 | `complex64` | 2,706 (2.90ms) | 2,361 (3.40ms) | 1,038 (3.11ms) | 1,454 (3.50ms) | 1,119 (4.42ms) | 4,590 (1.75ms) | 2,598 (2.98ms) | 940 (8.06ms) | 562 (13.01ms) | 1,117 (6.83ms) | 78 (82.84ms) | 3,532 (1.17ms) | 2,311 (3.22ms) |
+| **250k** | 384 | `complex64` | 2,176 (3.53ms) | 2,166 (3.60ms) | 1,289 (3.01ms) | 1,245 (4.31ms) | 900 (5.23ms) | 4,164 (1.85ms) | 2,839 (2.64ms) | 1,101 (6.98ms) | 961 (7.50ms) | 3,036 (2.46ms) | 53 (156.44ms) | 4,049 (1.14ms) | 2,398 (3.19ms) |
+| **250k** | 128 | `complex128` | 2,391 (3.26ms) | 2,051 (3.83ms) | 651 (6.12ms) | 1,434 (2.49ms) | 1,462 (3.63ms) | 5,371 (1.47ms) | 3,309 (2.36ms) | 1,706 (4.37ms) | 1,745 (4.36ms) | 3,426 (2.29ms) | 55 (129.81ms) | 729 (6.96ms) | 345 (22.92ms) |
+| **250k** | 384 | `complex128` | 2,259 (3.35ms) | 1,359 (5.44ms) | 1,181 (3.17ms) | 1,173 (4.79ms) | 698 (8.09ms) | 2,686 (2.91ms) | 642 (12.18ms) | 329 (23.72ms) | 455 (22.22ms) | 3,590 (2.11ms) | 89 (80.20ms) | 3,616 (1.23ms) | 1,929 (3.90ms) |
+| **500k** | 128 | `uint8` | 3,440 (2.29ms) | 3,579 (2.23ms) | 1,005 (2.34ms) | 1,578 (2.40ms) | 1,175 (2.78ms) | 3,750 (2.03ms) | 2,057 (3.69ms) | 800 (8.80ms) | 796 (9.01ms) | 2,321 (3.32ms) | 25 (314.17ms) | 3,101 (0.90ms) | 2,815 (2.79ms) |
+| **500k** | 384 | `uint8` | 2,318 (3.27ms) | 2,951 (2.67ms) | 1,031 (2.56ms) | 1,455 (2.56ms) | 912 (4.30ms) | 3,997 (1.95ms) | 3,071 (2.54ms) | 1,113 (6.11ms) | 1,122 (6.70ms) | 2,954 (2.67ms) | 21 (357.32ms) | 2,484 (1.19ms) | 1,545 (5.04ms) |
+| **500k** | 128 | `float64` | 3,366 (2.34ms) | 3,558 (2.22ms) | 1,139 (2.14ms) | 1,507 (2.75ms) | 1,130 (3.43ms) | 5,479 (1.43ms) | 3,312 (2.38ms) | 1,000 (5.93ms) | 1,427 (5.25ms) | 3,271 (2.42ms) | 28 (263.94ms) | 3,434 (0.85ms) | 2,677 (2.84ms) |
+| **500k** | 384 | `float64` | 1,408 (5.11ms) | 1,635 (4.74ms) | 817 (3.58ms) | 551 (7.77ms) | 145 (31.39ms) | 2,732 (1.84ms) | 3,445 (2.27ms) | 695 (9.11ms) | 981 (7.78ms) | 2,639 (2.95ms) | 24 (319.26ms) | 2,674 (1.06ms) | 2,166 (3.57ms) |
+| **500k** | 128 | `complex64` | 1,699 (4.55ms) | 2,060 (3.81ms) | 1,020 (2.38ms) | 1,526 (2.55ms) | 815 (4.28ms) | 3,279 (2.32ms) | 2,759 (2.87ms) | 707 (7.36ms) | 522 (11.63ms) | 2,486 (3.10ms) | 22 (378.60ms) | 2,458 (1.10ms) | 2,427 (3.19ms) |
+| **500k** | 384 | `complex64` | 2,342 (3.30ms) | 1,724 (4.56ms) | 767 (3.76ms) | 812 (4.37ms) | 545 (8.48ms) | 3,943 (1.98ms) | 1,284 (5.92ms) | 447 (16.70ms) | 804 (9.45ms) | 2,216 (3.42ms) | 23 (344.52ms) | 2,694 (1.03ms) | 803 (6.69ms) |
+| **500k** | 128 | `complex128` | 3,191 (2.47ms) | 2,844 (2.83ms) | 1,018 (2.37ms) | 1,459 (2.92ms) | 983 (4.75ms) | 5,432 (1.44ms) | 3,079 (2.55ms) | 1,116 (7.01ms) | 965 (6.89ms) | 2,576 (2.99ms) | 23 (351.11ms) | 3,202 (0.85ms) | 2,443 (3.13ms) |
+| **500k** | 384 | `complex128` | 952 (7.23ms) | 1,514 (5.17ms) | 802 (3.83ms) | 694 (7.67ms) | 436 (11.19ms) | 2,958 (2.48ms) | 1,990 (3.82ms) | 609 (12.90ms) | 590 (11.20ms) | 2,140 (3.39ms) | 12 (563.10ms) | 742 (2.01ms) | 1,779 (4.29ms) |
+
+---
 
 ## 0. Full-Scale 100k / 250k / 500k Validation Matrix (2026-10-16, AVX2 Client, EMLGo 0.7.0)
 

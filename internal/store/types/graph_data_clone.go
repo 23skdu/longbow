@@ -2,11 +2,12 @@ package types
 
 import (
 	"fmt"
+	"runtime"
+	"sync/atomic"
+
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/float16"
-	"runtime"
-	"sync/atomic"
 )
 
 func (g *GraphData) Clone() *GraphData {
@@ -549,6 +550,176 @@ func (g *GraphData) ShallowStructuralClone() *GraphData {
 	runtime.SetFinalizer(newG, func(g *GraphData) { g.Release() })
 
 	return newG
+}
+
+// MergeFrom merges non-zero chunk offsets, arenas, and node levels from other
+// into g so that publishing g via compareAndSwapData never clobbers chunks or
+// levels allocated by a concurrent AddBatch on other.
+func (g *GraphData) MergeFrom(other *GraphData) {
+	if g == nil || other == nil || g == other {
+		return
+	}
+	atomic.AddInt32(&other.cloneCount, 1)
+	defer atomic.AddInt32(&other.cloneCount, -1)
+
+	if other.Capacity > g.Capacity {
+		numChunks := (other.Capacity + ChunkSize - 1) / ChunkSize
+		g.GrowMetadataSlices(numChunks)
+		g.Capacity = other.Capacity
+	}
+
+	if g.Float32Arena == nil && other.Float32Arena != nil {
+		g.Float32Arena = memory.NewTypedArena[float32](other.Float32Arena.Slab())
+		g.Float32Arena.Retain()
+	}
+	if g.Float64Arena == nil && other.Float64Arena != nil {
+		g.Float64Arena = memory.NewTypedArena[float64](other.Float64Arena.Slab())
+		g.Float64Arena.Retain()
+	}
+	if g.Uint8Arena == nil && other.Uint8Arena != nil {
+		g.Uint8Arena = memory.NewTypedArena[uint8](other.Uint8Arena.Slab())
+		g.Uint8Arena.Retain()
+	}
+	if g.Uint16Arena == nil && other.Uint16Arena != nil {
+		g.Uint16Arena = memory.NewTypedArena[uint16](other.Uint16Arena.Slab())
+		g.Uint16Arena.Retain()
+	}
+	if g.Uint32Arena == nil && other.Uint32Arena != nil {
+		g.Uint32Arena = memory.NewTypedArena[uint32](other.Uint32Arena.Slab())
+		g.Uint32Arena.Retain()
+	}
+	if g.Uint64Arena == nil && other.Uint64Arena != nil {
+		g.Uint64Arena = memory.NewTypedArena[uint64](other.Uint64Arena.Slab())
+		g.Uint64Arena.Retain()
+	}
+	if g.Int8Arena == nil && other.Int8Arena != nil {
+		g.Int8Arena = memory.NewTypedArena[int8](other.Int8Arena.Slab())
+		g.Int8Arena.Retain()
+	}
+	if g.Int16Arena == nil && other.Int16Arena != nil {
+		g.Int16Arena = memory.NewTypedArena[int16](other.Int16Arena.Slab())
+		g.Int16Arena.Retain()
+	}
+	if g.Int32Arena == nil && other.Int32Arena != nil {
+		g.Int32Arena = memory.NewTypedArena[int32](other.Int32Arena.Slab())
+		g.Int32Arena.Retain()
+	}
+	if g.Int64Arena == nil && other.Int64Arena != nil {
+		g.Int64Arena = memory.NewTypedArena[int64](other.Int64Arena.Slab())
+		g.Int64Arena.Retain()
+	}
+	if g.Float16Arena == nil && other.Float16Arena != nil {
+		g.Float16Arena = memory.NewTypedArena[float16.Num](other.Float16Arena.Slab())
+		g.Float16Arena.Retain()
+	}
+	if g.Complex64Arena == nil && other.Complex64Arena != nil {
+		g.Complex64Arena = memory.NewTypedArena[complex64](other.Complex64Arena.Slab())
+		g.Complex64Arena.Retain()
+	}
+	if g.Complex128Arena == nil && other.Complex128Arena != nil {
+		g.Complex128Arena = memory.NewTypedArena[complex128](other.Complex128Arena.Slab())
+		g.Complex128Arena.Retain()
+	}
+
+	mergeOffsets := func(dst, src []uint64) []uint64 {
+		if len(src) == 0 {
+			return dst
+		}
+		if len(dst) < len(src) {
+			grown := make([]uint64, len(src))
+			for i := range dst {
+				grown[i] = atomic.LoadUint64(&dst[i])
+			}
+			dst = grown
+		}
+		for i := range src {
+			if atomic.LoadUint64(&dst[i]) == 0 {
+				if v := atomic.LoadUint64(&src[i]); v != 0 {
+					atomic.StoreUint64(&dst[i], v)
+				}
+			}
+		}
+		return dst
+	}
+
+	if len(other.VectorsF32) > 0 {
+		if len(g.VectorsF32) < len(other.VectorsF32) {
+			grown := make([]uint64, len(other.VectorsF32))
+			for i := range g.VectorsF32 {
+				grown[i] = atomic.LoadUint64(&g.VectorsF32[i])
+			}
+			g.VectorsF32 = grown
+		}
+		for i := range other.VectorsF32 {
+			hasZeroCopy := i < len(g.Vectors) && g.Vectors[i] != nil
+			if !hasZeroCopy && atomic.LoadUint64(&g.VectorsF32[i]) == 0 {
+				if v := atomic.LoadUint64(&other.VectorsF32[i]); v != 0 {
+					atomic.StoreUint64(&g.VectorsF32[i], v)
+				}
+			}
+		}
+	}
+	g.VectorsSQ8 = mergeOffsets(g.VectorsSQ8, other.VectorsSQ8)
+	g.VectorsPQ = mergeOffsets(g.VectorsPQ, other.VectorsPQ)
+	g.VectorsBQ = mergeOffsets(g.VectorsBQ, other.VectorsBQ)
+	g.VectorsTQ = mergeOffsets(g.VectorsTQ, other.VectorsTQ)
+	g.VectorsF16 = mergeOffsets(g.VectorsF16, other.VectorsF16)
+	g.VectorsInt8 = mergeOffsets(g.VectorsInt8, other.VectorsInt8)
+	g.VectorsInt16 = mergeOffsets(g.VectorsInt16, other.VectorsInt16)
+	g.VectorsUint16 = mergeOffsets(g.VectorsUint16, other.VectorsUint16)
+	g.VectorsInt32 = mergeOffsets(g.VectorsInt32, other.VectorsInt32)
+	g.VectorsUint32 = mergeOffsets(g.VectorsUint32, other.VectorsUint32)
+	g.VectorsInt64 = mergeOffsets(g.VectorsInt64, other.VectorsInt64)
+	g.VectorsUint64 = mergeOffsets(g.VectorsUint64, other.VectorsUint64)
+	g.VectorsFloat64Offsets = mergeOffsets(g.VectorsFloat64Offsets, other.VectorsFloat64Offsets)
+	g.VectorsComplex64Offsets = mergeOffsets(g.VectorsComplex64Offsets, other.VectorsComplex64Offsets)
+	g.VectorsComplex128Offsets = mergeOffsets(g.VectorsComplex128Offsets, other.VectorsComplex128Offsets)
+
+	for l := 0; l < len(other.Neighbors) && l < len(g.Neighbors); l++ {
+		g.Neighbors[l] = mergeOffsets(g.Neighbors[l], other.Neighbors[l])
+	}
+	for l := 0; l < len(other.Counts) && l < len(g.Counts); l++ {
+		g.Counts[l] = mergeOffsets(g.Counts[l], other.Counts[l])
+	}
+	for l := 0; l < len(other.Versions) && l < len(g.Versions); l++ {
+		g.Versions[l] = mergeOffsets(g.Versions[l], other.Versions[l])
+	}
+
+	if len(other.Levels) > 0 {
+		if len(g.Levels) < len(other.Levels) {
+			newL := make([][]uint32, len(other.Levels))
+			copy(newL, g.Levels)
+			g.Levels = newL
+		}
+		for i := range other.Levels {
+			if other.Levels[i] == nil {
+				continue
+			}
+			if g.Levels[i] == nil {
+				g.Levels[i] = make([]uint32, len(other.Levels[i]))
+			}
+			for j := 0; j < len(other.Levels[i]) && j < len(g.Levels[i]); j++ {
+				if atomic.LoadUint32(&g.Levels[i][j]) == 0 {
+					if lvl := atomic.LoadUint32(&other.Levels[i][j]); lvl != 0 {
+						atomic.StoreUint32(&g.Levels[i][j], lvl)
+					}
+				}
+			}
+		}
+	}
+
+	if len(other.Complex128Magnitudes) > 0 {
+		if len(g.Complex128Magnitudes) < len(other.Complex128Magnitudes) {
+			grown := make([]float64, len(other.Complex128Magnitudes))
+			copy(grown, g.Complex128Magnitudes)
+			g.Complex128Magnitudes = grown
+		}
+		for i, mag := range other.Complex128Magnitudes {
+			if g.Complex128Magnitudes[i] == 0 && mag != 0 {
+				g.Complex128Magnitudes[i] = mag
+			}
+		}
+	}
 }
 
 // SetExternalVectorsChunk maps a chunk of the graph directly to an external slice.

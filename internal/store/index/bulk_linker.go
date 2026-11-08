@@ -89,7 +89,7 @@ func (h *ArrowHNSW) bootstrapSequential(
 			h.updateMetadataIfHigher(bootstrapEp, bootstrapMaxL)
 		}
 	}
-	h.compareAndSwapData(h.data.Load(), data.Clone())
+	h.publishDataClone(data)
 	if err := ctx.Err(); err != nil {
 		return nil, 0, 0, err
 	}
@@ -146,8 +146,13 @@ func (h *ArrowHNSW) linkRemainingNodes(
 	freshPublished := h.data.Load()
 	if freshPublished != nil {
 		freshPublished.AcquireReader()
-		data = freshPublished.Clone()
+		freshClone := freshPublished.Clone()
 		freshPublished.ReleaseReader()
+		if data != nil {
+			freshClone.MergeFrom(data)
+			data.Release()
+		}
+		data = freshClone
 	} else {
 		data = nil
 	}
@@ -635,17 +640,7 @@ func (h *ArrowHNSW) linkRemainingNodes(
 			if errLayer != nil {
 				return nil, 0, 0, errLayer
 			}
-
-			// Update global snapshot for organic growth so next sub-batch sees these nodes
-			if i+subBatchSize < len(activeIndices) {
-				data = data.Clone()
-				h.compareAndSwapData(h.data.Load(), data)
-			}
 		}
-
-		// Final layer publish
-		data = data.Clone()
-		h.compareAndSwapData(h.data.Load(), data)
 	}
 
 	runtime.KeepAlive(data)

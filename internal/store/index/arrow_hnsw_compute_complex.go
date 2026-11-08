@@ -183,7 +183,7 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
 		// Triangle-inequality pruning: skip if |queryMag - storedMag| > threshold
 		if c.threshold > 0 {
-			if mag := c.data.GetComplex128Magnitude(id); float32(math.Abs(c.queryMag-mag)) > c.threshold {
+			if mag := c.data.GetComplex128Magnitude(id); mag > 0 && float32(math.Abs(c.queryMag-mag)) > c.threshold {
 				dists[i] = c.threshold + 1
 				continue
 			}
@@ -233,7 +233,7 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 	// Triangle-inequality pruning: if |queryMag - storedMag| > threshold, skip
 	if c.threshold > 0 {
-		if mag := c.data.GetComplex128Magnitude(id); float32(math.Abs(c.queryMag-mag)) > c.threshold {
+		if mag := c.data.GetComplex128Magnitude(id); mag > 0 && float32(math.Abs(c.queryMag-mag)) > c.threshold {
 			return c.threshold + 1, nil
 		}
 	}
@@ -307,7 +307,7 @@ func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 	for i, id := range ids {
 		// Triangle-inequality pruning: skip if |queryMag - storedMag| > threshold
 		if c.threshold > 0 {
-			if mag := c.data.GetComplex128Magnitude(id); float32(math.Abs(c.queryMag-mag)) > c.threshold {
+			if mag := c.data.GetComplex128Magnitude(id); mag > 0 && float32(math.Abs(c.queryMag-mag)) > c.threshold {
 				dst[i] = c.threshold + 1
 				c.batchVecs[i] = nil
 				pruned++

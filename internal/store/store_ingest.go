@@ -22,7 +22,6 @@ import (
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
-	internalcore "github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
 )
@@ -862,7 +861,11 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		if idColIdx != -1 && vecColIdx != -1 {
 			numRows := int(rec.NumRows())
 			ids := make([]uint64, numRows)
-			vectors := make([][]float32, numRows)
+			needTemporalVecs := ds.TemporalIndex.dimension > 0
+			var vectors [][]float32
+			if needTemporalVecs {
+				vectors = make([][]float32, numRows)
+			}
 			timestamps := make([]int64, numRows)
 
 			idArr := rec.Column(idColIdx).(*array.String)
@@ -879,64 +882,66 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 				listLen = int(fs.Len())
 			}
 
-			// Parallel Extraction
-			pool := internalcore.GetSharedPool()
-			pool.ParallelFor(numRows, 1024, func(start, end int) {
-				for i := start; i < end; i++ {
-					if idArr.IsValid(i) && vecCol.IsValid(i) {
-						idStr := idArr.Value(i)
-						id, _ := strconv.ParseUint(idStr, 10, 64)
-						ids[i] = id
+			// Extract directly on this ingestion worker goroutine so we do not block
+			// behind long-running HNSW linkage tasks in index.GetSharedPool().
+			for i := 0; i < numRows; i++ {
+				if idArr.IsValid(i) && vecCol.IsValid(i) {
+					idStr := idArr.Value(i)
+					id, _ := strconv.ParseUint(idStr, 10, 64)
+					ids[i] = id
 
-						if tsArr != nil && tsArr.IsValid(i) {
-							switch arr := tsArr.(type) {
-							case *array.Int64:
-								timestamps[i] = arr.Value(i)
-							case *array.Timestamp:
-								timestamps[i] = int64(arr.Value(i))
-							default:
-								timestamps[i] = ts
-							}
-						} else {
+					if tsArr != nil && tsArr.IsValid(i) {
+						switch arr := tsArr.(type) {
+						case *array.Int64:
+							timestamps[i] = arr.Value(i)
+						case *array.Timestamp:
+							timestamps[i] = int64(arr.Value(i))
+						default:
 							timestamps[i] = ts
 						}
+					} else {
+						timestamps[i] = ts
+					}
 
-						var vStart, vEnd int
-						var values arrow.Array
-						if fs, ok := vecCol.(*array.FixedSizeList); ok {
-							vStart = i * listLen
-							vEnd = (i + 1) * listLen
-							values = fs.ListValues()
-						} else if l, ok := vecCol.(*array.List); ok {
-							offsets := l.Offsets()
-							vStart = int(offsets[i])
-							vEnd = int(offsets[i+1])
-							values = l.ListValues()
-						}
+					if !needTemporalVecs {
+						continue
+					}
 
-						if values != nil {
-							switch valArr := values.(type) {
-							case *array.Float32:
-								if vStart < valArr.Len() && vEnd <= valArr.Len() {
-									src := valArr.Float32Values()[vStart:vEnd]
-									sub := make([]float32, len(src))
-									copy(sub, src)
-									vectors[i] = sub
+					var vStart, vEnd int
+					var values arrow.Array
+					if fs, ok := vecCol.(*array.FixedSizeList); ok {
+						vStart = i * listLen
+						vEnd = (i + 1) * listLen
+						values = fs.ListValues()
+					} else if l, ok := vecCol.(*array.List); ok {
+						offsets := l.Offsets()
+						vStart = int(offsets[i])
+						vEnd = int(offsets[i+1])
+						values = l.ListValues()
+					}
+
+					if values != nil {
+						switch valArr := values.(type) {
+						case *array.Float32:
+							if vStart < valArr.Len() && vEnd <= valArr.Len() {
+								src := valArr.Float32Values()[vStart:vEnd]
+								sub := make([]float32, len(src))
+								copy(sub, src)
+								vectors[i] = sub
+							}
+						case *array.Float64:
+							if vStart < valArr.Len() && vEnd <= valArr.Len() {
+								f64Values := valArr.Float64Values()[vStart:vEnd]
+								sub := make([]float32, len(f64Values))
+								for j, v := range f64Values {
+									sub[j] = float32(v)
 								}
-							case *array.Float64:
-								if vStart < valArr.Len() && vEnd <= valArr.Len() {
-									f64Values := valArr.Float64Values()[vStart:vEnd]
-									sub := make([]float32, len(f64Values))
-									for j, v := range f64Values {
-										sub[j] = float32(v)
-									}
-									vectors[i] = sub
-								}
+								vectors[i] = sub
 							}
 						}
 					}
 				}
-			})
+			}
 
 			// Batch Add
 			_ = ds.TemporalIndex.AddBatch(ids, vectors, timestamps, nil)
@@ -989,129 +994,24 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 		if idColIdx != -1 && vecColIdx != -1 {
 			numRows := int(rec.NumRows())
-			ids := make([]uint64, numRows)
-			vectors := make([][]float32, numRows)
-			points := make([]types.GeoPoint, numRows)
-			valid := make([]bool, numRows)
+			validIds := make([]uint64, 0, numRows)
+			validPoints := make([]types.GeoPoint, 0, numRows)
 
 			idArr := rec.Column(idColIdx).(*array.String)
 			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
 			geoArr := rec.Column(geoPointIdx).(*array.FixedSizeList)
 			geoValues := geoArr.ListValues().(*array.Float64).Float64Values()
-			listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
 
-			// Parallel Extraction
-			pool := internalcore.GetSharedPool()
-			pool.ParallelFor(numRows, 1024, func(start, end int) {
-				for i := start; i < end; i++ {
-					if idArr.IsValid(i) && vecArr.IsValid(i) && geoArr.IsValid(i) {
-						idStr := idArr.Value(i)
-						id, _ := strconv.ParseUint(idStr, 10, 64)
-						ids[i] = id
-
-						vStart := i * listLen
-						vEnd := (i + 1) * listLen
-						listValues := vecArr.ListValues()
-
-						switch values := listValues.(type) {
-						case *array.Float32:
-							src := values.Float32Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							copy(sub, src)
-							vectors[i] = sub
-						case *array.Float64:
-							f64Values := values.Float64Values()[vStart:vEnd]
-							sub := make([]float32, len(f64Values))
-							for j, v := range f64Values {
-								sub[j] = float32(v)
-							}
-							vectors[i] = sub
-						case *array.Int8:
-							src := values.Int8Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							for j, v := range src {
-								sub[j] = float32(v)
-							}
-							vectors[i] = sub
-						case *array.Int16:
-							src := values.Int16Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							for j, v := range src {
-								sub[j] = float32(v)
-							}
-							vectors[i] = sub
-						case *array.Int32:
-							src := values.Int32Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							for j, v := range src {
-								sub[j] = float32(v)
-							}
-							vectors[i] = sub
-						case *array.Int64:
-							src := values.Int64Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							for j, v := range src {
-								sub[j] = float32(v)
-							}
-							vectors[i] = sub
-						case *array.Uint8:
-							src := values.Uint8Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							for j, v := range src {
-								sub[j] = float32(v)
-							}
-							vectors[i] = sub
-						case *array.Uint16:
-							src := values.Uint16Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							for j, v := range src {
-								sub[j] = float32(v)
-							}
-							vectors[i] = sub
-						case *array.Uint32:
-							src := values.Uint32Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							for j, v := range src {
-								sub[j] = float32(v)
-							}
-							vectors[i] = sub
-						case *array.Uint64:
-							src := values.Uint64Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							for j, v := range src {
-								sub[j] = float32(v)
-							}
-							vectors[i] = sub
-						case *array.Float16:
-							src := values.Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							for j, v := range src {
-								sub[j] = v.Float32()
-							}
-							vectors[i] = sub
-						}
-
-						if vectors[i] != nil {
-							points[i] = types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]}
-							valid[i] = true
-						}
-					}
-				}
-			})
-
-			// Filter valid and Batch Add
-			validIds := make([]uint64, 0, numRows)
-			validVectors := make([][]float32, 0, numRows)
-			validPoints := make([]types.GeoPoint, 0, numRows)
 			for i := 0; i < numRows; i++ {
-				if valid[i] {
-					validIds = append(validIds, ids[i])
-					validVectors = append(validVectors, vectors[i])
-					validPoints = append(validPoints, points[i])
+				if idArr.IsValid(i) && vecArr.IsValid(i) && geoArr.IsValid(i) {
+					idStr := idArr.Value(i)
+					id, _ := strconv.ParseUint(idStr, 10, 64)
+					validIds = append(validIds, id)
+					validPoints = append(validPoints, types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]})
 				}
 			}
 
-			_ = ds.GeoIndex.AddBatch(validIds, validVectors, validPoints, nil)
+			_ = ds.GeoIndex.AddBatch(validIds, nil, validPoints, nil)
 		}
 	}
 

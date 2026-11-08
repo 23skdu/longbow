@@ -110,6 +110,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 // indirect
 	github.com/hamba/avro/v2 v2.31.1-0.20260107155452-afbafcb0b218 // indirect
 	github.com/hashicorp/go-uuid v1.0.4 // indirect
+	github.com/iskorotkov/avro/v2 v2.34.0 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/gofork v1.7.6 // indirect
@@ -161,7 +162,7 @@ require (
 	go.uber.org/atomic v1.12.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
@@ -182,3 +183,5 @@ require (
 )
 
 replace github.com/emlgo/eml => ../emlgo
+
+replace github.com/hamba/avro/v2 => github.com/iskorotkov/avro/v2 v2.35.0

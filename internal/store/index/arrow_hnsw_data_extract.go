@@ -3,6 +3,7 @@ package index
 import (
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -63,11 +64,7 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 			if len(floats) < 2 {
 				return nil
 			}
-			complexes := make([]complex64, len(floats)/2)
-			for i := 0; i < len(complexes); i++ {
-				complexes[i] = complex(floats[2*i], floats[2*i+1])
-			}
-			return complexes
+			return unsafe.Slice((*complex64)(unsafe.Pointer(&floats[0])), len(floats)/2) // #nosec G103
 		}
 		if h.config.DataType == types.VectorTypeComplex128 {
 			if len(floats) < 2 {
@@ -88,11 +85,7 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 			if len(floats) < 2 {
 				return nil
 			}
-			complexes := make([]complex128, len(floats)/2)
-			for i := 0; i < len(complexes); i++ {
-				complexes[i] = complex(floats[2*i], floats[2*i+1])
-			}
-			return complexes
+			return unsafe.Slice((*complex128)(unsafe.Pointer(&floats[0])), len(floats)/2) // #nosec G103
 		}
 		// Zero-copy: return the underlying slice directly
 		return floats

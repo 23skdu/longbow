@@ -133,22 +133,6 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 
 		_ = cachedMMax
 
-		// Prefetch neighbor vectors aggressively across all cache lines (prefetching 2 and 4 steps ahead)
-		for i := range neighbors {
-			if i+2 < len(neighbors) {
-				nextN := neighbors[i+2]
-				if int64(nextN) < maxCommitted {
-					computer.Prefetch(nextN)
-				}
-			}
-			if i+4 < len(neighbors) {
-				nextN4 := neighbors[i+4]
-				if int64(nextN4) < maxCommitted {
-					computer.Prefetch(nextN4)
-				}
-			}
-		}
-
 		if ctx.predicate != nil {
 			batch := ctx.visited.FilterAndMarkUnvisited(neighbors, maxCommitted, ctx.AllowUncommitted, ctx.neighborBatch[:0])
 

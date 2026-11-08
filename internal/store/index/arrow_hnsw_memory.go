@@ -48,7 +48,7 @@ func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *typ
 	}
 
 	// Grow capacity if needed
-	if (cID+1)*types.ChunkSize > data.Capacity {
+	if (cID+1)*types.ChunkSize > data.Capacity || len(data.Neighbors) == 0 || cID >= len(data.Neighbors[0]) {
 		newCap := (cID + 1) * types.ChunkSize
 		if newCap < data.Capacity*2 {
 			newCap = data.Capacity * 2
@@ -56,8 +56,6 @@ func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *typ
 		if err := h.growInternal(newCap, dims); err != nil {
 			return nil, false, err
 		}
-		// Release the pin on the old data, pin the new one
-		data.ReleaseReader()
 		data = h.data.Load()
 		if data != nil {
 			data.AcquireReader()
@@ -69,6 +67,7 @@ func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *typ
 	// Pin a reader so a concurrent compareAndSwapData-driven Release()
 	// cannot nil out the typed-arenas (e.g. Uint32Arena for Neighbors
 	// layer 0) while we call data.EnsureChunk.
+	data.AcquireReader()
 	if err := data.EnsureChunk(cID, cOff, dims); err != nil {
 		data.ReleaseReader()
 		return nil, false, err
@@ -89,13 +88,21 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		return fmt.Errorf("dimensions %d exceed MaxInt32", dims)
 	}
 
+	numChunks := (capacity + types.ChunkSize - 1) / types.ChunkSize
+	if numChunks <= 0 {
+		numChunks = 1
+	}
+	capacity = numChunks * types.ChunkSize
+
 	start := time.Now()
 	defer func() {
 		metrics.HNSWIndexGrowthDuration.Observe(time.Since(start).Seconds())
 	}()
 
 	oldData := h.data.Load()
-	if oldData != nil && capacity <= oldData.Capacity && dims == oldData.Dims &&
+	if oldData != nil && capacity <= oldData.Capacity &&
+		len(oldData.Neighbors) > 0 && len(oldData.Neighbors[0]) >= numChunks &&
+		dims == oldData.Dims &&
 		oldData.PQEnabled == h.config.PQEnabled &&
 		oldData.SQ8Enabled == h.config.SQ8Enabled &&
 		oldData.BQEnabled == h.config.BQEnabled {
@@ -146,19 +153,15 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	newData.TurboQuantEnabled = h.config.TurboQuantEnabled
 	newData.TurboQuantBits = h.config.TurboQuantBits
 
-	// Ensure metadata slices are appropriately sized
-	numChunks := (capacity + types.ChunkSize - 1) / types.ChunkSize
-	if numChunks <= 0 {
-		numChunks = 1
-	}
 	newData.GrowMetadataSlices(numChunks)
 
 	// Ensure structural allocation
 	if err := newData.PreAllocate(capacity); err != nil {
+		newData.Release()
 		return err
 	}
 
-	h.compareAndSwapData(oldData, newData)
+	h.installData(newData)
 
 	// Flush to disk after growth if UseDisk enabled
 	h.maybeFlushToDisk()
@@ -189,12 +192,19 @@ func (h *ArrowHNSW) ensureChunksLocked(startCID, endCID int, dims int) (*types.G
 	if data != nil {
 		data.AcquireReader()
 	}
-	needsGrow := data == nil || (endCID+1)*types.ChunkSize > data.Capacity
+	needsGrow := data == nil || (endCID+1)*types.ChunkSize > data.Capacity ||
+		len(data.Neighbors) == 0 || endCID >= len(data.Neighbors[0])
 
 	if needsGrow {
 		newCap := (endCID + 1) * types.ChunkSize
-		if data != nil && newCap < data.Capacity*2 {
-			newCap = data.Capacity * 2
+		if data != nil && data.Capacity > 0 {
+			grown := data.Capacity * 2
+			if data.Capacity >= 256*types.ChunkSize {
+				grown = data.Capacity + data.Capacity/4
+			}
+			if newCap < grown {
+				newCap = grown
+			}
 		}
 		// Release reader BEFORE growInternal to avoid self-deadlock:
 		// compareAndSwapData → oldData.Release() spins on readerCount > 0,
@@ -206,6 +216,10 @@ func (h *ArrowHNSW) ensureChunksLocked(startCID, endCID int, dims int) (*types.G
 			return nil, err
 		}
 		data = h.data.Load()
+		if data != nil {
+			data.AcquireReader()
+			defer data.ReleaseReader()
+		}
 	} else if data != nil {
 		defer data.ReleaseReader()
 	}
@@ -230,6 +244,9 @@ func (h *ArrowHNSW) compareAndSwapData(current, newData *types.GraphData) bool {
 		// Reject install: caller transferred ownership; release to avoid leak.
 		newData.Release()
 		return false
+	}
+	if current != nil && newData != nil {
+		newData.MergeFrom(current)
 	}
 	if newData != nil {
 		newData.OnEvict = func(layer int) {
@@ -267,4 +284,59 @@ func (h *ArrowHNSW) compareAndSwapData(current, newData *types.GraphData) bool {
 		newData.Release()
 	}
 	return swapped
+}
+
+// installData merges any concurrent chunk allocations or levels from the
+// currently published GraphData into newData and installs newData via a CAS
+// retry loop without releasing newData on transient CAS collisions.
+func (h *ArrowHNSW) installData(newData *types.GraphData) {
+	if newData == nil {
+		return
+	}
+	newData.OnEvict = func(layer int) {
+		if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+			h.neighborCache[layer].Clear()
+		}
+	}
+	for {
+		current := h.data.Load()
+		if current == newData {
+			return
+		}
+		if current != nil {
+			newData.MergeFrom(current)
+		}
+		if h.dataset != nil {
+			if provider, ok := h.dataset.(interface {
+				GetEvictionManager() any
+			}); ok {
+				if evMgrAny := provider.GetEvictionManager(); evMgrAny != nil {
+					if evMgr, ok := evMgrAny.(*GraphLayerEvictionManager); ok && evMgr != nil {
+						evMgr.SwapTarget(current, newData)
+					}
+				}
+			}
+		}
+		if h.data.CompareAndSwap(current, newData) {
+			for i := 0; i < len(h.neighborCache); i++ {
+				if h.neighborCache[i] != nil {
+					h.neighborCache[i].Clear()
+				}
+			}
+			if current != nil {
+				current.Release()
+			}
+			return
+		}
+	}
+}
+
+// publishDataClone clones data, merges any concurrent chunk allocations or
+// levels from the currently published GraphData, and installs the clone via a
+// CAS retry loop without consuming or releasing the caller's working copy.
+func (h *ArrowHNSW) publishDataClone(data *types.GraphData) {
+	if data == nil {
+		return
+	}
+	h.installData(data.Clone())
 }

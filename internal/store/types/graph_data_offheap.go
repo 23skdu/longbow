@@ -1,8 +1,9 @@
 package types
 
 import (
-	"github.com/23skdu/longbow/internal/memory"
 	"sync/atomic"
+
+	"github.com/23skdu/longbow/internal/memory"
 )
 
 func (g *GraphData) PreAllocate(capacity int) error {
@@ -325,12 +326,14 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 		initArenaSafe(&g.Float16Arena, slabSize, g.Allocator)
 
-		for i := len(g.VectorsF16); i < numChunks; i++ {
-			ref, err := g.Float16Arena.AllocSlice(ChunkSize * paddedDims)
-			if err != nil {
-				return err
+		for i := 0; i < numChunks; i++ {
+			if atomic.LoadUint64(&g.VectorsF16[i]) == 0 {
+				ref, err := g.Float16Arena.AllocSlice(ChunkSize * paddedDims)
+				if err != nil {
+					return err
+				}
+				atomic.StoreUint64(&g.VectorsF16[i], ref.Offset)
 			}
-			g.VectorsF16 = append(g.VectorsF16, ref.Offset)
 		}
 	}
 

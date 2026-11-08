@@ -179,10 +179,18 @@ type ArrowSearchContext struct {
 	// goroutines had got (roadmap Item 31).
 	inDegreeView inDegreeReader
 
-	scratchExtractedF32    [][]float32
-	scratchSelectedVecsF32 [][]float32
-	scratchPool            []uint32
-	scratchPruned          []uint32
+	scratchExtractedF32     [][]float32
+	scratchSelectedVecsF32  [][]float32
+	scratchExtractedF64     [][]float64
+	scratchSelectedVecsF64  [][]float64
+	scratchExtractedC64     [][]complex64
+	scratchSelectedVecsC64  [][]complex64
+	scratchExtractedC128    [][]complex128
+	scratchSelectedVecsC128 [][]complex128
+	scratchExtractedAny     []any
+	scratchSelectedVecsAny  []any
+	scratchPool             []uint32
+	scratchPruned           []uint32
 
 	vectorBuf []float32
 
@@ -301,47 +309,55 @@ type ArrowSearchContextPool struct {
 // NewArrowSearchContext creates a new ArrowSearchContext with default capacity.
 func NewArrowSearchContext() *ArrowSearchContext {
 	return &ArrowSearchContext{
-		candidates:             make([]types.Candidate, 0, 100),
-		visited:                types.NewArrowBitset(1000),
-		dists:                  make([]float32, 0, 100),
-		distsTemp:              make([]float32, 100),
-		neighborBuf:            make([]uint32, 0, 64),
-		layerCandidates:        make([]types.Candidate, 0, 100),
-		resultSet:              make(CandidateHeap, 0, 100),
-		scratchSelected:        make([]types.Candidate, 0, 100),
-		scratchRemaining:       make([]types.Candidate, 0, 100),
-		scratchDists:           make([]float32, 0, 128),
-		scratchExtractedF32:    make([][]float32, 0, 100),
-		scratchSelectedVecsF32: make([][]float32, 0, 100),
-		scratchPool:            make([]uint32, 0, 128),
-		scratchPruned:          make([]uint32, 0, 128),
-		bulkCandidates:         make([]types.Candidate, 0, 256),
-		bulkSources:            make([]uint32, 0, 64),
-		bulkDists:              make([]float32, 0, 64),
-		linkSrc:                make([]uint32, 0, 1),
-		linkDist:               make([]float32, 0, 1),
-		batchSrc:               make([]uint32, 0, 64),
-		batchNext:              make([]uint32, 0, 64),
-		diffOld:                make([]uint32, 0, 64),
-		diffNew:                make([]uint32, 0, 64),
-		queryBQ:                make([]uint64, 0, 256),
-		querySQ8:               make([]uint8, 0, 1536),
-		queryTQ:                make([]byte, 0, 512),
-		vectorBuf:              make([]float32, 0, 384),
-		bufF32_2:               make([]float32, 0, 384),
-		neighborBatch:          make([]uint32, 0, 64),
-		matchResultBuf:         make([]byte, 64),
-		dirty:                  false,
-		operations:             0,
-		cachedChunksF32:        make([]cachedChunkF32, 64),
-		cachedChunksF64:        make([]cachedChunkF64, 16),
-		cachedChunksInt8:       make([]cachedChunkInt8, 16),
-		cachedChunksF16:        make([]cachedChunkF16, 16),
-		cachedChunksC128:       make([]cachedChunkC128, 16),
-		cachedChunksTQ:         make([]cachedChunkBytes, 16),
-		cachedChunksSQ8:        make([]cachedChunkBytes, 16),
-		chunkEpoch:             1,
-		tqReconEpoch:           1,
+		candidates:              make([]types.Candidate, 0, 100),
+		visited:                 types.NewArrowBitset(1000),
+		dists:                   make([]float32, 0, 100),
+		distsTemp:               make([]float32, 100),
+		neighborBuf:             make([]uint32, 0, 64),
+		layerCandidates:         make([]types.Candidate, 0, 100),
+		resultSet:               make(CandidateHeap, 0, 100),
+		scratchSelected:         make([]types.Candidate, 0, 100),
+		scratchRemaining:        make([]types.Candidate, 0, 100),
+		scratchDists:            make([]float32, 0, 128),
+		scratchExtractedF32:     make([][]float32, 0, 100),
+		scratchSelectedVecsF32:  make([][]float32, 0, 100),
+		scratchExtractedF64:     make([][]float64, 0, 100),
+		scratchSelectedVecsF64:  make([][]float64, 0, 100),
+		scratchExtractedC64:     make([][]complex64, 0, 100),
+		scratchSelectedVecsC64:  make([][]complex64, 0, 100),
+		scratchExtractedC128:    make([][]complex128, 0, 100),
+		scratchSelectedVecsC128: make([][]complex128, 0, 100),
+		scratchExtractedAny:     make([]any, 0, 100),
+		scratchSelectedVecsAny:  make([]any, 0, 100),
+		scratchPool:             make([]uint32, 0, 128),
+		scratchPruned:           make([]uint32, 0, 128),
+		bulkCandidates:          make([]types.Candidate, 0, 256),
+		bulkSources:             make([]uint32, 0, 64),
+		bulkDists:               make([]float32, 0, 64),
+		linkSrc:                 make([]uint32, 0, 1),
+		linkDist:                make([]float32, 0, 1),
+		batchSrc:                make([]uint32, 0, 64),
+		batchNext:               make([]uint32, 0, 64),
+		diffOld:                 make([]uint32, 0, 64),
+		diffNew:                 make([]uint32, 0, 64),
+		queryBQ:                 make([]uint64, 0, 256),
+		querySQ8:                make([]uint8, 0, 1536),
+		queryTQ:                 make([]byte, 0, 512),
+		vectorBuf:               make([]float32, 0, 384),
+		bufF32_2:                make([]float32, 0, 384),
+		neighborBatch:           make([]uint32, 0, 64),
+		matchResultBuf:          make([]byte, 64),
+		dirty:                   false,
+		operations:              0,
+		cachedChunksF32:         make([]cachedChunkF32, 64),
+		cachedChunksF64:         make([]cachedChunkF64, 16),
+		cachedChunksInt8:        make([]cachedChunkInt8, 16),
+		cachedChunksF16:         make([]cachedChunkF16, 16),
+		cachedChunksC128:        make([]cachedChunkC128, 16),
+		cachedChunksTQ:          make([]cachedChunkBytes, 16),
+		cachedChunksSQ8:         make([]cachedChunkBytes, 16),
+		chunkEpoch:              1,
+		tqReconEpoch:            1,
 	}
 }
 
@@ -437,6 +453,14 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.scratchDists = ctx.scratchDists[:0]
 	ctx.scratchExtractedF32 = ctx.scratchExtractedF32[:0]
 	ctx.scratchSelectedVecsF32 = ctx.scratchSelectedVecsF32[:0]
+	ctx.scratchExtractedF64 = ctx.scratchExtractedF64[:0]
+	ctx.scratchSelectedVecsF64 = ctx.scratchSelectedVecsF64[:0]
+	ctx.scratchExtractedC64 = ctx.scratchExtractedC64[:0]
+	ctx.scratchSelectedVecsC64 = ctx.scratchSelectedVecsC64[:0]
+	ctx.scratchExtractedC128 = ctx.scratchExtractedC128[:0]
+	ctx.scratchSelectedVecsC128 = ctx.scratchSelectedVecsC128[:0]
+	ctx.scratchExtractedAny = ctx.scratchExtractedAny[:0]
+	ctx.scratchSelectedVecsAny = ctx.scratchSelectedVecsAny[:0]
 	ctx.scratchPool = ctx.scratchPool[:0]
 	ctx.scratchPruned = ctx.scratchPruned[:0]
 	ctx.bulkCandidates = ctx.bulkCandidates[:0]

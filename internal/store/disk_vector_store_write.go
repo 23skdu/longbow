@@ -190,9 +190,6 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 
 	lenBytes := numRows * width * elemSize
 
-	dvs.writeMu.Lock()
-	defer dvs.writeMu.Unlock()
-
 	dvs.mu.RLock()
 	compAlg := dvs.compression
 	tqBits := dvs.tqBits
@@ -202,7 +199,7 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 	var dataToWrite []byte
 	var compType byte // 0: none, 1: zstd, 2: lz4
 
-	// 2. Compress
+	// 2. Compress outside writeMu so concurrent ingestion workers compress in parallel
 	if tqBits > 0 && tqEnc != nil && elemSize == 4 {
 		compType = 3 // TurboQuant
 		stride := tqEnc.PackedSize()
@@ -237,6 +234,9 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 			compType = 0
 		}
 	}
+
+	dvs.writeMu.Lock()
+	defer dvs.writeMu.Unlock()
 
 	// 3. Write Block
 	header := make([]byte, 13)

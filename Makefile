@@ -53,7 +53,7 @@ help:
 	@echo "  build-bench          Build bench-tool CLI binary"
 	@echo "  build-verify         Build tensor-verify CLI binary"
 	@echo "  cross-compile        Verify ARM64 cross-compilation (build & vet)"
-	@echo "  clean                Remove compiled binaries, C-shared headers, and test artifacts"
+	@echo "  clean                Remove compiled binaries, C-shared headers, virtualenvs, test artifacts, and Longbow Docker images"
 	@echo "  deps                 Download and tidy Go modules and sync vendor directory"
 	@echo "  deps-upgrade         Upgrade all Go modules, tidy go.mod, and sync vendor"
 	@echo ""
@@ -184,9 +184,18 @@ deps-upgrade:
 	$(GO) mod vendor
 
 clean:
-	@echo "Cleaning build and test artifacts..."
-	rm -f liblongbow_adbc.so liblongbow_adbc.h coverage.out coverage.html mem.out cpu.out
-	rm -rf bin/
+	@echo "Cleaning build, virtualenv, test artifacts, and Longbow Docker images..."
+	rm -f liblongbow_adbc.so liblongbow_adbc.h bench-tool longbow coverage.out coverage.html coverage.txt mem.out cpu.out *.test *.prof *.pprof
+	rm -rf bin/ build/ dist/ scratch/ data/ profiles/ internal/profiling/profiles/ reports/ benchmark_results/
+	rm -rf venv/ .venv/ scripts/venv/ longbowclientsdk/venv/ longbowclientsdk/.venv/
+	find . -path ./vendor -prune -o -type d \( -name "__pycache__" -o -name ".pytest_cache" -o -name ".ruff_cache" \) -prune -exec rm -rf {} +
+	@if command -v $(DOCKER) >/dev/null 2>&1; then \
+		IMAGES=$$($(DOCKER) images --filter "reference=longbow*" --filter "reference=*/longbow*" -q 2>/dev/null | sort -u); \
+		if [ -n "$$IMAGES" ]; then \
+			$(DOCKER) rmi -f $$IMAGES || true; \
+		fi; \
+		$(DOCKER) image prune -f >/dev/null 2>&1 || true; \
+	fi
 	$(GO) clean -testcache
 
 # ==============================================================================

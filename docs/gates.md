@@ -70,15 +70,18 @@ go test -v -short -coverprofile=coverage.txt ./...
 
 ### Gate 3: Fuzz Testing Gate
 
-- **Identifier**: `test-fuzz`
-- **Enforcement Tool**: `make test-fuzz`, [`scripts/pre-commit.sh`](file:///home/rsd/REPOS/longbow/scripts/pre-commit.sh)
-- **Command**:
+- **Identifier**: `test-fuzz`, `fuzz-coverage`
+- **Enforcement Tool**: `make test-fuzz`, `make fuzz-coverage`, [`scripts/check_fuzz_coverage.sh`](file:///home/rsd/REPOS/longbow/scripts/check_fuzz_coverage.sh), [`scripts/pre-commit.sh`](file:///home/rsd/REPOS/longbow/scripts/pre-commit.sh)
+- **Commands**:
 
 ```bash
+./scripts/check_fuzz_coverage.sh
 go test -short -run='^Fuzz' ./...
 ```
 
-- **Description**: Executes deterministic fuzzing passes on input-parsing engines, dimensional validators, filter expressions, vector normalization functions, and geo/temporal range query parsers. This ensures that arbitrary or malformed user queries cannot cause memory faults, panics, or unbounded allocations.
+- **Description**: Two complementary checks:
+  1. **100% Package Fuzz Presence**: [`scripts/check_fuzz_coverage.sh`](file:///home/rsd/REPOS/longbow/scripts/check_fuzz_coverage.sh) enumerates every package in the module and fails if any package lacks a `func Fuzz*(f *testing.F)` target in its `*_test.go` files, so fuzz coverage cannot silently regress as packages are added.
+  2. **Deterministic Fuzz Execution**: Executes deterministic fuzzing passes on input-parsing engines, dimensional validators, filter expressions, vector normalization functions, and geo/temporal range query parsers. This ensures that arbitrary or malformed user queries cannot cause memory faults, panics, or unbounded allocations.
 
 ---
 
@@ -266,7 +269,7 @@ python3 scripts/unified_benchmark.py --ci --runs 3 --compare-baseline benchmarks
 | --- | --- | :---: | :---: | :---: | --- |
 | **1** | 100% Package Test Presence | **Yes** | **Yes** | **Yes** | `make test-coverage` |
 | **2** | Unit & Statement Coverage | **Yes** (staged) | **Yes** (all) | **Yes** (all) | `make test` / `make test-coverage` |
-| **3** | Fuzz Testing | **Yes** (short) | **Yes** | **Yes** | `make test-fuzz` |
+| **3** | 100% Fuzz Presence & Fuzz Testing | **Yes** (short) | **Yes** | **Yes** | `make fuzz-coverage`, `make test-fuzz` |
 | **4** | Accuracy Gate (15 DTypes) | **Yes** | **Yes** | **Yes** | `make accuracy-gate` |
 | **5** | Oracle Ground-Truth Parity | **Yes** | **Yes** | **Yes** | `make oracle-gate` |
 | **6** | Static Analysis & Linters | No | **Yes** | **Yes** | `make lint`, `make vet` |
@@ -285,6 +288,11 @@ python3 scripts/unified_benchmark.py --ci --runs 3 --compare-baseline benchmarks
 
 - **Cause**: A new Go package was created in the repository that lacks any `*_test.go` file.
 - **Remediation**: Add a unit test file (e.g. `package_test.go`) covering the exported types and functions in the new package. Re-run `make test-coverage`.
+
+### Issue: Gate Failed with "Found packages without fuzz targets"
+
+- **Cause**: A Go package (or its tests) defines no `func Fuzz*(f *testing.F)` target, so the 100% package fuzz coverage check fails.
+- **Remediation**: Add a `<topic>_fuzz_test.go` file to the package with at least one fuzz target that seeds valid and invalid inputs via `f.Add` and asserts a real invariant (no-panic floor; prefer round-trip, error-on-invalid, or oracle-parity properties). Re-run `make fuzz-coverage`.
 
 ### Issue: Unit Tests Cause Machine Freeze or OOM Crash
 

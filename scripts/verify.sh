@@ -46,8 +46,8 @@ if command -v gosec >/dev/null 2>&1; then
 fi
 echo "    ✓ Gate 2 passed: Security AST checks clean."
 
-# 3. 100% Package Test Presence Gate
-echo "--> Gate 3/6: Checking 100% Package Test Presence Gate..."
+# 3. 100% Package Test & Fuzz Presence Gate
+echo "--> Gate 3/6: Checking 100% Package Test & Fuzz Presence Gate..."
 UNTESTED=$(go test -list '.*' ./... 2>&1 | grep '\[no test files\]' || true)
 if [ -n "$UNTESTED" ]; then
     echo "::error::Found packages without test files:"
@@ -55,7 +55,8 @@ if [ -n "$UNTESTED" ]; then
     echo "Every package must have test coverage before committing."
     exit 1
 fi
-echo "    ✓ Gate 3 passed: All packages have active test files (100% package presence)."
+./scripts/check_fuzz_coverage.sh
+echo "    ✓ Gate 3 passed: All packages have test files and fuzz targets (100% presence)."
 
 # 4. Unit & Fuzz Test Gate (Bounded Short Mode)
 echo "--> Gate 4/6: Running Unit & Fuzz Tests on Target Packages..."

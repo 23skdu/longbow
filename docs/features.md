@@ -54,7 +54,7 @@ Longbow is designed to provide FAISS-level performance with Arrow-native ergonom
 
 - **Hardened CGO Bridge**: Remediated all high-confidence security findings in SIMD/GPU layers and removed vulnerable FAISS dependencies.
 - **Audited Subprocess Isolation**: Subprocess execution for GPU discovery is now fully audited and hardened.
-- **Comprehensive Test Coverage**: Every package in the repository has active test coverage, which CI enforces (`.github/workflows/ci.yml` runs `go test -race -coverprofile=coverage.txt ./...` and then fails the build if `go test -list '.*'` reports any `[no test files]`). The gate is per-package presence, not a numeric line-coverage threshold, so no ">95%" figure is claimed here. Race-condition validation runs under `-race`.
+- **Comprehensive Test Coverage**: Every package in the repository has active test coverage, which CI enforces (`.github/workflows/ci.yml` runs `go test -v -short -coverprofile=coverage.txt ./...`, then fails the build if `go test -list '.*'` reports any `[no test files]` or if `scripts/check_fuzz_coverage.sh` finds a package without a `Fuzz*` target). The gate is per-package presence (unit tests and fuzz targets), not a numeric line-coverage threshold, so no ">95%" figure is claimed here. Race-condition validation runs separately under `-race` via `make race`.
 
 ### Portability & Infrastructure
 

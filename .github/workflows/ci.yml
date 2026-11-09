@@ -78,6 +78,9 @@ jobs:
           fi
           echo "All packages have active test coverage."
 
+      - name: Verify 100% Package Fuzz Coverage Gate
+        run: ./scripts/check_fuzz_coverage.sh
+
       - name: Test Benchmark Harness Helpers
         run: |
           python3 scripts/tests/test_benchmark_validation.py

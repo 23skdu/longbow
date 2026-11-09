@@ -88,9 +88,16 @@ go test -v ./internal/store -run TestVectorStore
 
 #### Fuzzing
 
-Critical paths (quantization, predictor logic, Arrow extraction) must include fuzz tests:
+Critical paths (quantization, predictor logic, Arrow extraction) must include fuzz tests. Every package must define at least one `func Fuzz*(f *testing.F)` target — this is enforced by the 100% package fuzz coverage gate:
 
 ```bash
+# Verify every package defines a fuzz target (gate)
+make fuzz-coverage
+
+# Run all fuzz targets with their seed corpora (short mode)
+make test-fuzz
+
+# Run an extended fuzzing session against a single target
 go test -fuzz=FuzzKNNPredict ./internal/store
 ```
 

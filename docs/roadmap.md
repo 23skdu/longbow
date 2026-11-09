@@ -183,7 +183,7 @@ During deep code analysis of the `internal/simd`, `internal/store/index`, `inter
 
 ## 3. Expanded Unit & Fuzz Testing Scope
 
-Longbow enforces **100% per-package test file presence** across all Go packages in `cmd/`, `internal/`, `client/`, and `tools/`, coupled with deterministic unit tests and property-based fuzz targets (`Fuzz*`).
+Longbow enforces **100% per-package test file presence** across all Go packages in `cmd/`, `internal/`, `client/`, and `tools/`, coupled with deterministic unit tests and property-based fuzz targets (`Fuzz*`). Fuzz coverage is likewise enforced at **100% package presence**: every package must define at least one `Fuzz*` target, verified by `scripts/check_fuzz_coverage.sh` (wired into `make fuzz-coverage`, `make test-fuzz`, `make ci`, pre-commit Gate 3, and the CI `validate` job).
 
 ### Fuzz Testing Matrix
 
@@ -248,7 +248,7 @@ Every `git commit` (or manual `make verify` / `./scripts/verify.sh` invocation) 
 
 1. **Gate 1 — Formatting & Linting**: Checks `gofmt -l` on staged Go files, runs `go vet`, and runs `golangci-lint run` (`staticcheck`, `unused`) on affected packages.
 2. **Gate 2 — Go Security Check**: Runs `gosec -quiet -exclude=G115` AST security analysis on affected packages.
-3. **Gate 3 — 100% Package Test Presence**: Verifies zero Go packages report `[no test files]`.
+3. **Gate 3 — 100% Package Test & Fuzz Presence**: Verifies zero Go packages report `[no test files]` and runs `./scripts/check_fuzz_coverage.sh` to ensure every package defines at least one `Fuzz*` target.
 4. **Gate 4 — Unit & Fuzz Testing (Short Mode)**: Runs `go test -short -cover` and `go test -short -run='^Fuzz'` across staged and core packages.
 5. **Gate 5 — Accuracy Gate**: Runs `go test -v ./internal/simd/ -run='^TestSIMDAccuracy'`.
 6. **Gate 6 — Oracle Gate**: Runs `go test -v ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/ -run='Parity'`.
@@ -282,6 +282,7 @@ Every `git commit` (or manual `make verify` / `./scripts/verify.sh` invocation) 
 | **Linting Checks** | `make markdown-lint` | Lints `docs/**/*.md`, `README.md`, and `CONTRIBUTING.md` with `markdownlint` |
 | **Quality & Fuzz Gates** | `make accuracy-gate` | Runs `TestSIMDAccuracy*` across all 15 vector dtypes, batch dims, and dispatch layers |
 | **Quality & Fuzz Gates** | `make oracle-gate` | Runs `*Parity*` ground-truth oracle suites across `simd`, `pq`, `tensor`, `memory`, and `index` |
-| **Quality & Fuzz Gates** | `make test-fuzz` | Runs all `Fuzz*` targets across the repository in bounded short mode |
+| **Quality & Fuzz Gates** | `make test-fuzz` | Runs all `Fuzz*` targets across the repository in bounded short mode (after `fuzz-coverage`) |
+| **Quality & Fuzz Gates** | `make fuzz-coverage` | Verifies 100% package fuzz-target presence via `scripts/check_fuzz_coverage.sh` |
 | **Quality & Fuzz Gates** | `make test-coverage` | Verifies 100% package test presence and runs `go test -short -cover ./...` |
 | **Quality & Fuzz Gates** | `make coverage-gate` | Enforces $\ge 30\%$ statement coverage across core packages |

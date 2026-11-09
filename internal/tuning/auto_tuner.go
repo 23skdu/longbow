@@ -199,7 +199,10 @@ func (a *AutoTuner) estimateGradient(history []float64) float64 {
 		return 0
 	}
 
-	recent := history[len(history)-10:]
+	// Look at at most the most recent 10 samples. Clamp the start index so
+	// histories shorter than 10 (possible when MinSamples < 10) do not panic
+	// with a negative slice bound.
+	recent := history[max(len(history)-10, 0):]
 	if len(recent) < 2 {
 		return 0
 	}

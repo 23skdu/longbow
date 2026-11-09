@@ -26,7 +26,7 @@ IMAGE_TAG     ?= latest
 	deps deps-upgrade lint lint-fast lint-fix vet staticcheck deadcode fmt fmt-check \
 	security sec sec-gosec sec-vulncheck sec-audit \
 	perf perf-check cpu-profile profile-check mem mem-check mem-bench mem-escape mem-profile mem-asan mem-valgrind \
-	fuzz test-fuzz \
+	fuzz test-fuzz fuzz-coverage \
 	test test-short test-all race test-coverage coverage-gate coverage-html test-fuzz test-docker \
 	test-adbc test-adbc-python test-adbc-so \
 	cross-compile check-simd test-bench-harness helm-lint markdown-lint bench-ci bench-ab \
@@ -93,6 +93,7 @@ help:
 	@echo "  test-coverage        Verify 100% package test presence and collect statement coverage"
 	@echo "  coverage-html        Generate interactive HTML coverage report (coverage.html)"
 	@echo "  test-fuzz            Run fuzz test harnesses"
+	@echo "  fuzz-coverage        Verify 100% package fuzz-target presence"
 	@echo "  test-docker          Run Dockerfile unit tests (Go and Python)"
 	@echo "  test-bench-harness   Run benchmark harness test suite (114 Python tests)"
 	@echo "  test-adbc            Run ADBC driver Go test suite"
@@ -122,7 +123,7 @@ help:
 # Combined Local CI Pipeline
 # ==============================================================================
 
-ci: fmt-check lint vet build build-adbc cross-compile check-simd test-coverage test-docker test-bench-harness accuracy-gate oracle-gate observability-check observability-rules sec-gosec helm-lint
+ci: fmt-check lint vet build build-adbc cross-compile check-simd test-coverage fuzz-coverage test-docker test-bench-harness accuracy-gate oracle-gate observability-check observability-rules sec-gosec helm-lint
 	@echo "=========================================================="
 	@echo " ✓ Complete local CI verification pipeline passed 100%!"
 	@echo "=========================================================="
@@ -356,7 +357,11 @@ coverage-html:
 	$(GO) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report saved to coverage.html"
 
-test-fuzz:
+fuzz-coverage:
+	@echo "Verifying 100% Package Fuzz Coverage Gate..."
+	./scripts/check_fuzz_coverage.sh
+
+test-fuzz: fuzz-coverage
 	@echo "Running fuzz tests in short mode..."
 	$(GO) test -short -run='^Fuzz' ./...
 

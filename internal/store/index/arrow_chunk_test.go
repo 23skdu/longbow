@@ -74,6 +74,12 @@ func TestChunkedGrowth(t *testing.T) {
 		neighbors[int(cOff)*types.MaxNeighbors] = 999
 	}
 
+	// ensureChunk returns data with a reader pin held (see
+	// ensureChunkInternalLocked). Release it before the next Grow:
+	// installData → Release() spin-waits on readerCount == 0 and would
+	// otherwise hang the test forever.
+	newData.ReleaseReader()
+
 	// Grow again
 	if err := h.Grow(targetCap+types.ChunkSize, 128); err != nil {
 		t.Fatalf("Grow failed: %v", err)

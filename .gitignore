@@ -44,6 +44,7 @@ data*/
 *.fbin
 **/snapshots/*.parquet
 internal/store/wal.bin
+internal/store/test_*_vectors.bin
 
 # Test and coverage artifacts
 *.test

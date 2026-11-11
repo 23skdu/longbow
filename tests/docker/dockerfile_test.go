@@ -65,7 +65,7 @@ var allDockerfiles = []dockerfileMeta{
 	},
 	{
 		filename:      "Dockerfile.emlgo-gpu",
-		stages:        []string{"nvidia/cuda:13.4.3-devel-ubuntu24.04", "nvidia/cuda:13.4.3-runtime-ubuntu24.04"},
+		stages:        []string{"nvidia/cuda:13.5.0-devel-ubuntu24.04", "nvidia/cuda:13.5.0-runtime-ubuntu24.04"},
 		runtimeUser:   "longbow:longbow",
 		exposedPorts:  []string{"3000", "3001", "9090"},
 		hasVolumeData: true,
@@ -81,7 +81,7 @@ var allDockerfiles = []dockerfileMeta{
 	},
 	{
 		filename:      "Dockerfile.nvidia",
-		stages:        []string{"nvidia/cuda:13.4.3-devel-ubuntu24.04", "nvidia/cuda:13.4.3-runtime-ubuntu24.04"},
+		stages:        []string{"nvidia/cuda:13.5.0-devel-ubuntu24.04", "nvidia/cuda:13.5.0-runtime-ubuntu24.04"},
 		runtimeUser:   "longbow:longbow",
 		exposedPorts:  []string{"3000", "3001", "9090"},
 		hasVolumeData: true,

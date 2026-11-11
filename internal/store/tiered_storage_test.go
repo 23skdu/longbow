@@ -49,7 +49,7 @@ func TestTieredStorage_OffloadAndFetch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's in remote
-	exists, _ := remote.Exists(ctx, fmt.Sprintf("blocks/%s/%d", path, 0))
+	exists, _ := remote.Exists(ctx, fmt.Sprintf("blocks/%s_%d.bin", path, 0))
 	assert.True(t, exists)
 
 	// 3. Fetch vectors (transparently from remote)

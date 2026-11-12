@@ -29,7 +29,7 @@ func refDockerfileLines(data string) []string {
 // newline and blank-line handling included).
 func FuzzReadDockerfileLines(f *testing.F) {
 	// Valid seeds.
-	f.Add([]byte("FROM golang:1.27.3-bookworm\nUSER 65534:65534\n"))
+	f.Add([]byte("FROM golang:1.27.4-bookworm\nUSER 65534:65534\n"))
 	f.Add([]byte("FROM scratch\r\nUSER longbow:longbow\r\n")) // CRLF
 	f.Add([]byte("no trailing newline"))
 	f.Add([]byte("line-one\r")) // lone CR at EOF

@@ -26,7 +26,7 @@ Longbow maintains two primary validation environments:
 | **GPU** | NVIDIA GeForce RTX 4060 Laptop (8 GB VRAM, sm_89) |
 | **CUDA Toolkit** | CUDA 12.4 (`nvcc` V12.4.131) |
 | **Host Operating System** | Linux (Ubuntu / Debian x86_64 kernel 6.8) |
-| **Go Runtime** | Go 1.27.3 with CGO enabled |
+| **Go Runtime** | Go 1.27.4 with CGO enabled |
 | **Benchmark Script** | [scripts/unified_benchmark.py](file:///home/rsd/REPOS/longbow/scripts/unified_benchmark.py) |
 | **Benchmark Harness** | [cmd/bench-tool](file:///home/rsd/REPOS/longbow/cmd/bench-tool) (`bin/bench-tool`) |
 
@@ -38,7 +38,7 @@ Longbow maintains two primary validation environments:
 | **CPU** | Intel(R) Xeon(R) CPU @ 2.80GHz (16 vCPUs, AVX-512F, AVX-512DQ, AVX-512CD, AVX-512BW, AVX-512VL, AVX-512_VNNI, FMA) |
 | **System Memory** | 125 GiB RAM (high-memory envelope, no memory pressure) |
 | **Host Operating System** | Linux 7.0-gcp x86_64 |
-| **Go Runtime** | Go 1.27.1 with CGO enabled |
+| **Go Runtime** | Go 1.27.4 with CGO enabled |
 | **Role** | Production AVX-512 kernel validation, EMLGo parity, high-concurrency scaling (8+ workers, unpinned) |
 
 ---

@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-# Toolchain configuration (prefer Homebrew Go 1.27.3 and Homebrew / local tools)
+# Toolchain configuration (prefer Homebrew Go 1.27.4 and Homebrew / local tools)
 GO ?= $(shell which /home/linuxbrew/.linuxbrew/bin/go 2>/dev/null || which go)
 GOPATH ?= $(shell $(GO) env GOPATH)
 GOBIN ?= $(GOPATH)/bin

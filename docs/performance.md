@@ -1,6 +1,6 @@
 # Longbow Performance Benchmarks
 
-**Most recent revalidation:** 2026-11-07 — High-Dimensional & Multi-Scale CPU Standard (non-EMLGo) Validation across **10,000 / 25,000 / 50,000 / 100,000 / 250,000 / 500,000** vectors and **128 / 384** dimensions on the AVX2 local host (`bin/longbow`, Go 1.27.3), covering `uint8`, `float64`, `complex64`, `complex128` at 100k–500k and `float32`, `float16`, `int8` at 10k–100k across all 13 search modes (48/48 configurations complete, 0 failures, 0 panics).
+**Most recent revalidation:** 2026-11-07 — High-Dimensional & Multi-Scale CPU Standard (non-EMLGo) Validation across **10,000 / 25,000 / 50,000 / 100,000 / 250,000 / 500,000** vectors and **128 / 384** dimensions on the AVX2 local host (`bin/longbow`, Go 1.27.4), covering `uint8`, `float64`, `complex64`, `complex128` at 100k–500k and `float32`, `float16`, `int8` at 10k–100k across all 13 search modes (48/48 configurations complete, 0 failures, 0 panics).
 
 See **§0a below** for the 2026-11-07 multi-dimension (128d & 384d) validation tables and P0 regression root-cause analysis, and **§0** for the 2026-10-16 128d EMLGo pass. Prior tables (§1–§4, up to 2026-10-12) are retained unchanged for longitudinal readthrough.
 
@@ -205,7 +205,7 @@ This validation pass benchmarked the unified matrix across **all three target sc
 | Concurrency Workers | 4 Workers (`--workers 4`) |
 | Host RAM | 23 GB System Memory (13.5 GiB bench ceiling) |
 | GPU | NVIDIA GeForce RTX 4060 Laptop (8 GB VRAM, sm_89, CUDA 12.4) |
-| Go Runtime | Go 1.27.3 (CGO enabled) |
+| Go Runtime | Go 1.27.4 (CGO enabled) |
 
 #### Engine Variants Evaluated
 

@@ -45,7 +45,7 @@ Enable local inference by setting the following environment variables:
 
 ### WASM Integration
 
-- **`internal/wasm`**: Manages the Wazero runtime, handles WASM module loading, and manages tensor I/O mapping.
+- **`internal/wasm`**: Manages the Wazero runtime, handles WASM module loading, validates the runner ABI (`malloc`/`free`/`inference`/`inference_with_tokens`), and performs bounds-checked tensor I/O with output-buffer cleanup. Modules are instantiated without stdio capture and with restricted WASI capabilities.
 
 ---
 
@@ -123,7 +123,11 @@ Ensure `libonnxruntime` is in your library path (e.g., `/usr/local/lib`) or set 
 
 ### WASM: Out of Memory
 
-If you encounter OOM errors in WASM, adjust the memory limits in `internal/wasm/runner.go`.
+If you encounter OOM errors in WASM, reduce batch sizes or model dimensions. The runner enforces `MaxInputFloats` and `MaxOutputFloats` (1<<20 floats, ~4 MiB each) and validates all pointer/length pairs against module memory before reads or writes.
+
+### WASM: Invalid or Unsafe Modules
+
+Modules must export `inference`, `malloc`, and `memory` (and optionally `free` and `inference_with_tokens`). The runner rejects empty modules, missing exports, and any output whose pointer/length exceeds module memory. WASI filesystem, network, and environment access are disabled, and stdout/stderr are not captured.
 
 ### Metal: Not Available
 

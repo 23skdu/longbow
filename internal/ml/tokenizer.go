@@ -15,6 +15,31 @@ type Tokenizer struct {
 	maxLen   int
 }
 
+// ResolveTokenizerPath returns the best tokenizer asset path for a model path.
+// It searches the model's directory for tokenizer.json then vocab.txt, falling
+// back to the provided path when no asset is found.
+func ResolveTokenizerPath(modelPath string) string {
+	dir := filepath.Dir(modelPath)
+	candidates := []string{
+		filepath.Join(dir, "tokenizer.json"),
+		filepath.Join(dir, "vocab.txt"),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	if modelPath != "" {
+		return modelPath
+	}
+	return "vocab.txt"
+}
+
+// NewTokenizerForModel creates a tokenizer resolved relative to a model path.
+func NewTokenizerForModel(modelPath string, maxLen int) (*Tokenizer, error) {
+	return NewTokenizer(ResolveTokenizerPath(modelPath), maxLen)
+}
+
 // NewTokenizer creates a new tokenizer from a vocab file
 func NewTokenizer(vocabPath string, maxLen int) (*Tokenizer, error) {
 	vocab := make(map[string]int)

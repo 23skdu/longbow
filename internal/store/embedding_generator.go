@@ -729,55 +729,70 @@ func (le *localEmbeddingGenerator) Close() error {
 
 type onnxEmbeddingModel struct {
 	path    string
+	mu      sync.Mutex
 	session *onnx.Session
 }
 
 func (m *onnxEmbeddingModel) Inference(input []string) ([][]float32, error) {
+	m.mu.Lock()
 	if m.session == nil {
 		session, err := onnx.NewSession(m.path)
 		if err != nil {
+			m.mu.Unlock()
 			return nil, err
 		}
 		m.session = session
 	}
+	session := m.session
+	m.mu.Unlock()
 
 	start := time.Now()
 	defer func() {
 		metrics.EmbeddingGenerationDurationSeconds.WithLabelValues("local", "onnx").Observe(time.Since(start).Seconds())
 	}()
 
-	return m.session.Embed(context.Background(), input)
+	return session.Embed(context.Background(), input)
 }
 
 func (m *onnxEmbeddingModel) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.session != nil {
-		return m.session.Close()
+		err := m.session.Close()
+		m.session = nil
+		return err
 	}
 	return nil
 }
 
 type wasmEmbeddingModel struct {
 	path      string
+	mu        sync.Mutex
 	runner    *wasm.Runner
 	tokenizer *ml.Tokenizer
 }
 
 func (m *wasmEmbeddingModel) Inference(input []string) ([][]float32, error) {
+	m.mu.Lock()
 	if m.runner == nil {
 		runner, err := wasm.NewRunner(context.Background(), m.path)
 		if err != nil {
+			m.mu.Unlock()
 			return nil, err
 		}
 		m.runner = runner
 	}
-
 	if m.tokenizer == nil {
-		tok, err := ml.NewTokenizer("vocab.txt", 512)
+		tok, err := ml.NewTokenizerForModel(m.path, 512)
 		if err != nil {
+			m.mu.Unlock()
 			return nil, fmt.Errorf("failed to load tokenizer: %w", err)
 		}
 		m.tokenizer = tok
 	}
+	runner := m.runner
+	tokenizer := m.tokenizer
+	m.mu.Unlock()
 
 	start := time.Now()
 	defer func() {
@@ -786,8 +801,8 @@ func (m *wasmEmbeddingModel) Inference(input []string) ([][]float32, error) {
 
 	results := make([][]float32, len(input))
 	for i, text := range input {
-		ids, mask := m.tokenizer.Encode(text)
-		output, err := m.runner.InferenceWithTokens(context.Background(), ids, mask)
+		ids, mask := tokenizer.Encode(text)
+		output, err := runner.InferenceWithTokens(context.Background(), ids, mask)
 		if err != nil {
 			return nil, fmt.Errorf("WASM inference failed for text %d: %w", i, err)
 		}
@@ -798,8 +813,12 @@ func (m *wasmEmbeddingModel) Inference(input []string) ([][]float32, error) {
 }
 
 func (m *wasmEmbeddingModel) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.runner != nil {
-		return m.runner.Close(context.Background())
+		err := m.runner.Close(context.Background())
+		m.runner = nil
+		return err
 	}
 	return nil
 }

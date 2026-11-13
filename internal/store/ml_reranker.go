@@ -61,8 +61,8 @@ func (r *ONNXReranker) initModel() error {
 				r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize WASM runner, returning error")
 				return fmt.Errorf("failed to initialize WASM runner: %w", err)
 			}
-			tokenizer, _ := ml.NewTokenizer("vocab.txt", 512)
-			r.model = &wasmModelWrapper{runner: runner, tokenizer: tokenizer}
+			tokenizer, _ := ml.NewTokenizerForModel(r.modelPath, 512)
+			r.model = &wasmModelWrapper{path: r.modelPath, runner: runner, tokenizer: tokenizer}
 			return nil
 		case ".onnx":
 			// ONNX model - use our internal onnx bridge
@@ -91,6 +91,7 @@ func (w *onnxModelWrapper) Close() error {
 }
 
 type wasmModelWrapper struct {
+	path      string
 	runner    *wasm.Runner
 	tokenizer *ml.Tokenizer
 }
@@ -98,7 +99,7 @@ type wasmModelWrapper struct {
 func (w *wasmModelWrapper) Score(query string, documents []string) ([]float32, error) {
 	if w.tokenizer == nil {
 		// Fallback to basic tokenizer if not initialized
-		tok, _ := ml.NewTokenizer("vocab.txt", 512)
+		tok, _ := ml.NewTokenizerForModel(w.path, 512)
 		w.tokenizer = tok
 	}
 

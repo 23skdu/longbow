@@ -2,6 +2,7 @@ package wasm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -15,45 +16,108 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
-// Runner handle WASM model execution
+const (
+	// MaxInputFloats bounds the size of a single inference input to avoid OOMs.
+	MaxInputFloats = 1 << 20 // ~4 MiB of float32
+	// MaxOutputFloats bounds the size of a single inference output.
+	MaxOutputFloats = 1 << 20 // ~4 MiB of float32
+)
+
+var (
+	ErrInvalidModule   = errors.New("wasm: invalid module")
+	ErrMissingExport   = errors.New("wasm: missing required export")
+	ErrMemoryBounds    = errors.New("wasm: memory bounds exceeded")
+	ErrInferenceFailed = errors.New("wasm: inference failed")
+	ErrModuleClosed    = errors.New("wasm: module closed")
+	ErrInputTooLarge   = errors.New("wasm: input too large")
+	ErrOutputTooLarge  = errors.New("wasm: output too large")
+)
+
+// Runner handles WASM model execution
 type Runner struct {
 	runtime wazero.Runtime
 	mod     api.Module
 	mu      sync.Mutex
+	closed  bool
 	name    string
 }
 
 // NewRunner creates a new WASM runner for the given model path
 func NewRunner(ctx context.Context, modelPath string) (*Runner, error) { // #nosec G304
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	data, err := os.ReadFile(filepath.Clean(modelPath)) // #nosec G304
 	if err != nil {
 		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("%w: empty module", ErrInvalidModule)
 	}
 
 	r := wazero.NewRuntime(ctx)
 	wasi_snapshot_preview1.MustInstantiate(ctx, r)
 
-	mod, err := r.InstantiateWithConfig(ctx, data, wazero.NewModuleConfig().WithStdout(os.Stdout).WithStderr(os.Stderr))
-	if err != nil { // #nosec G104
-		r.Close(ctx)
+	mod, err := r.InstantiateWithConfig(ctx, data, wazero.NewModuleConfig().
+		WithStdout(nil).
+		WithStderr(nil))
+	if err != nil {
+		_ = r.Close(ctx)
 		return nil, fmt.Errorf("failed to instantiate WASM module: %w", err)
 	}
 
-	return &Runner{
+	runner := &Runner{
 		runtime: r,
 		mod:     mod,
 		name:    modelPath,
-	}, nil
+	}
+
+	if err := runner.validateExports(); err != nil {
+		_ = runner.Close(ctx)
+		return nil, err
+	}
+
+	return runner, nil
+}
+
+func (r *Runner) validateExports() error {
+	if r.mod == nil || r.mod.IsClosed() {
+		return ErrInvalidModule
+	}
+	if r.mod.ExportedFunction("inference") == nil {
+		return fmt.Errorf("%w: inference", ErrMissingExport)
+	}
+	if r.mod.ExportedFunction("malloc") == nil {
+		return fmt.Errorf("%w: malloc", ErrMissingExport)
+	}
+	if r.mod.Memory() == nil {
+		return fmt.Errorf("%w: memory", ErrMissingExport)
+	}
+	return nil
 }
 
 // Inference executes the model's inference function using shared memory
 func (r *Runner) Inference(ctx context.Context, input []float32) ([]float32, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(input) > MaxInputFloats {
+		return nil, ErrInputTooLarge
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if r.closed {
+		return nil, ErrModuleClosed
+	}
+
 	start := time.Now()
+	status := "success"
 	defer func() {
-		status := "success"
 		if ctx.Err() != nil {
 			status = "error"
 		}
@@ -67,48 +131,67 @@ func (r *Runner) Inference(ctx context.Context, input []float32) ([]float32, err
 	mem := r.mod.Memory()
 
 	if infFunc == nil || malloc == nil || mem == nil {
-		return nil, fmt.Errorf("WASM module missing required exports (inference, malloc, or memory)")
+		status = "error"
+		return nil, fmt.Errorf("%w: missing required exports", ErrMissingExport)
 	}
 
-	// 1. Allocate space for input
-	inputSize := uint64(len(input) * 4)
+	inputSize := uint64(len(input)) * 4
+	if len(input) == 0 {
+		inputSize = 4
+	}
+
 	results, err := malloc.Call(ctx, inputSize)
-	if err != nil {
-		return nil, fmt.Errorf("failed to allocate WASM memory: %w", err)
+	if err != nil || len(results) == 0 {
+		status = "error"
+		return nil, fmt.Errorf("%w: malloc failed: %v", ErrInferenceFailed, err)
 	}
 	inputPtr := uint32(results[0]) // #nosec G115
 	if free != nil {
-		defer free.Call(ctx, uint64(inputPtr))
+		defer func() { _, _ = free.Call(ctx, uint64(inputPtr)) }()
 	}
 
-	// 2. Copy input to WASM memory
 	inputBytes := make([]byte, inputSize)
 	for i, f := range input {
-		bits := math.Float32bits(f)          // #nosec G115
-		inputBytes[i*4] = byte(bits)         // #nosec G115
-		inputBytes[i*4+1] = byte(bits >> 8)  // #nosec G115
-		inputBytes[i*4+2] = byte(bits >> 16) // #nosec G115
-		inputBytes[i*4+3] = byte(bits >> 24) // #nosec G115
+		bits := math.Float32bits(f)
+		inputBytes[i*4] = byte(bits)
+		inputBytes[i*4+1] = byte(bits >> 8)
+		inputBytes[i*4+2] = byte(bits >> 16)
+		inputBytes[i*4+3] = byte(bits >> 24)
 	}
 	if !mem.Write(inputPtr, inputBytes) {
-		return nil, fmt.Errorf("failed to write to WASM memory")
+		status = "error"
+		return nil, fmt.Errorf("%w: failed to write input", ErrMemoryBounds)
 	}
 
-	// 3. Run inference
-	results, err = infFunc.Call(ctx, uint64(inputPtr), uint64(len(input)))
+	callResults, err := infFunc.Call(ctx, uint64(inputPtr), uint64(len(input)))
 	if err != nil {
-		return nil, fmt.Errorf("WASM inference failed: %w", err)
+		status = "error"
+		return nil, fmt.Errorf("%w: %v", ErrInferenceFailed, err)
+	}
+	if len(callResults) < 2 {
+		status = "error"
+		return nil, fmt.Errorf("%w: insufficient result data", ErrInferenceFailed)
 	}
 
-	// 4. Extract output (assuming result is a pointer to float32 array)
-	if len(results) < 2 {
-		return nil, fmt.Errorf("WASM inference returned insufficient result data")
-	} // #nosec G115
-	outputPtr := uint32(results[0]) // #nosec G115
-	outputLen := uint32(results[1]) // #nosec G115
+	outputPtr := uint32(callResults[0]) // #nosec G115
+	outputLen := uint32(callResults[1]) // #nosec G115
+	if outputLen > MaxOutputFloats {
+		status = "error"
+		return nil, ErrOutputTooLarge
+	}
+	if uint64(outputPtr)+uint64(outputLen)*4 > uint64(mem.Size()) {
+		status = "error"
+		return nil, ErrMemoryBounds
+	}
+
 	outputBytes, ok := mem.Read(outputPtr, outputLen*4)
 	if !ok {
-		return nil, fmt.Errorf("failed to read WASM memory")
+		status = "error"
+		return nil, fmt.Errorf("%w: failed to read output", ErrMemoryBounds)
+	}
+
+	if free != nil && outputPtr != inputPtr {
+		defer func() { _, _ = free.Call(ctx, uint64(outputPtr)) }()
 	}
 
 	output := make([]float32, outputLen)
@@ -122,12 +205,25 @@ func (r *Runner) Inference(ctx context.Context, input []float32) ([]float32, err
 
 // InferenceWithTokens executes the model's inference function using tokenized int64 inputs
 func (r *Runner) InferenceWithTokens(ctx context.Context, inputIds []int64, mask []int64) ([]float32, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(inputIds) > MaxInputFloats {
+		return nil, ErrInputTooLarge
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if r.closed {
+		return nil, ErrModuleClosed
+	}
+
 	infFunc := r.mod.ExportedFunction("inference_with_tokens")
 	if infFunc == nil {
-		// Fallback to generic inference if specific token func doesn't exist
 		infFunc = r.mod.ExportedFunction("inference")
 	}
 	malloc := r.mod.ExportedFunction("malloc")
@@ -135,49 +231,84 @@ func (r *Runner) InferenceWithTokens(ctx context.Context, inputIds []int64, mask
 	mem := r.mod.Memory()
 
 	if infFunc == nil || malloc == nil || mem == nil {
-		return nil, fmt.Errorf("WASM module missing required exports")
+		return nil, fmt.Errorf("%w: missing required exports", ErrMissingExport)
 	}
 
-	// Allocate and copy data
-	idSize := uint64(len(inputIds) * 8)
+	n := len(inputIds)
+	if n == 0 {
+		n = 1
+	}
+	idSize := uint64(n * 8)
 	maskSize := uint64(len(mask) * 8)
-
-	idResults, _ := malloc.Call(ctx, idSize)     // #nosec G115
-	idPtr := uint32(idResults[0])                // #nosec G115
-	maskResults, _ := malloc.Call(ctx, maskSize) // #nosec G115
-	maskPtr := uint32(maskResults[0])            // #nosec G115
-
-	if free != nil {
-		defer free.Call(ctx, uint64(idPtr))
-		defer free.Call(ctx, uint64(maskPtr))
+	if len(mask) == 0 {
+		maskSize = 8
 	}
 
-	// Helper to write int64 slice
+	idResults, err := malloc.Call(ctx, idSize)
+	if err != nil || len(idResults) == 0 {
+		return nil, fmt.Errorf("%w: malloc ids failed: %v", ErrInferenceFailed, err)
+	}
+	idPtr := uint32(idResults[0]) // #nosec G115
+	if free != nil {
+		defer func() { _, _ = free.Call(ctx, uint64(idPtr)) }()
+	}
+
+	maskResults, err := malloc.Call(ctx, maskSize)
+	if err != nil || len(maskResults) == 0 {
+		return nil, fmt.Errorf("%w: malloc mask failed: %v", ErrInferenceFailed, err)
+	}
+	maskPtr := uint32(maskResults[0]) // #nosec G115
+	if free != nil {
+		defer func() { _, _ = free.Call(ctx, uint64(maskPtr)) }()
+	}
+
 	idBytes := make([]byte, idSize)
-	for i, v := range inputIds {
+	for i := 0; i < len(inputIds); i++ {
+		v := inputIds[i]
 		for b := 0; b < 8; b++ {
-			idBytes[i*8+b] = byte(v >> (b * 8)) // #nosec G115
+			idBytes[i*8+b] = byte(v >> (b * 8))
 		}
 	}
-	mem.Write(idPtr, idBytes)
+	if !mem.Write(idPtr, idBytes) {
+		return nil, fmt.Errorf("%w: failed to write ids", ErrMemoryBounds)
+	}
 
 	maskBytes := make([]byte, maskSize)
-	for i, v := range mask {
-		for b := 0; b < 8; b++ { // #nosec G115
+	for i := 0; i < len(mask); i++ {
+		v := mask[i]
+		for b := 0; b < 8; b++ {
 			maskBytes[i*8+b] = byte(v >> (b * 8))
 		}
 	}
-	mem.Write(maskPtr, maskBytes)
+	if !mem.Write(maskPtr, maskBytes) {
+		return nil, fmt.Errorf("%w: failed to write mask", ErrMemoryBounds)
+	}
 
-	// Call inference
 	results, err := infFunc.Call(ctx, uint64(idPtr), uint64(maskPtr), uint64(len(inputIds)))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrInferenceFailed, err)
 	}
-	// #nosec G115
+	if len(results) < 2 {
+		return nil, fmt.Errorf("%w: insufficient result data", ErrInferenceFailed)
+	}
+
 	outputPtr := uint32(results[0]) // #nosec G115
 	outputLen := uint32(results[1]) // #nosec G115
-	outputBytes, _ := mem.Read(outputPtr, outputLen*4)
+	if outputLen > MaxOutputFloats {
+		return nil, ErrOutputTooLarge
+	}
+	if uint64(outputPtr)+uint64(outputLen)*4 > uint64(mem.Size()) {
+		return nil, ErrMemoryBounds
+	}
+
+	outputBytes, ok := mem.Read(outputPtr, outputLen*4)
+	if !ok {
+		return nil, fmt.Errorf("%w: failed to read output", ErrMemoryBounds)
+	}
+
+	if free != nil && outputPtr != idPtr && outputPtr != maskPtr {
+		defer func() { _, _ = free.Call(ctx, uint64(outputPtr)) }()
+	}
 
 	output := make([]float32, outputLen)
 	for i := range output {
@@ -189,5 +320,28 @@ func (r *Runner) InferenceWithTokens(ctx context.Context, inputIds []int64, mask
 }
 
 func (r *Runner) Close(ctx context.Context) error {
-	return r.runtime.Close(ctx)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return nil
+	}
+	r.closed = true
+
+	var firstErr error
+	if r.mod != nil {
+		if err := r.mod.Close(ctx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		r.mod = nil
+	}
+	if r.runtime != nil {
+		if err := r.runtime.Close(ctx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		r.runtime = nil
+	}
+	return firstErr
 }

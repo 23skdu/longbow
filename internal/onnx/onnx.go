@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"runtime"
 	"sync"
 
@@ -131,15 +130,8 @@ func NewSession(modelPath string) (*Session, error) {
 		outputNames: outputNames,
 	}
 
-	// Initialize tokenizer - look for vocab.txt in model directory
-	modelDir := filepath.Dir(modelPath)
-	vocabPath := filepath.Join(modelDir, "vocab.txt")
-	if _, err := os.Stat(vocabPath); err != nil {
-		// Fallback to current directory or default search paths
-		vocabPath = "vocab.txt"
-	}
-
-	tokenizer, err := ml.NewTokenizer(vocabPath, 512)
+	// Initialize tokenizer resolved relative to the model directory.
+	tokenizer, err := ml.NewTokenizerForModel(modelPath, 512)
 	if err == nil {
 		s.tokenizer = tokenizer
 	}

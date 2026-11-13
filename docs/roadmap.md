@@ -45,7 +45,6 @@ Completed P0 fixes have been removed from this roadmap; only outstanding work re
 | # | Category | Subsystem & Location | Issue Summary | Target Impact | Gate |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **7** | Performance | `internal/store/index/arrow_hnsw_compute_float16.go:26-50`, `arrow_hnsw_compute_complex.go:60-85, 248-271` | `float16Computer`, `complex64Computer`, and `complex128Computer` allocate via `getVectorWithCachedDisk` before checking zero-copy `*ChunkFast` | Eliminates 1 heap alloc/copy per HNSW hop (0 allocs/op) | `mem-check` |
-| **8** | Accuracy | `internal/store/hybrid_search.go:126, 257-303, 350-366` | `ReciprocalRankFusion` ignores `alpha` parameter, has non-deterministic tie order, and `HybridSearchWithBitmap` leaks unfiltered BM25 hits | Enforces `alpha`-weighted RRF, deterministic tie-breaking, and strict bitmap filtering | `oracle-gate` |
 | **9** | Accuracy & Perf | `internal/store/index/ivf_opq_index.go:304-328, 409-454, 488-490, 800-839` | `IVFOPQIndex.SearchBatch` passes cluster ID as VectorID in `refineBatch`; `SearchVectorsWithBitmap` uses scalar loop + full sort instead of `ADCDistanceBatch` + top-K heap | Fixes batch recall corruption & 4x faster filtered IVF-OPQ search | `oracle-gate` |
 | **10** | Accuracy & Perf | `internal/store/index/scalar_quantization.go:208-223, 263-308` | `SQ8Encoder.EncodeInto` truncates via `uint8(normalized)` instead of nearest rounding `uint8(normalized + 0.5)` and uses scalar distance loops | Halves max quantization bias (`-0.5 LSB` -> `0 LSB`) + SIMD SQ8 distance | `oracle-gate` |
 | **11** | Performance | `internal/pq/opq.go:122-190` | `OPQEncoder.Encode`, `Decode`, and `RotateVector` convert `float32` <-> `float64` and allocate two `gonum/mat.VecDense` per call | 8x faster OPQ rotation, 0 heap allocations in steady state | `mem-bench` |
@@ -68,12 +67,6 @@ Completed P0 fixes have been removed from this roadmap; only outstanding work re
 - **Location**: `internal/store/index/arrow_hnsw_compute_float16.go:26-50`, `internal/store/index/arrow_hnsw_compute_complex.go:60-85, 248-271`
 - **Root Cause**: `ComputeSingle` calls `c.h.getVectorWithCachedDisk(c.data, c.cachedDiskGraph, id)` *before* checking `GetVectorsF16ChunkFast` / `GetVectorsComplex64ChunkFast` / `GetVectorsComplex128ChunkFast`. Because `getVectorWithCachedDisk` allocates and copies a new slice on every call, the zero-copy chunk fast path below it is dead code whenever `getVectorWithCachedDisk` succeeds.
 - **Remediation**: Check `GetVectorsF16ChunkFast` / `GetVectorsComplex64ChunkFast` / `GetVectorsComplex128ChunkFast` first (matching `float32Computer` and `float64Computer`), falling back to `getVectorWithCachedDisk` only when the in-memory chunk is nil.
-
-#### Improvement 8: Honour `alpha` Weighting, Deterministic Tie-Breaking, and Bitmap Filtering in `HybridSearch`
-
-- **Location**: `internal/store/hybrid_search.go:126, 257-303, 350-366`
-- **Root Cause**: `SearchHybrid` accepts `alpha` (`0..1` dense vs. sparse weight) but `ReciprocalRankFusion` weights both legs equally (`1.0 / (k + rank + 1)`). When RRF scores tie, map iteration order causes non-deterministic top-K ordering. Furthermore, `HybridSearchWithBitmap` passes `req.Bitset` to dense search but passes `nil` to `searchBM25Arena` and `bm25Legacy.SearchBM25`, leaking filtered-out documents into hybrid results.
-- **Remediation**: Weight dense RRF contributions by `alpha` and sparse contributions by `1.0 - alpha`, break score ties deterministically by ascending `VectorID`, and pass `req.Bitset` into both BM25 search paths in `HybridSearchWithBitmap`.
 
 #### Improvement 9: Fix `IVFOPQIndex.SearchBatch` ID Mixup and Vectorize `SearchVectorsWithBitmap`
 

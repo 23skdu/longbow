@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,7 +49,7 @@ func NewCohereReranker(apiKey, model string) *CohereReranker {
 }
 
 // Score returns relevance scores for a query and a list of documents.
-func (c *CohereReranker) Score(query string, documents []string) ([]float32, error) {
+func (c *CohereReranker) Score(ctx context.Context, query string, documents []string) ([]float32, error) {
 	if len(documents) == 0 {
 		return []float32{}, nil
 	}
@@ -106,4 +107,14 @@ func (c *CohereReranker) Score(query string, documents []string) ([]float32, err
 func (c *CohereReranker) Close() error {
 	c.httpClient.CloseIdleConnections()
 	return nil
+}
+
+// Embed is not supported by the Cohere reranker backend.
+func (c *CohereReranker) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return nil, fmt.Errorf("cohere reranker does not support embeddings")
+}
+
+// Dimension reports zero for the Cohere reranker backend.
+func (c *CohereReranker) Dimension() int {
+	return 0
 }

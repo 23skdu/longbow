@@ -8,9 +8,6 @@ import (
 	"sync"
 
 	"github.com/23skdu/longbow/internal/core"
-	"github.com/23skdu/longbow/internal/ml"
-	"github.com/23skdu/longbow/internal/onnx"
-	"github.com/23skdu/longbow/internal/wasm"
 	"github.com/rs/zerolog"
 )
 
@@ -24,7 +21,7 @@ type MLModel interface {
 
 // ONNXReranker uses ONNX Runtime or WASM for cross-encoder reranking.
 type ONNXReranker struct {
-	model     MLModel
+	backend   MLBackend
 	modelPath string
 	logger    zerolog.Logger
 	mu        sync.RWMutex
@@ -51,79 +48,13 @@ func (r *ONNXReranker) initModel() error {
 	defer r.mu.Unlock()
 
 	// Check file extension to determine model type
-	if len(r.modelPath) > 5 {
-		ext := r.modelPath[len(r.modelPath)-5:]
-		switch ext {
-		case ".wasm":
-			// WebAssembly model - use wazero runtime
-			runner, err := wasm.NewRunner(context.Background(), r.modelPath)
-			if err != nil {
-				r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize WASM runner, returning error")
-				return fmt.Errorf("failed to initialize WASM runner: %w", err)
-			}
-			tokenizer, _ := ml.NewTokenizerForModel(r.modelPath, 512)
-			r.model = &wasmModelWrapper{path: r.modelPath, runner: runner, tokenizer: tokenizer}
-			return nil
-		case ".onnx":
-			// ONNX model - use our internal onnx bridge
-			session, err := onnx.NewSession(r.modelPath)
-			if err != nil {
-				r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize ONNX session, returning error")
-				return fmt.Errorf("failed to initialize ONNX session: %w", err)
-			}
-			r.model = &onnxModelWrapper{session: session}
-			return nil
-		}
+	backend, err := newMLBackend(r.modelPath, 0)
+	if err != nil {
+		r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize ML backend, returning error")
+		return fmt.Errorf("failed to initialize ML backend: %w", err)
 	}
-	return fmt.Errorf("strict model validation failed: unknown model extension for %s (use .onnx or .wasm)", r.modelPath)
-}
-
-type onnxModelWrapper struct {
-	session *onnx.Session
-}
-
-func (w *onnxModelWrapper) Score(query string, documents []string) ([]float32, error) {
-	return w.session.Score(context.Background(), query, documents)
-}
-
-func (w *onnxModelWrapper) Close() error {
-	return w.session.Close()
-}
-
-type wasmModelWrapper struct {
-	path      string
-	runner    *wasm.Runner
-	tokenizer *ml.Tokenizer
-}
-
-func (w *wasmModelWrapper) Score(query string, documents []string) ([]float32, error) {
-	if w.tokenizer == nil {
-		// Fallback to basic tokenizer if not initialized
-		tok, _ := ml.NewTokenizerForModel(w.path, 512)
-		w.tokenizer = tok
-	}
-
-	scores := make([]float32, len(documents))
-	for i, doc := range documents {
-		combined := query + " " + doc
-		ids, mask := w.tokenizer.Encode(combined)
-
-		output, err := w.runner.InferenceWithTokens(context.Background(), ids, mask)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(output) > 0 {
-			scores[i] = output[0]
-		} else {
-			scores[i] = 0.0
-		}
-	}
-	return scores, nil
-}
-
-func (w *wasmModelWrapper) Close() error {
-	return w.runner.Close(context.Background())
+	r.backend = backend
+	return nil
 }
 
 // Rerank performs second-stage reranking on search results using an ML model.
@@ -133,10 +64,10 @@ func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []Searc
 	}
 
 	r.mu.RLock()
-	model := r.model
+	backend := r.backend
 	r.mu.RUnlock()
 
-	if model == nil {
+	if backend == nil {
 		hr := &HeuristicReranker{ModelName: "fallback"}
 		return hr.Rerank(ctx, query, results)
 	}
@@ -160,7 +91,7 @@ func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []Searc
 		}
 	}
 
-	scores, err := model.Score(query, documents)
+	scores, err := backend.Score(ctx, query, documents)
 	if err != nil {
 		hr := &HeuristicReranker{ModelName: "fallback"}
 		return hr.Rerank(ctx, query, results)
@@ -196,8 +127,8 @@ func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []Searc
 func (r *ONNXReranker) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.model != nil {
-		return r.model.Close()
+	if r.backend != nil {
+		return r.backend.Close()
 	}
 	return nil
 }
@@ -351,7 +282,7 @@ func (f *RerankerFactory) CreateReranker(config map[string]interface{}) (Reranke
 			return nil, errors.New("api_key is required for cohere reranker")
 		}
 		cr := NewCohereReranker(apiKey, model)
-		return &ONNXReranker{model: cr, modelPath: "cohere-external"}, nil
+		return &ONNXReranker{backend: cr, modelPath: "cohere-external"}, nil
 	case "onnx", "ml":
 		logger := zerolog.Nop()
 		return NewONNXReranker(modelPath, logger)

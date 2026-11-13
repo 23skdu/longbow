@@ -14,9 +14,15 @@ type mockMLModel struct {
 	err    error
 }
 
-func (m *mockMLModel) Score(query string, documents []string) ([]float32, error) {
+func (m *mockMLModel) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return nil, nil
+}
+
+func (m *mockMLModel) Score(ctx context.Context, query string, documents []string) ([]float32, error) {
 	return m.scores, m.err
 }
+
+func (m *mockMLModel) Dimension() int { return 0 }
 
 func (m *mockMLModel) Close() error { return nil }
 
@@ -26,7 +32,7 @@ func TestONNXReranker(t *testing.T) {
 	}
 
 	r := &ONNXReranker{
-		model: mock,
+		backend: mock,
 	}
 
 	results := []SearchResult{

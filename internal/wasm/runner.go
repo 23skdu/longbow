@@ -121,8 +121,9 @@ func (r *Runner) Inference(ctx context.Context, input []float32) ([]float32, err
 		if ctx.Err() != nil {
 			status = "error"
 		}
-		metrics.WasmInferenceTotal.WithLabelValues(r.name, status).Inc()
-		metrics.WasmInferenceDurationSeconds.WithLabelValues(r.name).Observe(time.Since(start).Seconds())
+		modelID := filepath.Base(r.name)
+		metrics.WasmInferenceTotal.WithLabelValues(modelID, status).Inc()
+		metrics.WasmInferenceDurationSeconds.WithLabelValues(modelID).Observe(time.Since(start).Seconds())
 	}()
 
 	infFunc := r.mod.ExportedFunction("inference")

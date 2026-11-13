@@ -10,11 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/ml"
-	"github.com/23skdu/longbow/internal/onnx"
-	"github.com/23skdu/longbow/internal/wasm"
 )
 
 // EmbeddingGenerator defines the interface for generating vector embeddings from text.
@@ -596,7 +591,7 @@ type localEmbeddingGenerator struct {
 	modelPath   string
 	dimension   int
 	batchSize   int
-	model       EmbeddingModel
+	backend     MLBackend
 	logger      EmbeddingLogger
 	initialized bool
 }
@@ -654,23 +649,13 @@ func (le *localEmbeddingGenerator) initModel() error {
 		return errors.New("strict model validation failed: no model path specified")
 	}
 
-	ext := ""
-	if len(le.modelPath) > 5 {
-		ext = le.modelPath[len(le.modelPath)-5:]
+	backend, err := newMLBackend(le.modelPath, le.dimension)
+	if err != nil {
+		return err
 	}
-
-	switch ext {
-	case ".wasm":
-		le.model = &wasmEmbeddingModel{path: le.modelPath}
-		le.initialized = true
-		le.logger.Info("WASM embedding model loaded", "path", le.modelPath)
-	case ".onnx":
-		le.model = &onnxEmbeddingModel{path: le.modelPath}
-		le.initialized = true
-		le.logger.Info("ONNX embedding model loaded", "path", le.modelPath)
-	default:
-		return fmt.Errorf("strict model validation failed: unknown model extension for %s (use .onnx or .wasm)", le.modelPath)
-	}
+	le.backend = backend
+	le.initialized = true
+	le.logger.Info("ML backend loaded", "path", le.modelPath)
 
 	return nil
 }
@@ -694,7 +679,7 @@ func (le *localEmbeddingGenerator) Generate(ctx context.Context, texts []string)
 		}
 		batch := texts[i:end]
 
-		batchResults, err := le.model.Inference(batch)
+		batchResults, err := le.backend.Embed(ctx, batch)
 		if err != nil {
 			return nil, err
 		}
@@ -721,104 +706,8 @@ func (le *localEmbeddingGenerator) Dimension() int {
 }
 
 func (le *localEmbeddingGenerator) Close() error {
-	if le.model != nil {
-		return le.model.Close()
-	}
-	return nil
-}
-
-type onnxEmbeddingModel struct {
-	path    string
-	mu      sync.Mutex
-	session *onnx.Session
-}
-
-func (m *onnxEmbeddingModel) Inference(input []string) ([][]float32, error) {
-	m.mu.Lock()
-	if m.session == nil {
-		session, err := onnx.NewSession(m.path)
-		if err != nil {
-			m.mu.Unlock()
-			return nil, err
-		}
-		m.session = session
-	}
-	session := m.session
-	m.mu.Unlock()
-
-	start := time.Now()
-	defer func() {
-		metrics.EmbeddingGenerationDurationSeconds.WithLabelValues("local", "onnx").Observe(time.Since(start).Seconds())
-	}()
-
-	return session.Embed(context.Background(), input)
-}
-
-func (m *onnxEmbeddingModel) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.session != nil {
-		err := m.session.Close()
-		m.session = nil
-		return err
-	}
-	return nil
-}
-
-type wasmEmbeddingModel struct {
-	path      string
-	mu        sync.Mutex
-	runner    *wasm.Runner
-	tokenizer *ml.Tokenizer
-}
-
-func (m *wasmEmbeddingModel) Inference(input []string) ([][]float32, error) {
-	m.mu.Lock()
-	if m.runner == nil {
-		runner, err := wasm.NewRunner(context.Background(), m.path)
-		if err != nil {
-			m.mu.Unlock()
-			return nil, err
-		}
-		m.runner = runner
-	}
-	if m.tokenizer == nil {
-		tok, err := ml.NewTokenizerForModel(m.path, 512)
-		if err != nil {
-			m.mu.Unlock()
-			return nil, fmt.Errorf("failed to load tokenizer: %w", err)
-		}
-		m.tokenizer = tok
-	}
-	runner := m.runner
-	tokenizer := m.tokenizer
-	m.mu.Unlock()
-
-	start := time.Now()
-	defer func() {
-		metrics.EmbeddingGenerationDurationSeconds.WithLabelValues("local", "wasm").Observe(time.Since(start).Seconds())
-	}()
-
-	results := make([][]float32, len(input))
-	for i, text := range input {
-		ids, mask := tokenizer.Encode(text)
-		output, err := runner.InferenceWithTokens(context.Background(), ids, mask)
-		if err != nil {
-			return nil, fmt.Errorf("WASM inference failed for text %d: %w", i, err)
-		}
-		results[i] = output
-	}
-
-	return results, nil
-}
-
-func (m *wasmEmbeddingModel) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.runner != nil {
-		err := m.runner.Close(context.Background())
-		m.runner = nil
-		return err
+	if le.backend != nil {
+		return le.backend.Close()
 	}
 	return nil
 }

@@ -226,3 +226,26 @@ Every `git commit` (or manual `make verify` / `./scripts/verify.sh` invocation) 
 | **Quality & Fuzz Gates** | `make fuzz-coverage` | Verifies 100% package fuzz-target presence via `scripts/check_fuzz_coverage.sh` |
 | **Quality & Fuzz Gates** | `make test-coverage` | Verifies 100% package test presence and runs `go test -short -cover ./...` |
 | **Quality & Fuzz Gates** | `make coverage-gate` | Enforces $\ge 30\%$ statement coverage across core packages |
+
+---
+
+## P0 Feature Parity Gaps vs Top Vector Databases (Longbow Roadmap)
+
+To maintain parity/superiority against Pinecone, Milvus, Qdrant, Weaviate, Chroma, pgvector, Redis, Elasticsearch/OpenSearch, LanceDB, and Vespa, Longbow must close the following feature gaps:
+
+| ID | Priority | Gap | Competitor Parity | Target |
+| :--- | :--- | :--- | :--- | :--- |
+| **P0-P1** | **P0** | Managed cloud/SaaS offering & multi-region replication | Pinecone, TencentDB, Milvus Cloud | Longbow Cloud with SLA and global replication |
+| **P0-P2** | **P0** | REST/HTTP and GraphQL APIs (currently gRPC/Arrow Flight + SDKs) | Weaviate, Qdrant, Elasticsearch | First-class REST/GraphQL endpoints |
+| **P0-P3** | **P0** | RBAC, API keys, tenant isolation, audit logging | Pinecone, Qdrant, Milvus | Enterprise security layer |
+| **P0-P4** | **P0** | Backup/restore and point-in-time recovery | Milvus, Vespa, Elasticsearch | Snapshot + PITR |
+| **P0-P5** | **P0** | Streaming connectors (Kafka/Pulsar) and real-time CDC | Milvus, Vespa | Event-driven ingestion |
+| **P0-P6** | **P0** | Multi-modal embedding pipelines (image/audio/video) | Weaviate, LanceDB | Native multi-modal support |
+| **P0-P7** | **P0** | Advanced reranking (cross-encoder, LLM-based) and query rewriting | Weaviate, Pinecone | Pluggable reranker framework |
+| **P0-P8** | **P0** | Serverless/edge SDKs and WASM client | Chroma, LanceDB | Browser/edge runtime |
+| **P0-P9** | **P0** | Cost/usage metering and quotas | Pinecone, managed offerings | Usage tracking and limits |
+| **P0-P10** | **P0** | Auto-scaling and elastic sharding | Milvus, Vespa | Dynamic cluster scaling |
+| **P0-P11** | **P0** | Encryption at rest and in transit (TLS/mTLS) | All enterprise offerings | Full encryption |
+| **P0-P12** | **P0** | Schema validation and constraints | pgvector, Elasticsearch | Strong schema enforcement |
+| **P0-P13** | **P0** | Faceted search, highlighting, and aggregations | Elasticsearch/OpenSearch | Rich result presentation |
+| **P0-P14** | **P0** | Explainability and vector provenance | Weaviate, Vespa | Score breakdowns and lineage |

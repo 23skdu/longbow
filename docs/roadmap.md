@@ -44,8 +44,6 @@ Completed P0 fixes have been removed from this roadmap; only outstanding work re
 
 | # | Category | Subsystem & Location | Issue Summary | Target Impact | Gate |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **5** | Accuracy & Perf | `internal/store/index/turboquant.go:208-236` | `TurboQuantEncoder.Encode` computes QJL residual sign bits against unquantized `angles` instead of quantized angle codes | +6-11% Recall@10 for TQ4/TQ8 + 3x faster encoding via LUT | `oracle-gate` |
-| **6** | Accuracy & Perf | `internal/store/index/turboquant2.go:188-190, 304-311` | `TurboQuant2Encoder` 2-bit angle LUT aliases `q=0 (-pi)` and `q=3 (+pi)` to the same Cartesian point and locks `rngMu` per dimension | Restores full 4-state 2-bit codebook (+12% recall) & eliminates mutex contention | `oracle-gate` |
 | **7** | Performance | `internal/store/index/arrow_hnsw_compute_float16.go:26-50`, `arrow_hnsw_compute_complex.go:60-85, 248-271` | `float16Computer`, `complex64Computer`, and `complex128Computer` allocate via `getVectorWithCachedDisk` before checking zero-copy `*ChunkFast` | Eliminates 1 heap alloc/copy per HNSW hop (0 allocs/op) | `mem-check` |
 | **8** | Accuracy | `internal/store/hybrid_search.go:126, 257-303, 350-366` | `ReciprocalRankFusion` ignores `alpha` parameter, has non-deterministic tie order, and `HybridSearchWithBitmap` leaks unfiltered BM25 hits | Enforces `alpha`-weighted RRF, deterministic tie-breaking, and strict bitmap filtering | `oracle-gate` |
 | **9** | Accuracy & Perf | `internal/store/index/ivf_opq_index.go:304-328, 409-454, 488-490, 800-839` | `IVFOPQIndex.SearchBatch` passes cluster ID as VectorID in `refineBatch`; `SearchVectorsWithBitmap` uses scalar loop + full sort instead of `ADCDistanceBatch` + top-K heap | Fixes batch recall corruption & 4x faster filtered IVF-OPQ search | `oracle-gate` |
@@ -64,18 +62,6 @@ Completed P0 fixes have been removed from this roadmap; only outstanding work re
 ---
 
 ### Detailed Specification of the 20 Improvements
-
-#### Improvement 5: Reconstruct From Quantized Angle Codes in `TurboQuantEncoder.Encode`
-
-- **Location**: `internal/store/index/turboquant.go:208-236`
-- **Root Cause**: Step 4 of `TurboQuantEncoder.Encode` calls `e.polarReconstructRecursive(radius, angles, recon, stack)` using continuous *unquantized* `angles` before packing. As a result, `work - recon` in Step 5 measures only `float32` `Sincos` rounding noise (`~1e-7`) rather than the angle quantization residual, rendering the 1-bit QJL residual correction ineffective and paying `pow2 - 1` scalar `math.Sincos` calls per encoded vector.
-- **Remediation**: Pack angle codes first (or quantize angle indices in-place) and reconstruct `recon` via `e.polarReconstructCodes(radius, packedAngles, recon, stack)` using the precomputed `Sincos` LUT before computing QJL sign bits `work[i] > recon[i]`.
-
-#### Improvement 6: Fix Degenerate 2-Bit Angle Grid and Per-Dimension Mutex Lock in `TurboQuant2Encoder`
-
-- **Location**: `internal/store/index/turboquant2.go:188-190, 304-311`, `internal/simd/simd_turboquant.go:32-58, 147-167`
-- **Root Cause**: `TurboQuant2Encoder` quantizes angles to 4 levels with `scale = 2*pi/3, bias = -pi`, producing angles `{-pi, -pi/3, +pi/3, +pi}`. Because `cos(-pi) == cos(+pi) == -1` and `sin(-pi) == sin(+pi) == 0`, codes `0` and `3` map to the identical Cartesian vector, collapsing a 2-bit (4-state) quantizer into 3 distinct points on the unit circle. Additionally, `Encode` locks `e.rngMu` inside the per-dimension `for i := 0; i < e.pow2; i++` loop.
-- **Remediation**: Shift the 2-bit angle grid to cell midpoints `{-3*pi/4, -pi/4, +pi/4, +3*pi/4}` (`scale = pi/2, bias = -3*pi/4`) so all 4 codes represent orthogonal quadrants on the unit circle, and hoist RNG state into a pooled per-worker PRNG or lock once per vector.
 
 #### Improvement 7: Restore Zero-Copy Chunk Fast Path in `float16Computer`, `complex64Computer`, and `complex128Computer`
 

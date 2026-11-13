@@ -638,7 +638,45 @@ func run() error {
 		}
 	}()
 
-	// Start metrics server (Phase 4)
+	// Initialize RBAC & Audit Logging before HTTP/gRPC server registration (Item 3)
+	var authValidator security.AccessValidator
+	var auditLog *security.AuditLogger
+	if cfg.RBACEnabled {
+		rbacMgr := store.NewRBACManager()
+		vectorStore.EnableRBAC(rbacMgr)
+		authValidator = rbacMgr
+		auditLog = vectorStore.AuditLogger()
+		if _, bootstrapRaw, err := rbacMgr.CreateAPIKeyWithOptions(store.APIKeyOptions{
+			Name: "bootstrap-admin",
+			Role: store.RoleAdmin,
+		}); err == nil {
+			logger.Info().Str("key_id", "bootstrap-admin").Int("key_len", len(bootstrapRaw)).Msg("RBAC enabled with bootstrap admin API key")
+		}
+	}
+
+	// Initialize TLS / mTLS Certificate Reloader before HTTP/gRPC servers start (Item 11)
+	var certReloader *security.CertReloader
+	if cfg.TLSEnabled {
+		tlsCfg := security.TLSConfig{
+			Enabled:           cfg.TLSEnabled,
+			CertFile:          cfg.TLSCertFile,
+			KeyFile:           cfg.TLSKeyFile,
+			CAFile:            cfg.TLSCAFile,
+			RequireClientCert: cfg.TLSRequireClientCert,
+			MinVersion:        cfg.TLSMinVersion,
+			ReloadInterval:    cfg.TLSReloadInterval,
+		}
+		var err error
+		certReloader, err = security.NewCertReloader(tlsCfg)
+		if err != nil {
+			logger.Error().Err(err).Msg("Failed to initialize TLS CertReloader")
+			return err
+		}
+		certReloader.StartAutoReload(cfg.TLSReloadInterval)
+		defer certReloader.Stop()
+	}
+
+	// Start metrics & HTTP REST/GraphQL server (Phase 4 / Items 1-3, 11)
 	metricsSrvChan := make(chan *http.Server, 1)
 	go func() {
 		metricsAddr := os.Getenv("LONGBOW_METRICS_ADDR")
@@ -762,11 +800,25 @@ func run() error {
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		}
+		if certReloader != nil {
+			httpTLS, tlsErr := certReloader.BuildServerTLSConfig()
+			if tlsErr != nil {
+				logger.Error().Err(tlsErr).Msg("Failed to build HTTP TLS config")
+				return
+			}
+			srv.TLSConfig = httpTLS
+		}
 		metricsSrvChan <- srv
 
-		logger.Info().Str("addr", metricsAddr).Msg("Metrics and pprof server starting")
-		if err := srv.Serve(metricsListener); err != nil && err != http.ErrServerClosed {
-			logger.Error().Err(err).Msg("Metrics server failed")
+		logger.Info().Str("addr", metricsAddr).Bool("tls", srv.TLSConfig != nil).Msg("Metrics and HTTP REST/GraphQL server starting")
+		var serveErr error
+		if srv.TLSConfig != nil {
+			serveErr = srv.ServeTLS(metricsListener, "", "")
+		} else {
+			serveErr = srv.Serve(metricsListener)
+		}
+		if serveErr != nil && serveErr != http.ErrServerClosed {
+			logger.Error().Err(serveErr).Msg("Metrics/HTTP server failed")
 		}
 	}()
 	metricsSrv := <-metricsSrvChan
@@ -832,44 +884,6 @@ func run() error {
 	// Initialize Request Forwarder with RingManager for address resolution
 	fwdCfg := sharding.DefaultForwarderConfig()
 	forwarder := sharding.NewRequestForwarder(&fwdCfg, ringManager)
-
-	// Initialize RBAC & Audit Logging (Item 3)
-	var authValidator security.AccessValidator
-	var auditLog *security.AuditLogger
-	if cfg.RBACEnabled {
-		rbacMgr := store.NewRBACManager()
-		vectorStore.EnableRBAC(rbacMgr)
-		authValidator = rbacMgr
-		auditLog = vectorStore.AuditLogger()
-		if _, bootstrapRaw, err := rbacMgr.CreateAPIKeyWithOptions(store.APIKeyOptions{
-			Name: "bootstrap-admin",
-			Role: store.RoleAdmin,
-		}); err == nil {
-			logger.Info().Str("key_id", "bootstrap-admin").Int("key_len", len(bootstrapRaw)).Msg("RBAC enabled with bootstrap admin API key")
-		}
-	}
-
-	// Initialize TLS / mTLS Certificate Reloader (Item 11)
-	var certReloader *security.CertReloader
-	if cfg.TLSEnabled {
-		tlsCfg := security.TLSConfig{
-			Enabled:           cfg.TLSEnabled,
-			CertFile:          cfg.TLSCertFile,
-			KeyFile:           cfg.TLSKeyFile,
-			CAFile:            cfg.TLSCAFile,
-			RequireClientCert: cfg.TLSRequireClientCert,
-			MinVersion:        cfg.TLSMinVersion,
-			ReloadInterval:    cfg.TLSReloadInterval,
-		}
-		var err error
-		certReloader, err = security.NewCertReloader(tlsCfg)
-		if err != nil {
-			logger.Error().Err(err).Msg("Failed to initialize TLS CertReloader")
-			return err
-		}
-		certReloader.StartAutoReload(cfg.TLSReloadInterval)
-		defer certReloader.Stop()
-	}
 
 	// gRPC Server Options - using env-configurable message sizes and window sizes
 	serverOpts := make([]grpc.ServerOption, 0, 10)

@@ -131,42 +131,5 @@ func (w *wrappedAuthStream) Context() context.Context {
 
 // HTTPAuthMiddleware enforces RBAC Bearer / X-API-Key auth on HTTP handlers when validator is non-nil.
 func HTTPAuthMiddleware(validator security.AccessValidator, audit *security.AuditLogger, requiredPerm string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if validator == nil {
-				next.ServeHTTP(w, r)
-				return
-			}
-			var token string
-			if authz := r.Header.Get("Authorization"); authz != "" {
-				if strings.HasPrefix(strings.ToLower(authz), "bearer ") {
-					token = strings.TrimSpace(authz[7:])
-				} else {
-					token = strings.TrimSpace(authz)
-				}
-			}
-			if token == "" {
-				token = strings.TrimSpace(r.Header.Get("X-API-Key"))
-			}
-			if token == "" {
-				if audit != nil {
-					audit.RecordEvent(r.Context(), "", "", r.Method+" "+r.URL.Path, r.URL.Path, r.RemoteAddr, false, "missing HTTP credentials")
-				}
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-			ns := r.Header.Get("X-Tenant-ID")
-			ds := r.Header.Get("X-Dataset")
-			tc, err := validator.AuthorizeToken(r.Context(), token, requiredPerm, ns, ds)
-			if err != nil {
-				code := http.StatusUnauthorized
-				if errors.Is(err, security.ErrForbidden) || errors.Is(err, security.ErrTenantIsolation) {
-					code = http.StatusForbidden
-				}
-				http.Error(w, err.Error(), code)
-				return
-			}
-			next.ServeHTTP(w, r.WithContext(security.ContextWithTenant(r.Context(), tc)))
-		})
-	}
+	return security.HTTPAuthMiddleware(validator, audit, requiredPerm)
 }

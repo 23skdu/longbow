@@ -257,7 +257,7 @@ The Longbow CLI is an administrative tool for managing datasets, namespaces, and
 
 ### Installation
 
-Build from source (requires Go 1.24+):
+Build from source (requires Go 1.27.4+):
 
 ```bash
 go build -o bin/longbow-cli ./cmd/cli
@@ -734,7 +734,11 @@ The Helm chart (`helm/longbow/templates/hpa.yaml`) supports `autoscaling/v2` sca
 
 ### TLS / mTLS, KMS & Encryption at Rest
 
-Configure transport security and encrypted WAL/disk spill using `LONGBOW_TLS_*`, `LONGBOW_RBAC_*`, `LONGBOW_ENCRYPTION_AT_REST`, and `LONGBOW_KMS_*` environment variables. See [security-compliance.md](security-compliance.md) for full details and SOC2/GDPR compliance controls.
+Configure transport security and encrypted WAL/disk spill using `LONGBOW_TLS_*`, `LONGBOW_RBAC_*`, `LONGBOW_ENCRYPTION_AT_REST`, and `LONGBOW_KMS_*` environment variables. When `LONGBOW_TLS_ENABLED=true`, both the gRPC/Arrow Flight server and the HTTP REST/GraphQL/metrics listener use the `CertReloader` TLS/mTLS configuration with hot certificate rotation. When `LONGBOW_RBAC_ENABLED=true`, both Flight RPCs and `/api/v1/*` HTTP handlers enforce Bearer/`X-API-Key` authorization and audit logging. See [security-compliance.md](security-compliance.md) for full details and SOC2/GDPR compliance controls.
+
+### Managed Cloud Multi-Region Replication & Usage Admin Dashboard
+
+Deploy cross-region Longbow clusters using `/api/v1/cloud/clusters` (or `longbow-cli cloud-create-cluster`) with `async`, `semi_sync`, or `sync` replication modes and tier SLA policies (`serverless`, `dedicated`, `enterprise`). Monitor tenant resource consumption, quota warnings/rejections, REST/GraphQL throughput, and cross-region replication lag with `GET /api/v1/admin/usage` and the Grafana dashboard at `grafana/dashboards/usage-metering-billing.json`.
 
 ### Online Backup & Point-in-Time Recovery (PITR)
 

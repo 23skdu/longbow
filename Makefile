@@ -101,7 +101,7 @@ help:
 	@echo "  test-adbc-python     Run ADBC Python driver verification script"
 	@echo "  test-adbc-so         Run ADBC C-shared library Python tests"
 	@echo "  test-wasm            Run WASM/Edge client tests and js/wasm compilation check"
-	@echo "  test-features        Run roadmap Items 3-15 feature & fuzz test suite"
+	@echo "  test-features        Run roadmap Items 1-15 feature & fuzz test suite"
 	@echo "  accuracy-gate        Verify numerical precision tolerances across 15 vector dtypes"
 	@echo "  oracle-gate          Verify ground-truth mathematical parity vs reference oracles"
 	@echo "  observability-check  Verify metric declarations and alert rule bindings"
@@ -402,9 +402,9 @@ test-wasm: build-wasm-client
 	$(GO) test -v ./pkg/wasmclient/... ./cmd/longbow-wasm/...
 
 test-features: test-wasm
-	@echo "Running roadmap Items 3-15 feature & fuzz tests..."
+	@echo "Running roadmap Items 1-15 feature & fuzz tests..."
 	$(GO) test -v ./internal/security/... ./internal/middleware/... ./internal/storage -run 'TestEncrypted|FuzzEncrypt|TestTenant|TestAudit|TestAuth|FuzzToken'
-	$(GO) test -v ./internal/store -run 'TestRBAC|TestOnlineBackup|TestStreamingConnector|TestUsageMeter|TestMultiModal|TestAdvancedReranker|TestElasticSharding|TestItem12|TestItem13|TestItems14And15|TestHTTPHandlersAndEdgeClientRoundtrip|TestDoActionFeatureDispatchEndToEnd|Fuzz'
+	$(GO) test -v ./internal/store -run 'TestCloudControlPlane|TestRESTAPI|TestGraphQL|TestRBAC|TestOnlineBackup|TestStreamingConnector|TestUsageMeter|TestMultiModal|TestAdvancedReranker|TestElasticSharding|TestItem12|TestItem13|TestItems14And15|TestHTTPHandlersAndEdgeClientRoundtrip|TestDoActionFeatureDispatchEndToEnd|Fuzz'
 
 accuracy-gate:
 	@echo "Running Accuracy Gate (numerical precision across 15 vector dtypes + batch/dispatch tiers)..."

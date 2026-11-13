@@ -18,6 +18,7 @@ type FeatureSuite struct {
 	matViews    *MaterializedViewManager
 	textSearch  *AdvancedTextSearchManager
 	provenance  *ProvenanceManager
+	cloudCtrl   *CloudControlPlane
 }
 
 func (s *VectorStore) ensureFeatures() *FeatureSuite {
@@ -129,6 +130,17 @@ func (s *VectorStore) GetProvenanceManager() *ProvenanceManager {
 	return fs.provenance
 }
 
+// GetCloudControlPlane returns the lazily initialized managed cloud & multi-region control plane.
+func (s *VectorStore) GetCloudControlPlane() *CloudControlPlane {
+	fs := s.ensureFeatures()
+	s.featuresMu.Lock()
+	defer s.featuresMu.Unlock()
+	if fs.cloudCtrl == nil {
+		fs.cloudCtrl = NewCloudControlPlane(s)
+	}
+	return fs.cloudCtrl
+}
+
 // handleFeatureAction dispatches Flight DoAction calls for extended roadmap features.
 func (s *VectorStore) handleFeatureAction(action *flight.Action, stream flight.FlightService_DoActionServer) (bool, error) {
 	if action == nil {
@@ -161,17 +173,39 @@ func (s *VectorStore) handleFeatureAction(action *flight.Action, stream flight.F
 	if handled, err := s.handleProvenanceAction(action, stream); handled {
 		return true, err
 	}
+	if handled, err := s.handleCloudControlAction(action, stream); handled {
+		return true, err
+	}
+	if handled, err := s.handleGraphQLAction(action, stream); handled {
+		return true, err
+	}
 	return false, nil
 }
 
-// RegisterHTTPHandlers mounts feature HTTP API endpoints (such as /api/v1/usage)
-// onto the server's HTTP mux.
+// RegisterHTTPHandlers mounts feature HTTP API endpoints (REST v1, GraphQL,
+// Cloud Control Plane, Usage Metering, and Edge Transport) onto the server's HTTP mux,
+// wrapped with RBAC HTTP authentication when RBAC is enabled.
 func (s *VectorStore) RegisterHTTPHandlers(mux *http.ServeMux) {
 	if mux == nil {
 		return
 	}
-	mux.Handle("/api/v1/usage", s.GetUsageMeter().HTTPHandler())
-	mux.Handle("/api/v1/usage/export", s.GetUsageMeter().ExportHTTPHandler())
-	mux.Handle("/api/v1/search", s.EdgeSearchHTTPHandler())
-	mux.Handle("/api/v1/edge/sync", s.EdgeSyncHTTPHandler())
+	mux.Handle("/api/v1/health", s.RESTHealthHTTPHandler())
+	mux.Handle("/api/v1/openapi.json", s.OpenAPIHandler())
+	mux.Handle("/api/v1/graphql", s.httpAuthWrap(PermRead, s.GraphQLHTTPHandler()))
+
+	mux.Handle("/api/v1/namespaces", s.httpMethodAuthWrap(PermRead, PermWrite, s.namespacesHTTPHandler()))
+	mux.Handle("/api/v1/namespaces/", s.httpMethodAuthWrap(PermRead, PermWrite, s.namespaceItemHTTPHandler()))
+	mux.Handle("/api/v1/datasets", s.httpMethodAuthWrap(PermRead, PermWrite, s.datasetsCollectionHTTPHandler()))
+	mux.Handle("/api/v1/datasets/", s.httpAuthWrap(PermRead, s.datasetItemHTTPHandler()))
+
+	mux.Handle("/api/v1/usage", s.httpAuthWrap(PermRead, s.GetUsageMeter().HTTPHandler()))
+	mux.Handle("/api/v1/usage/export", s.httpAuthWrap(PermRead, s.GetUsageMeter().ExportHTTPHandler()))
+	mux.Handle("/api/v1/admin/usage", s.httpAuthWrap(PermManageTenant, s.adminUsageHTTPHandler()))
+
+	mux.Handle("/api/v1/search", s.httpAuthWrap(PermRead, s.EdgeSearchHTTPHandler()))
+	mux.Handle("/api/v1/edge/sync", s.httpAuthWrap(PermWrite, s.EdgeSyncHTTPHandler()))
+
+	mux.Handle("/api/v1/cloud/clusters", s.httpMethodAuthWrap(PermRead, PermManageTenant, s.cloudClustersCollectionHTTPHandler()))
+	mux.Handle("/api/v1/cloud/clusters/", s.httpAuthWrap(PermRead, s.cloudClusterItemHTTPHandler()))
+	mux.Handle("/api/v1/cloud/internal/replicate", s.httpAuthWrap(PermWrite, s.cloudInternalReplicateHTTPHandler()))
 }

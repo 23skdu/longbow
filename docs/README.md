@@ -109,6 +109,10 @@ RBAC, API key lifecycle, row-level security, TLS/mTLS hot rotation, AES-256-GCM 
 
 Pure-Go WASM local HNSW index, offline-first conflict resolution, TypeScript Edge SDK (`sdk/edge-js`), and HTTP sync/search endpoints.
 
+### 17. [Feature Parity Roadmap (Items 1–15)](roadmap.md)
+
+End-to-end roadmap covering Managed Cloud multi-region replication, first-class REST/GraphQL APIs, RBAC, backup/PITR, streaming CDC, multi-modal pipelines, usage metering, sharding, encryption/mTLS, schemas, materialized views, advanced text search, and provenance.
+
 ---
 
 ## Architecture Overview

@@ -17,19 +17,36 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Auto-approve Dependabot PR
-        run: gh pr review --approve "$PR_URL"
+      - name: Process Dependabot PR (Auto-merge or Comment)
+        # Auto-merge minor and patch updates for all ecosystems, plus actions and docker image bumps;
+        # never invoke `gh pr review --approve` because GitHub Actions PR approvals are disabled.
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_REPO: ${{ github.repository }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+        run: |
+          post_comment_once() {
+            local marker="$1"
+            local body="$2"
+            if ! gh pr view "$PR_URL" --json comments --jq '.comments[].body' | grep -Fq "$marker"; then
+              gh pr comment "$PR_URL" --body "$body"
+            fi
+          }
 
-      - name: Auto-merge updates (Go, Docker, Actions, Python, Helm)
-        # Auto-merge minor and patch updates for all ecosystems, plus actions and docker image bumps
-        if: |
-          steps.metadata.outputs.update-type != 'version-update:semver-major' ||
-          steps.metadata.outputs.package-ecosystem == 'github-actions' ||
-          steps.metadata.outputs.package-ecosystem == 'docker'
-        run: gh pr merge --auto --squash "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if [ "$UPDATE_TYPE" = "version-update:semver-major" ] && [ "$ECOSYSTEM" != "github-actions" ] && [ "$ECOSYSTEM" != "docker" ]; then
+            post_comment_once "[dependabot-major-update]" "[dependabot-major-update] Major version update (\`$UPDATE_TYPE\`) for \`$ECOSYSTEM\`: manual review and merge required."
+            exit 0
+          fi
+
+          allow_auto_merge=$(gh api "repos/$TARGET_REPO" --jq '.allow_auto_merge // false')
+          if [ "$allow_auto_merge" = "true" ]; then
+            if gh pr merge --auto --squash "$PR_URL"; then
+              exit 0
+            fi
+          elif gh pr merge --squash "$PR_URL"; then
+            exit 0
+          fi
+
+          post_comment_once "[dependabot-manual-merge]" "[dependabot-manual-merge] Automated merge could not complete automatically (for example, pending checks or required human approval, with GitHub Actions PR approval disabled). Please review and merge manually."

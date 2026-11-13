@@ -6,7 +6,7 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
 
-# Ensure Homebrew Go 1.27+ and Go tools are on PATH in non-interactive Git hooks
+# Ensure Homebrew Go 1.27.4+ and Go tools are on PATH in non-interactive Git hooks
 export PATH="/home/linuxbrew/.linuxbrew/bin:$(go env GOPATH 2>/dev/null || echo "$HOME/go")/bin:$PATH"
 
 echo "=========================================================="

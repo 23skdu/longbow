@@ -1,0 +1,150 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "datasource", "uid": "grafana"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "panels": [],
+      "title": "Tenant Usage Metering & Billing",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 1},
+      "id": 2,
+      "targets": [{"expr": "sum by (tenant) (rate(longbow_billing_tenant_queries_total[5m]))", "legendFormat": "{{tenant}}", "refId": "A"}],
+      "title": "Tenant Query Rate (QPS)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 1},
+      "id": 3,
+      "targets": [{"expr": "sum by (tenant) (longbow_billing_tenant_vectors_total)", "legendFormat": "{{tenant}}", "refId": "A"}],
+      "title": "Tenant Vectors Ingested",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 1},
+      "id": 4,
+      "targets": [{"expr": "sum by (tenant) (longbow_billing_tenant_storage_bytes)", "legendFormat": "{{tenant}}", "refId": "A"}],
+      "title": "Tenant Billable Storage (Bytes)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 1},
+      "id": 5,
+      "targets": [{"expr": "sum by (tenant) (rate(longbow_billing_tenant_egress_bytes_total[5m]))", "legendFormat": "{{tenant}}", "refId": "A"}],
+      "title": "Tenant Egress Rate (Bytes/s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 7},
+      "id": 6,
+      "targets": [
+        {"expr": "sum by (tenant, resource) (rate(longbow_billing_tenant_quota_warnings_total[5m]))", "legendFormat": "warn {{tenant}}/{{resource}}", "refId": "A"},
+        {"expr": "sum by (tenant, resource) (rate(longbow_billing_tenant_quota_rejections_total[5m]))", "legendFormat": "reject {{tenant}}/{{resource}}", "refId": "B"}
+      ],
+      "title": "Tenant Quota Warnings & Rejections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 7},
+      "id": 7,
+      "targets": [
+        {"expr": "sum by (endpoint, status) (rate(longbow_rest_requests_total[5m]))", "legendFormat": "REST {{endpoint}} ({{status}})", "refId": "A"},
+        {"expr": "sum by (operation_type, status) (rate(longbow_graphql_queries_total[5m]))", "legendFormat": "GraphQL {{operation_type}} ({{status}})", "refId": "B"}
+      ],
+      "title": "REST v1 & GraphQL Request Rate",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 13},
+      "id": 8,
+      "panels": [],
+      "title": "Managed Cloud & Multi-Region SLA",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 14},
+      "id": 9,
+      "targets": [{"expr": "sum by (tier, status) (longbow_cloud_clusters_active)", "legendFormat": "{{tier}} ({{status}})", "refId": "A"}],
+      "title": "Active Managed Cloud Clusters",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 14},
+      "id": 10,
+      "targets": [{"expr": "max by (cluster, region) (longbow_cloud_replication_lag_seconds)", "legendFormat": "{{cluster}} / {{region}}", "refId": "A"}],
+      "title": "Cross-Region Replication Lag (s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 14},
+      "id": 11,
+      "targets": [
+        {"expr": "sum by (region, status) (rate(longbow_cloud_replications_total[5m]))", "legendFormat": "rep {{region}}/{{status}}", "refId": "A"},
+        {"expr": "sum by (cluster, to_region) (increase(longbow_cloud_failovers_total[1h]))", "legendFormat": "failover {{cluster}}->{{to_region}}", "refId": "B"},
+        {"expr": "sum by (cluster, tier) (increase(longbow_cloud_sla_breaches_total[1h]))", "legendFormat": "sla_breach {{cluster}}", "refId": "C"}
+      ],
+      "title": "Cloud Replication, Failovers & SLA Breaches",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": ["longbow", "billing", "metering", "cloud", "sla"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": false, "text": "Prometheus", "value": "Prometheus"},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data Source",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Longbow Tenant Usage, Billing & Cloud SLA",
+  "uid": "longbow-usage-billing-cloud",
+  "version": 1,
+  "weekStart": ""
+}
+

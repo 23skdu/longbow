@@ -6,7 +6,7 @@ This document provides guidance for contributing to and developing Longbow.
 
 ### Prerequisites
 
-- **Go 1.24.x or later**: Longbow uses the latest Go features for performance and safety.
+- **Go 1.27.4 or later**: Longbow uses the latest Go features for performance and safety.
 - **Git**: For version control.
 - **Docker**: For multi-platform builds and deployment testing.
 - **Make**: For running build and test targets.
@@ -254,7 +254,7 @@ This section details the test plan for running comprehensive regression benchmar
 | RAM | 22 GB total, 16 GB allocated |
 | Storage | 50 GB free |
 | OS | Linux x86_64 |
-| Go toolchain | 1.22+ (for rebuilding if needed) |
+| Go toolchain | 1.27.4+ (for rebuilding if needed) |
 
 #### Disk Spillover Modes
 

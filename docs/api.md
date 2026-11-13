@@ -612,6 +612,7 @@ client = LongbowClient(
 - **Autonomous efSearch**: PID-tuned search depth for automatic recall optimization
 - **Hybrid Search**: Vector + BM25 keyword + metadata filtering in a single query
 - **Multi-Modal, Reranking & Provenance**: `ingest_media`, `multimodal_search`, `rerank`, `rewrite_query`, `explain_search`, `get_provenance`, and `format_search_explanation`
+- **REST/GraphQL & Managed Cloud**: `rest_search`, `graphql`, `cloud_create_cluster`, `cloud_list_clusters`, `cloud_scale_cluster`, `cloud_add_replica_region`, `cloud_promote_region`, and `cloud_get_sla`
 - **RBAC & Backup Controls**: `create_api_key`, `rotate_api_key`, `revoke_api_key`, `set_rls_policy`, `trigger_backup`, and `restore_backup`
 - **PEP 561 Typed**: `py.typed` marker for IDE autocomplete and type checking
 
@@ -619,12 +620,14 @@ client = LongbowClient(
 
 | Category | Arrow Flight Actions (`DoAction`) | HTTP Endpoints / CLI |
 | :--- | :--- | :--- |
-| **RBAC, RLS & Audit** | `CreateAPIKey`, `RotateAPIKey`, `RevokeAPIKey`, `ListAPIKeys`, `SetRLSPolicy`, `GetAuditLog` | `longbow-cli create-api-key`, `rotate-api-key`, `revoke-api-key`, `list-api-keys` |
+| **Managed Cloud & Multi-Region** | `CreateCloudCluster`, `GetCloudCluster`, `ListCloudClusters`, `ScaleCloudCluster`, `AddReplicaRegion`, `ReplicateClusterMutation`, `PromoteClusterRegion`, `GetCloudSLAReport`, `DeleteCloudCluster` | `GET/POST /api/v1/cloud/clusters`, `POST /api/v1/cloud/clusters/{id}/{scale,regions,replicate,promote}`, `GET /api/v1/cloud/clusters/{id}/sla`, `longbow-cli cloud-*` |
+| **REST v1 & GraphQL** | `GraphQLQuery` | `GET /api/v1/health`, `GET /api/v1/openapi.json`, `POST/GET /api/v1/graphql`, `GET/POST/DELETE /api/v1/namespaces`, `/api/v1/datasets/{name}/{vectors,search,hybrid,recommend,aggregations}` |
+| **RBAC, RLS & Audit** | `CreateAPIKey`, `RotateAPIKey`, `RevokeAPIKey`, `ListAPIKeys`, `SetRLSPolicy`, `GetAuditLog` | HTTP `Authorization: Bearer` / `X-API-Key` enforced on `/api/v1/*`, `longbow-cli create-api-key`, `rotate-api-key`, `revoke-api-key`, `list-api-keys` |
 | **Backup & PITR** | `TriggerBackup`, `RestoreBackup`, `VerifyBackup`, `ListBackups` | `longbow-cli backup`, `restore` |
 | **Streaming CDC** | `CreateStreamConnector`, `StopStreamConnector`, `ListStreamConnectors`, `GetStreamStats`, `RegisterStreamSchema`, `IngestStreamEvent` | Kafka & Pulsar connectors with Confluent Schema Registry wire framing |
 | **Multi-Modal** | `MultiModalIngest`, `MultiModalIngestParquet`, `MultiModalSearch` | `client.ingest_media(...)`, `client.multimodal_search(...)` |
 | **Rerank & Rewrite** | `Rerank`, `RewriteQuery` | `client.rerank(...)`, `client.rewrite_query(...)` |
-| **Usage & Billing** | `GetTenantUsage`, `SetTenantQuota`, `ExportBillingReport` | `GET/POST /api/v1/usage`, `GET /api/v1/usage/export?format=csv` |
+| **Usage & Billing** | `GetTenantUsage`, `SetTenantQuota`, `ExportBillingReport` | `GET/POST /api/v1/usage`, `GET /api/v1/usage/export?format=csv`, `GET /api/v1/admin/usage` |
 | **Elastic Sharding** | `GetAutoScaleConfig`, `SetAutoScaleConfig`, `TriggerShardSplit`, `TriggerShardMerge`, `TriggerRebalance`, `GetClusterTopology` | Helm HPA (`autoscaling.*`) + shard controller |
 | **Schema Registry** | `RegisterSchema`, `ValidateSchema`, `GetSchemaRegistry`, `MigrateSchema` | Enforced in `DoPut` ingestion batches |
 | **Materialized Views** | `CreateMaterializedView`, `RefreshMaterializedView`, `QueryMaterializedView` | Streaming auto-refresh on batch ingest |

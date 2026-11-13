@@ -187,9 +187,10 @@ func permissionAndDatasetForAction(action *flight.Action) (Permission, string) {
 		"GraphRAGExpand", "ListNamespaces", "ListDatasetsInNamespace", "ExplainSearch", "DebugSearchPath",
 		"SearchFacets", "SearchAnalytics", "AdvancedTextSearch", "QueryMaterializedView", "GetProvenance",
 		"Rerank", "RewriteQuery", "MultiModalSearch", "ValidateSchema", "GetSchemaRegistry", "GetTenantUsage",
-		"ListStreamConnectors", "GetStreamStats":
+		"ListStreamConnectors", "GetStreamStats", "GetCloudCluster", "ListCloudClusters", "GetCloudSLAReport",
+		"GraphQLQuery":
 		return PermRead, target
-	case "IngestStreamEvent", "MultiModalIngest", "MultiModalIngestParquet", "RecordProvenance":
+	case "IngestStreamEvent", "MultiModalIngest", "MultiModalIngestParquet", "RecordProvenance", "ReplicateClusterMutation":
 		return PermWrite, target
 	case "delete", "Delete", "drop", "Drop", "ResetDataset", "delete-dataset", "delete-vector":
 		return PermDelete, target
@@ -199,7 +200,8 @@ func permissionAndDatasetForAction(action *flight.Action) (Permission, string) {
 		return PermManageKeys, target
 	case "SetRLSPolicy", "CreateNamespace", "DeleteNamespace", "SetSchemaPolicy", "RegisterSchema",
 		"RefreshMaterializedView", "CreateMaterializedView", "SetTenantQuota", "ExportBillingReport",
-		"CreateStreamConnector", "StopStreamConnector", "RegisterStreamSchema", "TuneBM25", "MigrateSchema":
+		"CreateStreamConnector", "StopStreamConnector", "RegisterStreamSchema", "TuneBM25", "MigrateSchema",
+		"CreateCloudCluster", "ScaleCloudCluster", "AddReplicaRegion", "PromoteClusterRegion", "DeleteCloudCluster":
 		return PermManageTenant, target
 	case "GetAuditLog", "ReplicateWAL", "cluster-status", "MeshIdentity", "MeshStatus", "DiscoveryStatus",
 		"GetAutoScaleConfig", "SetAutoScaleConfig", "TriggerShardSplit", "TriggerShardMerge",

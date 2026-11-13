@@ -1,7 +1,33 @@
-# Longbow Feature Parity Roadmap (Items 3–15)
+# Longbow Feature Parity Roadmap (Items 1–15)
 
 This document defines the implementation plan for closing Longbow's feature gaps
 against leading vector databases. Each item includes required subtasks.
+
+---
+
+## 1. Managed Cloud / SaaS Control Plane & Multi-Region Replication
+
+### Item 1 Subtasks
+
+- 1.1 Define managed service tiers (`serverless`, `dedicated`, `enterprise`) with SLA targets (availability, max lag ms, RPO, RTO, P99 latency).
+- 1.2 Implement cluster lifecycle control plane (provisioning, scaling nodes/tiers, regional attachment, decommissioning).
+- 1.3 Implement cross-region mutation replication with monotonic LSNs, SHA-256 event checksums, and `async`/`semi_sync`/`sync` modes.
+- 1.4 Implement lowest-lag healthy read-region routing (`SelectReadRegion`) and automated/manual failover promotion (`PromoteRegion`).
+- 1.5 Add continuous SLA compliance evaluation (`EvaluateSLA`) and Prometheus metrics (`longbow_cloud_*`).
+- 1.6 Expose Cloud Control Plane over Flight `DoAction`, REST (`/api/v1/cloud/*`), GraphQL, CLI (`cloud-*`), and Python SDK (`cloud_*`).
+- 1.7 Add multi-region HTTP replication, failover, checksum verification, and fuzz tests.
+
+---
+
+## 2. First-Class REST/HTTP v1 & GraphQL APIs
+
+### Item 2 Subtasks
+
+- 2.1 Implement versioned `/api/v1/*` REST API for health, namespaces, datasets, vector CRUD, dense search, hybrid search, recommendations, and aggregations.
+- 2.2 Serve OpenAPI v3.0.3 specification at `GET /api/v1/openapi.json`.
+- 2.3 Implement pure-Go GraphQL engine (`POST`/`GET /api/v1/graphql` and `GraphQLQuery` `DoAction`) supporting queries, mutations, variables, aliases, field projection, and `__schema`/`__type` introspection.
+- 2.4 Protect HTTP REST/GraphQL/usage/cloud routes with RBAC HTTP authentication middleware (`security.HTTPAuthMiddleware`) and dataset/RLS enforcement.
+- 2.5 Add end-to-end REST, GraphQL, RBAC HTTP 401/403 enforcement, and parser/payload fuzz tests.
 
 ---
 
@@ -181,19 +207,21 @@ against leading vector databases. Each item includes required subtasks.
 
 ---
 
-## Implementation Reference (Items 3–15)
+## Implementation Reference (Items 1–15)
 
 | Item | Feature Area | Core Packages / Files |
 | :--- | :--- | :--- |
-| 3 | RBAC, API Keys, Tenant Isolation, RLS & Audit | `internal/security/{tenant.go,audit.go}`, `internal/middleware/auth_interceptor.go`, `internal/store/{rbac.go,rbac_actions.go}`, `cmd/cli/security_cmd.go` |
+| 1 | Managed Cloud Control Plane & Multi-Region Replication | `internal/store/{cloud_control_plane.go,cloud_control_plane_test.go}`, `cmd/cli/cloud_api_cmd.go`, `longbowclientsdk/src/longbow/client.py` |
+| 2 | First-Class REST/HTTP v1, OpenAPI 3.0 & GraphQL APIs | `internal/store/{rest_graphql.go,rest_graphql_test.go,features_hub.go}`, `longbowclientsdk/src/longbow/client.py` |
+| 3 | RBAC, API Keys, Tenant Isolation, RLS & Audit | `internal/security/{tenant.go,audit.go}`, `internal/middleware/auth_interceptor.go`, `internal/store/{rbac.go,rbac_actions.go,rest_graphql.go}`, `cmd/cli/security_cmd.go` |
 | 4 | Online Backup, Checksums & WAL PITR | `internal/store/{backup.go,backup_pitr.go,backup_test.go}`, `cmd/cli/security_cmd.go` |
 | 5 | Real-Time CDC & Kafka/Pulsar Streaming | `internal/store/{streaming_connectors.go,streaming_connectors_test.go}` |
 | 6 | Multi-Modal Image/Audio Pipelines | `internal/store/{multimodal.go,multimodal_test.go}`, `longbowclientsdk/src/longbow/client.py` |
 | 7 | Advanced Reranking & Query Rewriting | `internal/store/{reranker_advanced.go,reranker_advanced_test.go}`, `longbowclientsdk/src/longbow/client.py` |
 | 8 | Serverless/Edge SDKs & WASM Client | `pkg/wasmclient/`, `cmd/longbow-wasm/`, `internal/store/edge_http.go`, `sdk/edge-js/`, [edge-wasm.md](edge-wasm.md) |
-| 9 | Cost/Usage Metering & Quotas | `internal/store/{metering.go,metering_test.go}`, `internal/metrics/feature_metrics.go` |
+| 9 | Cost/Usage Metering, Quotas & Admin Dashboard | `internal/store/{metering.go,metering_test.go,rest_graphql.go}`, `internal/metrics/feature_metrics.go`, `grafana/dashboards/usage-metering-billing.json` |
 | 10 | Auto-Scaling & Elastic Sharding | `internal/store/{elastic_sharding.go,elastic_sharding_test.go}`, `helm/longbow/templates/hpa.yaml` |
-| 11 | Encryption at Rest, TLS/mTLS & KMS/Vault | `internal/security/{tls.go,kms.go}`, `internal/storage/encryption.go`, [security-compliance.md](security-compliance.md) |
+| 11 | Encryption at Rest, gRPC+HTTP TLS/mTLS & KMS/Vault | `internal/security/{tls.go,kms.go}`, `internal/storage/encryption.go`, `cmd/longbow/main.go`, [security-compliance.md](security-compliance.md) |
 | 12 | Schema Validation, Constraints & Evolution | `internal/store/{schema_constraints.go,items_12_15_test.go}` |
 | 13 | Materialized Views & Aggregations | `internal/store/{materialized_views.go,items_12_15_test.go}` |
 | 14 | Advanced Full-Text Search (Highlight, Facets, BM25, Analytics) | `internal/store/{text_search_advanced.go,items_12_15_test.go}` |

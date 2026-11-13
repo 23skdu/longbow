@@ -878,3 +878,25 @@ The publish interval is `metrics.DefaultShardedFlushInterval` (`internal/metrics
 **Forcing a flush.** `metrics.FlushHotpathCounters()` drains every hotpath accumulator synchronously and publishes the totals, returning the value it published. Call it from tests and tooling that need to observe a hotpath metric without waiting for the next tick. `metrics.HotpathPending()` reports the accumulated-but-unpublished value without draining it, which is what you want when asserting that a scrape is lagging rather than that a metric is wrong.
 
 The mechanism is generic: `longbow_sharded_counter_flushes_total` and `longbow_sharded_counter_flush_duration_seconds` measure the drain-and-publish cycles themselves, across every sharded counter in the process rather than just the hotpath set. A flush that starts taking milliseconds is the signal that the timer goroutine is falling behind.
+
+---
+
+## Managed Cloud, REST/GraphQL & Tenant Billing Metrics
+
+The control-plane, HTTP API, and multi-tenant usage dashboards (`grafana/dashboards/usage-metering-billing.json`) expose:
+
+| Metric | Labels | Description |
+| :--- | :--- | :--- |
+| `longbow_cloud_clusters_active` | `tier`, `status` | Active managed cloud clusters partitioned by tier and lifecycle status |
+| `longbow_cloud_replications_total` | `region`, `status` | Cross-region replication deliveries and errors per region |
+| `longbow_cloud_replication_lag_seconds` | `cluster`, `region` | Observed cross-region replication lag in seconds |
+| `longbow_cloud_failovers_total` | `cluster`, `to_region` | Regional failover promotions executed |
+| `longbow_cloud_sla_breaches_total` | `cluster`, `tier` | Detected SLA policy breaches (RPO/RTO/latency/availability) |
+| `longbow_rest_requests_total` | `endpoint`, `method`, `status` | First-class REST `/api/v1/*` requests served |
+| `longbow_graphql_queries_total` | `operation_type`, `status` | GraphQL queries and mutations executed |
+| `longbow_billing_tenant_queries_total` | `tenant` | Billable search/read queries executed per tenant |
+| `longbow_billing_tenant_vectors_total` | `tenant` | Total vectors ingested per tenant |
+| `longbow_billing_tenant_storage_bytes` | `tenant` | Current billable storage bytes held per tenant |
+| `longbow_billing_tenant_egress_bytes_total` | `tenant` | Total egress payload bytes served per tenant |
+| `longbow_billing_tenant_quota_warnings_total` | `tenant`, `resource` | Soft quota warnings triggered per tenant |
+| `longbow_billing_tenant_quota_rejections_total` | `tenant`, `resource` | Hard quota rejections triggered per tenant |

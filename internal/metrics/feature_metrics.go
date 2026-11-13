@@ -149,4 +149,67 @@ var (
 		},
 		[]string{"operation", "status"},
 	)
+
+	// CloudClustersActive tracks active managed cloud clusters by tier and status.
+	CloudClustersActive = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_cloud_clusters_active",
+			Help: "Number of managed cloud clusters by tier and status",
+		},
+		[]string{"tier", "status"},
+	)
+
+	// CloudReplicationsTotal counts cross-region replication operations by target region and status.
+	CloudReplicationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_cloud_replications_total",
+			Help: "Total number of cross-region cloud replication deliveries",
+		},
+		[]string{"region", "status"},
+	)
+
+	// CloudReplicationLagSeconds tracks estimated cross-region replication lag per cluster and region.
+	CloudReplicationLagSeconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_cloud_replication_lag_seconds",
+			Help: "Current cross-region replication lag in seconds",
+		},
+		[]string{"cluster", "region"},
+	)
+
+	// CloudFailoversTotal counts managed cloud regional failover promotions.
+	CloudFailoversTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_cloud_failovers_total",
+			Help: "Total number of regional failover promotions executed by the cloud control plane",
+		},
+		[]string{"cluster", "to_region"},
+	)
+
+	// CloudSLABreachesTotal counts detected SLA policy breaches per cluster and tier.
+	CloudSLABreachesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_cloud_sla_breaches_total",
+			Help: "Total number of SLA policy breaches detected",
+		},
+		[]string{"cluster", "tier"},
+	)
+
+	// RESTRequestsTotal counts first-class REST HTTP v1 API requests.
+	RESTRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_rest_requests_total",
+			Help: "Total number of first-class REST v1 HTTP requests served",
+		},
+		[]string{"endpoint", "method", "status"},
+	)
+
+	// GraphQLQueriesTotal counts GraphQL API operations executed.
+	GraphQLQueriesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_graphql_queries_total",
+			Help: "Total number of GraphQL API operations executed",
+		},
+		[]string{"operation_type", "status"},
+	)
 )

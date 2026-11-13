@@ -1083,3 +1083,132 @@ class LongbowClient:
                 f"model={prov.get('model', 'n/a')} src={prov.get('source_uri', 'n/a')}"
             )
         return "\n".join(lines)
+
+    # ---- Item 1: Managed Cloud Control Plane & Multi-Region Replication ----
+
+    def cloud_create_cluster(
+        self,
+        name: str,
+        primary_region: str,
+        tier: str = "dedicated",
+        tenant_id: str = "default",
+        nodes: int = 3,
+        replica_regions: Optional[Dict[str, str]] = None,
+        replication_mode: str = "semi_sync",
+        cluster_id: str = "",
+    ) -> Dict[str, Any]:
+        """Provision a managed multi-region Longbow Cloud cluster with tier SLA defaults."""
+        return self._do_action_json(
+            "CreateCloudCluster",
+            {
+                "id": cluster_id,
+                "name": name,
+                "tenant_id": tenant_id,
+                "tier": tier,
+                "primary_region": primary_region,
+                "replica_regions": replica_regions or {},
+                "nodes": nodes,
+                "replication_mode": replication_mode,
+            },
+            default={},
+        )
+
+    def cloud_list_clusters(self, tenant_id: str = "") -> List[Dict[str, Any]]:
+        """List managed cloud clusters, optionally filtered by tenant ID."""
+        return self._do_action_json(
+            "ListCloudClusters", {"tenant_id": tenant_id}, default={}
+        ).get("clusters", [])
+
+    def cloud_scale_cluster(
+        self, cluster_id: str, nodes: int = 0, tier: str = ""
+    ) -> Dict[str, Any]:
+        """Scale node count and/or tier on an existing managed cloud cluster."""
+        return self._do_action_json(
+            "ScaleCloudCluster",
+            {"id": cluster_id, "nodes": nodes, "tier": tier},
+            default={},
+        )
+
+    def cloud_add_replica_region(
+        self, cluster_id: str, region: str, endpoint: str = "local"
+    ) -> Dict[str, Any]:
+        """Attach a new geographic replica region to a managed cloud cluster."""
+        return self._do_action_json(
+            "AddReplicaRegion",
+            {"id": cluster_id, "region": region, "endpoint": endpoint},
+            default={},
+        )
+
+    def cloud_promote_region(
+        self, cluster_id: str, target_region: str = "", reason: str = "failover"
+    ) -> Dict[string, Any]:
+        """Promote a replica region to primary during manual or automated failover."""
+        return self._do_action_json(
+            "PromoteClusterRegion",
+            {
+                "cluster_id": cluster_id,
+                "target_region": target_region,
+                "reason": reason,
+            },
+            default={},
+        )
+
+    def cloud_get_sla(
+        self, cluster_id: str, observed_p99_ms: float = 0.0
+    ) -> Dict[str, Any]:
+        """Evaluate live SLA compliance (RPO/RTO/availability) for a managed cloud cluster."""
+        return self._do_action_json(
+            "GetCloudSLAReport",
+            {"cluster_id": cluster_id, "observed_p99_ms": observed_p99_ms},
+            default={},
+        )
+
+    # ---- Item 2: First-Class REST/HTTP v1 & GraphQL APIs ----
+
+    def graphql(
+        self,
+        query: str,
+        variables: Optional[Dict[str, Any]] = None,
+        operation_name: str = "",
+    ) -> Dict[str, Any]:
+        """Execute a GraphQL query or mutation via Flight DoAction."""
+        return self._do_action_json(
+            "GraphQLQuery",
+            {
+                "query": query,
+                "variables": variables or {},
+                "operationName": operation_name,
+            },
+            default={},
+        )
+
+    def rest_search(
+        self,
+        dataset: str,
+        vector: List[float],
+        k: int = 10,
+        http_endpoint: str = "http://127.0.0.1:6000",
+        filters: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Execute a REST v1 JSON vector search against /api/v1/datasets/{dataset}/search."""
+        import urllib.parse
+        import urllib.request
+
+        if not (
+            http_endpoint.startswith("http://") or http_endpoint.startswith("https://")
+        ):
+            raise ValueError(f"Unsupported http_endpoint scheme: {http_endpoint}")
+        encoded_ds = urllib.parse.quote(dataset, safe="")
+        url = f"{http_endpoint.rstrip('/')}/api/v1/datasets/{encoded_ds}/search"
+        payload = json.dumps(
+            {"vector": vector, "k": k, "filters": filters or []}
+        ).encode("utf-8")
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.tenant_id:
+            headers["X-Tenant-ID"] = self.tenant_id
+        req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310
+            data = json.loads(resp.read().decode("utf-8"))
+        return data.get("results", [])

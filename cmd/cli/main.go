@@ -75,6 +75,18 @@ func main() {
 		runBackup(ctx, os.Args[2:])
 	case "restore":
 		runRestore(ctx, os.Args[2:])
+	case "cloud-create-cluster":
+		runCloudCreateCluster(ctx, os.Args[2:])
+	case "cloud-list-clusters":
+		runCloudListClusters(ctx, os.Args[2:])
+	case "cloud-scale":
+		runCloudScaleCluster(ctx, os.Args[2:])
+	case "cloud-promote":
+		runCloudPromoteRegion(ctx, os.Args[2:])
+	case "cloud-sla":
+		runCloudSLAReport(ctx, os.Args[2:])
+	case "graphql":
+		runGraphQLCommand(ctx, os.Args[2:])
 	case "version", "-v", "--version":
 		version.Print()
 	case "help", "-h", "--help":
@@ -113,6 +125,12 @@ Commands:
   temporal-search  Search temporal index (as-of, range, window)
   drop             Explicitly drop a dataset from memory
   download-model   Download an ONNX model from Hugging Face
+  cloud-create-cluster Provision a managed cloud cluster
+  cloud-list-clusters  List managed cloud clusters
+  cloud-scale          Scale cloud cluster nodes or tier
+  cloud-promote        Promote a replica region in failover
+  cloud-sla            Evaluate cluster SLA compliance
+  graphql              Execute a GraphQL query or mutation
 
 Global Options:
   -uri string    Longbow server URI (default: grpc://127.0.0.1:3000)

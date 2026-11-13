@@ -26,7 +26,7 @@ See [Architecture Guide](docs/architecture.md) for a deep dive.
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.27.4+
 - Linux (recommended for best performance) or macOS
 
 ### Installation

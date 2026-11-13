@@ -22,12 +22,12 @@ PYTHON        ?= $(shell which python3 2>/dev/null || echo /home/linuxbrew/.linu
 DOCKER        ?= $(shell which docker 2>/dev/null || echo docker)
 IMAGE_TAG     ?= latest
 
-.PHONY: all help ci release build build-release build-debug build-race build-adbc build-bench build-verify clean \
-	deps deps-upgrade lint lint-fast lint-fix vet staticcheck deadcode fmt fmt-check \
+.PHONY: all help ci release build build-release build-debug build-race build-adbc build-bench build-verify build-wasm-client clean \
+	deps deps-upgrade lint lint-fast lint-fix lint-docs vet staticcheck deadcode fmt fmt-check \
 	security sec sec-gosec sec-vulncheck sec-audit \
 	perf perf-check cpu-profile profile-check mem mem-check mem-bench mem-escape mem-profile mem-asan mem-valgrind \
 	fuzz test-fuzz fuzz-coverage \
-	test test-short test-all race test-coverage coverage-gate coverage-html test-fuzz test-docker \
+	test test-short test-all test-wasm test-features race test-coverage coverage-gate coverage-html test-docker \
 	test-adbc test-adbc-python test-adbc-so \
 	cross-compile check-simd test-bench-harness helm-lint markdown-lint bench-ci bench-ab \
 	accuracy-gate oracle-gate observability-inventory observability-check observability-rules \
@@ -52,6 +52,7 @@ help:
 	@echo "  build-adbc           Build ADBC C-shared library (liblongbow_adbc.so)"
 	@echo "  build-bench          Build bench-tool CLI binary"
 	@echo "  build-verify         Build tensor-verify CLI binary"
+	@echo "  build-wasm-client    Build Longbow WASM edge client binary (dist/longbow.wasm)"
 	@echo "  cross-compile        Verify ARM64 cross-compilation (build & vet)"
 	@echo "  clean                Remove compiled binaries, C-shared headers, virtualenvs, test artifacts, and Longbow Docker images"
 	@echo "  deps                 Download and tidy Go modules and sync vendor directory"
@@ -99,6 +100,8 @@ help:
 	@echo "  test-adbc            Run ADBC driver Go test suite"
 	@echo "  test-adbc-python     Run ADBC Python driver verification script"
 	@echo "  test-adbc-so         Run ADBC C-shared library Python tests"
+	@echo "  test-wasm            Run WASM/Edge client tests and js/wasm compilation check"
+	@echo "  test-features        Run roadmap Items 3-15 feature & fuzz test suite"
 	@echo "  accuracy-gate        Verify numerical precision tolerances across 15 vector dtypes"
 	@echo "  oracle-gate          Verify ground-truth mathematical parity vs reference oracles"
 	@echo "  observability-check  Verify metric declarations and alert rule bindings"
@@ -161,6 +164,11 @@ build-verify:
 	@echo "Building tensor-verify..."
 	@mkdir -p bin
 	$(GO) build -o bin/tensor-verify ./cmd/tensor-verify
+
+build-wasm-client:
+	@echo "Building Longbow WASM edge client..."
+	@mkdir -p dist
+	GOOS=js GOARCH=wasm $(GO) build -o dist/longbow.wasm ./cmd/longbow-wasm
 
 cross-compile:
 	@echo "Verifying ARM64 cross-compilation..."
@@ -229,12 +237,12 @@ deadcode:
 
 fmt:
 	@echo "Formatting Go source files..."
-	gofmt -s -w cmd internal client tools tests
-	$(GOIMPORTS) -w cmd internal client tools tests
+	gofmt -s -w cmd internal client pkg tools tests
+	$(GOIMPORTS) -w cmd internal client pkg tools tests
 
 fmt-check:
 	@echo "Checking code formatting..."
-	@DIFF=$$(gofmt -l cmd internal client tools tests); \
+	@DIFF=$$(gofmt -l cmd internal client pkg tools tests); \
 	if [ -n "$$DIFF" ]; then \
 		echo "Unformatted files found:"; \
 		echo "$$DIFF"; \
@@ -245,6 +253,8 @@ fmt-check:
 markdown-lint:
 	@echo "Running markdown linting on documentation..."
 	-$(MARKDOWNLINT) -c .markdownlint.json docs/**/*.md README.md CONTRIBUTING.md
+
+lint-docs: markdown-lint
 
 # ==============================================================================
 # Security Analysis
@@ -386,6 +396,15 @@ test-adbc-python: build-adbc
 
 test-adbc-so: build-adbc
 	$(PYTHON) tests/adbc/test_driver_so.py
+
+test-wasm: build-wasm-client
+	@echo "Running WASM/Edge client tests..."
+	$(GO) test -v ./pkg/wasmclient/... ./cmd/longbow-wasm/...
+
+test-features: test-wasm
+	@echo "Running roadmap Items 3-15 feature & fuzz tests..."
+	$(GO) test -v ./internal/security/... ./internal/middleware/... ./internal/storage -run 'TestEncrypted|FuzzEncrypt|TestTenant|TestAudit|TestAuth|FuzzToken'
+	$(GO) test -v ./internal/store -run 'TestRBAC|TestOnlineBackup|TestStreamingConnector|TestUsageMeter|TestMultiModal|TestAdvancedReranker|TestElasticSharding|TestItem12|TestItem13|TestItems14And15|TestHTTPHandlersAndEdgeClientRoundtrip|TestDoActionFeatureDispatchEndToEnd|Fuzz'
 
 accuracy-gate:
 	@echo "Running Accuracy Gate (numerical precision across 15 vector dtypes + batch/dispatch tiers)..."

@@ -611,7 +611,26 @@ client = LongbowClient(
 - **Temporal Versioning**: As-of, range, and sliding window queries over versioned vectors
 - **Autonomous efSearch**: PID-tuned search depth for automatic recall optimization
 - **Hybrid Search**: Vector + BM25 keyword + metadata filtering in a single query
+- **Multi-Modal, Reranking & Provenance**: `ingest_media`, `multimodal_search`, `rerank`, `rewrite_query`, `explain_search`, `get_provenance`, and `format_search_explanation`
+- **RBAC & Backup Controls**: `create_api_key`, `rotate_api_key`, `revoke_api_key`, `set_rls_policy`, `trigger_backup`, and `restore_backup`
 - **PEP 561 Typed**: `py.typed` marker for IDE autocomplete and type checking
+
+#### Extended Flight Actions (`DoAction`) & HTTP Endpoints
+
+| Category | Arrow Flight Actions (`DoAction`) | HTTP Endpoints / CLI |
+| :--- | :--- | :--- |
+| **RBAC, RLS & Audit** | `CreateAPIKey`, `RotateAPIKey`, `RevokeAPIKey`, `ListAPIKeys`, `SetRLSPolicy`, `GetAuditLog` | `longbow-cli create-api-key`, `rotate-api-key`, `revoke-api-key`, `list-api-keys` |
+| **Backup & PITR** | `TriggerBackup`, `RestoreBackup`, `VerifyBackup`, `ListBackups` | `longbow-cli backup`, `restore` |
+| **Streaming CDC** | `CreateStreamConnector`, `StopStreamConnector`, `ListStreamConnectors`, `GetStreamStats`, `RegisterStreamSchema`, `IngestStreamEvent` | Kafka & Pulsar connectors with Confluent Schema Registry wire framing |
+| **Multi-Modal** | `MultiModalIngest`, `MultiModalIngestParquet`, `MultiModalSearch` | `client.ingest_media(...)`, `client.multimodal_search(...)` |
+| **Rerank & Rewrite** | `Rerank`, `RewriteQuery` | `client.rerank(...)`, `client.rewrite_query(...)` |
+| **Usage & Billing** | `GetTenantUsage`, `SetTenantQuota`, `ExportBillingReport` | `GET/POST /api/v1/usage`, `GET /api/v1/usage/export?format=csv` |
+| **Elastic Sharding** | `GetAutoScaleConfig`, `SetAutoScaleConfig`, `TriggerShardSplit`, `TriggerShardMerge`, `TriggerRebalance`, `GetClusterTopology` | Helm HPA (`autoscaling.*`) + shard controller |
+| **Schema Registry** | `RegisterSchema`, `ValidateSchema`, `GetSchemaRegistry`, `MigrateSchema` | Enforced in `DoPut` ingestion batches |
+| **Materialized Views** | `CreateMaterializedView`, `RefreshMaterializedView`, `QueryMaterializedView` | Streaming auto-refresh on batch ingest |
+| **Advanced Text** | `AdvancedTextSearch`, `SearchFacets`, `SearchAnalytics`, `TuneBM25` | Highlighting, facets, fuzzy/phrase/boolean queries |
+| **Explainability** | `ExplainSearch`, `DebugSearchPath`, `RecordProvenance`, `GetProvenance` | `client.explain_search(...)`, `client.format_search_explanation(...)` |
+| **Edge / WASM Sync** | — | `POST /api/v1/search`, `POST /api/v1/edge/sync` |
 
 ### Go
 

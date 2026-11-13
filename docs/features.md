@@ -2,7 +2,7 @@
 
 Longbow is designed to provide FAISS-level performance with Arrow-native ergonomics and GraphRAG integration.
 
-**Last Updated**: 2026-09-12
+**Last Updated**: 2026-11-13
 
 ---
 
@@ -68,6 +68,22 @@ Longbow is designed to provide FAISS-level performance with Arrow-native ergonom
 
 - **Full Prometheus Instrumentation**: Hardware-level metrics including GPU utilization, memory bandwidth, and WASM runtime latency profiles.
 - **Distributed Tracing**: End-to-end tracing for the ONNX inference pipeline across distributed sharding boundaries.
+
+### Enterprise Security, Operations & Query Intelligence (Items 3–15)
+
+- **Multi-Tenant RBAC, API Keys & RLS (`internal/store/rbac.go`, `internal/security/`)**: Roles (`admin`, `tenant-admin`, `writer`, `reader`), key rotation with grace windows and immediate revocation, namespace/dataset isolation, row-level metadata predicates (`SetRLSPolicy`), and immutable audit logging ([security-compliance.md](security-compliance.md)).
+- **Encryption at Rest, TLS/mTLS & KMS (`internal/storage/encryption.go`, `internal/security/kms.go`)**: AES-256-GCM length-framed encryption for disk spill and WAL, TLS 1.2/1.3 mutual authentication, SIGHUP/interval certificate reloading, and Local/Vault Transit envelope key management.
+- **Online Backup & Point-in-Time Recovery (`internal/store/backup.go`, `backup_pitr.go`)**: Online dataset snapshot archives with SHA-256 checksum verification, local/S3/GCS destinations, retention pruning, and WAL replay PITR.
+- **Real-Time CDC & Streaming Ingestion (`internal/store/streaming_connectors.go`)**: Kafka and Pulsar connectors with Confluent 5-byte wire header / HTTP Schema Registry validation, `SequenceDeduplicator` exactly-once watermarks, backpressure pause/resume, and dead-letter queue capture.
+- **Multi-Modal Pipelines (`internal/store/multimodal.go`)**: PNG/JPEG spatial image and PCM16 WAV audio encoders, HTTP/MLBackend embedding adapters, Arrow `blob+modality+vector` storage, Parquet/S3 media ingestion, and cross-modal search.
+- **Advanced Reranking & Query Rewriting (`internal/store/reranker_advanced.go`)**: Cross-encoder, OpenAI/Ollama LLM, and hybrid rerankers with LRU/TTL caching, synonym/multi-query/HyDE query rewriting, and NDCG@K/MRR evaluation harness.
+- **Serverless/Edge SDKs & WASM (`pkg/wasmclient`, `cmd/longbow-wasm`, `sdk/edge-js`)**: Pure-Go WASM local HNSW index with offline-first LWW/VectorClock sync, TypeScript edge SDK, and HTTP `/api/v1/search` & `/api/v1/edge/sync` endpoints ([edge-wasm.md](edge-wasm.md)).
+- **Cost/Usage Metering & Quotas (`internal/store/metering.go`)**: Per-tenant query/vector/storage/egress/rerank metering, soft warnings and hard quota rejections, JSON/CSV/Webhook/OTel billing exports, and `/api/v1/usage` endpoints.
+- **Elastic Sharding & Auto-Scaling (`internal/store/elastic_sharding.go`)**: Shard split/merge and rebalancing controller, load-based scale-up/scale-down recommendations, cluster peer membership and failover, plus Helm HPA integration.
+- **Schema Validation, Constraints & Evolution (`internal/store/schema_constraints.go`)**: Dataset schema registry with `NOT NULL`, `UNIQUE`, `CHECK`, and typed metadata enforcement during ingestion, backward/forward/full compatibility verification, and record batch migration.
+- **Materialized Views & Aggregations (`internal/store/materialized_views.go`)**: Real-time streaming and scheduled `GROUP BY` aggregations (`count`, `sum`, `avg`, `min`, `max`) with query planner lookup (`TryPlanQuery`).
+- **Advanced Full-Text Search & Analytics (`internal/store/text_search_advanced.go`)**: Boolean AST (`AND`/`OR`/`NOT`), phrase matching, Damerau-Levenshtein fuzzy terms (`~N`), `<mark>` snippet highlighting, categorical faceting, per-dataset BM25 (`k1`, `b`) tuning, and zero-result analytics.
+- **Explainability & Vector Provenance (`internal/store/provenance_explain.go`)**: Dense/sparse/RRF/graph score breakdowns, HNSW traversal hop trace debugging (`ExplainSearch` / `DebugSearchPath`), model/source/chunk provenance storage, and Python SDK table formatting.
 
 ---
 

@@ -63,6 +63,18 @@ func main() {
 		runDrop(ctx, os.Args[2:])
 	case "download-model":
 		runDownloadModel(ctx, os.Args[2:])
+	case "create-api-key":
+		runCreateAPIKey(ctx, os.Args[2:])
+	case "rotate-api-key":
+		runRotateAPIKey(ctx, os.Args[2:])
+	case "revoke-api-key":
+		runRevokeAPIKey(ctx, os.Args[2:])
+	case "list-api-keys":
+		runListAPIKeys(ctx, os.Args[2:])
+	case "backup":
+		runBackup(ctx, os.Args[2:])
+	case "restore":
+		runRestore(ctx, os.Args[2:])
 	case "version", "-v", "--version":
 		version.Print()
 	case "help", "-h", "--help":

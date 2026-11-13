@@ -1,0 +1,20 @@
+{
+  "name": "@longbow/edge-sdk",
+  "version": "1.0.0",
+  "description": "Lightweight Edge/Serverless/WASM TypeScript SDK for Longbow (Cloudflare Workers, Deno, Browsers)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./index.ts",
+      "types": "./index.ts"
+    }
+  },
+  "keywords": ["longbow", "vector-database", "wasm", "cloudflare-workers", "deno", "edge", "offline-first"],
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node --test ./edge.test.mjs"
+  }
+}
+

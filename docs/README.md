@@ -101,6 +101,14 @@ Contributing, architecture overview, benchmarking, and test infrastructure.
 
 Complete metrics reference for monitoring system health.
 
+### 15. [Security & Compliance](security-compliance.md)
+
+RBAC, API key lifecycle, row-level security, TLS/mTLS hot rotation, AES-256-GCM at-rest encryption, KMS/Vault, and SOC2/GDPR mappings.
+
+### 16. [Serverless, Edge SDKs & WASM Client](edge-wasm.md)
+
+Pure-Go WASM local HNSW index, offline-first conflict resolution, TypeScript Edge SDK (`sdk/edge-js`), and HTTP sync/search endpoints.
+
 ---
 
 ## Architecture Overview

@@ -23,7 +23,11 @@ class LongbowClient:
         uri: str = "grpc://localhost:3000",
         meta_uri: Optional[str] = None,
         api_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
+        tls_root_certs: Optional[bytes] = None,
+        tls_cert_chain: Optional[bytes] = None,
+        tls_private_key: Optional[bytes] = None,
     ):
         """
         Initialize the Longbow Client.
@@ -32,11 +36,19 @@ class LongbowClient:
             uri: gRPC URI for the Data Plane (DoPut/DoGet).
             meta_uri: gRPC URI for the Control Plane (DoAction/Info). Defaults to uri.
             api_key: Optional API key for authentication.
+            tenant_id: Optional tenant identifier injected as x-tenant-id header.
+            tls_root_certs: Optional PEM root CA certificates for TLS/mTLS.
+            tls_cert_chain: Optional client certificate chain PEM for mTLS.
+            tls_private_key: Optional client private key PEM for mTLS.
         """
         self.uri = uri
         self.meta_uri = meta_uri or uri
         self.api_key = api_key
+        self.tenant_id = tenant_id
         self.headers = headers or {}
+        self.tls_root_certs = tls_root_certs
+        self.tls_cert_chain = tls_cert_chain
+        self.tls_private_key = tls_private_key
 
         self._data_client = None
         self._meta_client = None
@@ -49,9 +61,15 @@ class LongbowClient:
                 ("grpc.max_receive_message_length", 1024 * 1024 * 1024),
                 ("grpc.max_send_message_length", 1024 * 1024 * 1024),
             ]
-            self._data_client = flight.FlightClient(self.uri, generic_options=options)
+            kwargs: Dict[str, Any] = {"generic_options": options}
+            if self.tls_root_certs is not None:
+                kwargs["tls_root_certs"] = self.tls_root_certs
+            if self.tls_cert_chain is not None and self.tls_private_key is not None:
+                kwargs["cert_chain"] = self.tls_cert_chain
+                kwargs["private_key"] = self.tls_private_key
+            self._data_client = flight.FlightClient(self.uri, **kwargs)
             self._meta_client = flight.FlightClient(
-                self.meta_uri, generic_options=options
+                self.meta_uri, **kwargs
             )
         except Exception as e:
             raise LongbowConnectionError(f"Failed to connect: {e}")
@@ -72,6 +90,9 @@ class LongbowClient:
         call_headers = []
         for k, v in self.headers.items():
             call_headers.append((k.encode("utf-8"), v.encode("utf-8")))
+
+        if self.tenant_id:
+            call_headers.append((b"x-tenant-id", self.tenant_id.encode("utf-8")))
 
         if self.api_key:
             call_headers.append(
@@ -950,3 +971,242 @@ class LongbowClient:
             return {}
         except Exception as e:
             raise LongbowQueryError(f"Temporal aggregation failed: {e}")
+
+    def create_api_key(
+        self,
+        name: str,
+        role: str = "reader",
+        tenant_id: str = "",
+        namespace: str = "",
+        datasets: Optional[List[str]] = None,
+        row_filters: Optional[Dict[str, str]] = None,
+        ttl_seconds: int = 0,
+    ) -> Dict[str, Any]:
+        """Issue a new RBAC API key scoped to a tenant/namespace."""
+        if self._meta_client is None:
+            self.connect()
+        payload = {
+            "name": name,
+            "role": role,
+            "tenant_id": tenant_id or namespace,
+            "namespace": namespace or tenant_id,
+            "datasets": datasets or [],
+            "row_filters": row_filters or {},
+            "ttl_seconds": ttl_seconds,
+        }
+        action = flight.Action("CreateAPIKey", json.dumps(payload).encode("utf-8"))
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()) if res else {}
+
+    def rotate_api_key(self, api_key: str, grace_period_seconds: int = 3600) -> Dict[str, Any]:
+        """Rotate an existing API key with an optional grace period."""
+        if self._meta_client is None:
+            self.connect()
+        action = flight.Action(
+            "RotateAPIKey",
+            json.dumps({"api_key": api_key, "grace_period_seconds": grace_period_seconds}).encode("utf-8"),
+        )
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()) if res else {}
+
+    def revoke_api_key(self, key_or_id: str) -> Dict[str, Any]:
+        """Revoke an API key by secret or KeyID."""
+        if self._meta_client is None:
+            self.connect()
+        action = flight.Action("RevokeAPIKey", json.dumps({"api_key": key_or_id}).encode("utf-8"))
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()) if res else {}
+
+    def set_rls_policy(
+        self,
+        name: str,
+        namespace: str,
+        dataset: str,
+        rules: List[Dict[str, Any]],
+        enabled: bool = True,
+    ) -> Dict[str, Any]:
+        """Configure a row-level security (RLS) policy for a namespace/dataset."""
+        if self._meta_client is None:
+            self.connect()
+        action = flight.Action(
+            "SetRLSPolicy",
+            json.dumps({
+                "name": name,
+                "namespace": namespace,
+                "dataset": dataset,
+                "rules": rules,
+                "enabled": enabled,
+            }).encode("utf-8"),
+        )
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()) if res else {}
+
+    def trigger_backup(self, dataset: str, destination: str = "") -> Dict[str, Any]:
+        """Trigger an online snapshot backup for a dataset."""
+        if self._meta_client is None:
+            self.connect()
+        action = flight.Action(
+            "TriggerBackup",
+            json.dumps({"dataset": dataset, "destination": destination}).encode("utf-8"),
+        )
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()) if res else {}
+
+    def restore_backup(
+        self, backup_id: str, dataset: str, pitr_timestamp: int = 0
+    ) -> Dict[str, Any]:
+        """Restore a dataset from a backup or point-in-time WAL timestamp (Unix ns)."""
+        if self._meta_client is None:
+            self.connect()
+        action = flight.Action(
+            "RestoreBackup",
+            json.dumps({
+                "backup_id": backup_id,
+                "dataset": dataset,
+                "pitr_timestamp": pitr_timestamp,
+            }).encode("utf-8"),
+        )
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()) if res else {}
+
+    def ingest_media(
+        self,
+        dataset: str,
+        items: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Ingest multi-modal media items (image/audio bytes, paths, URIs, captions)."""
+        import base64
+        from pathlib import Path
+
+        if self._meta_client is None:
+            self.connect()
+        encoded_items = []
+        for item in items:
+            copy_item = dict(item)
+            blob = copy_item.pop("blob", None)
+            if isinstance(blob, (bytes, bytearray)):
+                copy_item["blob_base64"] = base64.b64encode(bytes(blob)).decode("ascii")
+            elif isinstance(blob, Path):
+                copy_item["blob_base64"] = base64.b64encode(blob.read_bytes()).decode("ascii")
+            encoded_items.append(copy_item)
+        action = flight.Action(
+            "MultiModalIngest",
+            json.dumps({"dataset": dataset, "items": encoded_items}).encode("utf-8"),
+        )
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()) if res else {}
+
+    def multimodal_search(
+        self,
+        dataset: str,
+        text_query: str = "",
+        image_bytes: Optional[bytes] = None,
+        audio_bytes: Optional[bytes] = None,
+        modality: str = "",
+        k: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Perform cross-modal text-to-image, image-to-text, or audio search."""
+        import base64
+
+        if self._meta_client is None:
+            self.connect()
+        payload: Dict[str, Any] = {"dataset": dataset, "text_query": text_query, "modality": modality, "k": k}
+        if image_bytes is not None:
+            payload["image_base64"] = base64.b64encode(image_bytes).decode("ascii")
+        if audio_bytes is not None:
+            payload["audio_base64"] = base64.b64encode(audio_bytes).decode("ascii")
+        action = flight.Action("MultiModalSearch", json.dumps(payload).encode("utf-8"))
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()).get("results", []) if res else []
+
+    def rerank(
+        self,
+        query: str,
+        results: List[Dict[str, Any]],
+        strategy: str = "hybrid",
+        top_k: int = 10,
+    ) -> Dict[str, Any]:
+        """Rerank search results with hybrid/cross-encoder/heuristic strategy and caching."""
+        if self._meta_client is None:
+            self.connect()
+        action = flight.Action(
+            "Rerank",
+            json.dumps({"query": query, "results": results, "strategy": strategy, "top_k": top_k}).encode("utf-8"),
+        )
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()) if res else {}
+
+    def rewrite_query(self, query: str, mode: str = "synonyms") -> List[str]:
+        """Expand or rewrite a search query via synonyms, multi_query, or hyde."""
+        if self._meta_client is None:
+            self.connect()
+        action = flight.Action(
+            "RewriteQuery",
+            json.dumps({"query": query, "mode": mode}).encode("utf-8"),
+        )
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()).get("queries", []) if res else []
+
+    def explain_search(
+        self,
+        dataset: str,
+        vector: Optional[List[float]] = None,
+        text_query: str = "",
+        k: int = 10,
+        alpha: float = 0.7,
+        graph_alpha: float = 0.0,
+        max_hops: int = 16,
+    ) -> Dict[str, Any]:
+        """Run a search with score breakdowns, HNSW traversal hops, and vector provenance."""
+        if self._meta_client is None:
+            self.connect()
+        action = flight.Action(
+            "ExplainSearch",
+            json.dumps({
+                "dataset": dataset,
+                "vector": vector or [],
+                "text_query": text_query,
+                "k": k,
+                "alpha": alpha,
+                "graph_alpha": graph_alpha,
+                "max_hops": max_hops,
+            }).encode("utf-8"),
+        )
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()) if res else {}
+
+    def get_provenance(
+        self, dataset: str, vector_id: str = "", limit: int = 100
+    ) -> Dict[str, Any]:
+        """Retrieve vector provenance (model, version, source URI, timestamps, lineage)."""
+        if self._meta_client is None:
+            self.connect()
+        action = flight.Action(
+            "GetProvenance",
+            json.dumps({"dataset": dataset, "vector_id": vector_id, "limit": limit}).encode("utf-8"),
+        )
+        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
+        return json.loads(res[0].body.to_pybytes()) if res else {}
+
+    @staticmethod
+    def format_search_explanation(explanation: Dict[str, Any]) -> str:
+        """Format an ExplainSearch response as a readable table + HNSW hop trace."""
+        lines = [
+            f"Dataset: {explanation.get('dataset')} | Index: {explanation.get('index_type')} | "
+            f"Entry: {explanation.get('entry_point')} | Hops: {explanation.get('total_hops')} | "
+            f"Elapsed: {explanation.get('elapsed_ms', 0):.2f} ms"
+        ]
+        for hop in explanation.get("hops", []):
+            lines.append(
+                f"  Hop {hop.get('step')}: node={hop.get('node_id')} neighbors={hop.get('neighbor_count')} "
+                f"dist={hop.get('estimated_dist', 0):.4f} improved={hop.get('improved_best')}"
+            )
+        for cand in explanation.get("candidates", []):
+            bd = cand.get("breakdown", {})
+            prov = cand.get("provenance") or {}
+            lines.append(
+                f"  Hit id={cand.get('user_id', cand.get('id'))}: final={bd.get('final_score', 0):.4f} "
+                f"(dense={bd.get('dense_score', 0):.4f}, sparse={bd.get('sparse_score', 0):.4f}) "
+                f"model={prov.get('model', 'n/a')} src={prov.get('source_uri', 'n/a')}"
+            )
+        return "\n".join(lines)

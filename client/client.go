@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/security"
 	"github.com/23skdu/longbow/pkg/loadbalancing"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -17,6 +18,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 // maxCallMsgSizeBytes is the gRPC message size cap, sized for large Arrow
@@ -31,6 +33,14 @@ var maxCallMsgSizeBytes = func() int {
 	return int(target)
 }()
 
+// ClientConfig configures security and tenant headers for SmartClient.
+type ClientConfig struct {
+	Addr     string
+	APIKey   string
+	TenantID string
+	TLS      security.TLSConfig
+}
+
 // SmartClient is a wrapper around flight.Client that handles strict sharding redirects
 type SmartClient struct {
 	mu          sync.RWMutex
@@ -39,21 +49,36 @@ type SmartClient struct {
 	dialOpts    []grpc.DialOption
 	timeout     time.Duration
 	lastLoad    atomic.Pointer[loadbalancing.LoadHints]
+	apiKey      string
+	tenantID    string
 }
 
 // NewSmartClient creates a new smart client connected to the initial address
 func NewSmartClient(addr string) (*SmartClient, error) {
+	return NewSmartClientWithConfig(ClientConfig{Addr: addr})
+}
+
+// NewSmartClientWithConfig creates a SmartClient with optional TLS/mTLS, API key, and tenant context.
+func NewSmartClientWithConfig(cfg ClientConfig) (*SmartClient, error) {
+	addr := cfg.Addr
 	// Strip non-UDS schemes from address
 	if !strings.HasPrefix(addr, "unix://") {
 		addr = strings.TrimPrefix(addr, "grpc://")
+		addr = strings.TrimPrefix(addr, "grpcs://")
 		addr = strings.TrimPrefix(addr, "http://")
+		addr = strings.TrimPrefix(addr, "https://")
 	} else {
 		// Normalize unix://path to unix:path for gRPC dialer
-		// unix:///path stays unix:///path
-		if strings.HasPrefix(addr, "unix:///") {
-			// already absolute
-		} else {
+		if !strings.HasPrefix(addr, "unix:///") {
 			addr = "unix:" + strings.TrimPrefix(addr, "unix://")
+		}
+	}
+
+	credsOpt, err := security.GRPCDialOption(cfg.TLS)
+	if err != nil {
+		credsOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
+		if cfg.TLS.Enabled {
+			return nil, fmt.Errorf("tls config failed: %w", err)
 		}
 	}
 
@@ -61,13 +86,15 @@ func NewSmartClient(addr string) (*SmartClient, error) {
 		primaryAddr: addr,
 		clients:     make(map[string]flight.Client),
 		dialOpts: []grpc.DialOption{
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			credsOpt,
 			grpc.WithDefaultCallOptions(
 				grpc.MaxCallRecvMsgSize(maxCallMsgSizeBytes),
 				grpc.MaxCallSendMsgSize(maxCallMsgSizeBytes),
 			),
 		},
-		timeout: 30 * time.Second,
+		timeout:  30 * time.Second,
+		apiKey:   cfg.APIKey,
+		tenantID: cfg.TenantID,
 	}
 
 	// Warmup initial connection
@@ -76,6 +103,21 @@ func NewSmartClient(addr string) (*SmartClient, error) {
 	}
 
 	return sc, nil
+}
+
+// WithAuthContext attaches Bearer API key and optional tenant header to an outgoing RPC context.
+func (c *SmartClient) WithAuthContext(ctx context.Context) context.Context {
+	if c == nil || (c.apiKey == "" && c.tenantID == "") {
+		return ctx
+	}
+	pairs := make([]string, 0, 4)
+	if c.apiKey != "" {
+		pairs = append(pairs, "authorization", "Bearer "+c.apiKey)
+	}
+	if c.tenantID != "" {
+		pairs = append(pairs, "x-tenant-id", c.tenantID)
+	}
+	return metadata.AppendToOutgoingContext(ctx, pairs...)
 }
 
 // Close closes all active connections

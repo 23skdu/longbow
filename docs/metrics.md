@@ -5,7 +5,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 > [!NOTE]
 > **Default listen address.** The metrics listener reads `LONGBOW_METRICS_ADDR` directly and falls back to `:6000` when it is unset, so the bare binary serves metrics on port 6000. The `envconfig` default of `0.0.0.0:9090` is only logged and validated, never bound; the 9090 that most users see comes from the Helm chart and `docker-compose.yml`, which both set `LONGBOW_METRICS_ADDR=0.0.0.0:9090` explicitly.
 >
-> **Coverage.** This list covers all **789** `longbow_*` metric families the binary registers. The count is derived by enumerating every `Name: "longbow_..."` literal in non-vendor, non-`_test.go` Go sources, plus the one family composed from `Namespace: "longbow"` + `Name:` (`longbow_filter_execution_duration_seconds`, `internal/metrics/storage_metrics.go`). A handful of `longbow_test_*` families registered only inside `_test.go` files are deliberately excluded. The list was last reconciled against the source on 2026-10-11, during the observability audit recorded in `docs/roadmap.md` §4; seven families (`longbow_hnsw_simd_kernel_*`, `longbow_temporal_cache_*`) had been added by new alert groups without being added here, and `longbow_temporal_tree_cache_hit_ratio` was still listed after being deliberately removed. This inventory is enforced in CI via `make observability-check` and `internal/observability/metrics_conformance_test.go`, which fail on any drift between the metric registry, alert rules, and docs. Families declared without the `longbow_` namespace (the `graph_navigator_*` set in `internal/store/index/graph_navigator.go` and the `health_check_*` / `component_health_status` set in `internal/health/health_manager.go`) are not exported: the former is only registered when a `prometheus.Registerer` is supplied, which production code never does, and the latter goes into a private registry rather than the default one.
+> **Coverage.** This list covers all **805** `longbow_*` metric families the binary registers. The count is derived by enumerating every `Name: "longbow_..."` literal in non-vendor, non-`_test.go` Go sources, plus the one family composed from `Namespace: "longbow"` + `Name:` (`longbow_filter_execution_duration_seconds`, `internal/metrics/storage_metrics.go`). A handful of `longbow_test_*` families registered only inside `_test.go` files are deliberately excluded. The list was last reconciled against the source on 2026-10-11, during the observability audit recorded in `docs/roadmap.md` §4; seven families (`longbow_hnsw_simd_kernel_*`, `longbow_temporal_cache_*`) had been added by new alert groups without being added here, and `longbow_temporal_tree_cache_hit_ratio` was still listed after being deliberately removed. This inventory is enforced in CI via `make observability-check` and `internal/observability/metrics_conformance_test.go`, which fail on any drift between the metric registry, alert rules, and docs. Families declared without the `longbow_` namespace (the `graph_navigator_*` set in `internal/store/index/graph_navigator.go` and the `health_check_*` / `component_health_status` set in `internal/health/health_manager.go`) are not exported: the former is only registered when a `prometheus.Registerer` is supplied, which production code never does, and the latter goes into a private registry rather than the default one.
 
 | Metric Name | Description |
 | ------------- | ------------- |
@@ -51,6 +51,12 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_batch_search_latency_seconds` | Latency of batch search operations |
 | `longbow_batch_search_queries_total` | Total number of queries processed in batch searches |
 | `longbow_batch_search_requests_total` | Total number of batch search requests |
+| `longbow_billing_tenant_egress_bytes_total` | Total egress bytes transferred per tenant |
+| `longbow_billing_tenant_queries_total` | Total number of queries executed per tenant |
+| `longbow_billing_tenant_quota_rejections_total` | Total number of hard quota rejections per tenant |
+| `longbow_billing_tenant_quota_warnings_total` | Total number of soft quota warnings triggered per tenant |
+| `longbow_billing_tenant_storage_bytes` | Current billable storage bytes held per tenant |
+| `longbow_billing_tenant_vectors_total` | Total number of vectors ingested per tenant |
 | `longbow_binary_quantize_ops_total` | Total number of binary quantization operations |
 | `longbow_bitmap_cache_hits_total` | Total number of filter bitset cache hits |
 | `longbow_bitmap_cache_misses_total` | Total number of filter bitset cache misses |
@@ -503,6 +509,7 @@ implausibly cheaper than float32, which is the signature of the stranding bug. S
 | `longbow_lock_node_spin_cycles_total` | Total number of spin cycles performed by LockNode spinlocks |
 | `longbow_log_entries_total` | Total number of log entries by level |
 | `longbow_log_errors_total` | Total number of error log entries |
+| `longbow_materialized_view_refreshes_total` | Total number of materialized view refreshes |
 | `longbow_memory_backpressure_acquires_total` | Total number of memory permits acquired |
 | `longbow_memory_backpressure_rejects_total` | Total number of requests rejected due to memory backpressure |
 | `longbow_memory_backpressure_releases_total` | Total number of memory permits released |
@@ -632,6 +639,8 @@ implausibly cheaper than float32, which is the signature of the stranding bug. S
 | `longbow_replication_retries_total` | Total number of replication retries |
 | `longbow_replication_success_total` | Total number of successful replication operations |
 | `longbow_requantization_duration_seconds` | Time taken to re-quantize a dataset in the background. |
+| `longbow_rerank_cache_hits_total` | Total number of reranking cache hits |
+| `longbow_rerank_cache_misses_total` | Total number of reranking cache misses |
 | `longbow_reranker_batch_size` | Batch size for reranker operations |
 | `longbow_reranker_errors_total` | Total number of reranker errors |
 | `longbow_reranker_inference_duration_seconds` | Duration of reranker inference operations |
@@ -645,6 +654,7 @@ implausibly cheaper than float32, which is the signature of the stranding bug. S
 | `longbow_schema_columns_dropped_total` | Total number of columns dropped via schema evolution |
 | `longbow_schema_evolution_duration_seconds` | Duration of schema evolution operations |
 | `longbow_schema_evolution_total` | Total number of schema evolution operations |
+| `longbow_schema_validation_rejections_total` | Total number of batches rejected due to schema constraint violations |
 | `longbow_schema_version_current` | Current schema version |
 | `longbow_search_allocation_bytes` | Memory allocated during search operations in bytes |
 | `longbow_search_consistency_level_total` | Total number of vector searches by consistency level |
@@ -669,6 +679,7 @@ implausibly cheaper than float32, which is the signature of the stranding bug. S
 | `longbow_semaphore_waiting_requests` | Number of requests waiting for semaphore |
 | `longbow_shard_balance_imbalance_ratio` | Imbalance ratio across sharded indices |
 | `longbow_shard_lock_wait_duration_seconds` | Time spent waiting for shard-level locks |
+| `longbow_shard_rebalance_operations_total` | Total number of elastic shard rebalance operations |
 | `longbow_sharded_counter_flush_duration_seconds` | Time spent draining and publishing sharded metric accumulators |
 | `longbow_sharded_counter_flushes_total` | Total number of sharded counter drain and publish cycles |
 | `longbow_sharded_hnsw_load_factor` | Sharded HNSW load factor by shard (0-1) |
@@ -718,6 +729,11 @@ implausibly cheaper than float32, which is the signature of the stranding bug. S
 | `longbow_store_circuit_breaker_successes_total` | Total number of successful requests passing through breaker |
 | `longbow_store_dropped_datasets_total` | Total number of datasets explicitly dropped |
 | `longbow_store_vectors_managed_count` | Total number of vectors stored in managed arenas (SlabArena) |
+| `longbow_stream_backpressure_pauses_total` | Total number of streaming backpressure pause events |
+| `longbow_stream_consumed_messages_total` | Total number of messages consumed by streaming connectors |
+| `longbow_stream_consumer_lag` | Estimated consumer offset lag per connector and topic |
+| `longbow_stream_deduplicated_messages_total` | Total number of duplicate streaming messages skipped for exactly-once delivery |
+| `longbow_stream_dlq_messages_total` | Total number of streaming messages sent to DLQ |
 | `longbow_stream_termination_errors_total` | Total number of unexpected stream termination errors (non-EOF) |
 | `longbow_string_filter_bytes_compared_total` | Total number of bytes compared during string filtering |
 | `longbow_string_filter_comparisons_total` | Total number of string comparisons performed |

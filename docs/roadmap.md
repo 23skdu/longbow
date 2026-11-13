@@ -7,7 +7,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 3. Role-Based Access Control / API Keys / Tenant Isolation
 
-### Subtasks
+### Item 3 Subtasks
+
 - 3.1 Design RBAC model (roles: admin, writer, reader, tenant-admin).
 - 3.2 Implement API key issuance, rotation, and revocation.
 - 3.3 Add tenant isolation at dataset/namespace level (row-level security).
@@ -20,7 +21,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 4. Backup, Restore, and Point-in-Time Recovery
 
-### Subtasks
+### Item 4 Subtasks
+
 - 4.1 Define snapshot format for datasets, indexes, and metadata.
 - 4.2 Implement online snapshot to local/S3/GCS storage.
 - 4.3 Implement restore workflow with consistency checks.
@@ -33,7 +35,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 5. Real-Time CDC and Streaming Ingestion (Kafka/Pulsar Connectors)
 
-### Subtasks
+### Item 5 Subtasks
+
 - 5.1 Implement CDC event format and change log.
 - 5.2 Add Kafka connector (consumer + producer) for vector upserts.
 - 5.3 Add Pulsar connector with schema registry support.
@@ -46,7 +49,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 6. Multi-Modal (Image/Audio) Embedding Pipelines
 
-### Subtasks
+### Item 6 Subtasks
+
 - 6.1 Add image embedding backend (CLIP/OpenCLIP) via ONNX/WASM.
 - 6.2 Add audio embedding backend (Whisper/CLAP) via ONNX/WASM.
 - 6.3 Implement multi-modal dataset schema (blob + vector).
@@ -59,7 +63,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 7. Advanced Reranking (Cross-Encoder, LLM-Based) and Query Rewriting
 
-### Subtasks
+### Item 7 Subtasks
+
 - 7.1 Standardize reranker interface (already MLBackend).
 - 7.2 Add LLM-based reranker (OpenAI/Cohere/local).
 - 7.3 Add query rewriting/expansion module.
@@ -72,7 +77,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 8. Serverless/Edge SDKs and WASM Client
 
-### Subtasks
+### Item 8 Subtasks
+
 - 8.1 Build WASM client for browser (Arrow + gRPC-web).
 - 8.2 Add edge runtime (Cloudflare Workers, Deno).
 - 8.3 Implement offline-first sync and conflict resolution.
@@ -85,7 +91,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 9. Cost/Usage Metering and Quotas
 
-### Subtasks
+### Item 9 Subtasks
+
 - 9.1 Define usage metrics (queries, vectors, storage, egress).
 - 9.2 Implement per-tenant metering and aggregation.
 - 9.3 Add quota enforcement (hard/soft limits).
@@ -97,7 +104,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 10. Auto-Scaling and Elastic Sharding
 
-### Subtasks
+### Item 10 Subtasks
+
 - 10.1 Implement shard split/merge operations.
 - 10.2 Add load-based auto-scaling controller.
 - 10.3 Add rebalancing and data migration.
@@ -110,7 +118,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 11. Data Encryption at Rest and In Transit (TLS)
 
-### Subtasks
+### Item 11 Subtasks
+
 - 11.1 Enable TLS/mTLS for gRPC and HTTP.
 - 11.2 Add encryption at rest for disk spill and WAL.
 - 11.3 Implement key management (KMS/Vault).
@@ -122,7 +131,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 12. Schema Validation and Constraints
 
-### Subtasks
+### Item 12 Subtasks
+
 - 12.1 Define schema registry and validation rules.
 - 12.2 Add constraints (NOT NULL, UNIQUE, CHECK).
 - 12.3 Implement schema evolution with compatibility checks.
@@ -134,7 +144,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 13. Materialized Views / Aggregations
 
-### Subtasks
+### Item 13 Subtasks
+
 - 13.1 Define materialized view storage.
 - 13.2 Implement aggregation engine (count, sum, avg, etc.).
 - 13.3 Add refresh policies (manual/scheduled/streaming).
@@ -146,7 +157,8 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 14. Full-Text Search Advanced (Highlighting, Facets)
 
-### Subtasks
+### Item 14 Subtasks
+
 - 14.1 Add highlighting of matched terms.
 - 14.2 Implement faceted search (counts per category).
 - 14.3 Add fuzzy/phrase/boolean queries.
@@ -158,12 +170,31 @@ against leading vector databases. Each item includes required subtasks.
 
 ## 15. Explainability / Vector Provenance
 
-### Subtasks
+### Item 15 Subtasks
+
 - 15.1 Add score breakdowns (dense/sparse/rrf).
 - 15.2 Add provenance metadata (model, version, timestamp).
 - 15.3 Add debugging endpoints for search paths.
 - 15.4 Add visualization support in SDK.
 - 15.5 Add docs and examples.
 - 15.6 Add tests for provenance correctness.
-EOF
-echo done
+
+---
+
+## Implementation Reference (Items 3–15)
+
+| Item | Feature Area | Core Packages / Files |
+| :--- | :--- | :--- |
+| 3 | RBAC, API Keys, Tenant Isolation, RLS & Audit | `internal/security/{tenant.go,audit.go}`, `internal/middleware/auth_interceptor.go`, `internal/store/{rbac.go,rbac_actions.go}`, `cmd/cli/security_cmd.go` |
+| 4 | Online Backup, Checksums & WAL PITR | `internal/store/{backup.go,backup_pitr.go,backup_test.go}`, `cmd/cli/security_cmd.go` |
+| 5 | Real-Time CDC & Kafka/Pulsar Streaming | `internal/store/{streaming_connectors.go,streaming_connectors_test.go}` |
+| 6 | Multi-Modal Image/Audio Pipelines | `internal/store/{multimodal.go,multimodal_test.go}`, `longbowclientsdk/src/longbow/client.py` |
+| 7 | Advanced Reranking & Query Rewriting | `internal/store/{reranker_advanced.go,reranker_advanced_test.go}`, `longbowclientsdk/src/longbow/client.py` |
+| 8 | Serverless/Edge SDKs & WASM Client | `pkg/wasmclient/`, `cmd/longbow-wasm/`, `internal/store/edge_http.go`, `sdk/edge-js/`, [edge-wasm.md](edge-wasm.md) |
+| 9 | Cost/Usage Metering & Quotas | `internal/store/{metering.go,metering_test.go}`, `internal/metrics/feature_metrics.go` |
+| 10 | Auto-Scaling & Elastic Sharding | `internal/store/{elastic_sharding.go,elastic_sharding_test.go}`, `helm/longbow/templates/hpa.yaml` |
+| 11 | Encryption at Rest, TLS/mTLS & KMS/Vault | `internal/security/{tls.go,kms.go}`, `internal/storage/encryption.go`, [security-compliance.md](security-compliance.md) |
+| 12 | Schema Validation, Constraints & Evolution | `internal/store/{schema_constraints.go,items_12_15_test.go}` |
+| 13 | Materialized Views & Aggregations | `internal/store/{materialized_views.go,items_12_15_test.go}` |
+| 14 | Advanced Full-Text Search (Highlight, Facets, BM25, Analytics) | `internal/store/{text_search_advanced.go,items_12_15_test.go}` |
+| 15 | Explainability, Score Breakdowns & Vector Provenance | `internal/store/{provenance_explain.go,items_12_15_test.go}`, `longbowclientsdk/src/longbow/client.py` |

@@ -33,6 +33,7 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/middleware"
+	"github.com/23skdu/longbow/internal/security"
 	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
@@ -188,6 +189,20 @@ type Config struct {
 	RDMAEnabled   bool   `envconfig:"RDMA_ENABLED" default:"false"`
 	RDMAInterface string `envconfig:"RDMA_INTERFACE" default:"eth0"`
 	RDMAPort      int    `envconfig:"RDMA_PORT" default:"3002"`
+
+	// Security, RBAC, TLS/mTLS, and KMS Encryption Configuration (Items 3 & 11)
+	RBACEnabled          bool          `envconfig:"RBAC_ENABLED" default:"false"`
+	RBACBootstrapKey     string        `envconfig:"RBAC_BOOTSTRAP_KEY" default:""`
+	TLSEnabled           bool          `envconfig:"TLS_ENABLED" default:"false"`
+	TLSCertFile          string        `envconfig:"TLS_CERT_FILE" default:""`
+	TLSKeyFile           string        `envconfig:"TLS_KEY_FILE" default:""`
+	TLSCAFile            string        `envconfig:"TLS_CA_FILE" default:""`
+	TLSRequireClientCert bool          `envconfig:"TLS_REQUIRE_CLIENT_CERT" default:"false"`
+	TLSMinVersion        string        `envconfig:"TLS_MIN_VERSION" default:"1.2"`
+	TLSReloadInterval    time.Duration `envconfig:"TLS_RELOAD_INTERVAL" default:"5m"`
+	EncryptionAtRest     bool          `envconfig:"ENCRYPTION_AT_REST" default:"false"`
+	KMSProvider          string        `envconfig:"KMS_PROVIDER" default:"local"`
+	KMSMasterKey         string        `envconfig:"KMS_MASTER_KEY" default:""`
 }
 
 // Global config instance for hook functions
@@ -735,6 +750,8 @@ func run() error {
 			}
 		})
 
+		vectorStore.RegisterHTTPHandlers(mux)
+
 		metricsListener, err := listenWithReuseAddr("tcp", metricsAddr)
 		if err != nil {
 			logger.Error().Err(err).Str("addr", metricsAddr).Msg("Metrics server listen failed")
@@ -816,8 +833,53 @@ func run() error {
 	fwdCfg := sharding.DefaultForwarderConfig()
 	forwarder := sharding.NewRequestForwarder(&fwdCfg, ringManager)
 
+	// Initialize RBAC & Audit Logging (Item 3)
+	var authValidator security.AccessValidator
+	var auditLog *security.AuditLogger
+	if cfg.RBACEnabled {
+		rbacMgr := store.NewRBACManager()
+		vectorStore.EnableRBAC(rbacMgr)
+		authValidator = rbacMgr
+		auditLog = vectorStore.AuditLogger()
+		if _, bootstrapRaw, err := rbacMgr.CreateAPIKeyWithOptions(store.APIKeyOptions{
+			Name: "bootstrap-admin",
+			Role: store.RoleAdmin,
+		}); err == nil {
+			logger.Info().Str("key_id", "bootstrap-admin").Int("key_len", len(bootstrapRaw)).Msg("RBAC enabled with bootstrap admin API key")
+		}
+	}
+
+	// Initialize TLS / mTLS Certificate Reloader (Item 11)
+	var certReloader *security.CertReloader
+	if cfg.TLSEnabled {
+		tlsCfg := security.TLSConfig{
+			Enabled:           cfg.TLSEnabled,
+			CertFile:          cfg.TLSCertFile,
+			KeyFile:           cfg.TLSKeyFile,
+			CAFile:            cfg.TLSCAFile,
+			RequireClientCert: cfg.TLSRequireClientCert,
+			MinVersion:        cfg.TLSMinVersion,
+			ReloadInterval:    cfg.TLSReloadInterval,
+		}
+		var err error
+		certReloader, err = security.NewCertReloader(tlsCfg)
+		if err != nil {
+			logger.Error().Err(err).Msg("Failed to initialize TLS CertReloader")
+			return err
+		}
+		certReloader.StartAutoReload(cfg.TLSReloadInterval)
+		defer certReloader.Stop()
+	}
+
 	// gRPC Server Options - using env-configurable message sizes and window sizes
-	serverOpts := make([]grpc.ServerOption, 0, 9)
+	serverOpts := make([]grpc.ServerOption, 0, 10)
+	if certReloader != nil {
+		if credsOpt, err := certReloader.GRPCServerOption(); err != nil {
+			return err
+		} else if credsOpt != nil {
+			serverOpts = append(serverOpts, credsOpt)
+		}
+	}
 	serverOpts = append(serverOpts,
 		grpc.MaxRecvMsgSize(cfg.GRPCMaxRecvMsgSize),
 		grpc.MaxSendMsgSize(cfg.GRPCMaxSendMsgSize),
@@ -846,12 +908,14 @@ func run() error {
 	// Add Interceptors (Chained)
 	serverOpts = append(serverOpts,
 		grpc.ChainUnaryInterceptor(
+			middleware.AuthUnaryInterceptor(authValidator, auditLog),
 			middleware.AdmissionInterceptor(vectorStore.GetAdmissionController()),
 			middleware.CircuitBreakerInterceptor(),
 			rateLimiter.UnaryInterceptor(),
 			sharding.PartitionProxyInterceptor(ringManager, forwarder),
 		),
 		grpc.ChainStreamInterceptor(
+			middleware.AuthStreamInterceptor(authValidator, auditLog),
 			middleware.AdmissionStreamInterceptor(vectorStore.GetAdmissionController()),
 			rateLimiter.StreamInterceptor(),
 			sharding.PartitionProxyStreamInterceptor(ringManager, forwarder, streamAggregator),

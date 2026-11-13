@@ -45,6 +45,9 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 	})
 
 	for _, ds := range datasets {
+		if !s.CanTenantListDataset(stream.Context(), ds.Name) {
+			continue
+		}
 		// Apply filters
 		match := true
 		for _, f := range ticketQuery.Filters {
@@ -126,6 +129,10 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 		}, nil
 	}
 
+	if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, name); err != nil {
+		return nil, err
+	}
+
 	ds, ok := s.getDataset(name)
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "dataset %s not found", name)
@@ -154,6 +161,9 @@ func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescript
 		return nil, status.Error(codes.InvalidArgument, "empty path")
 	}
 	name := desc.Path[0]
+	if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, name); err != nil {
+		return nil, err
+	}
 	ds, ok := s.getDataset(name)
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "dataset %s not found", name)
@@ -186,6 +196,15 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	// 0. Admission Control (Backpressure)
 	if s.admission != nil {
 		if err := s.admission.Admit(stream.Context(), "search"); err != nil {
+			return err
+		}
+	}
+
+	if query.Name != "" {
+		if _, err := s.AuthorizeDatasetAccess(stream.Context(), PermRead, query.Name); err != nil {
+			return err
+		}
+		if err := s.enforceTenantQueryQuota(stream.Context(), query.Name, 0); err != nil {
 			return err
 		}
 	}

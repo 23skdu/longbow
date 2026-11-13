@@ -14,12 +14,13 @@ import (
 
 // BackupConfig defines the configuration for dataset backups.
 type BackupConfig struct {
-	BackupDir     string
-	Interval      time.Duration
-	RetentionDays int
-	Incremental   bool
-	Compression   bool
-	Destination   string
+	BackupDir      string
+	Interval       time.Duration
+	RetentionDays  int
+	RetentionCount int
+	Incremental    bool
+	Compression    bool
+	Destination    string
 }
 
 // BackupMetadata stores information about a specific backup.
@@ -32,6 +33,9 @@ type BackupMetadata struct {
 	Checksum     string
 	ParentBackup string
 	Version      int
+	WALSequence  uint64
+	RowCount     int64
+	Destination  string
 }
 
 // IncrementalBackup represents a backup containing only changes since a parent backup.

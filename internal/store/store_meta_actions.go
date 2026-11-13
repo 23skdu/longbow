@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
@@ -711,6 +712,19 @@ func (s *VectorStore) handleResetDataset(action *flight.Action, stream flight.Fl
 func (s *VectorStore) DoMetaAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	if action == nil {
 		return status.Error(codes.InvalidArgument, "action is required")
+	}
+
+	if s.rbacManager != nil {
+		perm, target := permissionAndDatasetForAction(action)
+		if _, err := s.AuthorizeDatasetAccess(stream.Context(), perm, target); err != nil {
+			return err
+		}
+	}
+	if handled, err := s.handleRBACAction(action, stream); handled {
+		return err
+	}
+	if handled, err := s.handleBackupAction(action, stream); handled {
+		return err
 	}
 
 	// Route to specific action handlers

@@ -27,6 +27,7 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/security"
 	"github.com/23skdu/longbow/internal/storage"
 	lbcore "github.com/23skdu/longbow/internal/store/index"
 )
@@ -203,6 +204,14 @@ type VectorStore struct {
 
 	// Learned index rate limiter
 	rateLimiter *LearnedIndexRateLimiter
+
+	// RBAC, tenant isolation, and security audit logging (Item 3)
+	rbacManager *RBACManager
+	auditLogger *security.AuditLogger
+
+	// Lazily-initialized enterprise and extended feature suite (Items 5-15)
+	featuresMu sync.Mutex
+	features   *FeatureSuite
 }
 
 // IngestionJob represents a unit of work for the ingestion pipeline, containing a record batch and timestamp.

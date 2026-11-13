@@ -723,3 +723,24 @@ Metrics are available at `http://<LONGBOW_METRICS_ADDR>/metrics` -- `http://loca
 ### Memory Management
 
 Set `GOMEMLIMIT` to 90% of the container's hard limit. Longbow's internal **GCTuner** will manage allocations to stay within `LONGBOW_MAX_MEMORY` while maximizing performance.
+
+---
+
+## 9. Elastic Sharding, Auto-Scaling, Security & Backup Operations
+
+### Kubernetes Horizontal Pod Autoscaler (HPA) & Elastic Shards
+
+The Helm chart (`helm/longbow/templates/hpa.yaml`) supports `autoscaling/v2` scaling on CPU, Memory, `longbow_search_requests_total_rate` (`autoscaling.targetSearchQPS`), and `longbow_search_latency_seconds_p99` (`autoscaling.targetSearchLatencyMs`). At the data-plane layer, `ElasticShardingController` (`internal/store/elastic_sharding.go`) exposes `TriggerShardSplit`, `TriggerShardMerge`, `TriggerRebalance`, `GetClusterTopology`, and `SetAutoScaleConfig` Flight actions for dynamic shard splitting/merging and failure recovery.
+
+### TLS / mTLS, KMS & Encryption at Rest
+
+Configure transport security and encrypted WAL/disk spill using `LONGBOW_TLS_*`, `LONGBOW_RBAC_*`, `LONGBOW_ENCRYPTION_AT_REST`, and `LONGBOW_KMS_*` environment variables. See [security-compliance.md](security-compliance.md) for full details and SOC2/GDPR compliance controls.
+
+### Online Backup & Point-in-Time Recovery (PITR)
+
+Trigger checksum-verified online backups and WAL PITR restores via Arrow Flight actions (`TriggerBackup`, `VerifyBackup`, `RestoreBackup`) or CLI:
+
+```bash
+longbow-cli backup -dataset production_docs -dest /backups/longbow
+longbow-cli restore -backup-id <backup-id> -dataset production_docs -pitr-ts 1762980000000000000
+```

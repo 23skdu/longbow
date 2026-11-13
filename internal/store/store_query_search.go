@@ -205,6 +205,8 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 
 	} // End of Cache Miss block
 
+	searchResults = s.FilterResultsByRLS(stream.Context(), req.Dataset, searchResults)
+
 	// Execute Window Functions
 	if len(windowFunctions) > 0 {
 		windowOp := qry.NewWindowOperator()

@@ -57,6 +57,9 @@ func (s *VectorStore) HandleVectorSearchAction(action *flight.Action, stream fli
 		metrics.VectorSearchActionErrors.Inc()
 		return status.Errorf(codes.InvalidArgument, "ef_search must be between 16 and 4096, got %d", req.EfSearch)
 	}
+	if err := s.enforceTenantQueryQuota(stream.Context(), req.Dataset, 0); err != nil {
+		return err
+	}
 
 	// Parse consistency level for distributed queries
 	var _ ConsistencyLevel
@@ -187,6 +190,8 @@ func (s *VectorStore) HandleVectorSearchAction(action *flight.Action, stream fli
 			searchResults = s.mapInternalToUserIDsLocked(ds, searchResults)
 			ds.dataMu.RUnlock()
 		}
+
+		searchResults = s.FilterResultsByRLS(stream.Context(), req.Dataset, searchResults)
 
 		// Perform Global Search (Scatter-Gather) if not local-only
 		if !req.LocalOnly && s.Mesh != nil {

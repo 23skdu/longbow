@@ -27,6 +27,21 @@ import (
 
 // DoAction handles custom actions like deletion, status, and graph operations.
 func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if s.rbacManager != nil && action != nil {
+		perm, target := permissionAndDatasetForAction(action)
+		if _, err := s.AuthorizeDatasetAccess(stream.Context(), perm, target); err != nil {
+			return err
+		}
+	}
+	if handled, err := s.handleRBACAction(action, stream); handled {
+		return err
+	}
+	if handled, err := s.handleBackupAction(action, stream); handled {
+		return err
+	}
+	if handled, err := s.handleFeatureAction(action, stream); handled {
+		return err
+	}
 	switch action.Type {
 	case "ForceSnapshot":
 		err := s.Snapshot(stream.Context())

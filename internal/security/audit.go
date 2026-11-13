@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -14,49 +15,110 @@ import (
 
 // AuditEntry represents a security audit log entry
 type AuditEntry struct {
-	Timestamp time.Time
-	UserID    string
-	Operation string
-	Resource  string
-	IPAddress string
-	Success   bool
-	Reason    string
+	Timestamp time.Time `json:"timestamp"`
+	UserID    string    `json:"user_id"`
+	TenantID  string    `json:"tenant_id,omitempty"`
+	Operation string    `json:"operation"`
+	Resource  string    `json:"resource"`
+	IPAddress string    `json:"ip_address"`
+	Success   bool      `json:"success"`
+	Reason    string    `json:"reason,omitempty"`
 }
 
-// AuditLogger handles security audit logging
+const defaultAuditBufferSize = 4096
+
+// AuditLogger handles security audit logging with an in-memory queryable ring buffer.
 type AuditLogger struct {
-	logger zerolog.Logger
+	logger  zerolog.Logger
+	mu      sync.RWMutex
+	entries []AuditEntry
+	maxSize int
 }
 
 // NewAuditLogger creates a new audit logger
 func NewAuditLogger() *AuditLogger {
 	logger := log.With().Str("component", "security_audit")
 	return &AuditLogger{
-		logger: logger.Logger(),
+		logger:  logger.Logger(),
+		maxSize: defaultAuditBufferSize,
+		entries: make([]AuditEntry, 0, 256),
 	}
 }
 
-// LogAuditEntry logs an audit entry
+// LogAuditEntry logs an audit entry and records it in the ring buffer.
 func (a *AuditLogger) LogAuditEntry(ctx context.Context, entry *AuditEntry) {
-	event := a.logger.Info().
-		Str("operation", entry.Operation).
-		Str("resource", entry.Resource).
-		Str("user_id", entry.UserID).
-		Str("ip_address", entry.IPAddress).
-		Bool("success", entry.Success).
-		Time("timestamp", entry.Timestamp)
-
-	if entry.Reason != "" {
-		event.Str("reason", entry.Reason)
+	if a == nil || entry == nil {
+		return
+	}
+	rec := *entry
+	if rec.Timestamp.IsZero() {
+		rec.Timestamp = time.Now()
 	}
 
-	if !entry.Success {
+	a.mu.Lock()
+	if a.maxSize <= 0 {
+		a.maxSize = defaultAuditBufferSize
+	}
+	if len(a.entries) >= a.maxSize {
+		copy(a.entries, a.entries[1:])
+		a.entries[len(a.entries)-1] = rec
+	} else {
+		a.entries = append(a.entries, rec)
+	}
+	a.mu.Unlock()
+
+	event := a.logger.Info().
+		Str("operation", rec.Operation).
+		Str("resource", rec.Resource).
+		Str("user_id", rec.UserID).
+		Str("tenant_id", rec.TenantID).
+		Str("ip_address", rec.IPAddress).
+		Bool("success", rec.Success).
+		Time("timestamp", rec.Timestamp)
+
+	if rec.Reason != "" {
+		event.Str("reason", rec.Reason)
+	}
+
+	if !rec.Success {
 		event.Str("status", "failed")
 	} else {
 		event.Str("status", "success")
 	}
 
 	event.Send()
+}
+
+// RecentEntries returns up to limit most recent audit log entries (newest first).
+func (a *AuditLogger) RecentEntries(limit int) []AuditEntry {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	n := len(a.entries)
+	if limit <= 0 || limit > n {
+		limit = n
+	}
+	out := make([]AuditEntry, 0, limit)
+	for i := n - 1; i >= n-limit; i-- {
+		out = append(out, a.entries[i])
+	}
+	return out
+}
+
+// RecordEvent creates and logs a structured AuditEntry.
+func (a *AuditLogger) RecordEvent(ctx context.Context, userID, tenantID, op, resource, ip string, success bool, reason string) {
+	a.LogAuditEntry(ctx, &AuditEntry{
+		Timestamp: time.Now(),
+		UserID:    userID,
+		TenantID:  tenantID,
+		Operation: op,
+		Resource:  resource,
+		IPAddress: ip,
+		Success:   success,
+		Reason:    reason,
+	})
 }
 
 // ValidateInput validates and sanitizes input parameters

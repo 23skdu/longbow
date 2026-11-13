@@ -51,6 +51,10 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		return fmt.Errorf("missing flight descriptor path")
 	}
 
+	if _, err := s.AuthorizeDatasetAccess(stream.Context(), PermIngest, name); err != nil {
+		return err
+	}
+
 	s.logger.Info().Str("dataset", name).Msg("DoPut started (Batched)")
 
 	// 0. Admission Control (Backpressure)
@@ -130,25 +134,20 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			batch = batch[:0]
 		}()
 
-		// Namespace quota check on flush
+		// Namespace and tenant usage quota check on flush
+		totalRows := int64(0)
+		totalBytes := int64(0)
+		for _, b := range batch {
+			totalRows += b.NumRows()
+			totalBytes += estimateBatchSize(b)
+		}
 		if ns != nil {
-			numVectors := int64(0)
-			totalBytes := int64(0)
-			for _, b := range batch {
-				numVectors += b.NumRows()
-				totalBytes += estimateBatchSize(b)
-			}
-			if err := ns.CheckQuota(numVectors, 0, totalBytes); err != nil {
+			if err := ns.CheckQuota(totalRows, 0, totalBytes); err != nil {
 				return status.Errorf(codes.ResourceExhausted, "namespace quota exceeded: %v", err)
 			}
 		}
-
-		// Check total size of batch
-		totalBytes := int64(0)
-		totalRows := int64(0)
-		for _, b := range batch {
-			totalBytes += estimateBatchSize(b)
-			totalRows += b.NumRows()
+		if err := s.enforceTenantIngestQuota(stream.Context(), name, totalRows, totalBytes); err != nil {
+			return err
 		}
 
 		startFlush := time.Now()
@@ -289,6 +288,12 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 // flushPutBatch handles writing a batch of records to WAL and memory
 func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []arrow.RecordBatch) error {
+	reg := s.GetSchemaRegistry()
+	for _, rec := range batch {
+		if err := reg.ValidateBatch(ctx, ds.Name, rec); err != nil {
+			return status.Errorf(codes.InvalidArgument, "%v", err)
+		}
+	}
 	s.broadcastCDC(ds.Name, batch)
 
 	if len(batch) == 0 {

@@ -26,16 +26,16 @@ make build-wasm-client
 make test-wasm
 ```
 
-Browser integration registers global helpers (`longbowInit`, `longbowUpsert`, `longbowSearch`, `longbowSync`) from `cmd/longbow-wasm/main.go`. Copy Go's `wasm_exec.js` alongside `dist/longbow.wasm`:
+Browser integration registers global helpers (`longbowEdgeInit`, `longbowEdgeUpsert`, `longbowEdgeSearch`) from `cmd/longbow-wasm/main.go`. Copy Go's `wasm_exec.js` alongside `dist/longbow.wasm`:
 
 ```javascript
 const go = new Go();
 const { instance } = await WebAssembly.instantiateStreaming(fetch("/dist/longbow.wasm"), go.importObject);
 go.run(instance);
 
-await longbowInit({ endpoint: "https://longbow.example.com", dataset: "docs", offlineFirst: true });
-await longbowUpsert("doc-1", [0.9, 0.1, 0.0, 0.0], { topic: "wasm" });
-const hits = await longbowSearch([1, 0, 0, 0], 5);
+longbowEdgeInit(JSON.stringify({ endpoint: "https://longbow.example.com", dataset: "docs", offline_first: true }));
+longbowEdgeUpsert(JSON.stringify({ id: "doc-1", vector: [0.9, 0.1, 0.0, 0.0], metadata: { topic: "wasm" } }));
+const hits = JSON.parse(longbowEdgeSearch(JSON.stringify([1, 0, 0, 0]), 5));
 ```
 
 ---
@@ -56,7 +56,7 @@ const client = new LongbowEdgeClient({
   offlineFirst: true,
 });
 
-await client.upsert("sku-1", [0.8, 0.2, 0.0, 0.0], { category: "edge" });
+await client.upsert({ id: "sku-1", vector: [0.8, 0.2, 0.0, 0.0], metadata: { category: "edge" } });
 const results = await client.search([1, 0, 0, 0], 5);
 await client.flushSync();
 ```

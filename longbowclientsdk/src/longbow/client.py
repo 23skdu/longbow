@@ -50,8 +50,35 @@ class LongbowClient:
         self.tls_cert_chain = tls_cert_chain
         self.tls_private_key = tls_private_key
 
-        self._data_client = None
-        self._meta_client = None
+        self._data_client: Any = None
+        self._meta_client: Any = None
+
+    def _require_data_client(self) -> Any:
+        if self._data_client is None:
+            self.connect()
+        if self._data_client is None:
+            raise LongbowConnectionError("Failed to initialize data client")
+        return self._data_client
+
+    def _require_meta_client(self) -> Any:
+        if self._meta_client is None:
+            self.connect()
+        if self._meta_client is None:
+            raise LongbowConnectionError("Failed to initialize meta client")
+        return self._meta_client
+
+    def _do_action_json(
+        self, action_type: str, payload: Dict[str, Any], default: Any = None
+    ) -> Any:
+        meta = self._require_meta_client()
+        action = flight.Action(action_type, json.dumps(payload).encode("utf-8"))
+        try:
+            results = list(meta.do_action(action, options=self._get_call_options()))
+            if results:
+                return json.loads(results[0].body.to_pybytes())
+            return {} if default is None else default
+        except Exception as e:
+            raise LongbowQueryError(f"{action_type} failed: {e}")
 
     def connect(self):
         """Establish connections to the server."""
@@ -119,9 +146,6 @@ class LongbowClient:
             batch_size: Batch size for upload chunks.
             timeout: Timeout in seconds for the upload operation (default: 180.0).
         """
-        if self._data_client is None:
-            self.connect()
-
         # Handle other types
         table = to_arrow_table(data)
         self._upload_batch(dataset, table, batch_size=batch_size, timeout=timeout)
@@ -134,13 +158,10 @@ class LongbowClient:
         timeout: float = 180.0,
     ):
         """Internal helper to upload a materialized batch in streaming chunks with timeout."""
-        if isinstance(data, pa.Table):
-            table = data
-        else:
-            table = to_arrow_table(data)
+        table: Any = data if isinstance(data, pa.Table) else to_arrow_table(data)
         descriptor = flight.FlightDescriptor.for_path(dataset)
         call_opts = self._get_call_options(timeout=timeout)
-        writer, reader = self._data_client.do_put(
+        writer, reader = self._require_data_client().do_put(
             descriptor, table.schema, options=call_opts
         )
         for batch in table.to_batches(max_chunksize=batch_size):
@@ -162,7 +183,7 @@ class LongbowClient:
     def search(
         self,
         dataset: str,
-        vector: List[float],
+        vector: Any,
         k: int = 10,
         filters: Optional[List[Dict]] = None,
         projection: Optional[List[str]] = None,
@@ -182,50 +203,51 @@ class LongbowClient:
         Returns:
             pandas.DataFrame: Dataframe containing search results.
         """
-        if self._data_client is None:
-            self.connect()
-
         # Handle complex query vectors and sanitization for JSON
+        np_mod: Any = None
         try:
             import numpy as np
 
-            has_numpy = True
+            np_mod = np
         except ImportError:
-            has_numpy = False
+            pass
 
-        if has_numpy and hasattr(vector, "dtype"):
-            if np.issubdtype(vector.dtype, np.complexfloating):
+        query_vec: Any = vector
+        if np_mod is not None and hasattr(query_vec, "dtype"):
+            if np_mod.issubdtype(query_vec.dtype, np_mod.complexfloating):
                 # Flatten complex to [real, imag, real, imag...]
                 # Use correct float type matching the complex precision
                 target_dtype = (
-                    np.float32 if vector.dtype == np.complex64 else np.float64
+                    np_mod.float32
+                    if query_vec.dtype == np_mod.complex64
+                    else np_mod.float64
                 )
-                vector = vector.view(target_dtype).flatten().tolist()
-            elif isinstance(vector, np.ndarray):
-                vector = vector.tolist()
+                query_vec = query_vec.view(target_dtype).flatten().tolist()
+            elif isinstance(query_vec, np_mod.ndarray):
+                query_vec = query_vec.tolist()
 
         # Handle Python list of complex numbers (e.g. [1+1j, 2+2j])
         if (
-            isinstance(vector, list)
-            and len(vector) > 0
-            and isinstance(vector[0], complex)
+            isinstance(query_vec, list)
+            and len(query_vec) > 0
+            and isinstance(query_vec[0], complex)
         ):
             flat_vector = []
-            for v in vector:
+            for v in query_vec:
                 flat_vector.append(float(v.real))
                 flat_vector.append(float(v.imag))
-            vector = flat_vector
+            query_vec = flat_vector
 
         # Sanitize: Ensure no NaN/Inf which breaks server JSON parsing
-        for i, v in enumerate(vector):
+        for i, v in enumerate(query_vec):
             if isinstance(v, (int, float)) and not math.isfinite(v):
                 raise ValueError(
                     f"Query vector contains invalid value (NaN or Inf) at index {i}"
                 )
 
-        req = {
+        req: Dict[str, Any] = {
             "dataset": dataset,
-            "vector": vector,
+            "vector": query_vec,
             "k": k,
         }
 
@@ -248,7 +270,9 @@ class LongbowClient:
         ticket = flight.Ticket(ticket_bytes)
 
         try:
-            reader = self._data_client.do_get(ticket, options=self._get_call_options())
+            reader = self._require_data_client().do_get(
+                ticket, options=self._get_call_options()
+            )
             table = reader.read_all()
             return table.to_pandas()  # Convert to Pandas
 
@@ -306,7 +330,9 @@ class LongbowClient:
         ticket = flight.Ticket(ticket_bytes)
 
         try:
-            reader = self._data_client.do_get(ticket, options=self._get_call_options())
+            reader = self._require_data_client().do_get(
+                ticket, options=self._get_call_options()
+            )
             table = reader.read_all()
             return table.to_pandas()
         except Exception as e:
@@ -316,21 +342,8 @@ class LongbowClient:
         self, dataset: str, id: Union[int, str], k: int = 10
     ) -> Dict[str, Any]:
         """Search for similar vectors by ID."""
-        if self._data_client is None:
-            self.connect()
-
-        req = {"dataset": dataset, "id": id, "k": k}
-        action = flight.Action("VectorSearchByID", json.dumps(req).encode("utf-8"))
-        try:
-            # We assume single result batch for this action
-            results = list(
-                self._meta_client.do_action(action, options=self._get_call_options())
-            )
-            if results:
-                return json.loads(results[0].body.to_pybytes())
-            return {}
-        except Exception as e:
-            raise LongbowQueryError(f"SearchByID failed: {e}")
+        req: Dict[str, Any] = {"dataset": dataset, "id": id, "k": k}
+        return self._do_action_json("VectorSearchByID", req, default={})
 
     def recommend(
         self,
@@ -371,7 +384,9 @@ class LongbowClient:
         ticket = flight.Ticket(json.dumps(ticket_json).encode("utf-8"))
 
         try:
-            reader = self._data_client.do_get(ticket, options=self._get_call_options())
+            reader = self._require_data_client().do_get(
+                ticket, options=self._get_call_options()
+            )
             table = reader.read_all()
             return table.to_pandas()
         except Exception as e:
@@ -395,10 +410,7 @@ class LongbowClient:
             force: If True, overwrite if exists.
             **hnsw_config: HNSW parameters (m, ef_construction).
         """
-        if self._meta_client is None:
-            self.connect()
-
-        req = {
+        req: Dict[str, Any] = {
             "name": name,
             "dims": dims,
             "data_type": data_type,
@@ -407,7 +419,7 @@ class LongbowClient:
         }
         action_body = json.dumps(req).encode("utf-8")
         action = flight.Action("CreateNamespace", action_body)
-        list(self._meta_client.do_action(action, options=self._get_call_options()))
+        list(self._require_meta_client().do_action(action, options=self._get_call_options()))
 
     def create_dataset(
         self,
@@ -432,10 +444,7 @@ class LongbowClient:
             disk_enabled: Enable Disk-ANN offloading.
             metric: Distance metric ("cosine", "l2", "ip").
         """
-        if self._meta_client is None:
-            self.connect()
-
-        req = {
+        req: Dict[str, Any] = {
             "name": name,
             "dimension": dimensions,
             "vector_type": vector_type,
@@ -446,27 +455,24 @@ class LongbowClient:
         }
         action_body = json.dumps(req).encode("utf-8")
         action = flight.Action("CreateDataset", action_body)
-        list(self._meta_client.do_action(action, options=self._get_call_options()))
+        list(self._require_meta_client().do_action(action, options=self._get_call_options()))
         # Check results if needed
 
     def list_namespaces(self) -> List[str]:
         """List all available datasets."""
-        if self._meta_client is None:
-            self.connect()
         return [
             f.descriptor.path[0].decode("utf-8")
-            for f in self._meta_client.list_flights()
+            for f in self._require_meta_client().list_flights()
         ]
 
     def list_datasets_in_namespace(self, namespace: str = "default") -> List[str]:
-        if self._meta_client is None:
-            self.connect()
-
         req = {"name": namespace}
         action_body = json.dumps(req).encode("utf-8")
         action = flight.Action("ListDatasetsInNamespace", action_body)
         results = list(
-            self._meta_client.do_action(action, options=self._get_call_options())
+            self._require_meta_client().do_action(
+                action, options=self._get_call_options()
+            )
         )
 
         if not results:
@@ -491,10 +497,9 @@ class LongbowClient:
             >>> table = client.download_arrow("my_dataset")
             >>> print(f"Downloaded {table.num_rows} rows")
         """
-        if self._data_client is None:
-            self.connect()
+        data_client = self._require_data_client()
 
-        req = {"name": dataset}
+        req: Dict[str, Any] = {"name": dataset}
         if filter:
             req["filters"] = filter
 
@@ -502,7 +507,7 @@ class LongbowClient:
         ticket = flight.Ticket(ticket_bytes)
 
         try:
-            reader = self._data_client.do_get(ticket, options=self._get_call_options())
+            reader = data_client.do_get(ticket, options=self._get_call_options())
             # Zero-copy: read all batches into single Arrow Table
             return reader.read_all()
         except Exception as e:
@@ -525,10 +530,9 @@ class LongbowClient:
             ...     print(f"Processing batch with {batch.num_rows} rows")
             ...     # Process batch without loading entire dataset into memory
         """
-        if self._data_client is None:
-            self.connect()
+        data_client = self._require_data_client()
 
-        req = {"name": dataset}
+        req: Dict[str, Any] = {"name": dataset}
         if filter:
             req["filters"] = filter
 
@@ -536,7 +540,7 @@ class LongbowClient:
         ticket = flight.Ticket(ticket_bytes)
 
         try:
-            reader = self._data_client.do_get(ticket, options=self._get_call_options())
+            reader = data_client.do_get(ticket, options=self._get_call_options())
             # Stream batches one at a time (memory-efficient)
             for chunk in reader:
                 yield chunk.data
@@ -567,8 +571,7 @@ class LongbowClient:
 
     def delete(self, dataset: str, ids: Optional[List[int]] = None):
         """Delete specific IDs from a dataset."""
-        if self._meta_client is None:
-            self.connect()
+        meta_client = self._require_meta_client()
 
         req = {"dataset": dataset}
         if ids:
@@ -583,11 +586,11 @@ class LongbowClient:
                 try:
                     action = flight.Action("delete", action_body)
                     list(
-                        self._meta_client.do_action(
+                        meta_client.do_action(
                             action, options=self._get_call_options()
                         )
                     )
-                except Exception as e:
+                except Exception:
                     # Log or warn? For batch delete, partial failure is tricky.
                     # We continue.
                     pass
@@ -595,7 +598,7 @@ class LongbowClient:
             # Delete entire namespace
             action_body = json.dumps(req).encode("utf-8")
             action = flight.Action("DeleteNamespace", action_body)
-            list(self._meta_client.do_action(action, options=self._get_call_options()))
+            list(meta_client.do_action(action, options=self._get_call_options()))
 
     def delete_namespace(self, dataset: str):
         """Delete an entire dataset."""
@@ -603,28 +606,20 @@ class LongbowClient:
 
     def drop_dataset(self, dataset: str):
         """Drop (delete) an entire dataset."""
-        if self._meta_client is None:
-            self.connect()
         req = {"dataset": dataset}
         action_body = json.dumps(req).encode("utf-8")
         action = flight.Action("delete-dataset", action_body)
-        list(self._meta_client.do_action(action, options=self._get_call_options()))
+        list(self._require_meta_client().do_action(action, options=self._get_call_options()))
 
     def snapshot(self):
         """Trigger a manual snapshot of the database."""
-        if self._meta_client is None:
-            self.connect()
-
         action = flight.Action("ForceSnapshot", b"")
-        list(self._meta_client.do_action(action, options=self._get_call_options()))
+        list(self._require_meta_client().do_action(action, options=self._get_call_options()))
 
     def get_info(self, dataset: str) -> Dict[str, Any]:
         """Get information about a dataset."""
-        if self._meta_client is None:
-            self.connect()
-
         descriptor = flight.FlightDescriptor.for_path(dataset)
-        info = self._meta_client.get_flight_info(
+        info = self._require_meta_client().get_flight_info(
             descriptor, options=self._get_call_options()
         )
         return {
@@ -642,10 +637,7 @@ class LongbowClient:
         weight: float = 1.0,
     ) -> None:
         """Add a directed edge to the graph."""
-        if self._meta_client is None:
-            self.connect()
-
-        req = {
+        req: Dict[str, Any] = {
             "dataset": dataset,
             "subject": subject,
             "predicate": predicate,
@@ -654,7 +646,11 @@ class LongbowClient:
         }
         action = flight.Action("add-edge", json.dumps(req).encode("utf-8"))
         try:
-            list(self._meta_client.do_action(action, options=self._get_call_options()))
+            list(
+                self._require_meta_client().do_action(
+                    action, options=self._get_call_options()
+                )
+            )
         except Exception as e:
             raise LongbowQueryError(f"Add edge failed: {e}")
 
@@ -668,10 +664,7 @@ class LongbowClient:
         weighted: bool = True,
     ) -> List[Dict]:
         """Traverse the graph from a start node."""
-        if self._meta_client is None:
-            self.connect()
-
-        req = {
+        req: Dict[str, Any] = {
             "dataset": dataset,
             "start": start,
             "max_hops": max_hops,
@@ -682,7 +675,7 @@ class LongbowClient:
         action = flight.Action("traverse-graph", json.dumps(req).encode("utf-8"))
         try:
             results = []
-            for res in self._meta_client.do_action(
+            for res in self._require_meta_client().do_action(
                 action, options=self._get_call_options()
             ):
                 results.append(json.loads(res.body.to_pybytes()))
@@ -692,20 +685,7 @@ class LongbowClient:
 
     def get_graph_stats(self, dataset: str) -> Dict[str, Any]:
         """Get graph statistics."""
-        if self._meta_client is None:
-            self.connect()
-
-        req = {"dataset": dataset}
-        action = flight.Action("GetGraphStats", json.dumps(req).encode("utf-8"))
-        try:
-            results = list(
-                self._meta_client.do_action(action, options=self._get_call_options())
-            )
-            if results:
-                return json.loads(results[0].body.to_pybytes())
-            return {}
-        except Exception as e:
-            raise LongbowQueryError(f"GetGraphStats failed: {e}")
+        return self._do_action_json("GetGraphStats", {"dataset": dataset}, default={})
 
     def calculate_pagerank(
         self,
@@ -726,27 +706,17 @@ class LongbowClient:
         Returns:
             Dict[str, float]: Mapping of node IDs to PageRank scores.
         """
-        if self._meta_client is None:
-            self.connect()
-
-        req = {
-            "dataset": dataset,
-            "damping_factor": damping_factor,
-            "max_iterations": max_iterations,
-            "tolerance": tolerance,
-        }
-        action = flight.Action("calculate-pagerank", json.dumps(req).encode("utf-8"))
-        try:
-            results = list(
-                self._meta_client.do_action(action, options=self._get_call_options())
-            )
-            if results:
-                raw_res = json.loads(results[0].body.to_pybytes())
-                # Result structure: {"Scores": {"id": score}}
-                return raw_res.get("Scores", {})
-            return {}
-        except Exception as e:
-            raise LongbowQueryError(f"PageRank calculation failed: {e}")
+        raw_res = self._do_action_json(
+            "calculate-pagerank",
+            {
+                "dataset": dataset,
+                "damping_factor": damping_factor,
+                "max_iterations": max_iterations,
+                "tolerance": tolerance,
+            },
+            default={},
+        )
+        return raw_res.get("Scores", {})
 
     def detect_communities(self, dataset: str, max_iterations: int = 10) -> Dict[str, Any]:
         """
@@ -759,20 +729,11 @@ class LongbowClient:
         Returns:
             Dict[str, Any]: Result containing 'CommunityCount' and 'Labels' mapping.
         """
-        if self._meta_client is None:
-            self.connect()
-
-        req = {"dataset": dataset, "max_iterations": max_iterations}
-        action = flight.Action("detect-communities", json.dumps(req).encode("utf-8"))
-        try:
-            results = list(
-                self._meta_client.do_action(action, options=self._get_call_options())
-            )
-            if results:
-                return json.loads(results[0].body.to_pybytes())
-            return {}
-        except Exception as e:
-            raise LongbowQueryError(f"Community detection failed: {e}")
+        return self._do_action_json(
+            "detect-communities",
+            {"dataset": dataset, "max_iterations": max_iterations},
+            default={},
+        )
 
     def temporal_search(
         self,
@@ -801,17 +762,11 @@ class LongbowClient:
         Returns:
             List of search results with id, distance, and score
         """
-        if self._meta_client is None:
-            self.connect()
-
         if dataset is None:
             namespaces = self.list_namespaces()
-            if namespaces:
-                dataset = namespaces[0]
-            else:
-                dataset = ""
+            dataset = namespaces[0] if namespaces else ""
 
-        req = {
+        req: Dict[str, Any] = {
             "dataset": dataset,
             "search_type": search_type,
             "k": k,
@@ -828,16 +783,7 @@ class LongbowClient:
         if duration is not None:
             req["duration"] = duration
 
-        action = flight.Action("TemporalSearch", json.dumps(req).encode("utf-8"))
-        try:
-            results = list(
-                self._meta_client.do_action(action, options=self._get_call_options())
-            )
-            if results:
-                return json.loads(results[0].body.to_pybytes())
-            return []
-        except Exception as e:
-            raise LongbowQueryError(f"Temporal search failed: {e}")
+        return self._do_action_json("TemporalSearch", req, default=[])
 
     def graph_rag_expand(self, dataset: str, node_ids: List[int]) -> Dict[int, List[int]]:
         """
@@ -850,18 +796,9 @@ class LongbowClient:
         Returns:
             Dict[int, List[int]]: Mapping of node IDs to their neighbor lists.
         """
-        if self._meta_client is None:
-            self.connect()
-
-        req = {"dataset": dataset, "node_ids": node_ids}
-        action = flight.Action("GraphRAGExpand", json.dumps(req).encode("utf-8"))
-        try:
-            results = list(self._meta_client.do_action(action, options=self._get_call_options()))
-            if results:
-                return json.loads(results[0].body.to_pybytes())
-            return {}
-        except Exception as e:
-            raise LongbowQueryError(f"GraphRAGExpand failed: {e}")
+        return self._do_action_json(
+            "GraphRAGExpand", {"dataset": dataset, "node_ids": node_ids}, default={}
+        )
 
     def get_flight_info_metadata(self, dataset: str) -> Dict[str, Any]:
         """
@@ -873,16 +810,15 @@ class LongbowClient:
         Returns:
             Dict: Dataset statistics and metadata.
         """
-        if self._meta_client is None:
-            self.connect()
-            
         descriptor = flight.FlightDescriptor.for_path(dataset)
-        info = self._meta_client.get_flight_info(descriptor, options=self._get_call_options())
+        info = self._require_meta_client().get_flight_info(
+            descriptor, options=self._get_call_options()
+        )
         return {
             "total_records": info.total_records,
             "total_bytes": info.total_bytes,
             "schema": str(info.schema),
-            "endpoints": [str(e.locations) for e in info.endpoints]
+            "endpoints": [str(e.locations) for e in info.endpoints],
         }
 
     def temporal_version_history(self, vector_id: int, dataset: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -896,29 +832,15 @@ class LongbowClient:
         Returns:
             List of versioned vectors with timestamps
         """
-        if self._meta_client is None:
-            self.connect()
-
         if dataset is None:
             namespaces = self.list_namespaces()
-            if namespaces:
-                dataset = namespaces[0]
-            else:
-                dataset = ""
+            dataset = namespaces[0] if namespaces else ""
 
-        req = {"dataset": dataset, "vector_id": vector_id}
-        action = flight.Action(
-            "TemporalVersionHistory", json.dumps(req).encode("utf-8")
+        return self._do_action_json(
+            "TemporalVersionHistory",
+            {"dataset": dataset, "vector_id": vector_id},
+            default=[],
         )
-        try:
-            results = list(
-                self._meta_client.do_action(action, options=self._get_call_options())
-            )
-            if results:
-                return json.loads(results[0].body.to_pybytes())
-            return []
-        except Exception as e:
-            raise LongbowQueryError(f"Version history failed: {e}")
 
     def temporal_aggregation(
         self,
@@ -941,17 +863,11 @@ class LongbowClient:
         Returns:
             Dictionary with buckets and total_count
         """
-        if self._meta_client is None:
-            self.connect()
-
         if dataset is None:
             namespaces = self.list_namespaces()
-            if namespaces:
-                dataset = namespaces[0]
-            else:
-                dataset = ""
+            dataset = namespaces[0] if namespaces else ""
 
-        req = {
+        req: Dict[str, Any] = {
             "dataset": dataset,
             "aggregation_type": aggregation_type,
             "start_time": start_time,
@@ -961,16 +877,7 @@ class LongbowClient:
         if interval is not None:
             req["interval"] = interval
 
-        action = flight.Action("TemporalAggregation", json.dumps(req).encode("utf-8"))
-        try:
-            results = list(
-                self._meta_client.do_action(action, options=self._get_call_options())
-            )
-            if results:
-                return json.loads(results[0].body.to_pybytes())
-            return {}
-        except Exception as e:
-            raise LongbowQueryError(f"Temporal aggregation failed: {e}")
+        return self._do_action_json("TemporalAggregation", req, default={})
 
     def create_api_key(
         self,
@@ -983,8 +890,6 @@ class LongbowClient:
         ttl_seconds: int = 0,
     ) -> Dict[str, Any]:
         """Issue a new RBAC API key scoped to a tenant/namespace."""
-        if self._meta_client is None:
-            self.connect()
         payload = {
             "name": name,
             "role": role,
@@ -994,28 +899,19 @@ class LongbowClient:
             "row_filters": row_filters or {},
             "ttl_seconds": ttl_seconds,
         }
-        action = flight.Action("CreateAPIKey", json.dumps(payload).encode("utf-8"))
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()) if res else {}
+        return self._do_action_json("CreateAPIKey", payload, default={})
 
     def rotate_api_key(self, api_key: str, grace_period_seconds: int = 3600) -> Dict[str, Any]:
         """Rotate an existing API key with an optional grace period."""
-        if self._meta_client is None:
-            self.connect()
-        action = flight.Action(
+        return self._do_action_json(
             "RotateAPIKey",
-            json.dumps({"api_key": api_key, "grace_period_seconds": grace_period_seconds}).encode("utf-8"),
+            {"api_key": api_key, "grace_period_seconds": grace_period_seconds},
+            default={},
         )
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()) if res else {}
 
     def revoke_api_key(self, key_or_id: str) -> Dict[str, Any]:
         """Revoke an API key by secret or KeyID."""
-        if self._meta_client is None:
-            self.connect()
-        action = flight.Action("RevokeAPIKey", json.dumps({"api_key": key_or_id}).encode("utf-8"))
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()) if res else {}
+        return self._do_action_json("RevokeAPIKey", {"api_key": key_or_id}, default={})
 
     def set_rls_policy(
         self,
@@ -1026,48 +922,39 @@ class LongbowClient:
         enabled: bool = True,
     ) -> Dict[str, Any]:
         """Configure a row-level security (RLS) policy for a namespace/dataset."""
-        if self._meta_client is None:
-            self.connect()
-        action = flight.Action(
+        return self._do_action_json(
             "SetRLSPolicy",
-            json.dumps({
+            {
                 "name": name,
                 "namespace": namespace,
                 "dataset": dataset,
                 "rules": rules,
                 "enabled": enabled,
-            }).encode("utf-8"),
+            },
+            default={},
         )
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()) if res else {}
 
     def trigger_backup(self, dataset: str, destination: str = "") -> Dict[str, Any]:
         """Trigger an online snapshot backup for a dataset."""
-        if self._meta_client is None:
-            self.connect()
-        action = flight.Action(
+        return self._do_action_json(
             "TriggerBackup",
-            json.dumps({"dataset": dataset, "destination": destination}).encode("utf-8"),
+            {"dataset": dataset, "destination": destination},
+            default={},
         )
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()) if res else {}
 
     def restore_backup(
         self, backup_id: str, dataset: str, pitr_timestamp: int = 0
     ) -> Dict[str, Any]:
         """Restore a dataset from a backup or point-in-time WAL timestamp (Unix ns)."""
-        if self._meta_client is None:
-            self.connect()
-        action = flight.Action(
+        return self._do_action_json(
             "RestoreBackup",
-            json.dumps({
+            {
                 "backup_id": backup_id,
                 "dataset": dataset,
                 "pitr_timestamp": pitr_timestamp,
-            }).encode("utf-8"),
+            },
+            default={},
         )
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()) if res else {}
 
     def ingest_media(
         self,
@@ -1078,8 +965,6 @@ class LongbowClient:
         import base64
         from pathlib import Path
 
-        if self._meta_client is None:
-            self.connect()
         encoded_items = []
         for item in items:
             copy_item = dict(item)
@@ -1089,12 +974,11 @@ class LongbowClient:
             elif isinstance(blob, Path):
                 copy_item["blob_base64"] = base64.b64encode(blob.read_bytes()).decode("ascii")
             encoded_items.append(copy_item)
-        action = flight.Action(
+        return self._do_action_json(
             "MultiModalIngest",
-            json.dumps({"dataset": dataset, "items": encoded_items}).encode("utf-8"),
+            {"dataset": dataset, "items": encoded_items},
+            default={},
         )
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()) if res else {}
 
     def multimodal_search(
         self,
@@ -1108,16 +992,19 @@ class LongbowClient:
         """Perform cross-modal text-to-image, image-to-text, or audio search."""
         import base64
 
-        if self._meta_client is None:
-            self.connect()
-        payload: Dict[str, Any] = {"dataset": dataset, "text_query": text_query, "modality": modality, "k": k}
+        payload: Dict[str, Any] = {
+            "dataset": dataset,
+            "text_query": text_query,
+            "modality": modality,
+            "k": k,
+        }
         if image_bytes is not None:
             payload["image_base64"] = base64.b64encode(image_bytes).decode("ascii")
         if audio_bytes is not None:
             payload["audio_base64"] = base64.b64encode(audio_bytes).decode("ascii")
-        action = flight.Action("MultiModalSearch", json.dumps(payload).encode("utf-8"))
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()).get("results", []) if res else []
+        return self._do_action_json("MultiModalSearch", payload, default={}).get(
+            "results", []
+        )
 
     def rerank(
         self,
@@ -1127,25 +1014,17 @@ class LongbowClient:
         top_k: int = 10,
     ) -> Dict[str, Any]:
         """Rerank search results with hybrid/cross-encoder/heuristic strategy and caching."""
-        if self._meta_client is None:
-            self.connect()
-        action = flight.Action(
+        return self._do_action_json(
             "Rerank",
-            json.dumps({"query": query, "results": results, "strategy": strategy, "top_k": top_k}).encode("utf-8"),
+            {"query": query, "results": results, "strategy": strategy, "top_k": top_k},
+            default={},
         )
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()) if res else {}
 
     def rewrite_query(self, query: str, mode: str = "synonyms") -> List[str]:
         """Expand or rewrite a search query via synonyms, multi_query, or hyde."""
-        if self._meta_client is None:
-            self.connect()
-        action = flight.Action(
-            "RewriteQuery",
-            json.dumps({"query": query, "mode": mode}).encode("utf-8"),
-        )
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()).get("queries", []) if res else []
+        return self._do_action_json(
+            "RewriteQuery", {"query": query, "mode": mode}, default={}
+        ).get("queries", [])
 
     def explain_search(
         self,
@@ -1158,11 +1037,9 @@ class LongbowClient:
         max_hops: int = 16,
     ) -> Dict[str, Any]:
         """Run a search with score breakdowns, HNSW traversal hops, and vector provenance."""
-        if self._meta_client is None:
-            self.connect()
-        action = flight.Action(
+        return self._do_action_json(
             "ExplainSearch",
-            json.dumps({
+            {
                 "dataset": dataset,
                 "vector": vector or [],
                 "text_query": text_query,
@@ -1170,23 +1047,19 @@ class LongbowClient:
                 "alpha": alpha,
                 "graph_alpha": graph_alpha,
                 "max_hops": max_hops,
-            }).encode("utf-8"),
+            },
+            default={},
         )
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()) if res else {}
 
     def get_provenance(
         self, dataset: str, vector_id: str = "", limit: int = 100
     ) -> Dict[str, Any]:
         """Retrieve vector provenance (model, version, source URI, timestamps, lineage)."""
-        if self._meta_client is None:
-            self.connect()
-        action = flight.Action(
+        return self._do_action_json(
             "GetProvenance",
-            json.dumps({"dataset": dataset, "vector_id": vector_id, "limit": limit}).encode("utf-8"),
+            {"dataset": dataset, "vector_id": vector_id, "limit": limit},
+            default={},
         )
-        res = list(self._meta_client.do_action(action, options=self._get_call_options()))
-        return json.loads(res[0].body.to_pybytes()) if res else {}
 
     @staticmethod
     def format_search_explanation(explanation: Dict[str, Any]) -> str:

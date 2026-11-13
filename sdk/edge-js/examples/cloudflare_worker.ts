@@ -1,4 +1,4 @@
-import { LongbowEdgeClient } from "../index.ts";
+import { LongbowEdgeClient } from "../index";
 
 export default {
   async fetch(request: Request, env: { LONGBOW_URL: string; LONGBOW_API_KEY: string }): Promise<Response> {

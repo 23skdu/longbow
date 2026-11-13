@@ -44,7 +44,6 @@ Completed P0 fixes have been removed from this roadmap; only outstanding work re
 
 | # | Category | Subsystem & Location | Issue Summary | Target Impact | Gate |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **7** | Performance | `internal/store/index/arrow_hnsw_compute_float16.go:26-50`, `arrow_hnsw_compute_complex.go:60-85, 248-271` | `float16Computer`, `complex64Computer`, and `complex128Computer` allocate via `getVectorWithCachedDisk` before checking zero-copy `*ChunkFast` | Eliminates 1 heap alloc/copy per HNSW hop (0 allocs/op) | `mem-check` |
 | **9** | Accuracy & Perf | `internal/store/index/ivf_opq_index.go:304-328, 409-454, 488-490, 800-839` | `IVFOPQIndex.SearchBatch` passes cluster ID as VectorID in `refineBatch`; `SearchVectorsWithBitmap` uses scalar loop + full sort instead of `ADCDistanceBatch` + top-K heap | Fixes batch recall corruption & 4x faster filtered IVF-OPQ search | `oracle-gate` |
 | **10** | Accuracy & Perf | `internal/store/index/scalar_quantization.go:208-223, 263-308` | `SQ8Encoder.EncodeInto` truncates via `uint8(normalized)` instead of nearest rounding `uint8(normalized + 0.5)` and uses scalar distance loops | Halves max quantization bias (`-0.5 LSB` -> `0 LSB`) + SIMD SQ8 distance | `oracle-gate` |
 | **11** | Performance | `internal/pq/opq.go:122-190` | `OPQEncoder.Encode`, `Decode`, and `RotateVector` convert `float32` <-> `float64` and allocate two `gonum/mat.VecDense` per call | 8x faster OPQ rotation, 0 heap allocations in steady state | `mem-bench` |
@@ -53,19 +52,12 @@ Completed P0 fixes have been removed from this roadmap; only outstanding work re
 | **15** | Accuracy | `internal/store/hnsw_temporal.go:70-136` | `TemporalHNSWIndex.SearchAsOf`, `SearchRange`, and `SearchSlidingWindow` return raw B-tree IDs with `Score: 0` without executing HNSW vector search | Full temporal-filtered ANN search with exact distance scores | `oracle-gate` |
 | **16** | Performance | `internal/store/index/bm25_arena.go:49, 100-140, 222-286` | `BM25ArenaIndex` leaves `postingArena` unused, allocates per-doc maps, scans postings in `O(P^2)`, and stores all TFs in a global `map[uint64]uint32` | Arena-backed contiguous postings + `simd.BM25ScoreBatch` (5x faster scoring) | `mem-bench` |
 | **17** | Performance | `internal/store/index/bm25_inverted_index.go:588-634` | `BM25InvertedIndex.SearchBM25` recomputes `blockMaxScores` over the entire posting list on every multi-term query instead of caching per-block max TF/min DocLen | Eliminates `O(N_postings)` pre-scan per query in Block-Max WAND | `perf-check` |
-| **18** | Performance | `internal/store/index/arrow_hnsw_compute_float32.go:241-274` | `float32Computer.ComputeBatch` iterates element-by-element calling `distFunc(c.q, v)` instead of batch SIMD (`L2SquaredDistanceBatch` / `DotProductBatch` / `CosineDistanceBatch`) | 2.5x-4.0x faster `float32Computer` batch candidate evaluation | `perf-check` |
 | **19** | Performance | `internal/store/store.go:161`, `internal/store/cluster/cdc.go:158, 182-186` | `VectorStore.hnsw2Config` is unwired during dataset creation and `ChangeDataCapture` bypasses its initialized `batchAggregator` | Enables HNSW2 dataset config propagation and batched CDC replication | `test-short` |
 | **20** | Accuracy | `internal/adbc/statement.go:358-410` | `Statement.executeScan` synthesizes a dummy query vector and runs `SearchHybrid` returning `(id, score)` instead of iterating dataset `RecordBatch`es matching `ExecuteSchema` | Schema-consistent Arrow `RecordBatch` table scan in ADBC driver | `test-adbc` |
 
 ---
 
 ### Detailed Specification of the 20 Improvements
-
-#### Improvement 7: Restore Zero-Copy Chunk Fast Path in `float16Computer`, `complex64Computer`, and `complex128Computer`
-
-- **Location**: `internal/store/index/arrow_hnsw_compute_float16.go:26-50`, `internal/store/index/arrow_hnsw_compute_complex.go:60-85, 248-271`
-- **Root Cause**: `ComputeSingle` calls `c.h.getVectorWithCachedDisk(c.data, c.cachedDiskGraph, id)` *before* checking `GetVectorsF16ChunkFast` / `GetVectorsComplex64ChunkFast` / `GetVectorsComplex128ChunkFast`. Because `getVectorWithCachedDisk` allocates and copies a new slice on every call, the zero-copy chunk fast path below it is dead code whenever `getVectorWithCachedDisk` succeeds.
-- **Remediation**: Check `GetVectorsF16ChunkFast` / `GetVectorsComplex64ChunkFast` / `GetVectorsComplex128ChunkFast` first (matching `float32Computer` and `float64Computer`), falling back to `getVectorWithCachedDisk` only when the in-memory chunk is nil.
 
 #### Improvement 9: Fix `IVFOPQIndex.SearchBatch` ID Mixup and Vectorize `SearchVectorsWithBitmap`
 
@@ -114,12 +106,6 @@ Completed P0 fixes have been removed from this roadmap; only outstanding work re
 - **Location**: `internal/store/index/bm25_inverted_index.go:588-634`
 - **Root Cause**: `BM25InvertedIndex.SearchBM25` allocates and recomputes `blockMaxScores` by scanning every posting's `TF` and `DocLen` on every multi-term query.
 - **Remediation**: Precompute per-128-doc block `(maxTF, minDocLen)` metadata on `BM25PostingList` during `AddBatch` / compaction so multi-term Block-Max WAND computes block upper bounds in `O(N_blocks)` instead of `O(N_postings)`.
-
-#### Improvement 18: Vectorize `float32Computer.ComputeBatch` Using Batch SIMD Dispatch
-
-- **Location**: `internal/store/index/arrow_hnsw_compute_float32.go:241-274`
-- **Root Cause**: Unlike `float32ToFloat32Computer.ComputeBatch` (which gathers a slice of candidate vector pointers and calls `simd.L2SquaredDistanceBatch` / `EuclideanDistanceBatch` / `CosineDistanceBatch` / `DotProductBatch`), `float32Computer.ComputeBatch` loops one ID at a time calling `c.h.distFunc(c.q, v)`.
-- **Remediation**: Gather non-nil candidate vectors into a scratch `batchVecs` slice on `float32Computer` and dispatch to the batch SIMD kernels.
 
 #### Improvement 19: Wire `VectorStore.hnsw2Config` and `ChangeDataCapture.batchAggregator`
 

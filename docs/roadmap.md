@@ -12,10 +12,6 @@ The current WASM/ONNX stack (`internal/wasm`, `internal/onnx`, `internal/store/e
 
 | # | ID | Subsystem & Location | Blocker Summary | Target Impact | Gate |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **1** | **P0-W1** | `internal/wasm/runner.go` | Unchecked WASM ABI: ignored `malloc`/`Write`/`Read` errors, no output free, no bounds/size limits, leaked runtime per model | Eliminates panics/OOMs and ≥2x steady-state throughput | `wasm-gate` |
-| **2** | **P0-W2** | `internal/store/embedding_generator.go`, `internal/store/ml_reranker.go`, `internal/onnx` | No common ML backend interface; store wrappers hard-code `wasm`/`onnx` types and lazy-init races | Unified runner selection, graceful fallback, clean lifecycle | `test-short` |
-| **3** | **P0-W3** | `internal/store/embedding_generator.go`, `internal/store/ml_reranker.go` | Per-text/per-doc inference loops (`InferenceWithTokens` per text, `Score` per doc) | 4x-16x embedding/rerank throughput via batching | `perf-check` |
-| **4** | **P0-W4** | `internal/ml/tokenizer.go`, `internal/wasm`, `internal/onnx` | Tokenizer resolved against CWD (`vocab.txt`), no `tokenizer.json`/HF support, no asset validation | Correct tokenization for any model directory, no CWD dependence | `accuracy-gate` |
 | **5** | **P0-W5** | `internal/onnx/onnx.go`, `internal/onnx/metal` | Hard-coded `input_ids`/`attention_mask`/`token_type_ids` and output names; no metadata introspection; tensor leaks | Robust ONNX loading across BERT/MiniLM/cross-encoder layouts | `onnx-gate` |
 | **6** | **P0-W6** | `internal/wasm/runner.go`, `internal/onnx/download.go` | WASM runs with full WASI stdio and no module integrity/size checks; downloads have no checksums | Sandboxed, verifiable model execution and supply-chain safety | `security` |
 | **7** | **P0-W7** | `internal/wasm`, `internal/onnx`, `internal/store` | One `wazero.Runtime` per model, coarse mutex, no pooling, no context cancellation propagation | Lower memory, higher concurrency, predictable shutdown | `mem-check` |
@@ -125,15 +121,7 @@ Derived from `docs/performance.md` (§0a 2026-11-07 multi-dimension validation).
 
 ## 1. Executive Summary & Immediate P0 Fixes Landed
 
-During deep code analysis of the `internal/simd`, `internal/store/index`, `internal/store`, `internal/pq`, `internal/tensor`, `internal/memory`, and `internal/adbc` subsystems, 20 concrete performance and accuracy gaps were identified. Four critical P0 accuracy and dispatch regressions were fixed immediately and locked down by the expanded Accuracy and Oracle gates:
-
-1. **Fixed `L2SquaredDistanceBatch` 1024-Dim Silent Truncation (`internal/simd/batch_operations.go`)**: `case 1024:` previously invoked `currentDispatch.L2SquaredDistance128(query, v)`, discarding 87.5% of the vector (`dims[128:1024]`). Fixed to dispatch `currentDispatch.L2SquaredDistance1024(query, v)`.
-2. **Fixed Scalar 4-Way Loop Shadowing SIMD Batch Dispatch for Dims 128, 384, 768 (`internal/simd/batch_operations.go`)**: `EuclideanDistanceBatch`, `L2SquaredDistanceBatch`, and `DotProductBatch` previously intercepted `dims == 128, 384, 768` and routed them unconditionally to scalar Go loops (`euclideanDistanceBatch4Way` / `dotProductBatch4Way`), bypassing AVX2, AVX-512, NEON, and AMX kernels. Fixed to dispatch directly to `currentDispatch` dimension-specialized SIMD kernels whenever hardware acceleration is active.
-3. **Fixed `layerAVX512` Clobbering 12 AVX2 Math & Reduction Kernels (`internal/simd/dispatch_tables.go`)**: `layerAVX512` copied the `avx2` dispatch struct and then overwrote `MatMul`, `BrayCurtisDistance`, `Sum`, `Max`, `Min`, `Sin`, `Cos`, `Sincos`, `Sqrt`, `Atan2`, `ArgMax`, and `ArgMin` back to `*Generic` scalar functions, and `layerAVX2` omitted `PackTQ2AVX2` and `PackTQ4AVX2`. Fixed so `layerAVX512` preserves AVX2 kernels and `layerAVX2` wires `PackTQ2AVX2` and `PackTQ4AVX2`.
-4. **Fixed `DequantizeL2Uint8Uint8` Missing Square Root & `float32ToSQ8Computer` False-Zero Fallback (`internal/simd/dequant_distance.go`, `internal/store/index/arrow_hnsw_compute_quantized.go`)**: `DequantizeL2Uint8Uint8` multiplied the squared integer L2 accumulator from `EuclideanDistanceSQ8` by `scale` without taking `math.Sqrt`, and `float32ToSQ8Computer.ComputeSingle` returned `0.0` (`distFuncSquared(c.q, c.q)`) on missing chunks instead of `math.MaxFloat32` and used a scalar loop instead of `simd.DequantizeL2Float32Uint8`. Both are now fixed and covered by `TestOracleParity_AllBatchKernels`.
-5. **Fixed `GraphData.PreAllocate` Skipping `Float16` Chunks & Concurrent `AddBatch` Snapshot Clobbering (`internal/store/types/graph_data_offheap.go`, `graph_data_clone.go`, `internal/store/index/arrow_hnsw_memory.go`)**: `PreAllocate` called `GrowMetadataSlices(numChunks)` and then looped `for i := len(g.VectorsF16); i < numChunks; i++`, executing 0 iterations. Concurrent `AddBatch` publishes then overwrote sibling batches' `VectorsF16`, `Neighbors`, and `Levels` offsets to `0`, causing `entry point vector not found` and `0.0 QPS` on `float16` at 50k/100k. Fixed via `0..numChunks-1` pre-allocation and `(*GraphData).MergeFrom`.
-6. **Fixed `growInternal` Single-Shot CAS Race & `Neighbors[0] slice too small` Index Worker Panic at 100k/200k/400k Growth Boundaries (`internal/store/index/arrow_hnsw_memory.go`)**: `growInternal` executed a single `compareAndSwapData(oldData, newData)` after `PreAllocate`. When another worker published a snapshot concurrently, the CAS failed and discarded the grown `GraphData`, causing `EnsureChunks` to panic on `Neighbors[0] slice too small` and dropping 10k-vector batches at 250k/500k (`float64`, `complex64`, `complex128`). Fixed via `installData`'s CAS retry loop and `1.25x` capacity growth above 256k vectors.
-7. **Fixed Multi-GB Redundant Heap Allocations & `SharedWorkerPool` Starvation During High-Dimensional Ingest (`internal/store/index/arrow_hnsw_data_extract.go`, `arrow_hnsw_insert.go`, `internal/store/store_ingest.go`, `dataset_registry.go`)**: Eliminated double heap allocation (`extractVector` + `slices.Clone`) for `complex64`/`complex128` via zero-copy `unsafe.Slice`, removed duplicate `[]float32` allocations and `SharedWorkerPool` head-of-line blocking in the `TemporalIndex`/`GeoIndex` ingest hooks, and fixed `2 * dim` complex dimension inflation in `ShouldSpillToDisk`.
+Completed P0 fixes have been removed from this roadmap; only outstanding work remains below.
 
 ### New P0 Blocker Improvements Identified from 100k / 250k / 500k Multi-Dimension Benchmarking (2026-11-07)
 
@@ -153,10 +141,6 @@ During deep code analysis of the `internal/simd`, `internal/store/index`, `inter
 
 | # | Category | Subsystem & Location | Issue Summary | Target Impact | Gate |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **1** | Accuracy | `internal/simd/batch_operations.go:305-330` | `L2SquaredDistanceBatch` 1024-dim truncation (`L2SquaredDistance128` called instead of `1024`) | Restores 100% 1024-dim L2Squared accuracy (**Fixed**) | `accuracy-gate` |
-| **2** | Performance | `internal/simd/batch_operations.go:40-92, 220-275` | Scalar 4-way loop shadows AVX2/AVX-512/NEON batch kernels for dims 128, 384, 768 | 3.5x-6.2x batch distance speedup (**Fixed**) | `perf-check` |
-| **3** | Performance | `internal/simd/dispatch_tables.go:134-142, 237-240, 304-310` | `layerAVX512` resets 12 AVX2 math/reduction kernels to Generic scalar; `PackTQ2/4` unwired on AVX2 | 2.8x-5.0x reduction/math speedup on AVX-512 (**Fixed**) | `accuracy-gate` |
-| **4** | Accuracy & Perf | `internal/simd/dequant_distance.go:54-57`, `internal/store/index/arrow_hnsw_compute_quantized.go:406-430` | `DequantizeL2Uint8Uint8` omits `math.Sqrt`; `float32ToSQ8Computer` returns `0.0` on missing chunk and runs scalar loop | Exact SQ8 L2 parity + 4x faster SQ8 HNSW scoring (**Fixed**) | `oracle-gate` |
 | **5** | Accuracy & Perf | `internal/store/index/turboquant.go:208-236` | `TurboQuantEncoder.Encode` computes QJL residual sign bits against unquantized `angles` instead of quantized angle codes | +6-11% Recall@10 for TQ4/TQ8 + 3x faster encoding via LUT | `oracle-gate` |
 | **6** | Accuracy & Perf | `internal/store/index/turboquant2.go:188-190, 304-311` | `TurboQuant2Encoder` 2-bit angle LUT aliases `q=0 (-pi)` and `q=3 (+pi)` to the same Cartesian point and locks `rngMu` per dimension | Restores full 4-state 2-bit codebook (+12% recall) & eliminates mutex contention | `oracle-gate` |
 | **7** | Performance | `internal/store/index/arrow_hnsw_compute_float16.go:26-50`, `arrow_hnsw_compute_complex.go:60-85, 248-271` | `float16Computer`, `complex64Computer`, and `complex128Computer` allocate via `getVectorWithCachedDisk` before checking zero-copy `*ChunkFast` | Eliminates 1 heap alloc/copy per HNSW hop (0 allocs/op) | `mem-check` |
@@ -177,30 +161,6 @@ During deep code analysis of the `internal/simd`, `internal/store/index`, `inter
 ---
 
 ### Detailed Specification of the 20 Improvements
-
-#### Improvement 1: Fix `L2SquaredDistanceBatch` 1024-Dimension Silent Truncation
-
-- **Location**: `internal/simd/batch_operations.go:305-330`
-- **Root Cause**: In `L2SquaredDistanceBatch`, the fast-path switch for `case 1024:` called `currentDispatch.L2SquaredDistance128(query, v)` instead of `currentDispatch.L2SquaredDistance1024(query, v)`, silently ignoring dimensions `128..1023` (87.5% of every 1024-dim embedding).
-- **Remediation**: Route `case 1024:` to `currentDispatch.L2SquaredDistance1024(query, v)` and ensure `newGenericDispatch()` populates `L2SquaredDistance128..3072`. (**Completed & Verified**)
-
-#### Improvement 2: Route 128, 384, and 768 Batch Operations Through Hardware SIMD Dispatch
-
-- **Location**: `internal/simd/batch_operations.go:40-92, 220-275, 296-332`
-- **Root Cause**: `EuclideanDistanceBatch`, `DotProductBatch`, and `L2SquaredDistanceBatch` intercepted `dims == 128, 384, 768` and called scalar Go helpers `euclideanDistanceBatch4Way` and `dotProductBatch4Way` even when AVX2, AVX-512, NEON, or AMX was active.
-- **Remediation**: Restrict `euclideanDistanceBatch4Way` and `dotProductBatch4Way` to `implementation == "generic"` and dispatch `128, 384, 768, 1024, 3072` directly to `currentDispatch` SIMD kernels. (**Completed & Verified**)
-
-#### Improvement 3: Preserve AVX2 Math & Reduction Kernels in `layerAVX512` and Wire `PackTQ2/4AVX2`
-
-- **Location**: `internal/simd/dispatch_tables.go:237-240, 304-322`
-- **Root Cause**: `layerAVX512` started from `d := *avx2` and then overwrote `MatMul`, `BrayCurtisDistance`, `Sum`, `Max`, `Min`, `Sin`, `Cos`, `Sincos`, `Sqrt`, `Atan2`, `ArgMax`, and `ArgMin` back to `*Generic` scalar implementations. In addition, `layerAVX2` only wired `PackTQ8AVX2` and omitted `PackTQ2AVX2` and `PackTQ4AVX2`.
-- **Remediation**: Remove the 12 scalar overrides in `layerAVX512` so AVX-512 inherits AVX2 kernels when dedicated 512-bit kernels are not present, and wire `PackTQ2AVX2` and `PackTQ4AVX2` in `layerAVX2`. (**Completed & Verified**)
-
-#### Improvement 4: Fix `DequantizeL2Uint8Uint8` Missing `math.Sqrt` and `float32ToSQ8Computer` False-Zero Fallback
-
-- **Location**: `internal/simd/dequant_distance.go:54-57`, `internal/store/index/arrow_hnsw_compute_quantized.go:406-430`
-- **Root Cause**: `DequantizeL2Uint8Uint8` called `EuclideanDistanceSQ8` (which returns squared `int32` L2 distance) and multiplied by `scale` without `math.Sqrt`, contradicting its docstring and its own fallback branch. Meanwhile, `float32ToSQ8Computer.ComputeSingle` returned `c.h.distFuncSquared(c.q, c.q)` (`0.0`) when `chunk == nil` and used a scalar loop instead of `simd.DequantizeL2Float32Uint8`.
-- **Remediation**: Apply `math.Sqrt(float64(dist)) * scale` in `DequantizeL2Uint8Uint8`, use `simd.DequantizeL2Float32Uint8` in `float32ToSQ8Computer.ComputeSingle`, and return `math.MaxFloat32, nil` when a chunk is absent. (**Completed & Verified**)
 
 #### Improvement 5: Reconstruct From Quantized Angle Codes in `TurboQuantEncoder.Encode`
 

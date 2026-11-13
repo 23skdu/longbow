@@ -1535,3 +1535,22 @@ Profiling `turboQuantDistanceAVX2Scratch` across 100,000 vectors revealed the in
 | **Chunk Resolution & Chunk Views** | < 1.0% | < 10 ms | Zero-allocation Arrow record chunk view lookup (amortized) |
 
 **Key Takeaway**: Over **89.2%** of the computational time in TurboQuant distance evaluation is consumed by scalar dequantization and coordinate reconstruction, while the SIMD distance computation accounts for only **4.3%**. Consequently, distance evaluation throughput is strictly bound by scalar reconstruction latency rather than SIMD vector throughput. This motivates Item 4 (candidate accumulation across hops to amortize batched kernel setup) and explains why TurboQuant search throughput is ~300–420 QPS rather than 2,000+ QPS.
+# Performance Recommendations (2026-11-07 Matrix Review)
+
+Derived from `docs/performance.md` §0a (100k/250k/500k, dims 128 & 384, all 13 search modes).
+
+## Key Bottlenecks
+
+1. **`uint32` dense search regression**: 518.1 QPS at 500k 128d vs ~3,000+ for adjacent integer types. Investigate dispatch/table lookup.
+2. **`complex128` throughput and memory**: 951.7 QPS at 500k 384d, 413.5s index time, 11.5 GB RSS. Needs tiled complex batch kernels and zero-copy extraction.
+3. **Geo search**: 12–35 QPS at 500k due to O(N) scan. Needs spatial cell/annulus pruning.
+4. **TurboQuant index time**: 429s at 500k; polar reconstruction is 47.8% of distance time. Needs Sincos LUT and batched reconstruction.
+5. **`float64` index time**: 433.5s at 500k 384d; needs batched `selectNeighbors`.
+6. **`filteredstring` for complex types**: 436 QPS at 500k 384d; optimize string filter fast path.
+
+## Recommended Actions
+
+- Prioritize P0-B, P0-C, P0-E (already in roadmap) for complex/geo/memory.
+- Add P0-F (uint32 dispatch), P0-I (TurboQuant LUT), P0-J (float64 selectNeighbors), P0-K (string filter), P0-L (memory cap) as P0 blockers in `docs/roadmap.md`.
+
+These are tracked as P0 blockers in `docs/roadmap.md`.

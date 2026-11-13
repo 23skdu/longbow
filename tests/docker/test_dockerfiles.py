@@ -39,7 +39,7 @@ DOCKERFILES = [
     },
     {
         "name": "Dockerfile.emlgo-gpu",
-        "stages": ["nvidia/cuda:13.4.3-devel-ubuntu24.04", "nvidia/cuda:13.4.3-runtime-ubuntu24.04"],
+        "stages": ["nvidia/cuda:13.5.0-devel-ubuntu24.04", "nvidia/cuda:13.5.0-runtime-ubuntu24.04"],
         "runtime_user": "longbow:longbow",
         "ports": ["3000", "3001", "9090"],
         "volume_data": True,
@@ -49,7 +49,7 @@ DOCKERFILES = [
     },
     {
         "name": "Dockerfile.nvidia",
-        "stages": ["nvidia/cuda:13.4.3-devel-ubuntu24.04", "nvidia/cuda:13.4.3-runtime-ubuntu24.04"],
+        "stages": ["nvidia/cuda:13.5.0-devel-ubuntu24.04", "nvidia/cuda:13.5.0-runtime-ubuntu24.04"],
         "runtime_user": "longbow:longbow",
         "ports": ["3000", "3001", "9090"],
         "volume_data": True,

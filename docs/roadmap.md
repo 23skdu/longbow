@@ -107,6 +107,22 @@ The current WASM/ONNX stack (`internal/wasm`, `internal/onnx`, `internal/store/e
 
 ---
 
+## P0 Performance Recommendations from 2026-11-07 Matrix (Memory & Throughput)
+
+Derived from `docs/performance.md` (§0a 2026-11-07 multi-dimension validation). These are P0 blockers because they represent >3x regressions or >10 GB memory footprints at 500k scale.
+
+| ID | Priority | Subsystem & Location | Recommendation | Target Impact |
+| :--- | :--- | :--- | :--- | :--- |
+| **P0-F** | **P0 Blocker** | `internal/store/index/arrow_hnsw_compute_uint32.go` (suspected) | `uint32` dense QPS collapses to **518.1 QPS** at 500k 128d while `uint16`/`uint64` deliver 3,454/1,360 QPS; investigate dispatch/table lookup regression | Restore uint32 to ~3,000+ QPS |
+| **P0-G** | **P0 Blocker** | `internal/simd/complex_batch.go` | `complex128` 500k 384d dense QPS is **951.7 QPS** with 413.5s index time and 11.5 GB RSS; implement tiled 4-way complex batch kernels (P0-B) and zero-copy extraction (P0-E) | 2.0x–3.0x QPS, 5.4x index time (as seen at 100k) |
+| **P0-H** | **P0 Blocker** | `internal/store/geo_search.go` | `geo` search is **12–35 QPS** at 500k due to O(N) R-tree scan; add spatial cell/annulus early termination for small k | 10x–25x geo QPS |
+| **P0-I** | **P0 Blocker** | `internal/store/index/turboquant.go` | TurboQuant polar reconstruction consumes 47.8% of distance time and index time is 429s at 500k; precompute Sincos LUT and batch reconstruction | 2x encode/index throughput |
+| **P0-J** | **P0 Blocker** | `internal/store/index/arrow_hnsw_insert.go` | `float64` 500k 384d index time is 433.5s and dense QPS 1,408; batch `selectNeighbors` via `EuclideanDistanceFloat64Batch` (P0-A) | 2.5x–3.5x index construction |
+| **P0-K** | **P0 Blocker** | `internal/store/index/search_string*.go` | `filteredstring` for `complex128` drops to 436 QPS at 500k 384d; optimize string filter fast path | 2x filtered-string QPS |
+| **P0-L** | **P0 Blocker** | `internal/store/index/arrow_hnsw_memory.go` | `complex128` RSS 11.5 GB at 500k; cap capacity growth and reuse arenas (P0-E) | ~3 GB saved |
+
+---
+
 ## 1. Executive Summary & Immediate P0 Fixes Landed
 
 During deep code analysis of the `internal/simd`, `internal/store/index`, `internal/store`, `internal/pq`, `internal/tensor`, `internal/memory`, and `internal/adbc` subsystems, 20 concrete performance and accuracy gaps were identified. Four critical P0 accuracy and dispatch regressions were fixed immediately and locked down by the expanded Accuracy and Oracle gates:

@@ -50,7 +50,6 @@ Completed P0 fixes have been removed from this roadmap; only outstanding work re
 | **11** | Performance | `internal/pq/opq.go:122-190` | `OPQEncoder.Encode`, `Decode`, and `RotateVector` convert `float32` <-> `float64` and allocate two `gonum/mat.VecDense` per call | 8x faster OPQ rotation, 0 heap allocations in steady state | `mem-bench` |
 | **12** | Accuracy & Perf | `internal/pq/kmeans.go:80-102, 160-188` | `TrainKMeans` uses uniform random centroid seeding (`rand.Perm`) and `MetricEuclidean` (`sqrt` per centroid in E-step) instead of K-Means++ and `FindNearestCentroid` | 15-25% lower PQ distortion + 3x faster codebook training | `oracle-gate` |
 | **13** | Performance | `internal/tensor/ops.go:174-208` | `contractNumeric` allocates `cIndices := make([]int, len(aAxes))` on every outer iteration and recomputes `totalIter` and `div/mod` inside the inner loop | Zero-alloc inner contraction loop + SIMD `DotProduct` fast path for 2D `MatMul` | `mem-bench` |
-| **14** | Accuracy | `internal/memory/arena.go:162-187, 201-230, 319` | `SlabArena.Alloc` and `AllocDirty` lock-free `allocFast` path omits `a.stats.UsedBytes.Add` and `metrics.ArenaFastPathTotal.Inc()` | 100% accurate `ArenaStats.UsedBytes` accounting across fast and slow paths | `oracle-gate` |
 | **15** | Accuracy | `internal/store/hnsw_temporal.go:70-136` | `TemporalHNSWIndex.SearchAsOf`, `SearchRange`, and `SearchSlidingWindow` return raw B-tree IDs with `Score: 0` without executing HNSW vector search | Full temporal-filtered ANN search with exact distance scores | `oracle-gate` |
 | **16** | Performance | `internal/store/index/bm25_arena.go:49, 100-140, 222-286` | `BM25ArenaIndex` leaves `postingArena` unused, allocates per-doc maps, scans postings in `O(P^2)`, and stores all TFs in a global `map[uint64]uint32` | Arena-backed contiguous postings + `simd.BM25ScoreBatch` (5x faster scoring) | `mem-bench` |
 | **17** | Performance | `internal/store/index/bm25_inverted_index.go:588-634` | `BM25InvertedIndex.SearchBM25` recomputes `blockMaxScores` over the entire posting list on every multi-term query instead of caching per-block max TF/min DocLen | Eliminates `O(N_postings)` pre-scan per query in Block-Max WAND | `perf-check` |
@@ -97,12 +96,6 @@ Completed P0 fixes have been removed from this roadmap; only outstanding work re
 - **Location**: `internal/tensor/ops.go:174-208`
 - **Root Cause**: `contractNumeric` allocates `cIndices := make([]int, len(aAxes))` on every outer free-index iteration and recomputes `totalIter` and `rem % dim` / `rem / dim` inside the innermost contraction loop.
 - **Remediation**: Pre-allocate `cIndices` and stride tables outside the outer loop, increment offsets with odometer carry addition, and add a direct `simd.MatMul` fast path for rank-2 `float32` contractions.
-
-#### Improvement 14: Fix Lock-Free Fast-Path Byte Accounting in `SlabArena`
-
-- **Location**: `internal/memory/arena.go:162-187, 201-230, 319`
-- **Root Cause**: When `SlabArena.Alloc` or `AllocDirty` succeeds on the initial lock-free `allocFast` call (lines 166 and 182), it returns immediately without updating `a.stats.UsedBytes.Add(int64(alignedSize))` or `metrics.ArenaFastPathTotal.Inc()`. Those counters are only updated when `allocFast` is called a second time inside `allocCommon`.
-- **Remediation**: Move `a.stats.UsedBytes.Add(int64(alignedSize))` and `metrics.ArenaFastPathTotal.Inc()` into `allocFast` itself so all fast-path allocations are accurately tracked.
 
 #### Improvement 15: Wire HNSW Vector Similarity Search into `TemporalHNSWIndex`
 

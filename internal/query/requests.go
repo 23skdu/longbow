@@ -22,3 +22,5 @@ type TicketQuery = core.TicketQuery
 type TemporalSearchRequest = core.TemporalSearchRequest
 type TemporalAggregationRequest = core.TemporalAggregationRequest
 type TemporalVersionHistoryRequest = core.TemporalVersionHistoryRequest
+type RangeSearchRequest = core.RangeSearchRequest
+type FederatedSearchRequest = core.FederatedSearchRequest

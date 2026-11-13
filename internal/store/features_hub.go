@@ -19,6 +19,7 @@ type FeatureSuite struct {
 	textSearch  *AdvancedTextSearchManager
 	provenance  *ProvenanceManager
 	cloudCtrl   *CloudControlPlane
+	federated   *FederatedQueryRouter
 }
 
 func (s *VectorStore) ensureFeatures() *FeatureSuite {
@@ -141,6 +142,17 @@ func (s *VectorStore) GetCloudControlPlane() *CloudControlPlane {
 	return fs.cloudCtrl
 }
 
+// GetFederatedRouter returns the lazily initialized federated cross-collection search router.
+func (s *VectorStore) GetFederatedRouter() *FederatedQueryRouter {
+	fs := s.ensureFeatures()
+	s.featuresMu.Lock()
+	defer s.featuresMu.Unlock()
+	if fs.federated == nil {
+		fs.federated = NewFederatedQueryRouter()
+	}
+	return fs.federated
+}
+
 // handleFeatureAction dispatches Flight DoAction calls for extended roadmap features.
 func (s *VectorStore) handleFeatureAction(action *flight.Action, stream flight.FlightService_DoActionServer) (bool, error) {
 	if action == nil {
@@ -176,6 +188,9 @@ func (s *VectorStore) handleFeatureAction(action *flight.Action, stream flight.F
 	if handled, err := s.handleCloudControlAction(action, stream); handled {
 		return true, err
 	}
+	if handled, err := s.handleFederatedAction(action, stream); handled {
+		return true, err
+	}
 	if handled, err := s.handleGraphQLAction(action, stream); handled {
 		return true, err
 	}
@@ -203,6 +218,8 @@ func (s *VectorStore) RegisterHTTPHandlers(mux *http.ServeMux) {
 	mux.Handle("/api/v1/admin/usage", s.httpAuthWrap(PermManageTenant, s.adminUsageHTTPHandler()))
 
 	mux.Handle("/api/v1/search", s.httpAuthWrap(PermRead, s.EdgeSearchHTTPHandler()))
+	mux.Handle("/api/v1/search/federated", s.httpAuthWrap(PermRead, s.federatedSearchHTTPHandler()))
+	mux.Handle("/api/v1/federated/collections", s.httpMethodAuthWrap(PermRead, PermWrite, s.federatedCollectionsHTTPHandler()))
 	mux.Handle("/api/v1/edge/sync", s.httpAuthWrap(PermWrite, s.EdgeSyncHTTPHandler()))
 
 	mux.Handle("/api/v1/cloud/clusters", s.httpMethodAuthWrap(PermRead, PermManageTenant, s.cloudClustersCollectionHTTPHandler()))

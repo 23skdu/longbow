@@ -219,6 +219,8 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			}
 		}
 
+		h.encodeAndStoreTQ(data, id, vec)
+
 		// PERSIST LEVEL: Ensure the node's hierarchical level is stored in metadata
 		cID := int(id) / types.ChunkSize
 		cOff := int(id) % types.ChunkSize

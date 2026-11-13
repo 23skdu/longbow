@@ -241,6 +241,10 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		return s.handleDoGetGeoSearch(query.GeoSearch, query.WindowFunctions, stream, mem)
 	case query.TemporalSearch != nil:
 		return s.handleDoGetTemporalSearch(query.TemporalSearch, query.WindowFunctions, stream, mem)
+	case query.RangeSearch != nil:
+		return s.handleDoGetRangeSearch(query.RangeSearch, query.WindowFunctions, stream, mem)
+	case query.FederatedSearch != nil:
+		return s.handleDoGetFederatedSearch(query.FederatedSearch, query.WindowFunctions, stream, mem)
 	case query.Search != nil:
 		if isGlobal {
 			query.Search.LocalOnly = false

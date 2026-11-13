@@ -348,25 +348,33 @@ func buildOpenAPISpec() map[string]any {
 			},
 		},
 		"paths": map[string]any{
-			"/api/v1/health":                       map[string]any{"get": map[string]any{"summary": "Health check", "responses": okResp("Healthy")}},
-			"/api/v1/openapi.json":                 map[string]any{"get": map[string]any{"summary": "OpenAPI schema", "responses": okResp("OpenAPI JSON")}},
-			"/api/v1/graphql":                      map[string]any{"post": map[string]any{"summary": "Execute GraphQL query/mutation", "responses": okResp("GraphQL result")}},
-			"/api/v1/namespaces":                   map[string]any{"get": map[string]any{"summary": "List namespaces", "responses": okResp("Namespaces")}, "post": map[string]any{"summary": "Create namespace", "responses": okResp("Created")}},
-			"/api/v1/namespaces/{name}":            map[string]any{"delete": map[string]any{"summary": "Delete namespace", "responses": okResp("Deleted")}},
-			"/api/v1/datasets":                     map[string]any{"get": map[string]any{"summary": "List datasets", "responses": okResp("Datasets")}, "post": map[string]any{"summary": "Create/seed dataset", "responses": okResp("Created")}},
-			"/api/v1/datasets/{name}":              map[string]any{"get": map[string]any{"summary": "Inspect dataset", "responses": okResp("Dataset info")}, "delete": map[string]any{"summary": "Drop dataset", "responses": okResp("Dropped")}},
-			"/api/v1/datasets/{name}/vectors":      map[string]any{"post": map[string]any{"summary": "Upsert JSON vectors", "responses": okResp("Upserted")}},
-			"/api/v1/datasets/{name}/vectors/{id}": map[string]any{"get": map[string]any{"summary": "Get vector by ID", "responses": okResp("Vector")}, "delete": map[string]any{"summary": "Delete vector by ID", "responses": okResp("Deleted")}},
-			"/api/v1/datasets/{name}/search":       map[string]any{"post": map[string]any{"summary": "Vector search", "responses": okResp("Search results")}},
-			"/api/v1/datasets/{name}/hybrid":       map[string]any{"post": map[string]any{"summary": "Hybrid vector + BM25 + graph search", "responses": okResp("Hybrid results")}},
-			"/api/v1/datasets/{name}/recommend":    map[string]any{"post": map[string]any{"summary": "Seed recommendations", "responses": okResp("Recommended results")}},
-			"/api/v1/datasets/{name}/aggregations": map[string]any{"post": map[string]any{"summary": "Columnar & metadata aggregations", "responses": okResp("Aggregation rows")}},
-			"/api/v1/admin/usage":                  map[string]any{"get": map[string]any{"summary": "Tenant metering & billing summary", "responses": okResp("Usage summary")}},
-			"/api/v1/cloud/clusters":               map[string]any{"get": map[string]any{"summary": "List managed cloud clusters", "responses": okResp("Clusters")}, "post": map[string]any{"summary": "Create managed cloud cluster", "responses": okResp("Cluster created")}},
-			"/api/v1/cloud/clusters/{id}/scale":    map[string]any{"post": map[string]any{"summary": "Scale cloud cluster", "responses": okResp("Scaled cluster")}},
-			"/api/v1/cloud/clusters/{id}/regions":  map[string]any{"post": map[string]any{"summary": "Add replica region", "responses": okResp("Updated cluster")}},
-			"/api/v1/cloud/clusters/{id}/promote":  map[string]any{"post": map[string]any{"summary": "Failover / promote region", "responses": okResp("Promoted cluster")}},
-			"/api/v1/cloud/clusters/{id}/sla":      map[string]any{"get": map[string]any{"summary": "Evaluate cluster SLA compliance", "responses": okResp("SLA report")}},
+			"/api/v1/health":                            map[string]any{"get": map[string]any{"summary": "Health check", "responses": okResp("Healthy")}},
+			"/api/v1/openapi.json":                      map[string]any{"get": map[string]any{"summary": "OpenAPI schema", "responses": okResp("OpenAPI JSON")}},
+			"/api/v1/graphql":                           map[string]any{"post": map[string]any{"summary": "Execute GraphQL query/mutation", "responses": okResp("GraphQL result")}},
+			"/api/v1/namespaces":                        map[string]any{"get": map[string]any{"summary": "List namespaces", "responses": okResp("Namespaces")}, "post": map[string]any{"summary": "Create namespace", "responses": okResp("Created")}},
+			"/api/v1/namespaces/{name}":                 map[string]any{"delete": map[string]any{"summary": "Delete namespace", "responses": okResp("Deleted")}},
+			"/api/v1/datasets":                          map[string]any{"get": map[string]any{"summary": "List datasets", "responses": okResp("Datasets")}, "post": map[string]any{"summary": "Create/seed dataset", "responses": okResp("Created")}},
+			"/api/v1/datasets/{name}":                   map[string]any{"get": map[string]any{"summary": "Inspect dataset", "responses": okResp("Dataset info")}, "delete": map[string]any{"summary": "Drop dataset", "responses": okResp("Dropped")}},
+			"/api/v1/datasets/{name}/vectors":           map[string]any{"post": map[string]any{"summary": "Upsert JSON vectors", "responses": okResp("Upserted")}},
+			"/api/v1/datasets/{name}/vectors/{id}":      map[string]any{"get": map[string]any{"summary": "Get vector by ID", "responses": okResp("Vector")}, "delete": map[string]any{"summary": "Delete vector by ID", "responses": okResp("Deleted")}},
+			"/api/v1/datasets/{name}/search":            map[string]any{"post": map[string]any{"summary": "Vector search (dense + filtered)", "responses": okResp("Search results")}},
+			"/api/v1/datasets/{name}/search/by-id":      map[string]any{"post": map[string]any{"summary": "Vector search by stored vector ID", "responses": okResp("Search results")}},
+			"/api/v1/datasets/{name}/hybrid":            map[string]any{"post": map[string]any{"summary": "Hybrid vector + BM25 + graph search", "responses": okResp("Hybrid results")}},
+			"/api/v1/datasets/{name}/text-search":       map[string]any{"post": map[string]any{"summary": "Advanced full-text search (Boolean AST, phrase, fuzzy, snippets, facets)", "responses": okResp("Full-text results")}},
+			"/api/v1/datasets/{name}/geo-search":        map[string]any{"post": map[string]any{"summary": "Geospatial radius, bounding-box, or geo+vector hybrid search", "responses": okResp("Geospatial results")}},
+			"/api/v1/datasets/{name}/temporal-search":   map[string]any{"post": map[string]any{"summary": "Temporal as-of, range, or sliding-window search", "responses": okResp("Temporal results")}},
+			"/api/v1/datasets/{name}/multimodal-search": map[string]any{"post": map[string]any{"summary": "Cross-modal text/image/audio search", "responses": okResp("Multi-modal results")}},
+			"/api/v1/datasets/{name}/range-search":      map[string]any{"post": map[string]any{"summary": "Distance-threshold range search", "responses": okResp("Range results")}},
+			"/api/v1/datasets/{name}/recommend":         map[string]any{"post": map[string]any{"summary": "Seed recommendations", "responses": okResp("Recommended results")}},
+			"/api/v1/datasets/{name}/aggregations":      map[string]any{"post": map[string]any{"summary": "Columnar & metadata aggregations", "responses": okResp("Aggregation rows")}},
+			"/api/v1/search/federated":                  map[string]any{"post": map[string]any{"summary": "Federated cross-collection vector search (RRF)", "responses": okResp("Federated results")}},
+			"/api/v1/federated/collections":             map[string]any{"get": map[string]any{"summary": "List federated collections", "responses": okResp("Federated collections")}, "post": map[string]any{"summary": "Register collection tags/metadata for federated routing", "responses": okResp("Registered")}},
+			"/api/v1/admin/usage":                       map[string]any{"get": map[string]any{"summary": "Tenant metering & billing summary", "responses": okResp("Usage summary")}},
+			"/api/v1/cloud/clusters":                    map[string]any{"get": map[string]any{"summary": "List managed cloud clusters", "responses": okResp("Clusters")}, "post": map[string]any{"summary": "Create managed cloud cluster", "responses": okResp("Cluster created")}},
+			"/api/v1/cloud/clusters/{id}/scale":         map[string]any{"post": map[string]any{"summary": "Scale cloud cluster", "responses": okResp("Scaled cluster")}},
+			"/api/v1/cloud/clusters/{id}/regions":       map[string]any{"post": map[string]any{"summary": "Add replica region", "responses": okResp("Updated cluster")}},
+			"/api/v1/cloud/clusters/{id}/promote":       map[string]any{"post": map[string]any{"summary": "Failover / promote region", "responses": okResp("Promoted cluster")}},
+			"/api/v1/cloud/clusters/{id}/sla":           map[string]any{"get": map[string]any{"summary": "Evaluate cluster SLA compliance", "responses": okResp("SLA report")}},
 		},
 	}
 }
@@ -518,7 +526,19 @@ func (s *VectorStore) datasetItemHTTPHandler() http.Handler {
 			return
 		}
 
-		for _, suffix := range []string{"/vectors", "/search", "/hybrid", "/recommend", "/aggregations"} {
+		for _, suffix := range []string{
+			"/vectors",
+			"/search/by-id",
+			"/search",
+			"/hybrid",
+			"/text-search",
+			"/geo-search",
+			"/temporal-search",
+			"/multimodal-search",
+			"/range-search",
+			"/recommend",
+			"/aggregations",
+		} {
 			if strings.HasSuffix(rawPath, suffix) {
 				dsName, _ := url.PathUnescape(strings.TrimSuffix(rawPath, suffix))
 				s.handleDatasetSubAction(w, r, dsName, suffix)
@@ -652,13 +672,15 @@ func (s *VectorStore) handleDatasetSubAction(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		var req struct {
-			Vector     []float32 `json:"vector"`
-			TextQuery  string    `json:"text_query"`
-			K          int       `json:"k"`
-			Alpha      float32   `json:"alpha"`
-			RRFK       int       `json:"rrf_k"`
-			GraphAlpha float32   `json:"graph_alpha"`
-			GraphDepth int       `json:"graph_depth"`
+			Vector     []float32     `json:"vector"`
+			TextQuery  string        `json:"text_query"`
+			K          int           `json:"k"`
+			Alpha      float32       `json:"alpha"`
+			RRFK       int           `json:"rrf_k"`
+			GraphAlpha float32       `json:"graph_alpha"`
+			GraphDepth int           `json:"graph_depth"`
+			RawHybrid  bool          `json:"raw_hybrid,omitempty"`
+			Filters    []core.Filter `json:"filters,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeRESTError(w, "hybrid", r.Method, http.StatusBadRequest, err.Error())
@@ -670,13 +692,171 @@ func (s *VectorStore) handleDatasetSubAction(w http.ResponseWriter, r *http.Requ
 		if req.RRFK <= 0 {
 			req.RRFK = 60
 		}
-		res, err := s.SearchHybrid(r.Context(), dsName, req.Vector, req.TextQuery, req.K, req.Alpha, req.RRFK, req.GraphAlpha, req.GraphDepth, false)
+		res, err := s.SearchHybridWithFilters(r.Context(), dsName, req.Vector, req.TextQuery, req.K, req.Alpha, req.RRFK, req.GraphAlpha, req.GraphDepth, req.RawHybrid, req.Filters)
 		if err != nil {
 			writeRESTError(w, "hybrid", r.Method, http.StatusBadRequest, err.Error())
 			return
 		}
 		res = s.FilterResultsByRLS(r.Context(), dsName, res)
 		writeRESTJSON(w, "hybrid", r.Method, http.StatusOK, map[string]any{"results": res, "count": len(res)})
+
+	case "/search/by-id":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
+			writeRESTError(w, "search_by_id", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req core.VectorSearchByIDRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "search_by_id", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Dataset = dsName
+		res, err := s.SearchByID(r.Context(), &req)
+		if err != nil {
+			writeRESTError(w, "search_by_id", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "search_by_id", r.Method, http.StatusOK, map[string]any{"results": res, "count": len(res)})
+
+	case "/text-search":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
+			writeRESTError(w, "text_search", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req AdvancedTextQueryRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "text_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Dataset = dsName
+		resp, err := s.GetTextSearchManager().Search(r.Context(), req)
+		if err != nil {
+			writeRESTError(w, "text_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "text_search", r.Method, http.StatusOK, resp)
+
+	case "/geo-search":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
+			writeRESTError(w, "geo_search", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req types.GeoSearchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "geo_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Dataset = dsName
+		if req.SearchType == "" {
+			req.SearchType = "radius"
+		}
+		if req.K <= 0 {
+			req.K = 10
+		}
+		res, err := s.GeoSearch(r.Context(), &req)
+		if err != nil {
+			writeRESTError(w, "geo_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "geo_search", r.Method, http.StatusOK, map[string]any{"results": res, "count": len(res)})
+
+	case "/temporal-search":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
+			writeRESTError(w, "temporal_search", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req struct {
+			SearchType string          `json:"search_type"`
+			K          int             `json:"k"`
+			Timestamp  int64           `json:"timestamp,omitempty"`
+			StartTime  int64           `json:"start_time,omitempty"`
+			EndTime    int64           `json:"end_time,omitempty"`
+			WindowSize int             `json:"window_size,omitempty"`
+			Duration   json.RawMessage `json:"duration,omitempty"`
+			DurationNs int64           `json:"duration_nanos,omitempty"`
+			Filters    []core.Filter   `json:"filters,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "temporal_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		if req.SearchType == "" {
+			req.SearchType = "as_of"
+		}
+		if req.K <= 0 {
+			req.K = 10
+		}
+		dur := time.Duration(req.DurationNs)
+		if len(req.Duration) > 0 && string(req.Duration) != "null" {
+			var durStr string
+			var durInt int64
+			if uerr := json.Unmarshal(req.Duration, &durStr); uerr == nil {
+				parsed, perr := time.ParseDuration(durStr)
+				if perr != nil {
+					writeRESTError(w, "temporal_search", r.Method, http.StatusBadRequest, perr.Error())
+					return
+				}
+				dur = parsed
+			} else if uerr := json.Unmarshal(req.Duration, &durInt); uerr == nil {
+				dur = time.Duration(durInt)
+			} else {
+				writeRESTError(w, "temporal_search", r.Method, http.StatusBadRequest, "invalid duration format")
+				return
+			}
+		}
+		res, err := s.TemporalSearch(r.Context(), &types.TemporalSearchRequest{
+			Dataset:    dsName,
+			SearchType: req.SearchType,
+			K:          req.K,
+			Timestamp:  req.Timestamp,
+			StartTime:  req.StartTime,
+			EndTime:    req.EndTime,
+			WindowSize: req.WindowSize,
+			Duration:   dur,
+			Filters:    req.Filters,
+		})
+		if err != nil {
+			writeRESTError(w, "temporal_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "temporal_search", r.Method, http.StatusOK, map[string]any{"results": res, "count": len(res)})
+
+	case "/multimodal-search":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
+			writeRESTError(w, "multimodal_search", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req MultiModalSearchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "multimodal_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Dataset = dsName
+		res, err := s.GetMultiModalPipeline().Search(r.Context(), req)
+		if err != nil {
+			writeRESTError(w, "multimodal_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		res = s.FilterResultsByRLS(r.Context(), dsName, res)
+		writeRESTJSON(w, "multimodal_search", r.Method, http.StatusOK, map[string]any{"results": res, "count": len(res)})
+
+	case "/range-search":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
+			writeRESTError(w, "range_search", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req core.RangeSearchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "range_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Dataset = dsName
+		res, err := s.RangeSearch(r.Context(), dsName, req.Vector, req.Threshold, req.Filters, req.MaxResults)
+		if err != nil {
+			writeRESTError(w, "range_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "range_search", r.Method, http.StatusOK, map[string]any{"results": res, "count": len(res), "threshold": req.Threshold})
 
 	case "/recommend":
 		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
@@ -740,6 +920,78 @@ func (s *VectorStore) handleDatasetSubAction(w http.ResponseWriter, r *http.Requ
 			"rows":        rows,
 		})
 	}
+}
+
+func (s *VectorStore) federatedSearchHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "federated_search", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req core.FederatedSearchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "federated_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		res, err := s.FederatedSearch(r.Context(), req.Collections, req.Tags, req.Vector, req.K, req.RRFK)
+		if err != nil {
+			writeRESTError(w, "federated_search", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "federated_search", r.Method, http.StatusOK, map[string]any{"results": res, "count": len(res)})
+	})
+}
+
+func (s *VectorStore) federatedCollectionsHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		router := s.GetFederatedRouter()
+		switch r.Method {
+		case http.MethodGet:
+			s.syncDatasetToFederatedRouter(router, s.GetActiveDatasets())
+			cols := router.ListCollections()
+			visible := make([]*CollectionInfo, 0, len(cols))
+			for _, c := range cols {
+				if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, c.Name); err == nil {
+					visible = append(visible, c)
+				}
+			}
+			writeRESTJSON(w, "federated_collections", r.Method, http.StatusOK, map[string]any{"collections": visible, "count": len(visible)})
+		case http.MethodPost:
+			r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+			var req struct {
+				Dataset     string            `json:"dataset"`
+				Name        string            `json:"name"`
+				Description string            `json:"description,omitempty"`
+				Tags        []string          `json:"tags,omitempty"`
+				Metadata    map[string]string `json:"metadata,omitempty"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeRESTError(w, "federated_collections", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			name := req.Dataset
+			if name == "" {
+				name = req.Name
+			}
+			if !isValidResourceName(name) {
+				writeRESTError(w, "federated_collections", r.Method, http.StatusBadRequest, "invalid collection name")
+				return
+			}
+			if _, err := s.AuthorizeDatasetAccess(r.Context(), PermWrite, name); err != nil {
+				writeRESTError(w, "federated_collections", r.Method, http.StatusForbidden, err.Error())
+				return
+			}
+			info := &CollectionInfo{Name: name, Description: req.Description, Tags: req.Tags, Metadata: req.Metadata}
+			router.UpsertCollection(name, &storeDatasetSearcher{store: s, dataset: name}, info)
+			for _, tag := range req.Tags {
+				_ = router.RegisterRoutingRule(&RoutingRule{Tag: tag, Collection: name, Priority: 1})
+			}
+			writeRESTJSON(w, "federated_collections", r.Method, http.StatusOK, map[string]any{"status": "registered", "collection": name, "tags": req.Tags})
+		default:
+			writeRESTError(w, "federated_collections", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
 }
 
 func (s *VectorStore) runDatasetAggregation(dsName string, groupBy []string, aggs []AggSpec, filters map[string]string) ([]MaterializedViewRow, int64, error) {
@@ -1527,6 +1779,21 @@ func argFloat64Slice(v any) []float32 {
 	return out
 }
 
+func argStringSlice(v any) []string {
+	switch items := v.(type) {
+	case []string:
+		return items
+	case []any:
+		out := make([]string, 0, len(items))
+		for _, it := range items {
+			out = append(out, fmt.Sprint(it))
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 func projectSelectionSet(val any, sels []gqlSelection) any {
 	if len(sels) == 0 || val == nil {
 		return val
@@ -1605,7 +1872,16 @@ func graphqlSchemaIntrospection() map[string]any {
 				{"name": "datasets", "type": "[DatasetInfo!]!"},
 				{"name": "dataset", "type": "DatasetInfo"},
 				{"name": "search", "type": "[SearchResult!]!"},
+				{"name": "searchById", "type": "[SearchResult!]!"},
 				{"name": "hybridSearch", "type": "[SearchResult!]!"},
+				{"name": "textSearch", "type": "AdvancedTextSearchResponse"},
+				{"name": "geoSearch", "type": "[SearchResult!]!"},
+				{"name": "temporalSearch", "type": "[SearchResult!]!"},
+				{"name": "multimodalSearch", "type": "[SearchResult!]!"},
+				{"name": "rangeSearch", "type": "[SearchResult!]!"},
+				{"name": "federatedSearch", "type": "[SearchResult!]!"},
+				{"name": "federatedCollections", "type": "[CollectionInfo!]!"},
+				{"name": "recommend", "type": "[SearchResult!]!"},
 				{"name": "aggregate", "type": "[AggregationRow!]!"},
 				{"name": "usage", "type": "[TenantUsageReport!]!"},
 				{"name": "cloudClusters", "type": "[CloudCluster!]!"},
@@ -1755,6 +2031,16 @@ func (s *VectorStore) execGQLQueryField(ctx context.Context, field string, args 
 		vec := argFloat64Slice(args["vector"])
 		k := argInt(args, "k", 10)
 		return s.SearchDatasetVectors(ctx, ds, vec, k, nil)
+	case "searchById":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
+			return nil, err
+		}
+		return s.SearchByID(ctx, &core.VectorSearchByIDRequest{
+			Dataset: ds,
+			ID:      argString(args, "id"),
+			K:       argInt(args, "k", 10),
+		})
 	case "hybridSearch":
 		ds := argString(args, "dataset")
 		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
@@ -1764,7 +2050,116 @@ func (s *VectorStore) execGQLQueryField(ctx context.Context, field string, args 
 		textQ := argString(args, "text")
 		k := argInt(args, "k", 10)
 		alpha := argFloat32(args, "alpha", 0.5)
-		res, err := s.SearchHybrid(ctx, ds, vec, textQ, k, alpha, 60, 0, 0, false)
+		rrfK := argInt(args, "rrfK", 60)
+		res, err := s.SearchHybridWithFilters(ctx, ds, vec, textQ, k, alpha, rrfK, argFloat32(args, "graphAlpha", 0), argInt(args, "graphDepth", 0), false, nil)
+		if err != nil {
+			return nil, err
+		}
+		return s.FilterResultsByRLS(ctx, ds, res), nil
+	case "textSearch":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
+			return nil, err
+		}
+		return s.GetTextSearchManager().Search(ctx, AdvancedTextQueryRequest{
+			Dataset:      ds,
+			Query:        argString(args, "query"),
+			K:            argInt(args, "k", 10),
+			FuzzyMaxDist: argInt(args, "fuzzyMaxDist", 0),
+			FacetFields:  argStringSlice(args["facetFields"]),
+		})
+	case "geoSearch":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
+			return nil, err
+		}
+		searchType := argString(args, "searchType")
+		if searchType == "" {
+			searchType = "radius"
+		}
+		var box *core.GeoBoundingBox
+		if argFloat32(args, "maxLat", 0) != 0 || argFloat32(args, "minLat", 0) != 0 {
+			box = &core.GeoBoundingBox{
+				MinLat: float64(argFloat32(args, "minLat", 0)),
+				MaxLat: float64(argFloat32(args, "maxLat", 0)),
+				MinLon: float64(argFloat32(args, "minLon", 0)),
+				MaxLon: float64(argFloat32(args, "maxLon", 0)),
+			}
+		}
+		return s.GeoSearch(ctx, &types.GeoSearchRequest{
+			Dataset:     ds,
+			Center:      core.GeoPoint{Lat: float64(argFloat32(args, "lat", 0)), Lon: float64(argFloat32(args, "lon", 0))},
+			RadiusKm:    float64(argFloat32(args, "radiusKm", 10)),
+			Box:         box,
+			K:           argInt(args, "k", 10),
+			SearchType:  searchType,
+			QueryVector: argFloat64Slice(args["vector"]),
+		})
+	case "temporalSearch":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
+			return nil, err
+		}
+		searchType := argString(args, "searchType")
+		if searchType == "" {
+			searchType = "as_of"
+		}
+		return s.TemporalSearch(ctx, &types.TemporalSearchRequest{
+			Dataset:    ds,
+			SearchType: searchType,
+			K:          argInt(args, "k", 10),
+			Timestamp:  int64(argInt(args, "timestamp", 0)),
+			StartTime:  int64(argInt(args, "startTime", 0)),
+			EndTime:    int64(argInt(args, "endTime", 0)),
+			WindowSize: argInt(args, "windowSize", 0),
+		})
+	case "multimodalSearch":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
+			return nil, err
+		}
+		res, err := s.GetMultiModalPipeline().Search(ctx, MultiModalSearchRequest{
+			Dataset:   ds,
+			Modality:  MediaModality(argString(args, "modality")),
+			TextQuery: argString(args, "textQuery"),
+			K:         argInt(args, "k", 10),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return s.FilterResultsByRLS(ctx, ds, res), nil
+	case "rangeSearch":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
+			return nil, err
+		}
+		return s.RangeSearch(ctx, ds, argFloat64Slice(args["vector"]), argFloat32(args, "threshold", 0.5), nil, argInt(args, "maxResults", 0))
+	case "federatedSearch":
+		return s.FederatedSearch(ctx, argStringSlice(args["collections"]), argStringSlice(args["tags"]), argFloat64Slice(args["vector"]), argInt(args, "k", 10), argInt(args, "rrfK", 0))
+	case "federatedCollections":
+		router := s.GetFederatedRouter()
+		s.syncDatasetToFederatedRouter(router, s.GetActiveDatasets())
+		cols := router.ListCollections()
+		visible := make([]*CollectionInfo, 0, len(cols))
+		for _, c := range cols {
+			if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, c.Name); err == nil {
+				visible = append(visible, c)
+			}
+		}
+		return visible, nil
+	case "recommend":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
+			return nil, err
+		}
+		res, err := s.Recommend(ctx, &qry.RecommendRequest{
+			Dataset: ds,
+			SeedIDs: argStringSlice(args["seedIds"]),
+			K:       argInt(args, "k", 10),
+			Alpha:   argFloat32(args, "alpha", 0.5),
+			MaxHops: argInt(args, "maxHops", 2),
+			Decay:   argFloat32(args, "decay", 0.5),
+		})
 		if err != nil {
 			return nil, err
 		}

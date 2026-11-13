@@ -29,6 +29,12 @@ type HybridSearchRequest struct {
 // SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
 // If alpha is < 0, it is automatically estimated using EstimateAlpha.
 func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int, rawHybrid bool) ([]SearchResult, error) {
+	return s.SearchHybridWithFilters(ctx, name, queryVec, textQuery, k, alpha, rrfK, graphAlpha, graphDepth, rawHybrid, nil)
+}
+
+// SearchHybridWithFilters performs a hybrid search combining dense vector search, sparse BM25 search,
+// optional GraphRAG expansion, and pre-filtering via structured metadata filters.
+func (s *VectorStore) SearchHybridWithFilters(ctx context.Context, name string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int, rawHybrid bool, filters []query.Filter) ([]SearchResult, error) {
 	// Adaptive Alpha
 	if alpha < 0 {
 		alpha = EstimateAlpha(textQuery)
@@ -44,6 +50,7 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 		Str("text_query", textQuery).
 		Float32("alpha", alpha).
 		Int("k", k).
+		Int("filters", len(filters)).
 		Msg("SearchHybrid started")
 
 	ds, ok := s.getDataset(name)
@@ -57,6 +64,20 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 	bm25Arena := ds.BM25ArenaIndex
 	ds.dataMu.RUnlock()
 
+	var filterRoaring *roaring.Bitmap
+	if len(filters) > 0 {
+		bs, ferr := ds.GenerateFilterBitset(filters, nil)
+		if ferr != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid filters: %v", ferr)
+		}
+		if bs != nil {
+			if bs.Count() == 0 {
+				return nil, nil
+			}
+			filterRoaring = bs.AsRoaring()
+		}
+	}
+
 	var denseResults []SearchResult
 	var sparseResults []SearchResult
 	var wg sync.WaitGroup
@@ -67,7 +88,7 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 		defer wg.Done()
 		if alpha > 0 && len(queryVec) > 0 {
 			if index != nil {
-				denseResults, denseErr = index.SearchVectors(ctx, queryVec, k*2, nil, SearchOptions{})
+				denseResults, denseErr = index.SearchVectors(ctx, queryVec, k*2, filters, SearchOptions{})
 				if denseErr != nil {
 					s.logger.Error().Err(denseErr).Msg("Vector search failed in hybrid search")
 					return
@@ -84,11 +105,11 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 			bm25Start := time.Now()
 
 			if bm25Arena != nil {
-				sparseResults = searchBM25Arena(bm25Arena, textQuery, k*2, nil)
+				sparseResults = searchBM25Arena(bm25Arena, textQuery, k*2, filterRoaring)
 				metrics.HybridSearchKeywordTotal.Inc()
 				metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
 			} else if bm25 != nil {
-				sparseResults = bm25.SearchBM25(textQuery, k*2, nil, s.resultPool)
+				sparseResults = bm25.SearchBM25(textQuery, k*2, filterRoaring, s.resultPool)
 				metrics.HybridSearchKeywordTotal.Inc()
 				metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
 			}

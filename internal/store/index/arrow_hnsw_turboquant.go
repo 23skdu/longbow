@@ -197,3 +197,38 @@ func (h *ArrowHNSW) ReleaseTQScratchArena() {
 		arena.Release()
 	}
 }
+
+// encodeAndStoreTQ ensures the TurboQuant runtime matches data.Dims and writes
+// the packed TurboQuant code for id into data's VectorsTQ chunk.
+func (h *ArrowHNSW) encodeAndStoreTQ(data *types.GraphData, id uint32, vec any) {
+	if data == nil || (h.config.DataType != types.VectorTypeTQ && !h.config.TurboQuantEnabled) {
+		return
+	}
+	if data.Dims > 0 {
+		cur := h.tq()
+		if cur == nil || cur.encoder == nil || cur.encoder.dims != data.Dims {
+			h.ensureTQComponents(data.Dims)
+		}
+	}
+	tqEnc := tqEncoderOf(h)
+	if tqEnc == nil {
+		return
+	}
+	tqChunk := data.GetVectorsTQChunk(int(types.ChunkID(id)))
+	if tqChunk == nil {
+		return
+	}
+	vf32, ok := vec.([]float32)
+	if !ok {
+		return
+	}
+	code, err := tqEnc.Encode(vf32)
+	if err != nil {
+		return
+	}
+	stride := data.PackedSize()
+	start := int(types.ChunkOffset(id)) * stride // #nosec G115
+	if start >= 0 && start+stride <= len(tqChunk) {
+		copy(tqChunk[start:start+stride], code)
+	}
+}

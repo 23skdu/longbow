@@ -1140,6 +1140,7 @@ class BenchmarkRunner(ScenarioMixin):
         env["LONGBOW_GRAPHRAG_ENABLED"] = "true"
         env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
         env["LONGBOW_HYBRID_SEARCH_ENABLED"] = "true"
+        env["LONGBOW_HYBRID_TEXT_COLUMNS"] = "text,category"
         env["LONGBOW_HNSW_TURBOQUANT_ENABLED"] = "true"
         env["LONGBOW_RERANKER_ENABLED"] = "true"
         env["LONGBOW_INDEXING_ADAPTIVE_ENABLED"] = "true"
@@ -1675,10 +1676,19 @@ class BenchmarkRunner(ScenarioMixin):
         search_metrics = {}
         # Only validate modes relevant to the current benchmark mode
         current_mode = getattr(self, "current_mode", self.args.mode)
+        resolved_modes = getattr(self.args, "resolved_search_modes", ["all"])
         if current_mode == "temporal":
             expected_modes = ["temporal_as_of", "temporal_range", "temporal_window"]
+        elif resolved_modes == ["all"]:
+            expected_modes = [
+                "dense", "hybrid", "sparse", "filtered", "filteredbool",
+                "filteredstring", "byid", "range", "advancedtext", "graphrag",
+                "globalgraphrag", "recommend", "geo", "geobox", "geohybrid",
+                "temporal", "temporalrange", "temporalwindow", "multimodal",
+                "federated", "learnedindex",
+            ]
         else:
-            expected_modes = ["dense", "hybrid", "sparse", "filtered", "byid"]
+            expected_modes = [m.lower().replace("_", "").replace("-", "") for m in resolved_modes]
         for key, value in metrics.items():
             if "_qps" in key:
                 prefix = key.replace("_qps", "")
@@ -2091,6 +2101,18 @@ class BenchmarkRunner(ScenarioMixin):
                     continue
                 if mode == "temporal":
                     self.execute_temporal()
+                    continue
+                if mode == "range":
+                    self.execute_range()
+                    continue
+                if mode == "federated":
+                    self.execute_federated()
+                    continue
+                if mode == "text":
+                    self.execute_text()
+                    continue
+                if mode == "multimodal":
+                    self.execute_multimodal()
                     continue
                 if mode == "memory_soak":
                     self.execute_memory_soak()
@@ -2745,7 +2767,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mode",
         default="cpu",
-        help="Benchmark mode(s), comma-separated: cpu, metal, cuda, onnx, recommend, deletion, graphrag, exchange, cluster, temporal, geo, churn, learned_index",
+        help="Benchmark mode(s), comma-separated: cpu, metal, cuda, onnx, recommend, deletion, graphrag, exchange, cluster, temporal, geo, range, federated, text, multimodal, churn, learned_index",
     )
     parser.add_argument(
         "--dims", default="128,768", help="Comma-separated dimensions"
@@ -2998,7 +3020,7 @@ if __name__ == "__main__":
         "--search-modes",
         type=str,
         default="all",
-        help="Comma-separated search modes to run (default: all)",
+        help="Comma-separated search modes for cpu/metal/cuda matrix (default: all -> dense, hybrid, sparse, filtered, filteredbool, filteredstring, byid, range, advancedtext, graphrag, globalgraphrag, recommend, geo, geobox, geohybrid, temporal, temporalrange, temporalwindow, multimodal, federated, learnedindex)",
     )
     parser.add_argument(
         "--shuffle-modes",

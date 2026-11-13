@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"math"
 	"time"
 
@@ -18,48 +19,47 @@ import (
 
 // ListFlights returns a list of available datasets as FlightInfo objects.
 
-func (s *VectorStore) handleDoGetGeoSearch(req *types.GeoSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
+// GeoSearch executes geospatial radius, bounding-box, or geo+vector hybrid search,
+// including optional global mesh scatter-gather and RLS filtering.
+func (s *VectorStore) GeoSearch(ctx context.Context, req *types.GeoSearchRequest) ([]SearchResult, error) {
 	ds, ok := s.getDataset(req.Dataset)
 	if !ok {
-		return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
 	}
 
 	if ds.GeoIndex == nil {
-		return status.Error(codes.FailedPrecondition, "dataset has no geospatial index")
+		return nil, status.Error(codes.FailedPrecondition, "dataset has no geospatial index")
 	}
 
-	// Lock dataset for search
 	ds.dataMu.RLock()
 	var results []types.SearchResult
 	var err error
 
 	switch req.SearchType {
 	case "radius":
-		results, err = ds.GeoIndex.SearchRadius(stream.Context(), req.Center, req.RadiusKm, req.K)
+		results, err = ds.GeoIndex.SearchRadius(ctx, req.Center, req.RadiusKm, req.K)
 	case "box":
 		if req.Box == nil {
 			ds.dataMu.RUnlock()
-			return status.Error(codes.InvalidArgument, "bounding box required for 'box' search")
+			return nil, status.Error(codes.InvalidArgument, "bounding box required for 'box' search")
 		}
-		results, err = ds.GeoIndex.SearchBox(stream.Context(), *req.Box, req.K)
+		results, err = ds.GeoIndex.SearchBox(ctx, *req.Box, req.K)
 	case "hybrid":
-		results, err = ds.GeoIndex.HybridSearch(stream.Context(), req.QueryVector, req.Center, req.RadiusKm, req.K)
+		results, err = ds.GeoIndex.HybridSearch(ctx, req.QueryVector, req.Center, req.RadiusKm, req.K)
 	default:
 		ds.dataMu.RUnlock()
-		return status.Errorf(codes.InvalidArgument, "invalid search_type: %s", req.SearchType)
+		return nil, status.Errorf(codes.InvalidArgument, "invalid search_type: %s", req.SearchType)
 	}
 
 	if err != nil {
 		ds.dataMu.RUnlock()
-		return status.Errorf(codes.Internal, "geospatial search failed: %v", err)
+		return nil, status.Errorf(codes.Internal, "geospatial search failed: %v", err)
 	}
 
-	// Map internal IDs to user IDs if primary index exists
 	results = s.mapInternalToUserIDsLocked(ds, results)
 	ds.dataMu.RUnlock()
 
-	// 2. Global Scatter-Gather if enabled
-	md, _ := metadata.FromIncomingContext(stream.Context())
+	md, _ := metadata.FromIncomingContext(ctx)
 	isGlobal := false
 	if vals := md.Get("x-longbow-global"); len(vals) > 0 && vals[0] == "true" {
 		isGlobal = true
@@ -99,23 +99,33 @@ func (s *VectorStore) handleDoGetGeoSearch(req *types.GeoSearchRequest, wfs []qr
 		}
 
 		var globalErr error
-		results, globalErr = s.coordinator.GlobalGeoSearch(stream.Context(), results, req, remotePeers)
+		results, globalErr = s.coordinator.GlobalGeoSearch(ctx, results, req, remotePeers)
 		if globalErr != nil {
-			s.logger.Warn().Err(globalErr).Msg("DoGet GlobalGeoSearch partial failure")
+			s.logger.Warn().Err(globalErr).Msg("GlobalGeoSearch partial failure")
 		}
 	}
 
+	return s.FilterResultsByRLS(ctx, req.Dataset, results), nil
+}
+
+func (s *VectorStore) handleDoGetGeoSearch(req *types.GeoSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
+	results, err := s.GeoSearch(stream.Context(), req)
+	if err != nil {
+		return err
+	}
 	return s.streamSearchResults(results, wfs, stream, mem)
 }
 
-func (s *VectorStore) handleDoGetTemporalSearch(req *types.TemporalSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
+// TemporalSearch executes as_of, range, sliding_window, or sliding_window_time queries,
+// including optional global mesh scatter-gather and RLS filtering.
+func (s *VectorStore) TemporalSearch(ctx context.Context, req *types.TemporalSearchRequest) ([]SearchResult, error) {
 	if !s.temporalConfig.Enabled {
-		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
+		return nil, status.Error(codes.FailedPrecondition, "temporal index not enabled")
 	}
 
 	ds, ok := s.getDataset(req.Dataset)
 	if !ok {
-		return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
 	}
 
 	var results []types.SearchResult
@@ -123,28 +133,26 @@ func (s *VectorStore) handleDoGetTemporalSearch(req *types.TemporalSearchRequest
 
 	switch req.SearchType {
 	case "as_of":
-		results, err = ds.TemporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
+		results, err = ds.TemporalIndex.SearchAsOf(ctx, req.Timestamp, req.K)
 	case "range":
-		results, err = ds.TemporalIndex.SearchRange(stream.Context(), req.StartTime, req.EndTime, req.K)
+		results, err = ds.TemporalIndex.SearchRange(ctx, req.StartTime, req.EndTime, req.K)
 	case "sliding_window":
-		results, err = ds.TemporalIndex.SearchSlidingWindow(stream.Context(), req.WindowSize, req.K)
+		results, err = ds.TemporalIndex.SearchSlidingWindow(ctx, req.WindowSize, req.K)
 	case "sliding_window_time":
-		results, err = ds.TemporalIndex.SearchSlidingWindowByTime(stream.Context(), req.Duration, req.K)
+		results, err = ds.TemporalIndex.SearchSlidingWindowByTime(ctx, req.Duration, req.K)
 	default:
-		return status.Errorf(codes.InvalidArgument, "invalid temporal search_type: %s", req.SearchType)
+		return nil, status.Errorf(codes.InvalidArgument, "invalid temporal search_type: %s", req.SearchType)
 	}
 
 	if err != nil {
-		return status.Errorf(codes.Internal, "temporal search failed: %v", err)
+		return nil, status.Errorf(codes.Internal, "temporal search failed: %v", err)
 	}
 
-	// Lock dataset for ID mapping (requires dataMu)
 	ds.dataMu.RLock()
 	results = s.mapInternalToUserIDsLocked(ds, results)
 	ds.dataMu.RUnlock()
 
-	// 2. Global Scatter-Gather if enabled
-	md, _ := metadata.FromIncomingContext(stream.Context())
+	md, _ := metadata.FromIncomingContext(ctx)
 	isGlobal := false
 	if vals := md.Get("x-longbow-global"); len(vals) > 0 && vals[0] == "true" {
 		isGlobal = true
@@ -186,11 +194,19 @@ func (s *VectorStore) handleDoGetTemporalSearch(req *types.TemporalSearchRequest
 		}
 
 		var globalErr error
-		results, globalErr = s.coordinator.GlobalTemporalSearch(stream.Context(), results, req, remotePeers)
+		results, globalErr = s.coordinator.GlobalTemporalSearch(ctx, results, req, remotePeers)
 		if globalErr != nil {
-			s.logger.Warn().Err(globalErr).Msg("DoGet GlobalTemporalSearch partial failure")
+			s.logger.Warn().Err(globalErr).Msg("GlobalTemporalSearch partial failure")
 		}
 	}
 
+	return s.FilterResultsByRLS(ctx, req.Dataset, results), nil
+}
+
+func (s *VectorStore) handleDoGetTemporalSearch(req *types.TemporalSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
+	results, err := s.TemporalSearch(stream.Context(), req)
+	if err != nil {
+		return err
+	}
 	return s.streamSearchResults(results, wfs, stream, mem)
 }

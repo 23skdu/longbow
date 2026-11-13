@@ -863,17 +863,16 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			}
 		}
 
-		if idColIdx != -1 && vecColIdx != -1 {
+		if vecColIdx != -1 {
 			numRows := int(rec.NumRows())
-			ids := make([]uint64, numRows)
-			needTemporalVecs := ds.TemporalIndex.dimension > 0
-			var vectors [][]float32
-			if needTemporalVecs {
-				vectors = make([][]float32, numRows)
-			}
-			timestamps := make([]int64, numRows)
+			ids := make([]uint64, 0, numRows)
+			vectors := make([][]float32, 0, numRows)
+			timestamps := make([]int64, 0, numRows)
 
-			idArr := rec.Column(idColIdx).(*array.String)
+			var idCol arrow.Array
+			if idColIdx != -1 {
+				idCol = rec.Column(idColIdx)
+			}
 			vecCol := rec.Column(vecColIdx)
 
 			var tsArr arrow.Array
@@ -881,7 +880,6 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 				tsArr = rec.Column(tsColIdx)
 			}
 
-			// Handle both FixedSizeList and variable-length List
 			var listLen int
 			if fs, ok := vecCol.DataType().(*arrow.FixedSizeListType); ok {
 				listLen = int(fs.Len())
@@ -890,62 +888,25 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			// Extract directly on this ingestion worker goroutine so we do not block
 			// behind long-running HNSW linkage tasks in index.GetSharedPool().
 			for i := 0; i < numRows; i++ {
-				if idArr.IsValid(i) && vecCol.IsValid(i) {
-					idStr := idArr.Value(i)
-					id, _ := strconv.ParseUint(idStr, 10, 64)
-					ids[i] = id
-
-					if tsArr != nil && tsArr.IsValid(i) {
-						switch arr := tsArr.(type) {
-						case *array.Int64:
-							timestamps[i] = arr.Value(i)
-						case *array.Timestamp:
-							timestamps[i] = int64(arr.Value(i))
-						default:
-							timestamps[i] = ts
-						}
-					} else {
-						timestamps[i] = ts
-					}
-
-					if !needTemporalVecs {
-						continue
-					}
-
-					var vStart, vEnd int
-					var values arrow.Array
-					if fs, ok := vecCol.(*array.FixedSizeList); ok {
-						vStart = i * listLen
-						vEnd = (i + 1) * listLen
-						values = fs.ListValues()
-					} else if l, ok := vecCol.(*array.List); ok {
-						offsets := l.Offsets()
-						vStart = int(offsets[i])
-						vEnd = int(offsets[i+1])
-						values = l.ListValues()
-					}
-
-					if values != nil {
-						switch valArr := values.(type) {
-						case *array.Float32:
-							if vStart < valArr.Len() && vEnd <= valArr.Len() {
-								src := valArr.Float32Values()[vStart:vEnd]
-								sub := make([]float32, len(src))
-								copy(sub, src)
-								vectors[i] = sub
-							}
-						case *array.Float64:
-							if vStart < valArr.Len() && vEnd <= valArr.Len() {
-								f64Values := valArr.Float64Values()[vStart:vEnd]
-								sub := make([]float32, len(f64Values))
-								for j, v := range f64Values {
-									sub[j] = float32(v)
-								}
-								vectors[i] = sub
-							}
-						}
+				if !vecCol.IsValid(i) || (idCol != nil && !idCol.IsValid(i)) {
+					continue
+				}
+				rowTs := ts
+				if tsArr != nil && tsArr.IsValid(i) {
+					switch arr := tsArr.(type) {
+					case *array.Int64:
+						rowTs = arr.Value(i)
+					case *array.Timestamp:
+						rowTs = int64(arr.Value(i))
 					}
 				}
+				vec := extractFloat32VectorAt(vecCol, listLen, i)
+				if len(vec) == 0 {
+					continue
+				}
+				ids = append(ids, uint64(baseRowID)+uint64(i))
+				vectors = append(vectors, vec)
+				timestamps = append(timestamps, rowTs)
 			}
 
 			// Batch Add
@@ -997,26 +958,39 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			}
 		}
 
-		if idColIdx != -1 && vecColIdx != -1 {
+		if vecColIdx != -1 {
 			numRows := int(rec.NumRows())
 			validIds := make([]uint64, 0, numRows)
+			validVecs := make([][]float32, 0, numRows)
 			validPoints := make([]types.GeoPoint, 0, numRows)
 
-			idArr := rec.Column(idColIdx).(*array.String)
-			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
-			geoArr := rec.Column(geoPointIdx).(*array.FixedSizeList)
-			geoValues := geoArr.ListValues().(*array.Float64).Float64Values()
-
-			for i := 0; i < numRows; i++ {
-				if idArr.IsValid(i) && vecArr.IsValid(i) && geoArr.IsValid(i) {
-					idStr := idArr.Value(i)
-					id, _ := strconv.ParseUint(idStr, 10, 64)
-					validIds = append(validIds, id)
-					validPoints = append(validPoints, types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]})
-				}
+			var idCol arrow.Array
+			if idColIdx != -1 {
+				idCol = rec.Column(idColIdx)
+			}
+			vecCol := rec.Column(vecColIdx)
+			var listLen int
+			if fs, ok := vecCol.DataType().(*arrow.FixedSizeListType); ok {
+				listLen = int(fs.Len())
 			}
 
-			_ = ds.GeoIndex.AddBatch(validIds, nil, validPoints, nil)
+			if geoArr, ok := rec.Column(geoPointIdx).(*array.FixedSizeList); ok {
+				if geoValArr, ok := geoArr.ListValues().(*array.Float64); ok {
+					geoValues := geoValArr.Float64Values()
+					for i := 0; i < numRows; i++ {
+						if (idCol != nil && !idCol.IsValid(i)) || !vecCol.IsValid(i) || !geoArr.IsValid(i) {
+							continue
+						}
+						if i*2+1 >= len(geoValues) {
+							continue
+						}
+						validIds = append(validIds, uint64(baseRowID)+uint64(i))
+						validVecs = append(validVecs, extractFloat32VectorAt(vecCol, listLen, i))
+						validPoints = append(validPoints, types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]})
+					}
+					_ = ds.GeoIndex.AddBatch(validIds, validVecs, validPoints, nil)
+				}
+			}
 		}
 	}
 
@@ -1044,5 +1018,43 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		}()
 	}
 
+	return nil
+}
+
+func extractFloat32VectorAt(vecCol arrow.Array, listLen, row int) []float32 {
+	var vStart, vEnd int
+	var values arrow.Array
+	switch col := vecCol.(type) {
+	case *array.FixedSizeList:
+		vStart = row * listLen
+		vEnd = (row + 1) * listLen
+		values = col.ListValues()
+	case *array.List:
+		offsets := col.Offsets()
+		vStart = int(offsets[row])
+		vEnd = int(offsets[row+1])
+		values = col.ListValues()
+	}
+	if values == nil || vStart < 0 || vEnd <= vStart {
+		return nil
+	}
+	switch valArr := values.(type) {
+	case *array.Float32:
+		if vEnd <= valArr.Len() {
+			src := valArr.Float32Values()[vStart:vEnd]
+			sub := make([]float32, len(src))
+			copy(sub, src)
+			return sub
+		}
+	case *array.Float64:
+		if vEnd <= valArr.Len() {
+			f64Values := valArr.Float64Values()[vStart:vEnd]
+			sub := make([]float32, len(f64Values))
+			for j, v := range f64Values {
+				sub[j] = float32(v)
+			}
+			return sub
+		}
+	}
 	return nil
 }

@@ -162,6 +162,7 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	}
 
 	h.installData(newData)
+	h.ensureTQComponents(dims)
 
 	// Flush to disk after growth if UseDisk enabled
 	h.maybeFlushToDisk()

@@ -140,7 +140,7 @@ func main() {
 	outputArrow := flag.String("output-arrow", "", "Save generated vectors to Arrow IPC file and exit")
 	outputFbin := flag.String("output-fbin", "", "Save generated vectors to .fbin file and exit")
 	mode := flag.String("mode", "vec", "Benchmark mode (vec, kv, cluster)")
-	searchModes := flag.String("search-modes", "all", "Comma-separated search modes to run (dense, hybrid, sparse, filtered, byid, graphrag, geo, temporal, learned_index)")
+	searchModes := flag.String("search-modes", "all", "Comma-separated search modes to run (all, dense, hybrid, sparse, filtered, filteredbool, filteredstring, byid, range, advancedtext, graphrag, globalgraphrag, recommend, geo, geobox, geohybrid, temporal, temporalrange, temporalwindow, multimodal, federated, learnedindex)")
 	searchTimeout := flag.Duration("search-timeout", 5*time.Minute,
 		"Budget for each search mode. This is per mode, not shared across them: a single budget covering all modes meant the last mode inherited whatever was left and started silently truncating, which reads as a low QPS rather than as a truncated run.")
 	temporalAsOf := flag.Int64("temporal-asof-nanos", defaultTemporalAsOf,
@@ -619,26 +619,26 @@ func main() {
 	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
 	// 3. Search
-	allModes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID", "GraphRAG", "GlobalGraphRAG", "Recommend", "Geo", "Temporal", "LearnedIndex"}
-	var modes []string
-	if *searchModes == "all" {
-		modes = allModes
-	} else {
-		selected := strings.Split(*searchModes, ",")
-		for _, m := range selected {
-			m = strings.TrimSpace(m)
-			// Normalize: strip underscores and lowercase for fuzzy matching
-			norm := strings.ReplaceAll(strings.ToLower(m), "_", "")
-			for _, am := range allModes {
-				if norm == strings.ToLower(am) {
-					modes = append(modes, am)
-					break
-				}
-			}
-		}
-	}
+	modes := resolveSearchModes(*searchModes)
 	if len(modes) == 0 && *searchModes != "" {
 		log.Printf("Warning: No valid search modes found for %s, skipping search phase\n", *searchModes)
+	}
+	for _, m := range modes {
+		if m == "MultiModal" {
+			mmDataset := *dataset + "_multimodal"
+			if err := ensureMultiModalDataset(context.Background(), sc, mmDataset); err != nil {
+				log.Printf("Warning: MultiModal setup failed for %s: %v\n", mmDataset, err)
+			} else if *drop {
+				defer func(dsName string) {
+					dsc, derr := client.NewSmartClient(*uri)
+					if derr == nil {
+						defer dsc.Close()
+						_ = dropDataset(context.Background(), dsc, dsName)
+					}
+				}(mmDataset)
+			}
+			break
+		}
 	}
 	// R11: one fixed as-of timestamp for the whole run.
 	TemporalAsOfNanos = *temporalAsOf
@@ -989,6 +989,37 @@ func corpusValueBound(dtype string) int {
 	return int(hi)
 }
 
+func (s *ReusableSearchState) fillQueryVector(dim int, dtype string, mode string, queryIdx int) (queryLen int, qLo, qHi float32) {
+	queryLen = dim
+	if dtype == "complex64" || dtype == "complex128" {
+		queryLen = dim * 2
+	}
+
+	// Randomize vector in-place
+	// One stream per (mode, query index): reproducible, and independent enough
+	// that neighbouring queries are not near-duplicates.
+	qLo, qHi = corpusValueRange(dtype)
+	qRng := rand.New(rand.NewSource(RunSeed + int64(queryIdx)*2654435761 + int64(len(mode))*97)) // #nosec G404 -- benchmark data
+	span := float64(qHi - qLo)
+	for i := 0; i < queryLen; i++ {
+		s.vector[i] = qLo + float32(qRng.Float64()*span) // #nosec G404 -- benchmark data
+	}
+	return queryLen, qLo, qHi
+}
+
+func (s *ReusableSearchState) appendVectorField(field string, queryLen int) {
+	s.buf = append(s.buf, `,"`...)
+	s.buf = append(s.buf, field...)
+	s.buf = append(s.buf, `":[`...)
+	for i := 0; i < queryLen; i++ {
+		if i > 0 {
+			s.buf = append(s.buf, ',')
+		}
+		s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
+	}
+	s.buf = append(s.buf, ']')
+}
+
 // BuildSearchTicket builds a search ticket for one query.
 //
 // queryIdx makes the query vector a deterministic function of (mode, query
@@ -1002,49 +1033,17 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 	s.buf = append(s.buf, `","k":`...)
 	s.buf = append(s.buf, fmt.Sprintf("%d", k)...)
 
-	queryLen := dim
-	if dtype == "complex64" || dtype == "complex128" {
-		queryLen = dim * 2
-	}
-
-	// Randomize vector in-place
-	// One stream per (mode, query index): reproducible, and independent enough
-	// that neighbouring queries are not near-duplicates.
-	qLo, qHi := corpusValueRange(dtype)
-	qRng := rand.New(rand.NewSource(RunSeed + int64(queryIdx)*2654435761 + int64(len(mode))*97)) // #nosec G404 -- benchmark data
-	span := float64(qHi - qLo)
-	for i := 0; i < queryLen; i++ {
-		s.vector[i] = qLo + float32(qRng.Float64()*span) // #nosec G404 -- benchmark data
-	}
+	queryLen, _, _ := s.fillQueryVector(dim, dtype, mode, queryIdx)
 
 	switch mode {
 	case "Dense":
-		s.buf = append(s.buf, `,"vector":[`...)
-		for i := 0; i < queryLen; i++ {
-			if i > 0 {
-				s.buf = append(s.buf, ',')
-			}
-			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
-		}
-		s.buf = append(s.buf, ']')
+		s.appendVectorField("vector", queryLen)
 	case "Hybrid":
-		s.buf = append(s.buf, `,"vector":[`...)
-		for i := 0; i < queryLen; i++ {
-			if i > 0 {
-				s.buf = append(s.buf, ',')
-			}
-			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
-		}
-		s.buf = append(s.buf, `],"text_query":"benchmark search term","alpha":0.5`...)
+		s.appendVectorField("vector", queryLen)
+		s.buf = append(s.buf, `,"text_query":"electronics","alpha":0.5`...)
 	case "Filtered", "FilteredBool", "FilteredString":
-		s.buf = append(s.buf, `,"vector":[`...)
-		for i := 0; i < queryLen; i++ {
-			if i > 0 {
-				s.buf = append(s.buf, ',')
-			}
-			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
-		}
-		s.buf = append(s.buf, `],"filters":[`...)
+		s.appendVectorField("vector", queryLen)
+		s.buf = append(s.buf, `,"filters":[`...)
 		switch mode {
 		case "Filtered":
 			s.buf = append(s.buf, `{"field":"id","operator":">","value":"10"}`...)
@@ -1055,25 +1054,13 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 		}
 		s.buf = append(s.buf, ']')
 	case "GraphRAG", "GlobalGraphRAG":
-		s.buf = append(s.buf, `,"vector":[`...)
-		for i := 0; i < queryLen; i++ {
-			if i > 0 {
-				s.buf = append(s.buf, ',')
-			}
-			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
-		}
-		s.buf = append(s.buf, `],"graph_alpha":0.5`...)
+		s.appendVectorField("vector", queryLen)
+		s.buf = append(s.buf, `,"graph_alpha":0.5`...)
 	case "Sparse":
-		s.buf = append(s.buf, `,"text_query":"benchmark search term","alpha":0.0`...)
+		s.buf = append(s.buf, `,"text_query":"electronics","alpha":0.0`...)
 	case "LearnedIndex":
-		s.buf = append(s.buf, `,"vector":[`...)
-		for i := 0; i < queryLen; i++ {
-			if i > 0 {
-				s.buf = append(s.buf, ',')
-			}
-			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
-		}
-		s.buf = append(s.buf, `],"enable_learned_index":true`...)
+		s.appendVectorField("vector", queryLen)
+		s.buf = append(s.buf, `,"enable_learned_index":true`...)
 	}
 
 	s.buf = append(s.buf, `}}`...)
@@ -1141,16 +1128,126 @@ func (s *ReusableSearchState) BuildSpecialTicket(dataset string, mode string, qu
 		s.buf = append(s.buf, `","k":10,"id":"`...)
 		s.buf = append(s.buf, fmt.Sprintf("%d", byID)...)
 		s.buf = append(s.buf, `"}}`...)
+	case "GeoBox":
+		s.buf = append(s.buf, `{"geo_search":{"dataset":"`...)
+		s.buf = append(s.buf, dataset...)
+		s.buf = append(s.buf, `","k":10,"box":{"min_lat":40.70,"max_lat":40.82,"min_lon":-74.02,"max_lon":-73.90},"search_type":"box"}}`...)
+	case "TemporalRange":
+		span := int64(corpusSize)
+		if span < 1000 {
+			span = 1000
+		}
+		s.buf = append(s.buf, `{"temporal_search":{"dataset":"`...)
+		s.buf = append(s.buf, dataset...)
+		s.buf = append(s.buf, `","k":10,"search_type":"range","start_time":`...)
+		s.buf = fmt.Appendf(s.buf, "%d", TemporalAsOfNanos-span-10)
+		s.buf = append(s.buf, `,"end_time":`...)
+		s.buf = fmt.Appendf(s.buf, "%d", TemporalAsOfNanos)
+		s.buf = append(s.buf, `}}`...)
+	case "TemporalWindow":
+		s.buf = append(s.buf, `{"temporal_search":{"dataset":"`...)
+		s.buf = append(s.buf, dataset...)
+		s.buf = append(s.buf, `","k":10,"search_type":"sliding_window","window_size":100}}`...)
 	}
 	return s.buf
 }
 
-// executeSearch performs search by setting JSON ticket in DoGet
+var allSearchModes = []string{
+	"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString",
+	"Sparse", "ByID", "Range", "AdvancedText", "GraphRAG", "GlobalGraphRAG",
+	"Recommend", "Geo", "GeoBox", "GeoHybrid", "Temporal", "TemporalRange",
+	"TemporalWindow", "MultiModal", "Federated", "LearnedIndex",
+}
+
+var searchModeAliases = map[string]string{
+	"text":               "AdvancedText",
+	"fulltext":           "AdvancedText",
+	"advancedtextsearch": "AdvancedText",
+	"rangesearch":        "Range",
+	"federatedsearch":    "Federated",
+	"georadius":          "Geo",
+	"temporalasof":       "Temporal",
+	"multimodalsearch":   "MultiModal",
+}
+
+func resolveSearchModes(raw string) []string {
+	if raw == "all" {
+		return append([]string(nil), allSearchModes...)
+	}
+	var modes []string
+	seen := make(map[string]bool)
+	normReplacer := strings.NewReplacer("_", "", "-", "")
+	for _, m := range strings.Split(raw, ",") {
+		norm := normReplacer.Replace(strings.ToLower(strings.TrimSpace(m)))
+		if norm == "" {
+			continue
+		}
+		if alias, ok := searchModeAliases[norm]; ok {
+			if !seen[alias] {
+				modes = append(modes, alias)
+				seen[alias] = true
+			}
+			continue
+		}
+		for _, am := range allSearchModes {
+			if norm == strings.ToLower(am) && !seen[am] {
+				modes = append(modes, am)
+				seen[am] = true
+				break
+			}
+		}
+	}
+	return modes
+}
+
+// BuildVectorSpecialTicket builds non-standard DoGet tickets that also carry a deterministic query vector.
+func (s *ReusableSearchState) BuildVectorSpecialTicket(dataset string, dim int, dtype string, mode string, k int, queryIdx int) []byte {
+	s.buf = s.buf[:0]
+	queryLen, qLo, qHi := s.fillQueryVector(dim, dtype, mode, queryIdx)
+	span := float64(qHi - qLo)
+	switch mode {
+	case "Range":
+		threshold := float32(0.25 * span * span * float64(queryLen))
+		if threshold < 1.0 {
+			threshold = 1.0
+		}
+		s.buf = append(s.buf, `{"range_search":{"dataset":"`...)
+		s.buf = append(s.buf, dataset...)
+		s.buf = fmt.Appendf(s.buf, `","threshold":%g,"max_results":%d`, threshold, k)
+		s.appendVectorField("vector", queryLen)
+		s.buf = append(s.buf, `}}`...)
+	case "GeoHybrid":
+		s.buf = append(s.buf, `{"geo_search":{"dataset":"`...)
+		s.buf = append(s.buf, dataset...)
+		s.buf = fmt.Appendf(s.buf, `","k":%d,"center":{"lat":40.7128,"lon":-74.0060},"radius_km":50.0,"search_type":"hybrid"`, k)
+		s.appendVectorField("query_vector", queryLen)
+		s.buf = append(s.buf, `}}`...)
+	case "Federated":
+		s.buf = append(s.buf, `{"federated_search":{"collections":["`...)
+		s.buf = append(s.buf, dataset...)
+		s.buf = fmt.Appendf(s.buf, `"],"k":%d,"rrf_k":60`, k)
+		s.appendVectorField("vector", queryLen)
+		s.buf = append(s.buf, `}}`...)
+	}
+	return s.buf
+}
+
+// executeSearch performs search by setting JSON ticket in DoGet or invoking Flight DoAction
 func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, dim int, dtype string, mode string, state *ReusableSearchState, queryIdx, corpusSize int) ([]searchHit, error) {
+	switch mode {
+	case "AdvancedText":
+		return executeAdvancedTextAction(ctx, sc, dataset, 10)
+	case "MultiModal":
+		return executeMultiModalAction(ctx, sc, dataset+"_multimodal", 10)
+	}
+
 	var ticketBytes []byte
-	if mode == "Recommend" || mode == "Geo" || mode == "Temporal" || mode == "ByID" {
+	switch mode {
+	case "Recommend", "Geo", "GeoBox", "Temporal", "TemporalRange", "TemporalWindow", "ByID":
 		ticketBytes = state.BuildSpecialTicket(dataset, mode, queryIdx, corpusSize)
-	} else {
+	case "Range", "GeoHybrid", "Federated":
+		ticketBytes = state.BuildVectorSpecialTicket(dataset, dim, dtype, mode, 10, queryIdx)
+	default:
 		ticketBytes = state.BuildSearchTicket(dataset, dim, dtype, mode, 10, queryIdx)
 	}
 
@@ -1159,6 +1256,106 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 	}
 
 	return executeDoGet(ctx, sc, ticketBytes)
+}
+
+func executeAdvancedTextAction(ctx context.Context, sc *client.SmartClient, dataset string, k int) ([]searchHit, error) {
+	body, err := json.Marshal(map[string]any{
+		"dataset":       dataset,
+		"query":         "electronics OR clothing",
+		"k":             k,
+		"facet_fields":  []string{"category"},
+		"snippet_chars": 120,
+	})
+	if err != nil {
+		return nil, err
+	}
+	stream, err := sc.DoAction(ctx, &flight.Action{Type: "AdvancedTextSearch", Body: body})
+	if err != nil {
+		return nil, err
+	}
+	res, err := stream.Recv()
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Hits []struct {
+			VectorID uint32  `json:"vector_id"`
+			Score    float64 `json:"score"`
+		} `json:"hits"`
+	}
+	if err := json.Unmarshal(res.Body, &parsed); err != nil {
+		return nil, err
+	}
+	hits := make([]searchHit, 0, len(parsed.Hits))
+	for _, h := range parsed.Hits {
+		hits = append(hits, searchHit{ID: uint64(h.VectorID), Score: float32(h.Score)})
+	}
+	return hits, nil
+}
+
+func ensureMultiModalDataset(ctx context.Context, sc *client.SmartClient, mmDataset string) error {
+	items := []map[string]any{
+		{"id": "mm_0", "modality": "text", "caption": "electronics laptop benchmark vector"},
+		{"id": "mm_1", "modality": "text", "caption": "electronics sensor audio stream"},
+		{"id": "mm_2", "modality": "text", "caption": "clothing jacket outdoor winter"},
+		{"id": "mm_3", "modality": "text", "caption": "home kitchen appliance smart"},
+		{"id": "mm_4", "modality": "text", "caption": "books science fiction edition"},
+	}
+	body, err := json.Marshal(map[string]any{
+		"dataset": mmDataset,
+		"items":   items,
+	})
+	if err != nil {
+		return err
+	}
+	stream, err := sc.DoAction(ctx, &flight.Action{Type: "MultiModalIngest", Body: body})
+	if err != nil {
+		return err
+	}
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+	waitForIndexingComplete(ctx, sc, mmDataset, 30*time.Second)
+	return nil
+}
+
+func executeMultiModalAction(ctx context.Context, sc *client.SmartClient, mmDataset string, k int) ([]searchHit, error) {
+	body, err := json.Marshal(map[string]any{
+		"dataset":    mmDataset,
+		"modality":   "text",
+		"text_query": "electronics vector benchmark",
+		"k":          k,
+	})
+	if err != nil {
+		return nil, err
+	}
+	stream, err := sc.DoAction(ctx, &flight.Action{Type: "MultiModalSearch", Body: body})
+	if err != nil {
+		return nil, err
+	}
+	res, err := stream.Recv()
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Results []struct {
+			ID       uint64  `json:"ID"`
+			Score    float32 `json:"Score"`
+			Distance float32 `json:"Distance"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(res.Body, &parsed); err != nil {
+		return nil, err
+	}
+	hits := make([]searchHit, 0, len(parsed.Results))
+	for _, r := range parsed.Results {
+		scVal := r.Score
+		if scVal == 0 {
+			scVal = r.Distance
+		}
+		hits = append(hits, searchHit{ID: r.ID, Score: scVal})
+	}
+	return hits, nil
 }
 
 // executeDoGet performs the actual Flight DoGet call, drains the stream and

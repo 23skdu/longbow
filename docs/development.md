@@ -107,11 +107,14 @@ Performance is a first-class citizen in Longbow. All major changes should be ver
 
 ### Unified Benchmark Script
 
-The `scripts/unified_benchmark.py` is the standard tool for verifying performance across dimensions and data types.
+The `scripts/unified_benchmark.py` orchestrator verifies performance across dimensions, data types, and search modes (enabling `LONGBOW_HYBRID_SEARCH_ENABLED=true` and `LONGBOW_HYBRID_TEXT_COLUMNS=text,category` for BM25/Hybrid/Text evaluation):
 
 ```bash
-# Run standard CPU benchmarks
-python3 scripts/unified_benchmark.py --mode cpu
+# Run standard CPU benchmarks across all 21 bench-tool search modes
+python3 scripts/unified_benchmark.py --mode cpu --search-modes all
+
+# Run targeted search scenarios (temporal, geo, range, federated, text, multimodal, recommend, graphrag, learned_index)
+python3 scripts/unified_benchmark.py --mode temporal,geo,range,federated,text,multimodal
 
 # Run Learned Index adaptation verification
 python3 scripts/unified_benchmark.py --mode learned_index
@@ -132,7 +135,7 @@ The `bench-tool` (also referred to as `benchmark-tool`) is a high-performance be
 
 - **Performance**: Remove Python allocation and dynamic typing overheads for small-batch throughput accuracy.
 - **Type Support**: Support a comprehensive scalar type matrix (`float32`, `float64`, `float16`, `int8`, `uint8`, `int16`, `uint16`, `int32`, `uint32`, `int64`, `uint64`, `complex64`, `complex128`) with exact memory layout verification.
-- **Full Coverage**: Test all search modalities including Vector, Hybrid, Filtered, Sparse, Geo, Temporal, GraphRAG, and Learned Index paths.
+- **Full Coverage**: Test all search modalities including Dense, Hybrid, Filtered, FilteredBool, FilteredString, Sparse, ByID, Range, AdvancedText, GraphRAG, GlobalGraphRAG, Recommend, Geo, GeoBox, GeoHybrid, Temporal, TemporalRange, TemporalWindow, MultiModal, Federated, and Learned Index paths (`cmd/bench-tool`), plus `-search-modes` in `cmd/io-bench`.
 
 #### Installation
 
@@ -161,6 +164,7 @@ go build -o bin/bench-tool ./cmd/bench-tool
 | `-json` | string | Path to save benchmark results as JSON | `""` |
 | `-tq-bits` | int | Quantization bits for TurboQuant (2, 4, 8) | `4` |
 | `-fbin` | string | Path to Arrow IPC binary file for ingestion | `""` |
+| `-search-modes` | string | Comma-separated search modes or `all` (21 modes) | `"all"` |
 
 #### Benchmark Suite Coverage
 
@@ -171,13 +175,18 @@ For every dataset, `bench-tool` executes the following operations in sequence:
 3. **DoGet**: Measures raw retrieval performance.
 4. **Search Dense**: Standard HNSW vector search.
 5. **Search Hybrid**: Combined vector and text search (BM25 + HNSW).
-6. **Search Filtered**: Vector search with complex boolean filters (Arrow-based).
-7. **Search Sparse**: Pure text/keyword search.
-8. **Search ByID**: Primary key lookups.
-9. **Search GraphRAG**: Multi-hop graph expansion + vector similarity.
-10. **Search Geo**: Geospatial radius search.
-11. **Search Temporal**: Point-in-time and range-based temporal queries.
-12. **Search LearnedIndex**: Experimental learned index traversal validation.
+6. **Search Filtered / FilteredBool / FilteredString**: Vector search with numeric, boolean, and categorical filters.
+7. **Search Sparse**: Pure BM25 text/keyword search (`alpha=0.0`).
+8. **Search ByID**: Primary key lookups (`search_by_id`).
+9. **Search Range**: Distance-threshold bounded search (`range_search`).
+10. **Search AdvancedText**: Boolean AST / fuzzy / faceted BM25 search (`AdvancedTextSearch`).
+11. **Search GraphRAG / GlobalGraphRAG**: Local and distributed multi-hop graph expansion + vector similarity.
+12. **Search Recommend**: Hybrid vector-graph seed recommendations (`recommend`).
+13. **Search Geo / GeoBox / GeoHybrid**: Geospatial radius, bounding-box, and geo+vector hybrid queries.
+14. **Search Temporal / TemporalRange / TemporalWindow**: Point-in-time `as_of`, `range`, and `sliding_window` queries.
+15. **Search MultiModal**: Cross-modal `MultiModalIngest` + `MultiModalSearch` pipeline benchmark.
+16. **Search Federated**: Federated cross-collection RRF search (`federated_search`).
+17. **Search LearnedIndex**: Experimental learned index traversal validation.
 
 #### Examples
 

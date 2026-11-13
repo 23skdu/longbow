@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -90,16 +91,28 @@ func (s *VectorStore) HandleVectorSearchAction(action *flight.Action, stream fli
 		metrics.VectorSearchActionErrors.Inc()
 		return status.Error(codes.InvalidArgument, "no query vector(s) provided")
 	}
+	alpha := req.Alpha
+	if len(queryVectors) == 0 && req.TextQuery != "" {
+		queryVectors = [][]float32{nil}
+		alpha = 0.0
+	}
+	graphDepth := req.GraphDepth
+	if graphDepth <= 0 {
+		graphDepth = 2
+	}
 	// Process each query vector
 	for _, queryVec := range queryVectors {
 		var searchResults []SearchResult
 		var err error
 
 		if isHybrid {
-			// Perform Hybrid Search
-			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2, req.RawHybrid)
+			// Perform Hybrid / Sparse Search (respecting optional filters)
+			searchResults, err = s.SearchHybridWithFilters(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, alpha, 60, req.GraphAlpha, graphDepth, req.RawHybrid, req.Filters)
 			if err != nil {
 				metrics.VectorSearchActionErrors.Inc()
+				if len(queryVectors) == 1 {
+					return err
+				}
 				continue
 			}
 		} else {
@@ -344,164 +357,10 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 	}
 
-	ds, ok := s.getDataset(req.Dataset)
-	if !ok {
-		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
-	}
-
-	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
-
-	if ds.Index == nil {
-		return status.Error(codes.FailedPrecondition, "dataset has no index")
-	}
-
-	// 1. Find the vector by User ID
-	var targetVec []float32
-	found := false
-
-	// Try Primary Index first (O(1))
-	if ds.PrimaryIndex != nil {
-		if loc, ok := ds.PrimaryIndex[req.ID]; ok {
-			// Check if deleted
-			isDeleted := false
-			if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
-				isDeleted = true
-			}
-
-			if !isDeleted {
-				if loc.BatchIdx < len(ds.Records.Read()) {
-					rec := ds.Records.Read()[loc.BatchIdx]
-					vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, -1)
-					if err != nil {
-						return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
-					}
-					targetVec = vec
-					found = true
-				}
-			}
-		}
-	}
-
-	// Fallback to linear scan if index miss (shouldn't happen if index is fully populated)
-	// or if PrimaryIndex wasn't initialized.
-	if !found && ds.PrimaryIndex == nil {
-		for i, rec := range ds.Records.Read() {
-			// Check for "id" column
-			idColIdx := -1
-			for j, field := range rec.Schema().Fields() {
-				if field.Name == "id" {
-					idColIdx = j
-					break
-				}
-			}
-			if idColIdx == -1 {
-				continue // No ID column in this batch
-			}
-
-			// Support String and Int64 IDs
-			// Comparison logic to match req.ID (which is string)
-			// If column is Int64, we parse req.ID
-			col := rec.Column(idColIdx)
-			rowIdx := -1
-
-			switch arr := col.(type) {
-			case *array.String:
-				for j := 0; j < arr.Len(); j++ {
-					if arr.Value(j) == req.ID {
-						rowIdx = j
-						break
-					}
-				}
-			case *array.Int64:
-				var intID int64
-				if n, _ := fmt.Sscanf(req.ID, "%d", &intID); n == 1 {
-					for j := 0; j < arr.Len(); j++ {
-						if arr.Value(j) == intID {
-							rowIdx = j
-							break
-						}
-					}
-				}
-			case *array.Uint64:
-				var uintID uint64
-				if n, _ := fmt.Sscanf(req.ID, "%d", &uintID); n == 1 {
-					for j := 0; j < arr.Len(); j++ {
-						if arr.Value(j) == uintID {
-							rowIdx = j
-							break
-						}
-					}
-				}
-			}
-
-			// Fallback: Check using String() formatted representation if specific type match failed or wasn't covered
-			if rowIdx == -1 {
-				switch arr := col.(type) {
-				case *array.Int64:
-					var val int64
-					if n, _ := fmt.Sscanf(req.ID, "%d", &val); n == 1 {
-						for j := 0; j < arr.Len(); j++ {
-							if arr.Value(j) == val {
-								rowIdx = j
-								break
-							}
-						}
-					}
-				case *array.Uint64:
-					var val uint64
-					if n, _ := fmt.Sscanf(req.ID, "%d", &val); n == 1 {
-						for j := 0; j < arr.Len(); j++ {
-							if arr.Value(j) == val {
-								rowIdx = j
-								break
-							}
-						}
-					}
-				case *array.String:
-					for j := 0; j < arr.Len(); j++ {
-						if arr.Value(j) == req.ID {
-							rowIdx = j
-							break
-						}
-					}
-				}
-			}
-
-			if rowIdx != -1 {
-				// Found it! Check if deleted.
-				ts := ds.Tombstones[i]
-				if ts != nil && ts.Contains(rowIdx) {
-					continue // Deleted
-				}
-
-				// Extract Vector
-				vec, err := ExtractVectorFromArrow(rec, rowIdx, -1) // -1 auto-detects vector column
-				if err != nil {
-					return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
-				}
-				targetVec = vec
-				found = true
-				break
-			}
-		}
-	}
-
-	if !found {
-		return status.Errorf(codes.NotFound, "id '%s' not found in dataset '%s'", req.ID, req.Dataset)
-	}
-
-	// 2. Perform Search
-	results, err := ds.Index.SearchVectors(stream.Context(), targetVec, req.K, nil, SearchOptions{
-		IncludeVectors: req.IncludeVectors,
-		VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
-	})
+	results, err := s.SearchByID(stream.Context(), &req)
 	if err != nil {
-		return status.Errorf(codes.Internal, "search failed: %v", err)
+		return err
 	}
-
-	// 3. Map Results
-	results = s.mapInternalToUserIDsLocked(ds, results)
 
 	resp := query.VectorSearchResponse{
 		IDs:    make([]uint64, len(results)),
@@ -513,9 +372,127 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 	}
 
 	respBytes, _ := json.Marshal(resp)
-	if err := stream.Send(&flight.Result{Body: respBytes}); err != nil {
-		return err
+	return stream.Send(&flight.Result{Body: respBytes})
+}
+
+// SearchByID looks up the stored vector for req.ID and returns its k nearest neighbors.
+func (s *VectorStore) SearchByID(ctx context.Context, req *core.VectorSearchByIDRequest) ([]SearchResult, error) {
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 	}
 
-	return nil
+	ds.dataMu.RLock()
+	if ds.Index == nil {
+		ds.dataMu.RUnlock()
+		return nil, status.Error(codes.FailedPrecondition, "dataset has no index")
+	}
+
+	targetVec, found, err := s.lookupVectorByIDLocked(ds, req.ID)
+	if err != nil {
+		ds.dataMu.RUnlock()
+		return nil, err
+	}
+	if !found {
+		ds.dataMu.RUnlock()
+		return nil, status.Errorf(codes.NotFound, "id '%s' not found in dataset '%s'", req.ID, req.Dataset)
+	}
+
+	k := req.K
+	if k <= 0 {
+		k = 10
+	}
+	results, err := ds.Index.SearchVectors(ctx, targetVec, k, nil, SearchOptions{
+		IncludeVectors: req.IncludeVectors,
+		VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
+	})
+	if err != nil {
+		ds.dataMu.RUnlock()
+		return nil, status.Errorf(codes.Internal, "search failed: %v", err)
+	}
+
+	results = s.mapInternalToUserIDsLocked(ds, results)
+	ds.dataMu.RUnlock()
+
+	return s.FilterResultsByRLS(ctx, req.Dataset, results), nil
+}
+
+func (s *VectorStore) lookupVectorByIDLocked(ds *Dataset, id string) ([]float32, bool, error) {
+	// Try Primary Index first (O(1))
+	if ds.PrimaryIndex != nil {
+		if loc, ok := ds.PrimaryIndex[id]; ok {
+			isDeleted := false
+			if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
+				isDeleted = true
+			}
+			if !isDeleted && loc.BatchIdx < len(ds.Records.Read()) {
+				rec := ds.Records.Read()[loc.BatchIdx]
+				vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, -1)
+				if err != nil {
+					return nil, false, status.Errorf(codes.Internal, "failed to extract vector: %v", err)
+				}
+				return vec, true, nil
+			}
+		}
+		return nil, false, nil
+	}
+
+	// Fallback to linear scan if PrimaryIndex wasn't initialized.
+	for i, rec := range ds.Records.Read() {
+		idColIdx := -1
+		for j, field := range rec.Schema().Fields() {
+			if field.Name == "id" {
+				idColIdx = j
+				break
+			}
+		}
+		if idColIdx == -1 {
+			continue
+		}
+
+		col := rec.Column(idColIdx)
+		rowIdx := findRowIndexByID(col, id)
+		if rowIdx != -1 {
+			ts := ds.Tombstones[i]
+			if ts != nil && ts.Contains(rowIdx) {
+				continue
+			}
+			vec, err := ExtractVectorFromArrow(rec, rowIdx, -1)
+			if err != nil {
+				return nil, false, status.Errorf(codes.Internal, "failed to extract vector: %v", err)
+			}
+			return vec, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func findRowIndexByID(col arrow.Array, id string) int {
+	switch arr := col.(type) {
+	case *array.String:
+		for j := 0; j < arr.Len(); j++ {
+			if arr.Value(j) == id {
+				return j
+			}
+		}
+	case *array.Int64:
+		var intID int64
+		if n, _ := fmt.Sscanf(id, "%d", &intID); n == 1 {
+			for j := 0; j < arr.Len(); j++ {
+				if arr.Value(j) == intID {
+					return j
+				}
+			}
+		}
+	case *array.Uint64:
+		var uintID uint64
+		if n, _ := fmt.Sscanf(id, "%d", &uintID); n == 1 {
+			for j := 0; j < arr.Len(); j++ {
+				if arr.Value(j) == uintID {
+					return j
+				}
+			}
+		}
+	}
+	return -1
 }

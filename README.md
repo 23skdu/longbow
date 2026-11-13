@@ -54,7 +54,10 @@ Longbow includes a comprehensive, multi-platform benchmark suite:
 
 ```bash
 # Run a targeted benchmark for specific types and dimensions
-python3 scripts/unified_benchmark.py --modes cpu,metal --dtypes float32,turboquant --dims 128,384,768
+python3 scripts/unified_benchmark.py --mode cpu,metal --dtypes float32,turboquant --dims 128,384,768 --search-modes all
+
+# Run dedicated scenario benchmarks (temporal, geo, range, federated, text, multimodal, recommend, graphrag, learned_index)
+python3 scripts/unified_benchmark.py --mode temporal,geo,range,federated,text,multimodal
 
 # Results are generated as a Markdown matrix in docs/performance.md
 ```
@@ -95,8 +98,8 @@ Notable flags:
 - `LONGBOW_HNSW_TURBOQUANT_ENABLED=true` (Enable SIMD-accelerated bit-packing)
 - `LONGBOW_LEARNED_INDEX_ENABLED=true` (Enable adaptive learned index routing)
 
-- **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).
-- **Search**: High-performance HNSW vector search with hybrid (Dense + Sparse) support and polymorphic vector types.
+- **Protocol**: Apache Arrow Flight (gRPC/HTTP2) plus first-class REST v1 (`/api/v1/*`) and GraphQL (`/api/v1/graphql`).
+- **Search Modalities**: Dense ANN/k-NN, Search by ID (`ByID`), Filtered (`filter_expr`/CTEs), Sparse/BM25, Advanced Full-Text (Boolean AST, fuzzy, facets), Hybrid (RRF + `raw_hybrid`), Distance Range Search, Geo-Spatial (radius/box/hybrid), Temporal (as-of/range/sliding-window), Multi-Modal (text/image/audio), Hybrid Vector-Graph Recommendation, GraphRAG & GlobalGraphRAG, Federated Cross-Collection Search, TurboQuant, and Learned Index ([docs/vectorsearch.md](docs/vectorsearch.md)).
 - **Distance Metrics**: Pluggable metrics (Euclidean, Cosine, Dot Product) with SIMD optimizations for all supported types.
 - **Filtering**: Metadata-aware predicate filtering for searches and scans.
 - **Lifecycle**: Support for vector deletion via tombstones.

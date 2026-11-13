@@ -12,15 +12,23 @@ Get started with Longbow using Docker or Helm. Covers installation, environment 
 
 ### 2. [Unified Search & Discovery](vectorsearch.md)
 
-Comprehensive guide to all 10 search modes:
+Comprehensive guide to all Longbow search modes (including Flight `DoGet`/`DoAction`, REST v1 `/api/v1/*`, GraphQL, `longbow-cli`, Python SDK, and `bench-tool`):
 
-- **Dense**: HNSW vector search with SIMD acceleration.
-- **Hybrid**: Dense + Sparse fusion with Distributed Global RRF.
-- **Filtered**: SQL-like boolean logic and metadata predicates.
-- **GraphRAG**: Spreading Activation + Knowledge Graph traversal.
-- **Temporal**: Point-in-time and range-based versioned search.
-- **Geo-Spatial**: Haversine radius and bounding box queries.
-- **TurboQuant**: Compressed vector search (4x-64x reduction).
+- **Dense Vector Search (ANN / k-NN)**: HNSW vector similarity across 17 data types with SIMD/GPU/TPU acceleration and global scatter-gather (`LocalOnly=false`).
+- **Vector Search by ID (`ByID`)**: O(1) similarity lookup from a stored vector ID (`search_by_id`, `/search/by-id`, `longbow-cli search -mode by-id`).
+- **Filtered Search**: SIMD predicate evaluation (`filters`), complex boolean `filter_expr` AST, subqueries, and CTE pipelines.
+- **Sparse / BM25 Keyword Search**: Pure keyword retrieval over inverted text indexes (`alpha=0.0` + `text_query`).
+- **Advanced Full-Text Search**: Boolean AST (`AND`/`OR`/`NOT`), phrase matching, Damerau-Levenshtein fuzzy terms (`~N`), `<mark>` snippets, categorical facets, tunable BM25 (`k1`, `b`), and zero-result analytics (`AdvancedTextSearch`, `/text-search`, `longbow-cli text-search`).
+- **Hybrid Search**: Dense HNSW + BM25 RRF/weighted blending with optional un-fused `raw_hybrid` results and GraphRAG blending (`/hybrid`).
+- **Distance-Threshold Range Search**: Radius/thresholded HNSW search returning all matches within a distance bound (`range_search`, `/range-search`, GraphQL `rangeSearch`, `longbow-cli range-search`).
+- **Temporal Search**: Point-in-time `as_of`, `range`, `sliding_window`, `sliding_window_time`, version history, and temporal aggregations (`/temporal-search`, `longbow-cli temporal-search`).
+- **Geo-Spatial Search**: Haversine `radius`, bounding `box`, and geo+vector `hybrid` queries via Quadtree or Morton grid (`/geo-search`, `longbow-cli geo-search`).
+- **Multi-Modal / Cross-Modal Search**: Text, image (PNG/JPEG), and audio (PCM16 WAV) joint embeddings and cross-modal retrieval (`MultiModalSearch`, `/multimodal-search`, `longbow-cli multimodal-search`).
+- **Hybrid Vector-Graph Recommendation (`Recommend`)**: Multi-hop seed expansion blended with vector similarity (`recommend`, `/recommend`, `longbow-cli recommend`).
+- **GraphRAG & Distributed Graph Expansion**: Spreading activation (`graph_alpha`/`graph_depth`), explicit triple traversal (`traverse-graph`), `GraphRAGExpand`, and cluster-wide `GlobalGraphRAG`.
+- **Federated Cross-Collection Search**: Parallel k-NN across multiple collections or tag-routed collections fused via RRF (`federated_search`, `/api/v1/search/federated`, GraphQL `federatedSearch`, `longbow-cli federated-search`).
+- **TurboQuant & Learned Index**: 2/4/8-bit compressed ANN search (`TurboQuant`) and runtime k-NN index auto-dispatch (`LearnedIndex`).
+- **Companion Pipeline Actions**: Cross-encoder/hybrid reranking (`Rerank`), synonym/multi-query/HyDE query rewriting (`RewriteQuery`), and HNSW hop/score explainability (`ExplainSearch`, `DebugSearchPath`).
 
 ### 3. [High-Performance Indexing](indexing.md)
 

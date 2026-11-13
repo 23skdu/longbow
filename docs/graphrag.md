@@ -77,14 +77,15 @@ stats = client.get_graph_stats(dataset="knowledge")
 # Returns: {"nodes": 1000, "edges": 5000, "predicates": ["knows", "works_at"]}
 ```
 
-### Arrow Flight Actions
+### Arrow Flight Actions & Related Search Interfaces
 
-| Action | Description | Parameters |
+| Action / Endpoint | Description | Parameters |
 |--------|-------------|------------|
 | `add-edge` | Adds an explicit relationship | `subject`, `predicate`, `object`, `weight` |
 | `traverse-graph` | BFS traversal from a start node | `start`, `max_hops`, `incoming`, `weighted` |
 | `GraphRAGExpand` | Distributed expansion for multiple nodes | `node_ids`, `max_hops` |
 | `GetGraphStats` | Basic graph metadata | `dataset` |
+| `recommend` (`DoGet` / `POST /api/v1/datasets/{name}/recommend` / `longbow-cli recommend`) | Hybrid vector + graph seed recommendations | `dataset`, `seed_ids`, `k`, `alpha`, `max_hops`, `decay` |
 
 ---
 
@@ -110,11 +111,11 @@ results = client.search(
     dataset="documents",
     vector=[0.1, 0.2, ...],
     k=10,
-    alpha=0.7,  # 1.0 = full graph, 0.0 = pure vector
-    depth=2      # graph traversal depth
+    graph_alpha=0.7,  # 1.0 = full graph, 0.0 = pure vector
+    graph_depth=2     # graph traversal depth
 )
 
-# Pure graph-based recommendation
+# Pure or hybrid graph-based recommendation
 results = client.recommend(
     dataset="documents",
     seed_ids=["doc_1", "doc_2"],

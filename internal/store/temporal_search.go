@@ -245,6 +245,9 @@ func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metad
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
 
+	if ti.dimension == 0 && len(vector) > 0 {
+		ti.dimension = len(vector)
+	}
 	if len(vector) != ti.dimension {
 		return fmt.Errorf("dimension mismatch: expected %d, got %d", ti.dimension, len(vector))
 	}
@@ -287,6 +290,19 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 		return nil
 	}
 
+	ti.mu.Lock()
+	dim := ti.dimension
+	if dim == 0 {
+		for _, v := range vectors {
+			if len(v) > 0 {
+				dim = len(v)
+				ti.dimension = dim
+				break
+			}
+		}
+	}
+	ti.mu.Unlock()
+
 	norms := make([]float32, n)
 	workers := runtime.GOMAXPROCS(0)
 	if workers > n {
@@ -305,7 +321,7 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 		go func(s, e int) {
 			defer wg.Done()
 			for i := s; i < e; i++ {
-				if i < len(vectors) && len(vectors[i]) == ti.dimension {
+				if i < len(vectors) && len(vectors[i]) == dim {
 					norms[i] = ti.computeNorm(vectors[i])
 				}
 			}
@@ -315,7 +331,7 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 
 	ti.mu.Lock()
 	for i := range ids {
-		if i >= len(vectors) || len(vectors[i]) != ti.dimension {
+		if i >= len(vectors) || len(vectors[i]) != dim {
 			continue
 		}
 		var m []byte

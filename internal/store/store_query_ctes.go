@@ -70,7 +70,7 @@ func (s *VectorStore) executeInternalSearch(ctx context.Context, req *qry.Vector
 	}
 
 	if isHybrid {
-		return s.SearchHybrid(ctx, req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2, req.RawHybrid)
+		return s.SearchHybridWithFilters(ctx, req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2, req.RawHybrid, req.Filters)
 	}
 
 	ds, ok := s.getDataset(req.Dataset)

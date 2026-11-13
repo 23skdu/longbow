@@ -183,14 +183,15 @@ func permissionAndDatasetForAction(action *flight.Action) (Permission, string) {
 	switch action.Type {
 	case "VectorSearch", "VectorSearchByID", "search", "dense", "sparse", "filtered", "hybrid",
 		"HybridSearch", "GeoSearch", "TemporalSearch", "TemporalRangeSearch", "TemporalVersionHistory",
-		"TemporalAggregation", "traverse-graph", "GetGraphStats", "calculate-pagerank", "detect-communities",
+		"TemporalAggregation", "RangeSearch", "FederatedSearch", "ListFederatedCollections",
+		"traverse-graph", "GetGraphStats", "calculate-pagerank", "detect-communities",
 		"GraphRAGExpand", "ListNamespaces", "ListDatasetsInNamespace", "ExplainSearch", "DebugSearchPath",
 		"SearchFacets", "SearchAnalytics", "AdvancedTextSearch", "QueryMaterializedView", "GetProvenance",
 		"Rerank", "RewriteQuery", "MultiModalSearch", "ValidateSchema", "GetSchemaRegistry", "GetTenantUsage",
 		"ListStreamConnectors", "GetStreamStats", "GetCloudCluster", "ListCloudClusters", "GetCloudSLAReport",
 		"GraphQLQuery":
 		return PermRead, target
-	case "IngestStreamEvent", "MultiModalIngest", "MultiModalIngestParquet", "RecordProvenance", "ReplicateClusterMutation":
+	case "IngestStreamEvent", "MultiModalIngest", "MultiModalIngestParquet", "RecordProvenance", "ReplicateClusterMutation", "RegisterFederatedCollection":
 		return PermWrite, target
 	case "delete", "Delete", "drop", "Drop", "ResetDataset", "delete-dataset", "delete-vector":
 		return PermDelete, target

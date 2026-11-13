@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -28,12 +29,55 @@ func TestParseFloats(t *testing.T) {
 }
 
 func TestSearchModes(t *testing.T) {
-	validModes := []string{"dense", "sparse", "filtered", "hybrid"}
-	for _, mode := range validModes {
-		isValid := mode == "dense" || mode == "sparse" || mode == "filtered" || mode == "hybrid"
-		if !isValid {
-			t.Errorf("unexpected mode: %s", mode)
-		}
+	cases := []struct {
+		name      string
+		mode      string
+		vector    string
+		text      string
+		id        string
+		filters   string
+		expectKey string
+	}{
+		{"dense", "dense", "1,0,0", "", "", "", "search"},
+		{"sparse", "sparse", "", "quantum", "", `{"field":"cat","operator":"=","value":"sec"}`, "search"},
+		{"filtered", "filtered", "1,0,0", "", "", `[{"field":"cat","operator":"=","value":"sec"}]`, "search"},
+		{"hybrid", "hybrid", "1,0,0", "quantum", "", "", "search"},
+		{"by-id", "by-id", "", "", "doc-0", "", "search_by_id"},
+		{"range", "range", "1,0,0", "", "", "", "range_search"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := buildSearchTicket(tc.mode, "kb", tc.vector, tc.text, tc.id, tc.filters, 5, 60, 2, 0.5, 0.25, 0.2, true)
+			if err != nil {
+				t.Fatalf("buildSearchTicket(%s) error: %v", tc.mode, err)
+			}
+			var decoded map[string]map[string]any
+			if err := json.Unmarshal(b, &decoded); err != nil {
+				t.Fatalf("unmarshal ticket: %v", err)
+			}
+			if _, ok := decoded[tc.expectKey]; !ok {
+				t.Fatalf("expected root key %q in %v", tc.expectKey, decoded)
+			}
+		})
+	}
+}
+
+func TestSearchTicketBuilders(t *testing.T) {
+	if _, err := buildGeoSearchTicket("box", "kb", "37.7,-122.5,37.8,-122.4", "", 0, 0, 0, 5); err != nil {
+		t.Fatalf("box geo ticket failed: %v", err)
+	}
+	if _, err := buildGeoSearchTicket("hybrid", "kb", "", "1,0,0,0", 37.7, -122.4, 5.0, 5); err != nil {
+		t.Fatalf("hybrid geo ticket failed: %v", err)
+	}
+	if _, err := buildFederatedSearchTicket("col_a,col_b", "", "1,0,0,0", 5, 60); err != nil {
+		t.Fatalf("federated ticket failed: %v", err)
+	}
+	textReq := buildAdvancedTextRequest("kb", "enc AND mesh", "category", "<mark>", 5, 1)
+	if textReq["query"] != "enc AND mesh" {
+		t.Fatalf("unexpected text req: %v", textReq)
+	}
+	if _, err := buildMultiModalRequest("media", "text", "sunset", "", "", "", 5); err != nil {
+		t.Fatalf("multimodal req failed: %v", err)
 	}
 }
 
@@ -127,11 +171,14 @@ func TestGeoSearchParams(t *testing.T) {
 }
 
 func TestTemporalSearchTypes(t *testing.T) {
-	validTypes := []string{"as_of", "range", "window", "latest"}
+	validTypes := []string{"as_of", "range", "sliding_window", "sliding_window_time", "window"}
 	for _, typ := range validTypes {
-		isValid := typ == "as_of" || typ == "range" || typ == "window" || typ == "latest"
-		if !isValid {
-			t.Errorf("unexpected temporal type: %s", typ)
+		body, err := buildTemporalSearchBody(typ, "kb", "5m", 100, 50, 100, 10, 5)
+		if err != nil {
+			t.Errorf("buildTemporalSearchBody(%s) failed: %v", typ, err)
+		}
+		if body["search_type"] == "" {
+			t.Errorf("empty search_type for %s", typ)
 		}
 	}
 }

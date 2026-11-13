@@ -2,10 +2,10 @@
 
 ## Overview
 
-Longbow provides **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data operations.
+Longbow exposes a dual-interface protocol layer combining high-throughput **Apache Arrow Flight (gRPC/HTTP2)** with first-class **REST v1** (`/api/v1/*`) and **GraphQL** (`/api/v1/graphql`) HTTP endpoints:
 
-- **Arrow Flight API** - Primary gRPC-based protocol for high-performance operations
-- **Admin Actions** - Flight-based administrative operations
+- **Arrow Flight API** - Primary zero-copy gRPC protocol for ingestion (`DoPut`), search (`DoGet`), and control operations (`DoAction`, `DoExchange`)
+- **REST v1 & GraphQL HTTP API** - JSON/HTTP endpoints for CRUD, all search modalities, federations, OpenAPI (`/api/v1/openapi.json`), and GraphQL (`/api/v1/graphql`)
 - **Prometheus Metrics** - HTTP metrics endpoint on `LONGBOW_METRICS_ADDR` (falls back to `:6000`)
 
 ### Protocol Ports
@@ -14,8 +14,8 @@ Longbow provides **gRPC + Apache Arrow Flight only**. No REST/HTTP API for data 
 |------|---------|----------|
 | 3000 | Data Server | gRPC/Arrow Flight |
 | 3001 | Meta Server | gRPC/Arrow Flight |
-| 6000 | Metrics (bare binary default) | HTTP/Prometheus |
-| 9090 | Metrics (helm / docker-compose) | HTTP/Prometheus |
+| 6000 | HTTP / Metrics (bare binary default) | HTTP/Prometheus, REST v1, GraphQL |
+| 9090 | HTTP / Metrics (helm / docker-compose) | HTTP/Prometheus, REST v1, GraphQL |
 
 ### Data vs Meta Server
 
@@ -203,31 +203,46 @@ All control plane operations target **Port 3001**.
 
 ### DoGet - Global Search
 
-Performs distributed Vector or Hybrid search across the entire cluster (automatically handles scatter-gather).
+Performs distributed Vector, Hybrid, ByID, Recommend, Geo-Spatial, Temporal, Range, or Federated search across the local node or entire cluster mesh.
 
-**Input Ticket:**
+**Input Tickets (`{"<ticket_type>": {...}}`):**
 
 ```json
 {
   "search": {
     "dataset": "name",
-    "vector": [...],
+    "vector": [0.1, 0.2],
     "text_query": "optional",
-    "k": 10,
+    "alpha": 0.5,
     "graph_alpha": 0.5,
-    "graph_depth": 2
+    "graph_depth": 2,
+    "filters": [{"field": "category", "operator": "==", "value": "tech"}],
+    "raw_hybrid": false,
+    "enable_learned_index": false,
+    "k": 10
   }
 }
 ```
 
-**Output:** Arrow RecordBatch stream with `id` (uint64) and `score` (float32).
+Other supported `DoGet` ticket payloads:
+
+- **Search by ID**: `{"search_by_id": {"dataset": "name", "id": "42", "k": 10}}`
+- **Distance Range Search**: `{"range_search": {"dataset": "name", "vector": [0.1, 0.2], "threshold": 0.5, "max_results": 100}}`
+- **Geo-Spatial Search**: `{"geo_search": {"dataset": "name", "search_type": "radius", "center": {"lat": 40.71, "lon": -74.0}, "radius_km": 10.0, "k": 10}}`
+- **Temporal Search**: `{"temporal_search": {"dataset": "name", "search_type": "as_of", "timestamp": 1700050000000000000, "k": 10}}`
+- **Vector-Graph Recommend**: `{"recommend": {"dataset": "name", "seed_ids": ["1", "2"], "k": 10, "alpha": 0.5, "max_hops": 2, "decay": 0.5}}`
+- **Federated Cross-Collection**: `{"federated_search": {"collections": ["ds_a", "ds_b"], "tags": ["prod"], "vector": [0.1, 0.2], "k": 10, "rrf_k": 60}}`
+
+**Output:** Arrow RecordBatch stream with search result columns (such as `id` and `score`/`distance`).
 
 ```bash
-# Vector Search
-python3 scripts/ops_test.py search --dataset my_dataset --k 5
-
-# Hybrid Search
-python3 scripts/ops_test.py search --dataset my_dataset --text-query "apple" --alpha 0.5
+# CLI search across core and specialized modes
+longbow-cli search -dataset my_dataset -mode dense -vector 0.1,0.2 -k 5
+longbow-cli search -dataset my_dataset -mode hybrid -vector 0.1,0.2 -text "apple" -alpha 0.5
+longbow-cli range-search -dataset my_dataset -vector 0.1,0.2 -threshold 0.5 -k 100
+longbow-cli federated-search -collections ds_a,ds_b -vector 0.1,0.2 -k 10 -rrf-k 60
+longbow-cli text-search -dataset my_dataset -query 'apple AND "juice"' -facets category
+longbow-cli multimodal-search -dataset media_ds -modality text -text "apple fruit"
 ```
 
 ### DoAction - Administrative Operations
@@ -298,10 +313,18 @@ for result in client.do_action(action):
 
 #### Search Actions
 
-| Action | Parameters | Description | CLI Command |
-|--------|------------|-------------|-------------|
-| `VectorSearch` | JSON with `dataset`, `vector`, `k`, optional `filters` | Unary vector search (alternative to DoGet) | (Internal) |
-| `VectorSearchByID` | `{"dataset": "...", "id": "...", "k": 10}` | Find similar vectors to a given ID | `ops_test.py similar --dataset <name> --id <ID>` |
+| Action | Parameters | Description | CLI / SDK |
+|--------|------------|-------------|-----------|
+| `VectorSearch` | JSON with `dataset`, `vector`, `k`, optional `filters` | Unary vector search (alternative to DoGet) | `client.search(...)` |
+| `VectorSearchByID` | `{"dataset": "...", "id": "...", "k": 10}` | Find similar vectors to a given ID | `longbow-cli search -mode by-id` / `client.search_by_id()` |
+| `RangeSearch` | `{"dataset": "...", "vector": [...], "threshold": 0.5, "max_results": 100}` | Distance-threshold range search | `longbow-cli range-search` / `client.range_search()` |
+| `FederatedSearch` | `{"collections": [...], "tags": [...], "vector": [...], "k": 10, "rrf_k": 60}` | Multi-collection / tag-routed RRF search | `longbow-cli federated-search` / `client.federated_search()` |
+| `RegisterFederatedCollection` / `ListFederatedCollections` | `{"name": "...", "tags": [...]}` | Register or inspect federated router collections | `client.register_federated_collection()` / `list_federated_collections()` |
+| `GeoSearch` | `{"dataset": "...", "search_type": "radius / box / hybrid", ...}` | Geospatial radius, bounding-box, or hybrid search | `longbow-cli geo-search` / `client.geo_search()` |
+| `TemporalSearch` / `TemporalRangeSearch` / `TemporalVersionHistory` / `TemporalAggregation` | `{"dataset": "...", "search_type": "as_of / range / sliding_window / sliding_window_time", ...}` | Time-travel & versioned queries | `longbow-cli temporal-search` / `client.temporal_search()` |
+| `AdvancedTextSearch` / `SearchFacets` / `SearchAnalytics` / `TuneBM25` | `{"dataset": "...", "query": "...", "facet_fields": [...], "fuzzy_max_dist": 1}` | Boolean AST, phrase, fuzzy `~N`, snippets, facets, BM25 tuning | `longbow-cli text-search` / `client.advanced_text_search()` |
+| `MultiModalSearch` | `{"dataset": "...", "modality": "text / image / audio", "text_query": "..."}` | Cross-modal text/image/audio retrieval | `longbow-cli multimodal-search` / `client.multimodal_search()` |
+| `Rerank` / `RewriteQuery` / `ExplainSearch` / `DebugSearchPath` | Strategy, query, candidate hits, max hops | Reranking, synonym/HyDE query rewriting, HNSW/score explanation | `longbow-cli rerank`, `rewrite-query`, `explain-search` |
 
 **Examples:**
 
@@ -621,7 +644,7 @@ client = LongbowClient(
 | Category | Arrow Flight Actions (`DoAction`) | HTTP Endpoints / CLI |
 | :--- | :--- | :--- |
 | **Managed Cloud & Multi-Region** | `CreateCloudCluster`, `GetCloudCluster`, `ListCloudClusters`, `ScaleCloudCluster`, `AddReplicaRegion`, `ReplicateClusterMutation`, `PromoteClusterRegion`, `GetCloudSLAReport`, `DeleteCloudCluster` | `GET/POST /api/v1/cloud/clusters`, `POST /api/v1/cloud/clusters/{id}/{scale,regions,replicate,promote}`, `GET /api/v1/cloud/clusters/{id}/sla`, `longbow-cli cloud-*` |
-| **REST v1 & GraphQL** | `GraphQLQuery` | `GET /api/v1/health`, `GET /api/v1/openapi.json`, `POST/GET /api/v1/graphql`, `GET/POST/DELETE /api/v1/namespaces`, `/api/v1/datasets/{name}/{vectors,search,hybrid,recommend,aggregations}` |
+| **REST v1 & GraphQL** | `GraphQLQuery` (`rangeSearch`, `federatedSearch`, `textSearch`, `geoSearch`, `temporalSearch`, `multimodalSearch`, `recommend`) | `GET /api/v1/health`, `GET /api/v1/openapi.json`, `POST/GET /api/v1/graphql`, `GET/POST/DELETE /api/v1/namespaces`, `/api/v1/datasets/{name}/{vectors,search,search/by-id,hybrid,text-search,geo-search,temporal-search,multimodal-search,range-search,recommend,aggregations}`, `POST /api/v1/search/federated`, `GET/POST /api/v1/federated/collections` |
 | **RBAC, RLS & Audit** | `CreateAPIKey`, `RotateAPIKey`, `RevokeAPIKey`, `ListAPIKeys`, `SetRLSPolicy`, `GetAuditLog` | HTTP `Authorization: Bearer` / `X-API-Key` enforced on `/api/v1/*`, `longbow-cli create-api-key`, `rotate-api-key`, `revoke-api-key`, `list-api-keys` |
 | **Backup & PITR** | `TriggerBackup`, `RestoreBackup`, `VerifyBackup`, `ListBackups` | `longbow-cli backup`, `restore` |
 | **Streaming CDC** | `CreateStreamConnector`, `StopStreamConnector`, `ListStreamConnectors`, `GetStreamStats`, `RegisterStreamSchema`, `IngestStreamEvent` | Kafka & Pulsar connectors with Confluent Schema Registry wire framing |
@@ -634,6 +657,22 @@ client = LongbowClient(
 | **Advanced Text** | `AdvancedTextSearch`, `SearchFacets`, `SearchAnalytics`, `TuneBM25` | Highlighting, facets, fuzzy/phrase/boolean queries |
 | **Explainability** | `ExplainSearch`, `DebugSearchPath`, `RecordProvenance`, `GetProvenance` | `client.explain_search(...)`, `client.format_search_explanation(...)` |
 | **Edge / WASM Sync** | — | `POST /api/v1/search`, `POST /api/v1/edge/sync` |
+
+#### REST v1 Search Endpoints
+
+| Endpoint | Method | Search Modality |
+| :--- | :--- | :--- |
+| `/api/v1/datasets/{name}/search` | `POST` | Dense ANN / Filtered / `filter_expr` AST |
+| `/api/v1/datasets/{name}/search/by-id` | `POST` | Vector Search by ID (`ByID`) |
+| `/api/v1/datasets/{name}/hybrid` | `POST` | Hybrid Dense + BM25 RRF + Optional GraphRAG (`raw_hybrid`) |
+| `/api/v1/datasets/{name}/text-search` | `POST` | Advanced Full-Text (Boolean AST, phrase, fuzzy `~N`, snippets, facets) |
+| `/api/v1/datasets/{name}/geo-search` | `POST` | Geospatial (`radius`, `box`, `hybrid`) |
+| `/api/v1/datasets/{name}/temporal-search` | `POST` | Temporal (`as_of`, `range`, `sliding_window`, `sliding_window_time`) |
+| `/api/v1/datasets/{name}/multimodal-search` | `POST` | Cross-modal (`text`, `image`, `audio`) |
+| `/api/v1/datasets/{name}/range-search` | `POST` | Distance-threshold Range Search |
+| `/api/v1/datasets/{name}/recommend` | `POST` | Hybrid Vector-Graph Recommendations |
+| `/api/v1/search/federated` | `POST` | Federated Cross-Collection Search (RRF) |
+| `/api/v1/federated/collections` | `GET` / `POST` | List or Register Federated Collection Tags |
 
 ### Go
 

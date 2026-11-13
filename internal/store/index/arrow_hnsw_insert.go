@@ -1417,6 +1417,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			if err := data.SetVector(id, v); err != nil {
 				return nil, err
 			}
+			h.encodeAndStoreTQ(data, id, v)
 			h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 		}
 	}

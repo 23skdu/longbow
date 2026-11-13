@@ -96,7 +96,7 @@ help:
 	@echo "  test-fuzz            Run fuzz test harnesses"
 	@echo "  fuzz-coverage        Verify 100% package fuzz-target presence"
 	@echo "  test-docker          Run Dockerfile unit tests (Go and Python)"
-	@echo "  test-bench-harness   Run benchmark harness test suite (114 Python tests)"
+	@echo "  test-bench-harness   Run benchmark harness test suite (122 Python tests)"
 	@echo "  test-adbc            Run ADBC driver Go test suite"
 	@echo "  test-adbc-python     Run ADBC Python driver verification script"
 	@echo "  test-adbc-so         Run ADBC C-shared library Python tests"
@@ -387,6 +387,7 @@ test-bench-harness:
 	$(PYTHON) scripts/tests/test_benchmark_temporal.py
 	$(PYTHON) scripts/tests/test_benchmark_attribution.py
 	$(PYTHON) scripts/tests/test_ab_stats.py
+	$(PYTHON) scripts/tests/test_search_modes.py
 
 test-adbc:
 	$(GO) test -v -cover ./internal/adbc/...

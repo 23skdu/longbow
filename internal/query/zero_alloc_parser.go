@@ -254,6 +254,38 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				p.result.Recommend = &req
 				i = newPos
 			}
+		case "range_search":
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				i += 4
+			} else {
+				start := i
+				newPos, err := SkipObject(data, i)
+				if err != nil {
+					return p.result, err
+				}
+				var req core.RangeSearchRequest
+				if err := ParseRangeSearchRequest(data[start:newPos], &req); err != nil {
+					return p.result, err
+				}
+				p.result.RangeSearch = &req
+				i = newPos
+			}
+		case "federated_search":
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				i += 4
+			} else {
+				start := i
+				newPos, err := SkipObject(data, i)
+				if err != nil {
+					return p.result, err
+				}
+				var req core.FederatedSearchRequest
+				if err := ParseFederatedSearchRequest(data[start:newPos], &req); err != nil {
+					return p.result, err
+				}
+				p.result.FederatedSearch = &req
+				i = newPos
+			}
 		default:
 			newPos, err := SkipValue(data, i)
 			if err != nil {

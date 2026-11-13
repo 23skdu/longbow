@@ -157,12 +157,32 @@ type TicketQuery struct {
 	Recommend       *RecommendRequest        `json:"recommend,omitempty"`
 	GeoSearch       *GeoSearchRequest        `json:"geo_search,omitempty"`
 	TemporalSearch  *TemporalSearchRequest   `json:"temporal_search,omitempty"`
+	RangeSearch     *RangeSearchRequest      `json:"range_search,omitempty"`
+	FederatedSearch *FederatedSearchRequest  `json:"federated_search,omitempty"`
 	CTEs            []CTE                    `json:"ctes,omitempty"`
-	Mode            string                   `json:"mode,omitempty"` // search mode: dense, sparse, filtered, hybrid
+	Mode            string                   `json:"mode,omitempty"` // search mode: dense, sparse, filtered, hybrid, range, federated
 
 	// Backwards compatibility / Direct shortcut fields
 	Vector []float32 `json:"vector,omitempty"`
 	K      int       `json:"k,omitempty"`
+}
+
+// RangeSearchRequest represents a distance-threshold range search query.
+type RangeSearchRequest struct {
+	Dataset    string    `json:"dataset"`
+	Vector     []float32 `json:"vector"`
+	Threshold  float32   `json:"threshold"`
+	Filters    []Filter  `json:"filters,omitempty"`
+	MaxResults int       `json:"max_results,omitempty"`
+}
+
+// FederatedSearchRequest represents a federated cross-collection vector search query.
+type FederatedSearchRequest struct {
+	Collections []string  `json:"collections,omitempty"`
+	Tags        []string  `json:"tags,omitempty"`
+	Vector      []float32 `json:"vector"`
+	K           int       `json:"k"`
+	RRFK        int       `json:"rrf_k,omitempty"`
 }
 
 // VectorSearchResponse defines the response format for VectorSearch action

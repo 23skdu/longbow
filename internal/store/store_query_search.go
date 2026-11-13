@@ -99,7 +99,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 			if depth <= 0 {
 				depth = 2
 			}
-			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, depth, req.RawHybrid)
+			searchResults, err = s.SearchHybridWithFilters(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, depth, req.RawHybrid, req.Filters)
 		} else {
 			// Standard Vector Search
 			ds, ok := s.getDataset(req.Dataset)

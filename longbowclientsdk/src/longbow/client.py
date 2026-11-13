@@ -7,7 +7,7 @@ import math
 import warnings
 from typing import Union, List, Dict, Any, Optional, Iterator
 
-from .exceptions import LongbowConnectionError, LongbowQueryError
+from .exceptions import LongbowConnectionError, LongbowNotFoundError, LongbowQueryError
 from .ingest import to_arrow_table
 
 __all__ = ["LongbowClient"]
@@ -79,6 +79,84 @@ class LongbowClient:
             return {} if default is None else default
         except Exception as e:
             raise LongbowQueryError(f"{action_type} failed: {e}")
+
+    def _do_get_df(self, ticket_payload: Dict[str, Any], label: str) -> pd.DataFrame:
+        if self._data_client is None:
+            self.connect()
+        ticket = flight.Ticket(json.dumps(ticket_payload).encode("utf-8"))
+        try:
+            reader = self._require_data_client().do_get(
+                ticket, options=self._get_call_options()
+            )
+            return reader.read_all().to_pandas()
+        except Exception as e:
+            raise LongbowQueryError(f"{label} failed: {e}")
+
+    @staticmethod
+    def _serialize_vector(vector: Any) -> Optional[List[float]]:
+        if vector is None:
+            return None
+        np_mod: Any = None
+        try:
+            import numpy as np
+
+            np_mod = np
+        except ImportError:
+            pass
+
+        query_vec: Any = vector
+        if np_mod is not None and hasattr(query_vec, "dtype"):
+            if np_mod.issubdtype(query_vec.dtype, np_mod.complexfloating):
+                target_dtype = (
+                    np_mod.float32
+                    if query_vec.dtype == np_mod.complex64
+                    else np_mod.float64
+                )
+                query_vec = query_vec.view(target_dtype).flatten().tolist()
+            elif isinstance(query_vec, np_mod.ndarray):
+                query_vec = query_vec.tolist()
+
+        if (
+            isinstance(query_vec, list)
+            and len(query_vec) > 0
+            and isinstance(query_vec[0], complex)
+        ):
+            flat_vector = []
+            for v in query_vec:
+                flat_vector.append(float(v.real))
+                flat_vector.append(float(v.imag))
+            query_vec = flat_vector
+
+        for i, v in enumerate(query_vec):
+            if isinstance(v, (int, float)) and not math.isfinite(v):
+                raise ValueError(
+                    f"Query vector contains invalid value (NaN or Inf) at index {i}"
+                )
+        return list(query_vec)
+
+    def _rest_request(
+        self,
+        method: str,
+        path: str,
+        body: Optional[Dict[str, Any]] = None,
+        http_endpoint: str = "http://127.0.0.1:6000",
+    ) -> Dict[str, Any]:
+        import urllib.request
+
+        if not (
+            http_endpoint.startswith("http://") or http_endpoint.startswith("https://")
+        ):
+            raise ValueError(f"Unsupported http_endpoint scheme: {http_endpoint}")
+        url = f"{http_endpoint.rstrip('/')}{path}"
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.tenant_id:
+            headers["X-Tenant-ID"] = self.tenant_id
+        data_bytes = json.dumps(body).encode("utf-8") if body is not None else None
+        req = urllib.request.Request(url, data=data_bytes, headers=headers, method=method)
+        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310
+            return json.loads(resp.read().decode("utf-8"))
 
     def connect(self):
         """Establish connections to the server."""
@@ -183,73 +261,34 @@ class LongbowClient:
     def search(
         self,
         dataset: str,
-        vector: Any,
+        vector: Any = None,
         k: int = 10,
         filters: Optional[List[Dict]] = None,
         projection: Optional[List[str]] = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Perform a K-Nearest Neighbor search.
+        Perform a dense, sparse (alpha=0 + text_query), filtered, or hybrid search.
 
         Args:
             dataset: Target dataset.
-            vector: Query vector.
+            vector: Query vector (optional for pure sparse BM25 search with alpha=0.0).
             k: Number of results.
             filters: Optional filter criteria.
             projection: Optional list of columns to return (reduces bandwidth).
-            **kwargs: Additional arguments passed to the search query (e.g. 'alpha', 'text_query', 'include_vectors').
+            **kwargs: Extra arguments (e.g. 'alpha', 'text_query', 'rrf_k', 'graph_alpha', 'graph_depth', 'raw_hybrid').
 
         Returns:
             pandas.DataFrame: Dataframe containing search results.
         """
-        # Handle complex query vectors and sanitization for JSON
-        np_mod: Any = None
-        try:
-            import numpy as np
-
-            np_mod = np
-        except ImportError:
-            pass
-
-        query_vec: Any = vector
-        if np_mod is not None and hasattr(query_vec, "dtype"):
-            if np_mod.issubdtype(query_vec.dtype, np_mod.complexfloating):
-                # Flatten complex to [real, imag, real, imag...]
-                # Use correct float type matching the complex precision
-                target_dtype = (
-                    np_mod.float32
-                    if query_vec.dtype == np_mod.complex64
-                    else np_mod.float64
-                )
-                query_vec = query_vec.view(target_dtype).flatten().tolist()
-            elif isinstance(query_vec, np_mod.ndarray):
-                query_vec = query_vec.tolist()
-
-        # Handle Python list of complex numbers (e.g. [1+1j, 2+2j])
-        if (
-            isinstance(query_vec, list)
-            and len(query_vec) > 0
-            and isinstance(query_vec[0], complex)
-        ):
-            flat_vector = []
-            for v in query_vec:
-                flat_vector.append(float(v.real))
-                flat_vector.append(float(v.imag))
-            query_vec = flat_vector
-
-        # Sanitize: Ensure no NaN/Inf which breaks server JSON parsing
-        for i, v in enumerate(query_vec):
-            if isinstance(v, (int, float)) and not math.isfinite(v):
-                raise ValueError(
-                    f"Query vector contains invalid value (NaN or Inf) at index {i}"
-                )
+        query_vec = self._serialize_vector(vector)
 
         req: Dict[str, Any] = {
             "dataset": dataset,
-            "vector": query_vec,
             "k": k,
         }
+        if query_vec is not None:
+            req["vector"] = query_vec
 
         if filters:
             req["filters"] = filters
@@ -257,7 +296,7 @@ class LongbowClient:
         if projection:
             req["projection"] = projection
 
-        # Merge extra args (e.g. alpha, text_query)
+        # Merge extra args (e.g. alpha, text_query, rrf_k, graph_alpha, graph_depth)
         for kw, val in kwargs.items():
             if val is not None:
                 req[kw] = val
@@ -266,18 +305,7 @@ class LongbowClient:
         if kwargs.get("ef_search_pid", False):
             req["ef_search_pid"] = True
 
-        ticket_bytes = json.dumps({"search": req}).encode("utf-8")
-        ticket = flight.Ticket(ticket_bytes)
-
-        try:
-            reader = self._require_data_client().do_get(
-                ticket, options=self._get_call_options()
-            )
-            table = reader.read_all()
-            return table.to_pandas()  # Convert to Pandas
-
-        except Exception as e:
-            raise LongbowQueryError(f"Search failed: {e}")
+        return self._do_get_df({"search": req}, "Search")
 
     def geo_search(
         self,
@@ -291,59 +319,188 @@ class LongbowClient:
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Perform a Geospatial search (radius or bounding box).
-
-        Args:
-            dataset: Target dataset (must have geospatial index enabled).
-            center: Center point {"lat": 1.2, "lon": 3.4}. Required for radius/hybrid.
-            radius_km: Search radius in kilometers. Required for radius/hybrid.
-            box: Bounding box {"min_lat": ..., "max_lat": ..., "min_lon": ..., "max_lon": ...}. Required for box search.
-            search_type: "radius", "box", or "hybrid".
-            k: Number of results.
-            filters: Optional metadata filters.
-            **kwargs: Extra parameters.
-
-        Returns:
-            pandas.DataFrame: Search results with 'id' and 'distance'.
+        Perform a Geospatial search (radius, bounding box, or geo+vector hybrid).
         """
-        if self._data_client is None:
-            self.connect()
-
-        geo_req = {
+        geo_req: Dict[str, Any] = {
             "dataset": dataset,
             "k": k,
             "search_type": search_type,
         }
-
         if center:
             geo_req["center"] = center
-        if radius_km:
+        if radius_km is not None:
             geo_req["radius_km"] = radius_km
         if box:
             geo_req["box"] = box
         if filters:
             geo_req["filters"] = filters
-
         geo_req.update(kwargs)
 
-        ticket_bytes = json.dumps({"geo_search": geo_req}).encode("utf-8")
-        ticket = flight.Ticket(ticket_bytes)
+        return self._do_get_df({"geo_search": geo_req}, "Geo-Search")
 
-        try:
-            reader = self._require_data_client().do_get(
-                ticket, options=self._get_call_options()
+    def get_vector(
+        self,
+        dataset: str,
+        id: Union[int, str],
+        http_endpoint: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fetch a stored vector record by document ID via REST v1 or Arrow Flight filter."""
+        if http_endpoint:
+            import urllib.parse
+
+            ds_q = urllib.parse.quote(dataset, safe="")
+            id_q = urllib.parse.quote(str(id), safe="")
+            return self._rest_request(
+                "GET", f"/api/v1/datasets/{ds_q}/vectors/{id_q}", http_endpoint=http_endpoint
             )
-            table = reader.read_all()
-            return table.to_pandas()
-        except Exception as e:
-            raise LongbowQueryError(f"Geo-Search failed: {e}")
+
+        table = self.download_arrow(
+            dataset, filter=[{"field": "id", "operator": "=", "value": str(id)}]
+        )
+        rows = table.to_pylist()
+        if not rows:
+            raise LongbowNotFoundError(f"Vector {id!r} not found in dataset {dataset!r}")
+        return rows[0]
 
     def search_by_id(
-        self, dataset: str, id: Union[int, str], k: int = 10
+        self,
+        dataset: str,
+        id: Union[int, str],
+        k: int = 10,
+        filters: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Search for similar vectors by ID."""
         req: Dict[str, Any] = {"dataset": dataset, "id": id, "k": k}
+        if filters:
+            req["filters"] = filters
         return self._do_action_json("VectorSearchByID", req, default={})
+
+    def search_by_id_df(
+        self,
+        dataset: str,
+        id: Union[int, str],
+        k: int = 10,
+        filters: Optional[List[Dict[str, Any]]] = None,
+    ) -> pd.DataFrame:
+        """Search for similar vectors by ID via Arrow Flight DoGet returning a DataFrame."""
+        req: Dict[str, Any] = {"dataset": dataset, "id": id, "k": k}
+        if filters:
+            req["filters"] = filters
+        return self._do_get_df({"search_by_id": req}, "SearchByID")
+
+    def range_search(
+        self,
+        dataset: str,
+        vector: Any,
+        threshold: float,
+        max_results: int = 100,
+        filters: Optional[List[Dict[str, Any]]] = None,
+        filter_expr: Optional[Dict[str, Any]] = None,
+    ) -> pd.DataFrame:
+        """Find all vectors within `threshold` distance of `vector`."""
+        req: Dict[str, Any] = {
+            "dataset": dataset,
+            "vector": self._serialize_vector(vector) or [],
+            "threshold": float(threshold),
+            "max_results": max_results,
+        }
+        if filters:
+            req["filters"] = filters
+        if filter_expr:
+            req["filter_expr"] = filter_expr
+        return self._do_get_df({"range_search": req}, "RangeSearch")
+
+    def federated_search(
+        self,
+        vector: Any,
+        collections: Optional[List[str]] = None,
+        tags: Optional[List[str]] = None,
+        k: int = 10,
+        rrf_k: int = 60,
+    ) -> pd.DataFrame:
+        """Search across multiple collections (or routed tags) and merge via RRF."""
+        req: Dict[str, Any] = {
+            "vector": self._serialize_vector(vector) or [],
+            "k": k,
+            "rrf_k": rrf_k,
+        }
+        if collections:
+            req["collections"] = collections
+        if tags:
+            req["tags"] = tags
+        return self._do_get_df({"federated_search": req}, "FederatedSearch")
+
+    def list_federated_collections(self) -> List[Dict[str, Any]]:
+        """List federated collections registered with the server."""
+        return self._do_action_json("ListFederatedCollections", {}, default={}).get(
+            "collections", []
+        )
+
+    def register_federated_collection(
+        self,
+        name: str,
+        description: str = "",
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Register a dataset and routing tags in the federated query router."""
+        payload: Dict[str, Any] = {"dataset": name, "name": name}
+        if description:
+            payload["description"] = description
+        if tags:
+            payload["tags"] = tags
+        if metadata:
+            payload["metadata"] = metadata
+        return self._do_action_json("RegisterFederatedCollection", payload, default={})
+
+    def advanced_text_search(
+        self,
+        dataset: str,
+        query: str,
+        k: int = 10,
+        fuzzy_max_dist: int = 1,
+        highlight_tag: str = "<mark>",
+        snippet_chars: int = 160,
+        facet_fields: Optional[List[str]] = None,
+        bm25: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, Any]:
+        """Execute advanced BM25 full-text search (boolean AST, phrases, fuzzy, snippets, facets)."""
+        payload: Dict[str, Any] = {
+            "dataset": dataset,
+            "query": query,
+            "k": k,
+            "fuzzy_max_dist": fuzzy_max_dist,
+            "highlight_tag": highlight_tag,
+            "snippet_chars": snippet_chars,
+        }
+        if facet_fields:
+            payload["facet_fields"] = facet_fields
+        if bm25:
+            payload["bm25"] = bm25
+        return self._do_action_json("AdvancedTextSearch", payload, default={})
+
+    def search_facets(
+        self,
+        dataset: str,
+        query: str,
+        facet_fields: Optional[List[str]] = None,
+        k: int = 10,
+    ) -> Dict[str, Any]:
+        """Compute faceted metadata counts matching an advanced full-text query."""
+        payload: Dict[str, Any] = {"dataset": dataset, "query": query, "k": k}
+        if facet_fields:
+            payload["facet_fields"] = facet_fields
+        return self._do_action_json("SearchFacets", payload, default={})
+
+    def search_analytics(self, limit: int = 20) -> Dict[str, Any]:
+        """Retrieve query popularity and zero-result search analytics."""
+        return self._do_action_json("SearchAnalytics", {"limit": limit}, default={})
+
+    def tune_bm25(self, dataset: str, k1: float = 1.2, b: float = 0.75) -> Dict[str, Any]:
+        """Tune per-dataset BM25 scoring parameters k1 and b."""
+        return self._do_action_json(
+            "TuneBM25", {"dataset": dataset, "k1": k1, "b": b}, default={}
+        )
 
     def recommend(
         self,
@@ -1192,23 +1349,232 @@ class LongbowClient:
     ) -> List[Dict[str, Any]]:
         """Execute a REST v1 JSON vector search against /api/v1/datasets/{dataset}/search."""
         import urllib.parse
-        import urllib.request
 
-        if not (
-            http_endpoint.startswith("http://") or http_endpoint.startswith("https://")
-        ):
-            raise ValueError(f"Unsupported http_endpoint scheme: {http_endpoint}")
         encoded_ds = urllib.parse.quote(dataset, safe="")
-        url = f"{http_endpoint.rstrip('/')}/api/v1/datasets/{encoded_ds}/search"
-        payload = json.dumps(
-            {"vector": vector, "k": k, "filters": filters or []}
-        ).encode("utf-8")
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        if self.tenant_id:
-            headers["X-Tenant-ID"] = self.tenant_id
-        req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310
-            data = json.loads(resp.read().decode("utf-8"))
+        data = self._rest_request(
+            "POST",
+            f"/api/v1/datasets/{encoded_ds}/search",
+            {"vector": vector, "k": k, "filters": filters or []},
+            http_endpoint=http_endpoint,
+        )
         return data.get("results", [])
+
+    def rest_hybrid_search(
+        self,
+        dataset: str,
+        vector: Optional[List[float]] = None,
+        text_query: str = "",
+        k: int = 10,
+        alpha: float = 0.5,
+        rrf_k: int = 60,
+        graph_alpha: float = 0.0,
+        graph_depth: int = 0,
+        raw_hybrid: bool = False,
+        filters: Optional[List[Dict[str, Any]]] = None,
+        http_endpoint: str = "http://127.0.0.1:6000",
+    ) -> List[Dict[str, Any]]:
+        """Execute a REST v1 hybrid search against /api/v1/datasets/{dataset}/hybrid."""
+        import urllib.parse
+
+        encoded_ds = urllib.parse.quote(dataset, safe="")
+        payload: Dict[str, Any] = {
+            "text_query": text_query,
+            "k": k,
+            "alpha": alpha,
+            "rrf_k": rrf_k,
+            "graph_alpha": graph_alpha,
+            "graph_depth": graph_depth,
+            "raw_hybrid": raw_hybrid,
+        }
+        if vector is not None:
+            payload["vector"] = vector
+        if filters:
+            payload["filters"] = filters
+        return self._rest_request(
+            "POST",
+            f"/api/v1/datasets/{encoded_ds}/hybrid",
+            payload,
+            http_endpoint=http_endpoint,
+        ).get("results", [])
+
+    def rest_range_search(
+        self,
+        dataset: str,
+        vector: List[float],
+        threshold: float,
+        max_results: int = 100,
+        filters: Optional[List[Dict[str, Any]]] = None,
+        http_endpoint: str = "http://127.0.0.1:6000",
+    ) -> List[Dict[str, Any]]:
+        """Execute a REST v1 range search against /api/v1/datasets/{dataset}/range-search."""
+        import urllib.parse
+
+        encoded_ds = urllib.parse.quote(dataset, safe="")
+        return self._rest_request(
+            "POST",
+            f"/api/v1/datasets/{encoded_ds}/range-search",
+            {
+                "vector": vector,
+                "threshold": threshold,
+                "max_results": max_results,
+                "filters": filters or [],
+            },
+            http_endpoint=http_endpoint,
+        ).get("results", [])
+
+    def rest_search_by_id(
+        self,
+        dataset: str,
+        id: Union[int, str],
+        k: int = 10,
+        filters: Optional[List[Dict[str, Any]]] = None,
+        http_endpoint: str = "http://127.0.0.1:6000",
+    ) -> List[Dict[str, Any]]:
+        """Execute a REST v1 search-by-id against /api/v1/datasets/{dataset}/search/by-id."""
+        import urllib.parse
+
+        encoded_ds = urllib.parse.quote(dataset, safe="")
+        return self._rest_request(
+            "POST",
+            f"/api/v1/datasets/{encoded_ds}/search/by-id",
+            {"id": str(id), "k": k, "filters": filters or []},
+            http_endpoint=http_endpoint,
+        ).get("results", [])
+
+    def rest_text_search(
+        self,
+        dataset: str,
+        query: str,
+        k: int = 10,
+        facet_fields: Optional[List[str]] = None,
+        fuzzy_max_dist: int = 1,
+        http_endpoint: str = "http://127.0.0.1:6000",
+    ) -> Dict[str, Any]:
+        """Execute a REST v1 full-text search against /api/v1/datasets/{dataset}/text-search."""
+        import urllib.parse
+
+        encoded_ds = urllib.parse.quote(dataset, safe="")
+        payload: Dict[str, Any] = {
+            "query": query,
+            "k": k,
+            "fuzzy_max_dist": fuzzy_max_dist,
+        }
+        if facet_fields:
+            payload["facet_fields"] = facet_fields
+        return self._rest_request(
+            "POST",
+            f"/api/v1/datasets/{encoded_ds}/text-search",
+            payload,
+            http_endpoint=http_endpoint,
+        )
+
+    def rest_geo_search(
+        self,
+        dataset: str,
+        search_type: str = "radius",
+        center: Optional[Dict[str, float]] = None,
+        radius_km: float = 1.0,
+        box: Optional[Dict[str, float]] = None,
+        query_vector: Optional[List[float]] = None,
+        k: int = 10,
+        http_endpoint: str = "http://127.0.0.1:6000",
+    ) -> List[Dict[str, Any]]:
+        """Execute a REST v1 geospatial search against /api/v1/datasets/{dataset}/geo-search."""
+        import urllib.parse
+
+        encoded_ds = urllib.parse.quote(dataset, safe="")
+        payload: Dict[str, Any] = {"search_type": search_type, "radius_km": radius_km, "k": k}
+        if center:
+            payload["center"] = center
+        if box:
+            payload["box"] = box
+        if query_vector is not None:
+            payload["query_vector"] = query_vector
+        return self._rest_request(
+            "POST",
+            f"/api/v1/datasets/{encoded_ds}/geo-search",
+            payload,
+            http_endpoint=http_endpoint,
+        ).get("results", [])
+
+    def rest_temporal_search(
+        self,
+        dataset: str,
+        search_type: str = "as_of",
+        timestamp: int = 0,
+        start_time: int = 0,
+        end_time: int = 0,
+        window_size: int = 0,
+        duration: Optional[Union[str, int]] = None,
+        k: int = 10,
+        http_endpoint: str = "http://127.0.0.1:6000",
+    ) -> List[Dict[str, Any]]:
+        """Execute a REST v1 temporal search against /api/v1/datasets/{dataset}/temporal-search."""
+        import urllib.parse
+
+        encoded_ds = urllib.parse.quote(dataset, safe="")
+        payload: Dict[str, Any] = {
+            "search_type": search_type,
+            "timestamp": timestamp,
+            "start_time": start_time,
+            "end_time": end_time,
+            "window_size": window_size,
+            "k": k,
+        }
+        if duration is not None:
+            payload["duration"] = duration
+        return self._rest_request(
+            "POST",
+            f"/api/v1/datasets/{encoded_ds}/temporal-search",
+            payload,
+            http_endpoint=http_endpoint,
+        ).get("results", [])
+
+    def rest_multimodal_search(
+        self,
+        dataset: str,
+        modality: str = "text",
+        text_query: str = "",
+        image_base64: str = "",
+        audio_base64: str = "",
+        k: int = 10,
+        http_endpoint: str = "http://127.0.0.1:6000",
+    ) -> List[Dict[str, Any]]:
+        """Execute a REST v1 multi-modal search against /api/v1/datasets/{dataset}/multimodal-search."""
+        import urllib.parse
+
+        encoded_ds = urllib.parse.quote(dataset, safe="")
+        return self._rest_request(
+            "POST",
+            f"/api/v1/datasets/{encoded_ds}/multimodal-search",
+            {
+                "modality": modality,
+                "text_query": text_query,
+                "image_base64": image_base64,
+                "audio_base64": audio_base64,
+                "k": k,
+            },
+            http_endpoint=http_endpoint,
+        ).get("results", [])
+
+    def rest_federated_search(
+        self,
+        vector: List[float],
+        collections: Optional[List[str]] = None,
+        tags: Optional[List[str]] = None,
+        k: int = 10,
+        rrf_k: int = 60,
+        http_endpoint: str = "http://127.0.0.1:6000",
+    ) -> List[Dict[str, Any]]:
+        """Execute a REST v1 federated cross-collection search against /api/v1/search/federated."""
+        payload: Dict[str, Any] = {"vector": vector, "k": k, "rrf_k": rrf_k}
+        if collections:
+            payload["collections"] = collections
+        if tags:
+            payload["tags"] = tags
+        return self._rest_request(
+            "POST",
+            "/api/v1/search/federated",
+            payload,
+            http_endpoint=http_endpoint,
+        ).get("results", [])

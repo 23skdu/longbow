@@ -616,9 +616,13 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 	searchCtx := h.searchPool.Get()
 	searchCtx.MaxNodeCount = meta.NodeCount
 	searchCtx.MaxGeneration = meta.Generation
+	searchCtx.diskGraph = h.diskGraph.Load()
+	searchCtx.nodesVisitedCount = 0
+	searchCtx.visitedNodesBudget = max(maxNodeCount*4, 5000)
 	defer func() {
 		searchCtx.filterBitmap = nil
 		searchCtx.filterMask = nil
+		searchCtx.diskGraph = nil
 		metrics.HNSWSearchPoolPutSharded.Inc()
 		h.searchPool.Put(searchCtx)
 	}()
@@ -695,22 +699,17 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 	}
 
 	var results []types.SearchResult
-	fm := searchCtx.filterMask
-	for _, c := range res {
-		if c.Dist > threshold {
-			continue
+	if len(res) > 0 {
+		refined := h.ProcessResultsParallel(ctx, queryVec, queryVec, res, len(res), roaringFilter)
+		if refined == nil {
+			// Fallback for query vector types without parallel refinement.
+			refined = h.extractSearchResults(res, len(res), searchCtx)
 		}
-		if h.IsDeleted(c.ID) {
-			continue
+		for _, r := range refined {
+			if r.Distance <= threshold {
+				results = append(results, r)
+			}
 		}
-		if fm != nil && !fm.allows(c.ID) {
-			continue
-		}
-		results = append(results, types.SearchResult{
-			ID:       types.VectorID(c.ID),
-			Distance: c.Dist,
-			Score:    1.0 / (1.0 + c.Dist),
-		})
 	}
 
 	_ = time.Since(start)

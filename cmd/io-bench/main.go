@@ -57,7 +57,7 @@ func main() {
 		queries     = flag.Int("queries", 1000, "Number of search queries")
 		dataset     = flag.String("dataset", "benchmark", "Dataset name")
 		jsonFile    = flag.String("json", "", "Output JSON file")
-		searchModes = flag.String("search-modes", "dense,hybrid,sparse,filtered,byid", "Search modes (including temporal_as_of,temporal_range,temporal_window)")
+		searchModes = flag.String("search-modes", "dense,hybrid,sparse,filtered,byid", "Comma-separated search modes (dense,hybrid,sparse,filtered,byid,range,federated,recommend,geo_radius,geo_box,geo_hybrid,temporal_as_of,temporal_range,temporal_window,temporal_sliding_time, or all)")
 	)
 	flag.Parse()
 
@@ -375,44 +375,52 @@ func printStats(op string, elapsed time.Duration, ops, bytes uint64) {
 	fmt.Printf("  Avg Latency: %.4f ms/op\n", avgLat)
 }
 
+type ModeStats struct {
+	QPS   float64 `json:"qps"`
+	P50Ms float64 `json:"p50_ms"`
+	P95Ms float64 `json:"p95_ms"`
+	P99Ms float64 `json:"p99_ms"`
+}
+
 type BenchmarkResult struct {
-	Dim                 int     `json:"dim"`
-	Dtype               string  `json:"dtype"`
-	Count               int     `json:"count"`
-	IngestVecPerSec     float64 `json:"ingest_vec_per_sec"`
-	IngestP50Ms         float64 `json:"ingest_p50_ms"`
-	DenseQPS            float64 `json:"dense_qps"`
-	DenseP50Ms          float64 `json:"dense_p50_ms"`
-	DenseP95Ms          float64 `json:"dense_p95_ms"`
-	DenseP99Ms          float64 `json:"dense_p99_ms"`
-	HybridQPS           float64 `json:"hybrid_qps"`
-	HybridP50Ms         float64 `json:"hybrid_p50_ms"`
-	HybridP95Ms         float64 `json:"hybrid_p95_ms"`
-	HybridP99Ms         float64 `json:"hybrid_p99_ms"`
-	SparseQPS           float64 `json:"sparse_qps"`
-	SparseP50Ms         float64 `json:"sparse_p50_ms"`
-	SparseP95Ms         float64 `json:"sparse_p95_ms"`
-	SparseP99Ms         float64 `json:"sparse_p99_ms"`
-	FilteredQPS         float64 `json:"filtered_qps"`
-	FilteredP50Ms       float64 `json:"filtered_p50_ms"`
-	FilteredP95Ms       float64 `json:"filtered_p95_ms"`
-	FilteredP99Ms       float64 `json:"filtered_p99_ms"`
-	ByIDQPS             float64 `json:"byid_qps"`
-	ByIDP50Ms           float64 `json:"byid_p50_ms"`
-	ByIDP95Ms           float64 `json:"byid_p95_ms"`
-	ByIDP99Ms           float64 `json:"byid_p99_ms"`
-	TemporalAsOfQPS     float64 `json:"temporal_as_of_qps"`
-	TemporalAsOfP50Ms   float64 `json:"temporal_as_of_p50_ms"`
-	TemporalAsOfP95Ms   float64 `json:"temporal_as_of_p95_ms"`
-	TemporalAsOfP99Ms   float64 `json:"temporal_as_of_p99_ms"`
-	TemporalRangeQPS    float64 `json:"temporal_range_qps"`
-	TemporalRangeP50Ms  float64 `json:"temporal_range_p50_ms"`
-	TemporalRangeP95Ms  float64 `json:"temporal_range_p95_ms"`
-	TemporalRangeP99Ms  float64 `json:"temporal_range_p99_ms"`
-	TemporalWindowQPS   float64 `json:"temporal_window_qps"`
-	TemporalWindowP50Ms float64 `json:"temporal_window_p50_ms"`
-	TemporalWindowP95Ms float64 `json:"temporal_window_p95_ms"`
-	TemporalWindowP99Ms float64 `json:"temporal_window_p99_ms"`
+	Dim                 int                  `json:"dim"`
+	Dtype               string               `json:"dtype"`
+	Count               int                  `json:"count"`
+	IngestVecPerSec     float64              `json:"ingest_vec_per_sec"`
+	IngestP50Ms         float64              `json:"ingest_p50_ms"`
+	DenseQPS            float64              `json:"dense_qps"`
+	DenseP50Ms          float64              `json:"dense_p50_ms"`
+	DenseP95Ms          float64              `json:"dense_p95_ms"`
+	DenseP99Ms          float64              `json:"dense_p99_ms"`
+	HybridQPS           float64              `json:"hybrid_qps"`
+	HybridP50Ms         float64              `json:"hybrid_p50_ms"`
+	HybridP95Ms         float64              `json:"hybrid_p95_ms"`
+	HybridP99Ms         float64              `json:"hybrid_p99_ms"`
+	SparseQPS           float64              `json:"sparse_qps"`
+	SparseP50Ms         float64              `json:"sparse_p50_ms"`
+	SparseP95Ms         float64              `json:"sparse_p95_ms"`
+	SparseP99Ms         float64              `json:"sparse_p99_ms"`
+	FilteredQPS         float64              `json:"filtered_qps"`
+	FilteredP50Ms       float64              `json:"filtered_p50_ms"`
+	FilteredP95Ms       float64              `json:"filtered_p95_ms"`
+	FilteredP99Ms       float64              `json:"filtered_p99_ms"`
+	ByIDQPS             float64              `json:"byid_qps"`
+	ByIDP50Ms           float64              `json:"byid_p50_ms"`
+	ByIDP95Ms           float64              `json:"byid_p95_ms"`
+	ByIDP99Ms           float64              `json:"byid_p99_ms"`
+	TemporalAsOfQPS     float64              `json:"temporal_as_of_qps"`
+	TemporalAsOfP50Ms   float64              `json:"temporal_as_of_p50_ms"`
+	TemporalAsOfP95Ms   float64              `json:"temporal_as_of_p95_ms"`
+	TemporalAsOfP99Ms   float64              `json:"temporal_as_of_p99_ms"`
+	TemporalRangeQPS    float64              `json:"temporal_range_qps"`
+	TemporalRangeP50Ms  float64              `json:"temporal_range_p50_ms"`
+	TemporalRangeP95Ms  float64              `json:"temporal_range_p95_ms"`
+	TemporalRangeP99Ms  float64              `json:"temporal_range_p99_ms"`
+	TemporalWindowQPS   float64              `json:"temporal_window_qps"`
+	TemporalWindowP50Ms float64              `json:"temporal_window_p50_ms"`
+	TemporalWindowP95Ms float64              `json:"temporal_window_p95_ms"`
+	TemporalWindowP99Ms float64              `json:"temporal_window_p99_ms"`
+	Modes               map[string]ModeStats `json:"modes,omitempty"`
 }
 
 func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int, dataset, jsonFile, searchModes string) {
@@ -445,6 +453,8 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 		{Name: "id", Type: arrow.BinaryTypes.String},
 		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 		{Name: "timestamp", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "geo_point", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float64)},
+		{Name: "category", Type: arrow.BinaryTypes.String},
 	}, nil)
 
 	// gRPC wire protocol uses a 4-byte length prefix, capping individual
@@ -458,6 +468,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 	}
 
 	now := time.Now().UnixNano()
+	categories := []string{"electronics", "clothing", "home", "books"}
 	for offset := 0; offset < scale; offset += batchSize {
 		end := offset + batchSize
 		if end > scale {
@@ -469,24 +480,36 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 		listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32) // #nosec G115
 		vecBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
 		tsBuilder := array.NewInt64Builder(mem)
+		geoBuilder := array.NewFixedSizeListBuilder(mem, 2, arrow.PrimitiveTypes.Float64)
+		geoValBuilder := geoBuilder.ValueBuilder().(*array.Float64Builder)
+		catBuilder := array.NewStringBuilder(mem)
 
 		idBuilder.Reserve(n)
 		listBuilder.Reserve(n)
 		vecBuilder.Reserve(n * dim)
 		tsBuilder.Reserve(n)
+		geoBuilder.Reserve(n)
+		geoValBuilder.Reserve(n * 2)
+		catBuilder.Reserve(n)
 
 		for i := 0; i < n; i++ {
 			idBuilder.Append(fmt.Sprintf("%d", offset+i))
 			listBuilder.Append(true)
 			tsBuilder.Append(now + int64(offset+i)*1000000000)
+			geoBuilder.Append(true)
+			geoValBuilder.Append(40.7128 + rnd.Float64()*0.1)  // #nosec G404
+			geoValBuilder.Append(-74.0060 + rnd.Float64()*0.1) // #nosec G404
+			catBuilder.Append(categories[(offset+i)%len(categories)])
 		}
 		vecBuilder.AppendValues(vecs[offset*dim:(offset+n)*dim], nil)
 
 		idArr := idBuilder.NewArray()
 		vecArr := listBuilder.NewArray()
 		tsArr := tsBuilder.NewArray()
+		geoArr := geoBuilder.NewArray()
+		catArr := catBuilder.NewArray()
 
-		rec := array.NewRecordBatch(sch, []arrow.Array{idArr, vecArr, tsArr}, int64(n))
+		rec := array.NewRecordBatch(sch, []arrow.Array{idArr, vecArr, tsArr, geoArr, catArr}, int64(n))
 		if err := uploadData(ctx, sc, dataset, rec, sch); err != nil {
 			log.Fatalf("Ingest failed at offset %d: %v", offset, err)
 		}
@@ -494,10 +517,14 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 		idArr.Release()
 		vecArr.Release()
 		tsArr.Release()
+		geoArr.Release()
+		catArr.Release()
 		rec.Release()
 		idBuilder.Release()
 		listBuilder.Release()
 		tsBuilder.Release()
+		geoBuilder.Release()
+		catBuilder.Release()
 	}
 
 	ingestDur := time.Since(ingestStart)
@@ -505,7 +532,21 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 	result.IngestP50Ms = ingestDur.Seconds() * 1000
 	fmt.Printf("Ingested %d vectors in %.2fs (%.0f vec/s)\n", scale, ingestDur.Seconds(), result.IngestVecPerSec)
 
-	modes := strings.Split(searchModes, ",")
+	result.Modes = make(map[string]ModeStats)
+	var modes []string
+	if strings.TrimSpace(searchModes) == "all" {
+		modes = []string{
+			"dense", "hybrid", "sparse", "filtered", "byid", "range", "federated",
+			"recommend", "geo_radius", "geo_box", "geo_hybrid",
+			"temporal_as_of", "temporal_range", "temporal_window", "temporal_sliding_time",
+		}
+	} else {
+		for _, m := range strings.Split(searchModes, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				modes = append(modes, m)
+			}
+		}
+	}
 	rnd = rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404
 
 	for _, mode := range modes {
@@ -529,46 +570,9 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 			}
 
 			start := time.Now()
-			var runErr error
-
-			var ticketBytes []byte
-			if strings.HasPrefix(mode, "temporal_") {
-				ts := time.Now().UnixNano()
-				switch mode {
-				case "temporal_as_of":
-					req := map[string]interface{}{
-						"dataset":     dataset,
-						"search_type": "as_of",
-						"timestamp":   ts,
-						"k":           10,
-					}
-					ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
-				case "temporal_range":
-					req := map[string]interface{}{
-						"dataset":     dataset,
-						"search_type": "range",
-						"start_time":  ts - 1000000000,
-						"end_time":    ts,
-						"k":           10,
-					}
-					ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
-				case "temporal_window":
-					req := map[string]interface{}{
-						"dataset":     dataset,
-						"search_type": "sliding_window",
-						"window_size": 10,
-						"k":           10,
-					}
-					ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
-				}
-			} else {
-				req := map[string]interface{}{
-					"dataset": dataset,
-					"vector":  query,
-					"k":       10,
-					"mode":    mode,
-				}
-				ticketBytes, _ = json.Marshal(map[string]interface{}{"search": req})
+			ticketBytes, ticketErr := buildIOBenchTicket(mode, dataset, query, i, scale, start.UnixNano())
+			if ticketErr != nil {
+				continue
 			}
 
 			stream, runErr := sc.DoGet(ctx, ticketBytes)
@@ -598,6 +602,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 		elapsed := time.Since(totalStart).Seconds()
 		qps := float64(len(latencies)) / elapsed
 
+		result.Modes[mode] = ModeStats{QPS: qps, P50Ms: p50, P95Ms: p95, P99Ms: p99}
 		switch mode {
 		case "dense":
 			result.DenseQPS, result.DenseP50Ms, result.DenseP95Ms, result.DenseP99Ms = qps, p50, p95, p99
@@ -619,19 +624,10 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 	}
 
 	fmt.Printf("\nResults:\n")
-	fmt.Printf("  Dense:    %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.DenseQPS, result.DenseP50Ms, result.DenseP95Ms, result.DenseP99Ms)
-	fmt.Printf("  Hybrid:  %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.HybridQPS, result.HybridP50Ms, result.HybridP95Ms, result.HybridP99Ms)
-	fmt.Printf("  Sparse:  %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.SparseQPS, result.SparseP50Ms, result.SparseP95Ms, result.SparseP99Ms)
-	fmt.Printf("  Filtered:%8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.FilteredQPS, result.FilteredP50Ms, result.FilteredP95Ms, result.FilteredP99Ms)
-	fmt.Printf("  ByID:    %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.ByIDQPS, result.ByIDP50Ms, result.ByIDP95Ms, result.ByIDP99Ms)
-	if result.TemporalAsOfQPS > 0 {
-		fmt.Printf("  TemporalAsOf:  %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.TemporalAsOfQPS, result.TemporalAsOfP50Ms, result.TemporalAsOfP95Ms, result.TemporalAsOfP99Ms)
-	}
-	if result.TemporalRangeQPS > 0 {
-		fmt.Printf("  TemporalRange: %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.TemporalRangeQPS, result.TemporalRangeP50Ms, result.TemporalRangeP95Ms, result.TemporalRangeP99Ms)
-	}
-	if result.TemporalWindowQPS > 0 {
-		fmt.Printf("  TemporalWindow: %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.TemporalWindowQPS, result.TemporalWindowP50Ms, result.TemporalWindowP95Ms, result.TemporalWindowP99Ms)
+	for _, mode := range modes {
+		if st, ok := result.Modes[mode]; ok {
+			fmt.Printf("  %-22s %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", mode+":", st.QPS, st.P50Ms, st.P95Ms, st.P99Ms)
+		}
 	}
 
 	if jsonFile != "" {
@@ -641,6 +637,47 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 		} else {
 			fmt.Printf("Results written to %s\n", jsonFile)
 		}
+	}
+}
+
+func buildIOBenchTicket(mode, dataset string, query []float32, queryIdx, corpusSize int, tsNanos int64) ([]byte, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "dense":
+		return json.Marshal(map[string]any{"search": map[string]any{"dataset": dataset, "vector": query, "k": 10}})
+	case "hybrid":
+		return json.Marshal(map[string]any{"search": map[string]any{"dataset": dataset, "vector": query, "text_query": "electronics", "alpha": 0.5, "k": 10}})
+	case "sparse":
+		return json.Marshal(map[string]any{"search": map[string]any{"dataset": dataset, "text_query": "electronics", "alpha": 0.0, "k": 10}})
+	case "filtered":
+		return json.Marshal(map[string]any{"search": map[string]any{"dataset": dataset, "vector": query, "filters": []map[string]string{{"field": "category", "operator": "=", "value": "electronics"}}, "k": 10}})
+	case "byid":
+		target := queryIdx
+		if corpusSize > 0 {
+			target = queryIdx % corpusSize
+		}
+		return json.Marshal(map[string]any{"search_by_id": map[string]any{"dataset": dataset, "id": fmt.Sprintf("%d", target), "k": 10}})
+	case "range":
+		return json.Marshal(map[string]any{"range_search": map[string]any{"dataset": dataset, "vector": query, "threshold": 10.0, "max_results": 10}})
+	case "federated":
+		return json.Marshal(map[string]any{"federated_search": map[string]any{"collections": []string{dataset}, "vector": query, "k": 10, "rrf_k": 60}})
+	case "recommend":
+		return json.Marshal(map[string]any{"recommend": map[string]any{"dataset": dataset, "seed_ids": []string{"0"}, "k": 10, "max_hops": 2, "decay": 0.8, "alpha": 0.5}})
+	case "geo_radius":
+		return json.Marshal(map[string]any{"geo_search": map[string]any{"dataset": dataset, "center": map[string]float64{"lat": 40.7128, "lon": -74.0060}, "radius_km": 50.0, "search_type": "radius", "k": 10}})
+	case "geo_box":
+		return json.Marshal(map[string]any{"geo_search": map[string]any{"dataset": dataset, "box": map[string]float64{"min_lat": 40.70, "max_lat": 40.82, "min_lon": -74.02, "max_lon": -73.90}, "search_type": "box", "k": 10}})
+	case "geo_hybrid":
+		return json.Marshal(map[string]any{"geo_search": map[string]any{"dataset": dataset, "center": map[string]float64{"lat": 40.7128, "lon": -74.0060}, "radius_km": 50.0, "search_type": "hybrid", "query_vector": query, "k": 10}})
+	case "temporal_as_of":
+		return json.Marshal(map[string]any{"temporal_search": map[string]any{"dataset": dataset, "search_type": "as_of", "timestamp": tsNanos, "k": 10}})
+	case "temporal_range":
+		return json.Marshal(map[string]any{"temporal_search": map[string]any{"dataset": dataset, "search_type": "range", "start_time": tsNanos - 1000000000, "end_time": tsNanos, "k": 10}})
+	case "temporal_window":
+		return json.Marshal(map[string]any{"temporal_search": map[string]any{"dataset": dataset, "search_type": "sliding_window", "window_size": 10, "k": 10}})
+	case "temporal_sliding_time":
+		return json.Marshal(map[string]any{"temporal_search": map[string]any{"dataset": dataset, "search_type": "sliding_window_time", "duration": int64(60 * time.Second), "k": 10}})
+	default:
+		return nil, fmt.Errorf("unsupported search mode: %s", mode)
 	}
 }
 

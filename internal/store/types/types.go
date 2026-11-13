@@ -203,6 +203,12 @@ type TemporalSearchRequest = basecore.TemporalSearchRequest
 // TemporalAggregationRequest alias for basecore.TemporalAggregationRequest.
 type TemporalAggregationRequest = basecore.TemporalAggregationRequest
 
+// RangeSearchRequest alias for basecore.RangeSearchRequest.
+type RangeSearchRequest = basecore.RangeSearchRequest
+
+// FederatedSearchRequest alias for basecore.FederatedSearchRequest.
+type FederatedSearchRequest = basecore.FederatedSearchRequest
+
 // SearchOptions defines the options for search operations
 type SearchOptions struct {
 	IncludeVectors bool

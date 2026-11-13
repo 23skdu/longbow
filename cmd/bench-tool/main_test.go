@@ -261,7 +261,7 @@ func TestBuildSearchTicketHybrid(t *testing.T) {
 	}
 
 	search := parsed["search"].(map[string]interface{})
-	if search["text_query"] != "benchmark search term" {
+	if search["text_query"] != "electronics" {
 		t.Errorf("expected text_query, got %v", search["text_query"])
 	}
 	if search["alpha"] != 0.5 {
@@ -279,7 +279,7 @@ func TestBuildSearchTicketSparse(t *testing.T) {
 	}
 
 	search := parsed["search"].(map[string]interface{})
-	if search["text_query"] != "benchmark search term" {
+	if search["text_query"] != "electronics" {
 		t.Errorf("expected text_query, got %v", search["text_query"])
 	}
 }
@@ -629,5 +629,91 @@ func TestTemporalAsOfIsFixed(t *testing.T) {
 	}
 	if !strings.Contains(a, fmt.Sprintf("%d", defaultTemporalAsOf)) {
 		t.Errorf("temporal ticket does not carry the fixed timestamp: %s", a)
+	}
+}
+
+func TestResolveSearchModes(t *testing.T) {
+	all := resolveSearchModes("all")
+	if len(all) != len(allSearchModes) {
+		t.Fatalf("expected %d modes for 'all', got %d: %v", len(allSearchModes), len(all), all)
+	}
+	for _, required := range []string{"Range", "AdvancedText", "GeoBox", "GeoHybrid", "TemporalRange", "TemporalWindow", "MultiModal", "Federated"} {
+		found := false
+		for _, m := range all {
+			if m == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected %q in resolveSearchModes(\"all\")", required)
+		}
+	}
+
+	got := resolveSearchModes("dense, range_search, text, geo-box, geo_hybrid, temporal_range, temporal_window, multi-modal, federated_search, dense")
+	want := []string{"Dense", "Range", "AdvancedText", "GeoBox", "GeoHybrid", "TemporalRange", "TemporalWindow", "MultiModal", "Federated"}
+	if len(got) != len(want) {
+		t.Fatalf("resolveSearchModes got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("index %d: got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestBuildExtendedSpecialAndVectorTickets(t *testing.T) {
+	s := NewReusableSearchState(64)
+
+	geoBox := s.BuildSpecialTicket("test_ds", "GeoBox", 0, 100)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(geoBox, &parsed); err != nil {
+		t.Fatalf("GeoBox invalid JSON: %v", err)
+	}
+	gb := parsed["geo_search"].(map[string]interface{})
+	if gb["search_type"] != "box" {
+		t.Errorf("GeoBox search_type = %v, want box", gb["search_type"])
+	}
+
+	tr := s.BuildSpecialTicket("test_ds", "TemporalRange", 0, 500)
+	if err := json.Unmarshal(tr, &parsed); err != nil {
+		t.Fatalf("TemporalRange invalid JSON: %v", err)
+	}
+	trm := parsed["temporal_search"].(map[string]interface{})
+	if trm["search_type"] != "range" {
+		t.Errorf("TemporalRange search_type = %v, want range", trm["search_type"])
+	}
+
+	tw := s.BuildSpecialTicket("test_ds", "TemporalWindow", 0, 500)
+	if err := json.Unmarshal(tw, &parsed); err != nil {
+		t.Fatalf("TemporalWindow invalid JSON: %v", err)
+	}
+	twm := parsed["temporal_search"].(map[string]interface{})
+	if twm["search_type"] != "sliding_window" {
+		t.Errorf("TemporalWindow search_type = %v, want sliding_window", twm["search_type"])
+	}
+
+	for _, tc := range []struct {
+		mode string
+		root string
+	}{
+		{"Range", "range_search"},
+		{"GeoHybrid", "geo_search"},
+		{"Federated", "federated_search"},
+	} {
+		t1 := string(s.BuildVectorSpecialTicket("test_ds", 64, "float32", tc.mode, 10, 3))
+		if err := json.Unmarshal([]byte(t1), &parsed); err != nil {
+			t.Fatalf("%s invalid JSON: %v", tc.mode, err)
+		}
+		if _, ok := parsed[tc.root]; !ok {
+			t.Fatalf("%s missing root key %q in %s", tc.mode, tc.root, t1)
+		}
+		s2 := NewReusableSearchState(64)
+		if t2 := string(s2.BuildVectorSpecialTicket("test_ds", 64, "float32", tc.mode, 10, 3)); t1 != t2 {
+			t.Errorf("%s not deterministic for same index", tc.mode)
+		}
+		if t3 := string(s2.BuildVectorSpecialTicket("test_ds", 64, "float32", tc.mode, 10, 4)); t1 == t3 {
+			t.Errorf("%s produced identical ticket for different query indices", tc.mode)
+		}
 	}
 }

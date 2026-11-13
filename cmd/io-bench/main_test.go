@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -58,5 +59,45 @@ func TestIOBenchHelpers(t *testing.T) {
 	size := prepFile(tmpDir, 1, 4096)
 	if size < 1024*1024 {
 		t.Errorf("prepFile size = %d; want at least 1MB", size)
+	}
+}
+
+func TestBuildIOBenchTicket(t *testing.T) {
+	query := []float32{0.1, 0.2, 0.3}
+	cases := []struct {
+		mode    string
+		rootKey string
+	}{
+		{"dense", "search"},
+		{"hybrid", "search"},
+		{"sparse", "search"},
+		{"filtered", "search"},
+		{"byid", "search_by_id"},
+		{"range", "range_search"},
+		{"federated", "federated_search"},
+		{"recommend", "recommend"},
+		{"geo_radius", "geo_search"},
+		{"geo_box", "geo_search"},
+		{"geo_hybrid", "geo_search"},
+		{"temporal_as_of", "temporal_search"},
+		{"temporal_range", "temporal_search"},
+		{"temporal_window", "temporal_search"},
+		{"temporal_sliding_time", "temporal_search"},
+	}
+	for _, tc := range cases {
+		raw, err := buildIOBenchTicket(tc.mode, "ds", query, 5, 100, 1700000000000000000)
+		if err != nil {
+			t.Fatalf("buildIOBenchTicket(%q) error = %v", tc.mode, err)
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			t.Fatalf("buildIOBenchTicket(%q) invalid json: %v", tc.mode, err)
+		}
+		if _, ok := parsed[tc.rootKey]; !ok {
+			t.Errorf("buildIOBenchTicket(%q) missing key %q in %s", tc.mode, tc.rootKey, string(raw))
+		}
+	}
+	if _, err := buildIOBenchTicket("unknown", "ds", query, 0, 10, 0); err == nil {
+		t.Fatal("expected error for unsupported mode")
 	}
 }

@@ -178,8 +178,59 @@ func (fqr *FederatedQueryRouter) RegisterCollection(name string, searcher Vector
 	return fqr.registry.RegisterCollection(info)
 }
 
-// Search performs a parallel search across specified collections and merges results using RRF.
+// UpsertCollection registers or refreshes a collection searcher and metadata idempotently.
+func (fqr *FederatedQueryRouter) UpsertCollection(name string, searcher VectorSearcher, info *CollectionInfo) {
+	fqr.mu.Lock()
+	defer fqr.mu.Unlock()
+
+	fqr.searchers[name] = searcher
+	if info == nil {
+		info = &CollectionInfo{Name: name}
+	}
+	if info.Name == "" {
+		info.Name = name
+	}
+	info.Dimension = searcher.GetDimension()
+	if err := fqr.registry.RegisterCollection(info); err != nil {
+		fqr.registry.mu.Lock()
+		if existing, ok := fqr.registry.collections[name]; ok {
+			existing.Dimension = info.Dimension
+			existing.VectorCount = info.VectorCount
+			if len(info.Tags) > 0 {
+				existing.Tags = info.Tags
+			}
+			if info.Description != "" {
+				existing.Description = info.Description
+			}
+			if len(info.Metadata) > 0 {
+				existing.Metadata = info.Metadata
+			}
+		}
+		fqr.registry.mu.Unlock()
+	}
+}
+
+// ListCollections returns metadata for all registered federated collections.
+func (fqr *FederatedQueryRouter) ListCollections() []*CollectionInfo {
+	fqr.mu.RLock()
+	defer fqr.mu.RUnlock()
+	return fqr.registry.ListCollections()
+}
+
+// RegisterRoutingRule registers a tag-to-collection routing rule with the router.
+func (fqr *FederatedQueryRouter) RegisterRoutingRule(rule *RoutingRule) error {
+	fqr.mu.RLock()
+	defer fqr.mu.RUnlock()
+	return fqr.registry.RegisterRoutingRule(rule)
+}
+
+// Search performs a parallel search across specified collections and merges results using the default RRF k.
 func (fqr *FederatedQueryRouter) Search(ctx context.Context, query []float32, collections []string, k int) ([]lbtypes.SearchResult, error) {
+	return fqr.SearchWithRRFK(ctx, query, collections, k, int(fqr.defaultRRF))
+}
+
+// SearchWithRRFK performs a parallel search across specified collections and merges results using RRF with rrfK.
+func (fqr *FederatedQueryRouter) SearchWithRRFK(ctx context.Context, query []float32, collections []string, k, rrfK int) ([]lbtypes.SearchResult, error) {
 	fqr.mu.RLock()
 	defer fqr.mu.RUnlock()
 
@@ -214,7 +265,7 @@ func (fqr *FederatedQueryRouter) Search(ctx context.Context, query []float32, co
 		allResults = append(allResults, r)
 	}
 
-	merged := fqr.mergeResultsRRF(allResults, k)
+	merged := fqr.mergeResultsRRF(allResults, k, rrfK)
 	return merged, nil
 }
 
@@ -258,7 +309,7 @@ type partialResult struct {
 	err        error
 }
 
-func (fqr *FederatedQueryRouter) mergeResultsRRF(partials []partialResult, k int) []lbtypes.SearchResult {
+func (fqr *FederatedQueryRouter) mergeResultsRRF(partials []partialResult, k, rrfK int) []lbtypes.SearchResult {
 	if len(partials) == 0 {
 		return nil
 	}
@@ -277,7 +328,13 @@ func (fqr *FederatedQueryRouter) mergeResultsRRF(partials []partialResult, k int
 	}
 
 	scoreMap := make(map[lbtypes.VectorID]*scoredResult, totalPotential/2)
-	rrfConstant := float32(fqr.defaultRRF)
+	rrfConstant := float32(rrfK)
+	if rrfConstant <= 0 {
+		rrfConstant = float32(fqr.defaultRRF)
+	}
+	if rrfConstant <= 0 {
+		rrfConstant = 60
+	}
 
 	for _, p := range partials {
 		for i, r := range p.results {

@@ -1,23 +1,29 @@
 # Unified Search & Discovery Guide
 
-**Last Updated**: 2026-04-28
+**Last Updated**: 2026-11-13
 
-Longbow provides an integrated suite of search capabilities, from low-latency vector similarity to complex relational filtering and graph-based retrieval.
+Longbow provides an integrated suite of search modalities across Apache Arrow Flight (`DoGet` / `DoAction`), REST v1 (`/api/v1/*`), GraphQL (`/api/v1/graphql`), `longbow-cli`, and the Python SDK (`LongbowClient`).
 
 ## Search Modes Overview
 
-| Mode | Description | Python SDK |
-|------|------------|-----------|
-| **Dense** | HNSW-based vector similarity | `client.search()` |
-| **Sparse** | BM25/Keyword matching | Built-in |
-| **Filtered** | Metadata filtering | `filters=` parameter |
-| **Hybrid** | RRF-fused dense + sparse | `client.search(alpha=0.5)` |
-| **ByID** | Instant specific vector retrieval | `client.search_by_id()` |
-| **Temporal** | Versioned time-travel queries | `client.temporal_search()` |
-| **Geo-Spatial** | Radius/bounding box search | `client.geo_search()` |
-| **GraphRAG** | Knowledge graph spreading | `client.recommend()` |
-| **Learned Index** | Automatic index selection | Auto-enabled |
-| **TurboQuant** | Compressed vector search | `vector_type="turboquant"` |
+| Mode | Description | Flight / REST Endpoint | Python SDK |
+|------|-------------|------------------------|------------|
+| **Dense (ANN / k-NN)** | HNSW vector similarity (`float32`..`complex128`) | `{"search": ...}` / `POST /datasets/{name}/search` | `client.search()` |
+| **ByID** | O(1) lookup & neighbor search from a stored ID | `{"search_by_id": ...}` / `POST .../search/by-id` | `client.search_by_id()` / `search_by_id_df()` |
+| **Filtered** | Metadata predicates (`filters`), `filter_expr` AST, CTEs | `{"search": {"filters": ...}}` / `POST .../search` | `client.search(filters=...)` |
+| **Sparse (BM25)** | Inverted keyword retrieval (`alpha=0.0` + `text_query`) | `{"search": {"alpha": 0.0, ...}}` | `client.search(text_query=..., alpha=0.0)` |
+| **Advanced Full-Text** | Boolean AST (`AND`/`OR`/`NOT`), phrase, fuzzy `~N`, facets | `AdvancedTextSearch` / `POST .../text-search` | `client.advanced_text_search()` / `search_facets()` |
+| **Hybrid** | Dense + BM25 RRF/weighted fusion (+ `raw_hybrid`) | `{"search": ...}` / `POST .../hybrid` | `client.search(text_query=..., alpha=0.5)` |
+| **Range Search** | All vectors within a distance threshold bound | `{"range_search": ...}` / `POST .../range-search` | `client.range_search()` |
+| **Temporal** | `as_of`, `range`, `sliding_window`, `sliding_window_time` | `{"temporal_search": ...}` / `POST .../temporal-search` | `client.temporal_search()` |
+| **Geo-Spatial** | Haversine `radius`, `box`, and geo+vector `hybrid` | `{"geo_search": ...}` / `POST .../geo-search` | `client.geo_search()` |
+| **Multi-Modal** | Cross-modal text, PNG/JPEG image, PCM16 WAV audio | `MultiModalSearch` / `POST .../multimodal-search` | `client.multimodal_search()` |
+| **Recommend** | Hybrid vector + multi-hop graph seed expansion | `{"recommend": ...}` / `POST .../recommend` | `client.recommend()` |
+| **GraphRAG / GlobalGraphRAG** | Spreading activation & cluster-wide graph expansion | `graph_alpha > 0` / `traverse-graph` / `GraphRAGExpand` | `client.search(graph_alpha=...)` / `traverse()` |
+| **Federated** | Cross-collection / tag-routed RRF parallel search | `{"federated_search": ...}` / `POST /api/v1/search/federated` | `client.federated_search()` |
+| **TurboQuant** | 2/4/8-bit compressed vector ANN search | `vector_type: "turboquant"` | `vector_type="turboquant"` |
+| **Learned Index** | Runtime k-NN index dispatch (`enable_learned_index`) | `"enable_learned_index": true` | Auto-enabled (`LONGBOW_LEARNED_INDEX_ENABLED`) |
+| **Global Distributed** | Cluster scatter-gather + Global RRF fusion | `LocalOnly: false` / `x-longbow-global: true` | Automatic when cluster peers active |
 
 ---
 
@@ -68,11 +74,24 @@ client.create_namespace(
 
 ## 2. Sparse Search (BM25)
 
-Traditional full-text retrieval using inverted index.
+Full-text keyword retrieval using an inverted BM25 index (configured via `LONGBOW_HYBRID_TEXT_COLUMNS`, e.g. `text,category`).
 
-**Algorithm**: BM25 with configurable $k_1$ and $b$ parameters.
+**Algorithm**: BM25 with configurable $k_1$ and $b$ parameters (tunable per dataset via `TuneBM25`).
 
 **Use Case**: Exact keyword matching where semantic embeddings might be too "fuzzy".
+
+```bash
+longbow-cli search -uri grpc://127.0.0.1:3000 -dataset documents -mode sparse -text "arrow flight" -k 10
+```
+
+```python
+results = client.search(
+    dataset="documents",
+    text_query="arrow flight",
+    alpha=0.0,  # Pure sparse BM25 (no query vector required)
+    k=10,
+)
+```
 
 ---
 
@@ -136,6 +155,7 @@ longbow-cli search \
   -uri grpc://127.0.0.1:3000 \
   -dataset product-catalog \
   -mode hybrid \
+  -vector 0.12,0.43,-0.05 \
   -text "wireless noise cancelling headphones" \
   -alpha 0.5 \
   -k 10
@@ -149,13 +169,13 @@ The Python SDK handles zero-copy Arrow-backed retrieval and maps the request to 
 from longbow import LongbowClient
 
 client = LongbowClient("grpc://127.0.0.1:3000")
+client.connect()
 
 results_df = client.search(
     dataset="product-catalog",
     vector=[0.12, 0.43, -0.05, ...],  # Dense vector
-    text="wireless noise cancelling headphones",  # Sparse text query
-    mode="hybrid",
-    alpha=0.5,  # Balance parameter
+    text_query="wireless noise cancelling headphones",  # Sparse text query
+    alpha=0.5,  # Balance parameter (0=sparse, 1=dense)
     k=10
 )
 
@@ -182,33 +202,38 @@ results = client.search(
     dataset="documents",
     vector=[0.1, 0.2, ...],
     filters=[
-        {"field": "category", "op": "eq", "value": "tech"},
-        {"field": "priority", "op": "gte", "value": 5},
+        {"field": "category", "operator": "==", "value": "tech"},
+        {"field": "priority", "operator": ">=", "value": "5"},
     ],
     k=10
 )
 ```
 
-**Operators**: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `like`
+**Operators**: `==` / `eq`, `!=` / `neq`, `>` / `gt`, `>=` / `gte`, `<` / `lt`, `<=` / `lte`, `in`, `contains` / `like` (plus boolean `filter_expr` AST groups with `AND`, `OR`, `NOT`).
 
 ---
 
 ## 5. ByID Search
 
-O(1) instant retrieval of specific vectors.
+O(1) instant lookup and nearest-neighbor retrieval for stored vector IDs.
 
 ```python
-# Find neighbors of known vector
-results = client.search_by_id(
+# Find neighbors of a stored vector (returns dict or DataFrame)
+neighbors = client.search_by_id(
     dataset="documents",
-    id=12345,
-    k=10  # Get 10 nearest neighbors
+    id="12345",
+    k=10,
+)
+neighbors_df = client.search_by_id_df(
+    dataset="documents",
+    id="12345",
+    k=10,
 )
 
-# Get single vector
-vector = client.get_vector(
+# Fetch the stored vector/record by ID
+record = client.get_vector(
     dataset="documents",
-    id=12345
+    id="12345",
 )
 ```
 
@@ -288,7 +313,7 @@ results = client.geo_search(
     dataset="locations",
     center={"lat": 37.7749, "lon": -122.4194},
     radius_km=5,
-    vector=[0.1, 0.2, ...],  # Combine with semantic search
+    query_vector=[0.1, 0.2, ...],  # Combine with semantic search
     search_type="hybrid",
     k=10
 )
@@ -307,8 +332,8 @@ Dual-path: Spreading Activation + Knowledge Graph triples.
 results = client.search(
     dataset="documents",
     vector=[0.1, 0.2, ...],
-    alpha=0.7,  # Graph weight (1.0 = full graph, 0.0 = pure vector)
-    depth=2,    # Graph traversal depth
+    graph_alpha=0.7,  # Graph weight (1.0 = full graph, 0.0 = pure vector)
+    graph_depth=2,    # Graph traversal depth
     k=10
 )
 ```
@@ -506,7 +531,86 @@ python3 scripts/unified_benchmark.py \
 
 ---
 
-## 12. Resilience & Observability
+## 12. Distance-Threshold Range Search
+
+Returns all vectors within a Euclidean/similarity `threshold` distance bound from the query vector (with optional metadata filters and `max_results` cap). Supported over Flight `DoGet` (`{"range_search": ...}`), `DoAction` (`RangeSearch`), REST `POST /api/v1/datasets/{name}/range-search`, GraphQL `rangeSearch`, `longbow-cli range-search`, and Python SDK `range_search()` / `rest_range_search()`.
+
+```bash
+longbow-cli range-search -uri grpc://127.0.0.1:3000 -dataset documents -vector 0.1,0.2,0.3 -threshold 0.5 -k 100
+```
+
+```python
+matches = client.range_search(
+    dataset="documents",
+    vector=[0.1, 0.2, 0.3],
+    threshold=0.5,
+    max_results=100,
+)
+```
+
+---
+
+## 13. Advanced Full-Text Search & Facets
+
+Provides Boolean AST (`AND`/`OR`/`NOT`), exact `"phrase"` matching, Damerau-Levenshtein fuzzy terms (`term~1`), `<mark>` highlighted snippets, categorical facets, per-dataset BM25 (`k1`, `b`) tuning, and query/zero-result analytics. Supported via `AdvancedTextSearch` / `SearchFacets` / `SearchAnalytics` / `TuneBM25` Flight actions, REST `POST /api/v1/datasets/{name}/text-search`, GraphQL `textSearch`, `longbow-cli text-search`, and Python SDK `advanced_text_search()`.
+
+```bash
+longbow-cli text-search -uri grpc://127.0.0.1:3000 -dataset documents -query 'arrow AND "flight"~1' -facets category -k 10
+```
+
+```python
+resp = client.advanced_text_search(
+    dataset="documents",
+    query='arrow AND "flight"',
+    fuzzy_max_dist=1,
+    facet_fields=["category"],
+    k=10,
+)
+```
+
+---
+
+## 14. Multi-Modal / Cross-Modal Search
+
+Embeds and searches text, PNG/JPEG images, and PCM16 WAV audio into a shared joint vector space (configurable local spatial/spectral embedder or remote MLBackend HTTP/ONNX embedder). Supported via `MultiModalIngest` / `MultiModalIngestParquet` / `MultiModalSearch` Flight actions, REST `POST /api/v1/datasets/{name}/multimodal-search`, GraphQL `multimodalSearch`, `longbow-cli multimodal-search`, and Python SDK `ingest_media()` / `multimodal_search()`.
+
+```bash
+longbow-cli multimodal-search -uri grpc://127.0.0.1:3000 -dataset media_ds -modality image -text "sunset beach" -k 5
+```
+
+```python
+client.ingest_media("media_ds", [{"id": "img1", "modality": "image", "mime_type": "image/png", "caption": "sunset", "blob": png_bytes}])
+hits = client.multimodal_search("media_ds", text_query="sunset beach", modality="image", k=5)
+```
+
+---
+
+## 15. Federated Cross-Collection Search
+
+Executes parallel k-NN search across multiple collections or tag-matched collections registered in the federated router and merges results via Reciprocal Rank Fusion (`rrf_k`). Automatically synchronizes active live datasets into the router. Supported via Flight `DoGet` (`{"federated_search": ...}`), `DoAction` (`FederatedSearch`, `ListFederatedCollections`, `RegisterFederatedCollection`), REST `POST /api/v1/search/federated` & `/api/v1/federated/collections`, GraphQL `federatedSearch`, `longbow-cli federated-search`, and Python SDK `federated_search()`.
+
+```bash
+longbow-cli federated-search -uri grpc://127.0.0.1:3000 -collections docs_v1,docs_v2 -vector 0.1,0.2,0.3 -k 10 -rrf-k 60
+```
+
+```python
+client.register_federated_collection("docs_v1", tags=["prod", "kb"])
+fused_df = client.federated_search(vector=[0.1, 0.2, 0.3], tags=["prod"], k=10, rrf_k=60)
+```
+
+---
+
+## 16. Companion Pipeline Actions (Reranking, Query Rewriting & Explainability)
+
+Longbow provides pipeline stages around every search query:
+
+- **Reranking (`Rerank`)**: Re-scores candidates using heuristic, cross-encoder, or MMR/hybrid strategies with LRU/TTL caching (`longbow-cli rerank`, `client.rerank()`).
+- **Query Rewriting (`RewriteQuery`)**: Expands queries using `synonyms`, `multi_query`, or `hyde` hypotheses (`longbow-cli rewrite-query`, `client.rewrite_query()`).
+- **Explainability & Hop Trace (`ExplainSearch`, `DebugSearchPath`)**: Inspects dense/sparse/RRF/graph score attribution and visited HNSW graph hops (`longbow-cli explain-search`, `client.explain_search()`).
+
+---
+
+## 17. Resilience & Observability
 
 ### Circuit Breaker
 
@@ -526,11 +630,21 @@ python3 scripts/unified_benchmark.py \
 ### Benchmark
 
 ```bash
-# Run benchmark suite
+# Run full benchmark matrix across all search modes
 python3 scripts/unified_benchmark.py \
-    --mode dense,hybrid,filtered,byid,temporal,geo,graphrag,turboquant \
+    --mode cpu \
     --dims 768 \
-    --counts 10000
+    --counts 10000 \
+    --search-modes all
+
+# Run dedicated specialized search scenarios
+python3 scripts/unified_benchmark.py \
+    --mode temporal,geo,range,federated,text,multimodal,recommend,graphrag,learned_index \
+    --dims 128 \
+    --counts 1000
+
+# Run bench-tool directly across all 21 search modes
+./bin/bench-tool -uri 127.0.0.1:3000 -dim 128 -scale 10000 -search-modes all -queries 200 -workers 8
 ```
 
 > [!NOTE]

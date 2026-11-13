@@ -604,63 +604,70 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 	case "HybridSearch":
 		var req struct {
-			Dataset   string         `json:"dataset"`
-			Vector    []float32      `json:"vector"`
-			K         int            `json:"k"`
-			TextQuery string         `json:"text_query"`
-			Alpha     float32        `json:"alpha"`
-			Filters   map[string]any `json:"filters"`
+			Dataset    string          `json:"dataset"`
+			Vector     []float32       `json:"vector"`
+			K          int             `json:"k"`
+			TextQuery  string          `json:"text_query"`
+			Alpha      float32         `json:"alpha"`
+			RRFK       int             `json:"rrf_k,omitempty"`
+			GraphAlpha float32         `json:"graph_alpha,omitempty"`
+			GraphDepth int             `json:"graph_depth,omitempty"`
+			RawHybrid  bool            `json:"raw_hybrid,omitempty"`
+			Filters    json.RawMessage `json:"filters,omitempty"`
 		}
 		if err := json.Unmarshal(action.Body, &req); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
-
-		// Convert generic dictionary filters to string map if needed, or update HybridSearch sig
-		// s.HybridSearch signature: (ctx, name, query []float32, k int, filters map[string]string)
-		// We'll coerce filters to map[string]string for now
-		strFilters := make(map[string]string)
-		for k, v := range req.Filters {
-			strFilters[k] = fmt.Sprintf("%v", v)
+		filters, err := parseFlexibleFilters(req.Filters)
+		if err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid filters: %v", err)
+		}
+		if req.RRFK <= 0 {
+			req.RRFK = 60
 		}
 
-		// Generate Cache Key
-		cacheKey := HashHybridQuery(
-			req.Dataset,
-			req.Vector,
-			req.TextQuery,
-			req.K,
-			req.Alpha,
-			60,  // Default RRF k
-			0.0, // Default Graph Alpha
-			0,   // Default Graph Depth
-		)
+		var results []types.SearchResult
+		// Generate Cache Key only for unfiltered requests (HashHybridQuery does not hash filters).
+		var cacheKey uint64
+		if len(filters) == 0 {
+			cacheKey = HashHybridQuery(
+				req.Dataset,
+				req.Vector,
+				req.TextQuery,
+				req.K,
+				req.Alpha,
+				req.RRFK,
+				req.GraphAlpha,
+				req.GraphDepth,
+			)
+		}
 
-		// Check Cache
-		// Use SearchHybrid for text+vector search with Circuit Breaker
+		// Use SearchHybridWithFilters for text+vector+filter search with Circuit Breaker
 		cb := s.Breakers.GetOrCreate(req.Dataset)
 		resultsAny, err := cb.Execute(func() (any, error) {
-			return s.SearchHybrid(
+			return s.SearchHybridWithFilters(
 				stream.Context(),
 				req.Dataset,
 				req.Vector,
 				req.TextQuery,
 				req.K,
 				req.Alpha,
-				60,    // Default RRF k
-				0.0,   // Default Graph Alpha
-				0,     // Default Graph Depth
-				false, // RawHybrid
+				req.RRFK,
+				req.GraphAlpha,
+				req.GraphDepth,
+				req.RawHybrid,
+				filters,
 			)
 		})
 
-		var results []types.SearchResult
 		if err == nil {
-			results = resultsAny.([]types.SearchResult)
-			// Cache the result
-			s.queryCache.PutUint64(cacheKey, results)
+			results = s.FilterResultsByRLS(stream.Context(), req.Dataset, resultsAny.([]types.SearchResult))
+			if len(filters) == 0 {
+				s.queryCache.PutUint64(cacheKey, results)
+			}
 		}
 		if err != nil {
-			return status.Errorf(codes.Internal, "failed to parse filters: %v", err)
+			return status.Errorf(codes.Internal, "hybrid search failed: %v", err)
 		}
 
 		// Serialize results
@@ -669,6 +676,9 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return status.Errorf(codes.Internal, "failed to marshal hybrid results: %v", err)
 		}
 		return stream.Send(&flight.Result{Body: body})
+
+	case "RangeSearch":
+		return s.handleRangeSearchAction(action, stream)
 
 	case "Compact":
 		var req struct {
@@ -846,45 +856,50 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		if err := json.Unmarshal(action.Body, &req); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
-		ds, ok := s.getDataset(req.Dataset)
-		if !ok {
-			return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+		if _, err := s.AuthorizeDatasetAccess(stream.Context(), PermRead, req.Dataset); err != nil {
+			return err
 		}
-		if ds.GeoIndex == nil {
-			return status.Error(codes.FailedPrecondition, "dataset has no geo index")
-		}
-		ds.dataMu.RLock()
-		defer ds.dataMu.RUnlock()
-
-		// Wrap with Circuit Breaker
 		cb := s.Breakers.GetOrCreate(req.Dataset)
 		resultsAny, err := cb.Execute(func() (any, error) {
-			switch req.SearchType {
-			case "radius":
-				return ds.GeoIndex.SearchRadius(stream.Context(), req.Center, req.RadiusKm, req.K)
-			case "box":
-				if req.Box == nil {
-					return nil, status.Error(codes.InvalidArgument, "box required")
-				}
-				return ds.GeoIndex.SearchBox(stream.Context(), *req.Box, req.K)
-			case "hybrid":
-				return ds.GeoIndex.HybridSearch(stream.Context(), req.QueryVector, req.Center, req.RadiusKm, req.K)
-			default:
-				return nil, status.Error(codes.InvalidArgument, "invalid search type")
-			}
+			return s.GeoSearch(stream.Context(), &req)
 		})
-
-		var results []types.SearchResult
-		if err == nil {
-			results = resultsAny.([]types.SearchResult)
-		} else {
+		if err != nil {
 			return status.Errorf(codes.Internal, "geo search failed: %v", err)
 		}
-		results = s.mapInternalToUserIDsLocked(ds, results)
-		body, _ := json.Marshal(results)
+		body, _ := json.Marshal(resultsAny.([]types.SearchResult))
 		return stream.Send(&flight.Result{Body: body})
 	}
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)
+}
+
+func parseFlexibleFilters(raw json.RawMessage) ([]query.Filter, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return nil, nil
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		var list []query.Filter
+		if err := json.Unmarshal(raw, &list); err != nil {
+			return nil, err
+		}
+		return list, nil
+	}
+	if strings.HasPrefix(trimmed, "{") {
+		var obj map[string]any
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return nil, err
+		}
+		filters := make([]query.Filter, 0, len(obj))
+		for k, v := range obj {
+			filters = append(filters, query.Filter{
+				Field:    k,
+				Operator: "=",
+				Value:    fmt.Sprintf("%v", v),
+			})
+		}
+		return filters, nil
+	}
+	return nil, fmt.Errorf("filters must be array or object")
 }
 
 // DoPut handles streaming ingestion of Arrow RecordBatches into the store.

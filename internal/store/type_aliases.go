@@ -210,6 +210,12 @@ type TemporalAggregationRequest = core.TemporalAggregationRequest
 // TemporalVersionHistoryRequest defines a request for retrieving the version history of a vector.
 type TemporalVersionHistoryRequest = core.TemporalVersionHistoryRequest
 
+// RangeSearchRequest defines a request for distance-threshold range search.
+type RangeSearchRequest = core.RangeSearchRequest
+
+// FederatedSearchRequest defines a request for cross-collection federated search.
+type FederatedSearchRequest = core.FederatedSearchRequest
+
 // LockFreeNeighborList provides lock-free reads with copy-on-write updates.
 type LockFreeNeighborList = hnswcore.LockFreeNeighborList
 

@@ -263,20 +263,7 @@ func (h *ArrowHNSW) extractAndIngestBatchVectors(
 			}
 
 			// 5. TQ Ingestion
-			tqEnc := tqEncoderOf(h)
-			if tqEnc != nil {
-				tqChunk := data.GetVectorsTQChunk(cID)
-				if tqChunk != nil {
-					if vf32, ok := v.([]float32); ok {
-						code, err := tqEnc.Encode(vf32)
-						if err == nil {
-							stride := data.PackedSize()
-							dest := tqChunk[int(cOff)*stride : (int(cOff)+1)*stride]
-							copy(dest, code)
-						}
-					}
-				}
-			}
+			h.encodeAndStoreTQ(data, id, v)
 
 			activeNodes[j] = activeNode{
 				id:    id,

@@ -59,6 +59,20 @@ func main() {
 		runDetectCommunities(ctx, os.Args[2:])
 	case "temporal-search":
 		runTemporalSearch(ctx, os.Args[2:])
+	case "range-search":
+		runRangeSearch(ctx, os.Args[2:])
+	case "federated-search":
+		runFederatedSearch(ctx, os.Args[2:])
+	case "text-search":
+		runTextSearch(ctx, os.Args[2:])
+	case "multimodal-search":
+		runMultiModalSearch(ctx, os.Args[2:])
+	case "explain-search":
+		runExplainSearch(ctx, os.Args[2:])
+	case "rerank":
+		runRerank(ctx, os.Args[2:])
+	case "rewrite-query":
+		runRewriteQuery(ctx, os.Args[2:])
 	case "drop":
 		runDrop(ctx, os.Args[2:])
 	case "download-model":
@@ -107,22 +121,29 @@ Usage:
 Commands:
   import           Import parquet, npy, or arrow files into a dataset
   export           Export a dataset to an arrow file
-  search           Search vectors with Dense, Sparse, Filtered, or Hybrid modes
-  create-namespace Create a new dataset namespace
-  delete-namespace Delete a dataset namespace
-  list-namespaces  List all dataset namespaces
+  search            Search vectors (dense, sparse, filtered, hybrid, by-id, range)
+  range-search      Search all vectors within a distance threshold
+  federated-search  Search across multiple collections or routed tags with RRF
+  text-search       Advanced full-text search (boolean AST, fuzzy, snippets, facets)
+  multimodal-search Cross-modal search (text, image, audio)
+  explain-search    Return search provenance and traversal hop trace
+  rerank            Rerank candidate results (heuristic, cross_encoder, mmr)
+  rewrite-query     Expand or rewrite a search query
+  create-namespace  Create a new dataset namespace
+  delete-namespace  Delete a dataset namespace
+  list-namespaces   List all dataset namespaces
   list-datasets-in-namespace List datasets in a namespace
-  stats            Show dataset statistics
-  geo-search       Search vectors with geospatial constraints
-  recommend        Get recommendations based on seed IDs
-  delete           Delete specific IDs from a dataset
-  snapshot         Trigger a manual snapshot
-  add-edge         Add a directed edge to the graph
-  traverse         Traverse the graph from a start node
-  get-graph-stats  Show graph connectivity statistics
-  pagerank         Calculate PageRank centrality
+  stats             Show dataset statistics
+  geo-search        Search vectors with geospatial constraints (radius, box, hybrid)
+  recommend         Get recommendations based on seed IDs (vector-graph)
+  delete            Delete specific IDs from a dataset
+  snapshot          Trigger a manual snapshot
+  add-edge          Add a directed edge to the graph
+  traverse          Traverse the graph from a start node
+  get-graph-stats   Show graph connectivity statistics
+  pagerank          Calculate PageRank centrality
   detect-communities Run community detection (LPA)
-  temporal-search  Search temporal index (as-of, range, window)
+  temporal-search   Search temporal index (as_of, range, sliding_window, sliding_window_time)
   drop             Explicitly drop a dataset from memory
   download-model   Download an ONNX model from Hugging Face
   cloud-create-cluster Provision a managed cloud cluster

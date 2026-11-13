@@ -37,11 +37,13 @@ Longbow is designed to provide FAISS-level performance with Arrow-native ergonom
 
 ### Specialized Search Capabilities
 
-- **Distributed GraphRAG**: Support for cross-node BFS and activation propagation protocols, enabling traversal of multi-billion node knowledge graphs across clusters.
+- **Full Multi-Modal & Unified Search Suite**: Supports Dense ANN/k-NN, Vector Search by ID (`search_by_id`), Filtered search (`filter_expr`, subqueries, CTEs), Sparse BM25 keyword search (`alpha=0.0`), Advanced Full-Text search (Boolean AST, phrases, fuzzy `~N`, snippets, facets), Hybrid RRF search (`raw_hybrid`), Distance-Threshold Range Search (`RangeSearch`), Federated Cross-Collection Search (`FederatedSearch`), Multi-Modal cross-modal search (`MultiModalSearch`), and Hybrid Vector-Graph Recommendations (`Recommend`).
+- **Distributed GraphRAG**: Support for cross-node BFS and activation propagation protocols (`graph_alpha`/`graph_depth`, `traverse-graph`, `GraphRAGExpand`, `GlobalGraphRAG`), enabling traversal of multi-billion node knowledge graphs across clusters.
+- **Temporal Versioning**: Point-in-time `as_of`, time `range`, count `sliding_window`, duration `sliding_window_time`, version history, and temporal aggregations.
 - **Persistent HNSW Memory Mapping**: Direct Arrow-backed `mmap` for HNSW graph storage, eliminating indexing load times and enabling instant-on cold starts.
-- **Geo-Search Engine**: Native support for Haversine distance and geospatial indexing using AVX-accelerated Quadtrees, with an opt-in Morton/Z-order grid for write-heavy workloads.
+- **Geo-Search Engine**: Native support for Haversine `radius`, bounding `box`, and geo+vector `hybrid` indexing using AVX-accelerated Quadtrees, with an opt-in Morton/Z-order grid for write-heavy workloads.
 - **SQL Analytical Functions**: Full support for `ROW_NUMBER`, `RANK`, and windowing functions.
-- **Multi-Type Filter Evaluator**: Native SIMD-accelerated support for Int32, Uint64, Float64, and String comparisons.
+- **Multi-Type Filter Evaluator**: Native SIMD-accelerated support for Int32, Uint64, Float64, Boolean, and String comparisons.
 - **Automatic Sharding**: Distributed index management splitting large datasets into shards based on growth.
 
 ### Unified ML Inference Engine
@@ -72,7 +74,7 @@ Longbow is designed to provide FAISS-level performance with Arrow-native ergonom
 ### Enterprise Cloud, Security, APIs & Query Intelligence (Items 1–15)
 
 - **Managed Cloud Control Plane & Multi-Region Replication (`internal/store/cloud_control_plane.go`)**: Provision serverless/dedicated/enterprise clusters with tier SLA policies (availability, RPO/lag, RTO, P99 latency), cross-region SHA-256 checksummed replication (`async`/`semi_sync`/`sync`), lowest-lag read routing, failover promotion, and live SLA evaluation.
-- **First-Class REST/HTTP v1 & GraphQL APIs (`internal/store/rest_graphql.go`)**: Full REST CRUD, dense/hybrid search, recommend, columnar aggregations, OpenAPI v3.0.3 schema (`/api/v1/openapi.json`), and pure-Go GraphQL engine (`/api/v1/graphql` + `GraphQLQuery` `DoAction`) with variables, aliases, mutations, and introspection.
+- **First-Class REST/HTTP v1 & GraphQL APIs (`internal/store/rest_graphql.go`)**: Full REST CRUD, dense/filtered, by-id (`/search/by-id`), hybrid (`/hybrid`), advanced full-text (`/text-search`), geo (`/geo-search`), temporal (`/temporal-search`), multi-modal (`/multimodal-search`), range (`/range-search`), federated (`/api/v1/search/federated`), recommend (`/recommend`), columnar aggregations (`/aggregations`), OpenAPI v3.0.3 schema (`/api/v1/openapi.json`), and pure-Go GraphQL engine (`/api/v1/graphql` + `GraphQLQuery` `DoAction`) with variables, aliases, mutations, and introspection.
 - **Multi-Tenant RBAC, API Keys & RLS (`internal/store/rbac.go`, `internal/security/`)**: Roles (`admin`, `tenant-admin`, `writer`, `reader`), key rotation with grace windows and immediate revocation, namespace/dataset isolation, row-level metadata predicates (`SetRLSPolicy`), HTTP Bearer/`X-API-Key` middleware, and immutable audit logging ([security-compliance.md](security-compliance.md)).
 - **Encryption at Rest, TLS/mTLS & KMS (`internal/storage/encryption.go`, `internal/security/kms.go`)**: AES-256-GCM length-framed encryption for disk spill and WAL, TLS 1.2/1.3 mutual authentication, SIGHUP/interval certificate reloading, and Local/Vault Transit envelope key management.
 - **Online Backup & Point-in-Time Recovery (`internal/store/backup.go`, `backup_pitr.go`)**: Online dataset snapshot archives with SHA-256 checksum verification, local/S3/GCS destinations, retention pruning, and WAL replay PITR.

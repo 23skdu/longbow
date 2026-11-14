@@ -442,13 +442,13 @@ Maintain a log of changes per vector ID (configured via `LONGBOW_TEMPORAL_MAX_VE
 
 `VersionHistory` uses the same columnar design as the temporal index, in `internal/store/version_history.go`. Every version is grouped into two flat columns -- a prefix-sum `entOff` plus per-version `ts` and `vers` -- and an immutable `versionHistoryIndex` snapshot is published through an `atomic.Pointer`. A point-in-time lookup therefore costs one ID resolution (a dense offset column for in-range IDs, a sparse slot map otherwise) plus a **binary search over a cache-dense `int64` timestamp column**, instead of a scan over per-ID slices. Resolving many IDs at a single timestamp (`GetVersionsAtBatch`) reuses the same lookup per ID, so batch temporal filters stay on the fast path.
 
-### 6.3 Schema Evolution
+### 6.3 Schema Evolution & Live Constraints
 
-Longbow allows datasets to evolve their metadata schema without requiring re-indexing or downtime.
+Longbow allows datasets to enforce strict or evolving metadata schemas (`internal/store/schema_constraints.go`) without requiring re-indexing or downtime.
 
-- **Additive Evolution**: New columns can be appended to existing Arrow schemas.
-- **Compatibility**: Existing columns must retain their name and data type to ensure backward compatibility for search and scans.
-- **Enforcement**: Mismatched schemas that break these rules are rejected at the ingestion layer.
+- **Evolution Modes**: Supports `strict`, `backward`, and `additive` modes registered per dataset via `RegisterSchema` (`POST /api/v1/schemas`, `longbow-cli register-schema`).
+- **Column Constraints**: Enforces `Required`, `NotNull`, `Unique`, `DefaultValue`, `RegexPattern`, and `AllowedValues` directly inside `StoreRecordBatch` (`ValidateRecordBatch`) before WAL or memory mutation.
+- **Zero-Downtime Migration & Streaming Views**: `MigrateSchema` evolves live dataset schemas and backfills default values, while `applyBatchToMemory` automatically triggers `MaterializedViewManager.OnBatchIngested` for streaming materialized views (`internal/store/materialized_views.go`).
 
 ### 6.4 Geospatial Columnar Grid
 

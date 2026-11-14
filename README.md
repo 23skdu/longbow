@@ -90,7 +90,7 @@ Longbow is configured via environment variables. Key limits include:
 - `LONGBOW_MAX_MEMORY` (Soft limit with exponential backpressure)
 - `LONGBOW_MAX_MEMORY_HARD` (Absolute hard ceiling that triggers `ResourceExhausted` rejection)
 
-See [Deployment & Configuration](docs/deploy.md#2-configuration) and [Limits](docs/limits.md) for details.
+See [Deployment & Configuration](docs/deploy.md) and [Limits & Constraints](docs/deploy.md#5-limits--constraints) for details.
 
 Notable flags:
 
@@ -206,7 +206,12 @@ docker run -p 3000:3000 -p 3001:3001 -p 9090:9090 longbow
 ## Documentation
 
 - [API Reference](docs/api.md)
+- [CLI Reference (`longbow-cli`)](docs/cli.md)
 - [Deployment & Configuration](docs/deploy.md)
+- [Features & Competitive Landscape](docs/features.md)
+- [Feature Parity Roadmap](docs/roadmap.md)
+- [Security & Compliance](docs/security-compliance.md)
+- [Serverless, Edge SDKs & WASM Client](docs/edge-wasm.md)
 - [Performance Benchmarks](docs/performance.md)
 - [Systems Architecture](docs/architecture.md)
 - [Vector Search Architecture](docs/vectorsearch.md)

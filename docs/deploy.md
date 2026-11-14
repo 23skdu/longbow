@@ -253,7 +253,7 @@ The server has no "strict models" mode. The Helm chart sets `LONGBOW_STRICT_MODE
 
 ## 4. CLI Reference
 
-The Longbow CLI is an administrative tool for managing datasets, namespaces, and performing vector searches from the terminal.
+The Longbow CLI (`longbow-cli`) is a unified command-line administration, ingestion, search, security, streaming, sharding, and cloud control-plane client. For the complete command reference across all 65+ subcommands, see [cli.md](cli.md).
 
 ### Installation
 
@@ -269,20 +269,22 @@ The binary will be created in the `bin/` directory.
 
 All commands support the following global options:
 
-- `-uri string`: Longbow server URI (default: `grpc://127.0.0.1:3000`)
+- `-uri string`: Longbow server URI (default: `grpc://127.0.0.1:3000` for Flight commands, `http://127.0.0.1:8080` for HTTP REST/GraphQL/Cloud commands)
+- `LONGBOW_API_KEY`: Environment variable for Bearer / `X-API-Key` authentication
 
-### Import Data
+### Import & Export Data
 
-Import vectors from Parquet, NumPy, or generate demo data. Supports local filesystem and remote S3 buckets.
+Import vectors from Parquet, NumPy, or generate demo data. Supports local filesystem and remote S3/GCS buckets.
 
 ```bash
 longbow-cli import -dataset <name> [options]
+longbow-cli export -dataset <name> -file <path/s3/gs>
 ```
 
 **Options:**
 
 - `-dataset string`: Target dataset name (required)
-- `-input string`: Path to `.parquet`, `.npy`, or `s3://bucket/key`
+- `-input string`: Path to `.parquet`, `.npy`, `s3://bucket/key`, or `gs://bucket/key`
 - `-dim int`: Vector dimension (default: 128, used for demo data)
 - `-count int`: Number of vectors to generate (default: 1000, used for demo data if no input file)
 
@@ -299,41 +301,39 @@ longbow-cli import -dataset my-collection -input s3://my-bucket/vectors.parquet
 longbow-cli import -dataset demo-ds -dim 1536 -count 10000
 ```
 
-### Search Commands
+### Search & Pipeline Commands
 
-#### Vector Search
-
-Perform high-performance vector searches using various modes.
+#### Vector, Hybrid, Sparse & ByID Search
 
 ```bash
-longbow-cli search -dataset <name> -mode <type> [options]
+longbow-cli search -dataset <name> -mode <dense|sparse|filtered|hybrid|by-id> [options]
 ```
 
 **Options:**
 
 - `-dataset string`: Dataset name (required)
-- `-mode string`: Search mode (dense, sparse, filtered, hybrid)
+- `-mode string`: Search mode (`dense`, `sparse`, `filtered`, `hybrid`, `by-id`)
 - `-vector string`: Query vector as comma-separated floats
+- `-id string`: Seed vector ID (for `-mode by-id`)
 - `-text string`: Text query for sparse/hybrid search
 - `-alpha float`: Hybrid weighting (0=sparse, 1=dense)
 - `-k int`: Number of results to return
 - `-filters string`: JSON filter expression or path to JSON file
 
-#### Geospatial Search
+#### Specialized Search & Query Pipeline Commands
 
-Search for vectors within a physical radius.
-
-```bash
-longbow-cli geo-search -dataset <name> -lat <val> -lon <val> -radius <km> -k <n>
-```
-
-#### Recommendations
-
-Get similar vectors based on existing IDs.
-
-```bash
-longbow-cli recommend -dataset <name> -seeds <id1,id2> -k <n> -alpha <f>
-```
+- **Range Search:** `longbow-cli range-search -dataset <ds> -vector <f1,f2...> -threshold <dist> [-k 100]`
+- **Advanced Text Search:** `longbow-cli text-search -dataset <ds> -query <expr> [-fuzzy 1] [-facets f1,f2] [-k 10]`
+- **Tune BM25:** `longbow-cli tune-bm25 -dataset <ds> -k1 1.5 -b 0.75`
+- **Search Facets & Analytics:** `longbow-cli search-facets -dataset <ds> -facets category` / `longbow-cli search-analytics`
+- **Multi-Modal Ingest & Search:** `longbow-cli multimodal-ingest -dataset <ds> -id <id> -modality <text|image|audio> [-file <path>]` / `longbow-cli multimodal-search -dataset <ds> -modality image -text "query"`
+- **Federated Search:** `longbow-cli federated-search -collections <ds1,ds2> -vector <f1,f2...> [-rrf-k 60]`
+- **Geospatial Search:** `longbow-cli geo-search -dataset <name> -lat <val> -lon <val> -radius <km> -k <n>`
+- **Recommendations:** `longbow-cli recommend -dataset <name> -seeds <id1,id2> -k <n> -alpha <f>`
+- **Temporal Search:** `longbow-cli temporal-search -dataset <name> -type <as_of|range|window> [-ts <ns>] [-start <ns>] [-end <ns>] [-k <n>]`
+- **Reranking & Evaluation:** `longbow-cli rerank -query <q> -candidates <json>` / `longbow-cli eval-reranker -query <q> -candidates <json> -relevant <id1,id2>`
+- **Query Rewriting:** `longbow-cli rewrite-query -query <q> -strategy <synonyms|multi_query|hyde>`
+- **Explain & Provenance:** `longbow-cli explain-search ...`, `longbow-cli explain-plan ...`, `longbow-cli record-provenance ...`, `longbow-cli get-provenance ...`
 
 ### Advanced Filtering
 
@@ -363,6 +363,17 @@ Manage logical groupings and lifecycle of data.
 - **Stats:** `longbow-cli stats -dataset <name>`
 - **Drop Dataset:** `longbow-cli drop -dataset <name>` (Evicts dataset from memory and clears RCU/COW structures)
 
+### Security, Backups, Streaming, Sharding, Schemas, Views & Cloud CLI
+
+- **RBAC, RLS & Audit:** `create-api-key`, `rotate-api-key`, `revoke-api-key`, `list-api-keys`, `set-rls-policy`, `audit-log`
+- **Backups & PITR:** `backup`, `list-backups`, `verify-backup`, `restore`
+- **CDC & Streaming Connectors:** `cdc-status`, `stream-create`, `stream-stop`, `stream-list`, `stream-stats`, `stream-ingest`
+- **Metering, Quotas & Billing:** `usage`, `set-quota`, `export-billing`, `admin-usage`
+- **Elastic Sharding & Autoscale:** `shard-topology`, `shard-split`, `shard-merge`, `shard-rebalance`, `autoscale-config`
+- **Schema Registry & Migration:** `register-schema`, `get-schema`, `validate-schema`, `migrate-schema`
+- **Materialized Views:** `create-view`, `refresh-view`, `query-view`, `list-views`
+- **Cloud Control Plane, REST & GraphQL:** `cloud-create-cluster`, `cloud-list-clusters`, `cloud-scale-cluster`, `cloud-replicate-region`, `cloud-failover-region`, `rest-list-datasets`, `rest-search`, `graphql`
+
 ### Graph & GraphRAG Operations
 
 Administrative tools for managing the HNSW graph as a knowledge graph.
@@ -386,23 +397,6 @@ longbow-cli download-model -repo <repo_id> [-dest <path>]
 ```bash
 longbow-cli download-model -repo sentence-transformers/all-MiniLM-L6-v2 -dest models/all-mini
 ```
-
-### Temporal Search
-
-Query the temporal index for versioned data.
-
-```bash
-longbow-cli temporal-search -dataset <name> -type <as_of|range|window> [options]
-```
-
-**Options:**
-
-- `-dataset string`: Target dataset name (required)
-- `-type string`: Search type (as_of, range, window)
-- `-ts int`: Unix nanosecond timestamp for `as_of`
-- `-start int`: Start time for `range`
-- `-end int`: End time for `range`
-- `-k int`: Number of results (default: 10)
 
 ---
 
@@ -488,55 +482,27 @@ Single RecordBatch sizes are unbounded but typically 1KB-10MB in practice.
 
 ## 6. Security
 
-### Current State
+Longbow provides multi-tenant isolation, Role-Based Access Control (RBAC), Row-Level Security (RLS), TLS/mTLS transport security with certificate hot-reload, AES-256-GCM encryption at rest with KMS/Vault envelope keys, and structured immutable audit logging across Arrow Flight gRPC and HTTP endpoints. See [security-compliance.md](security-compliance.md) for the complete specification and SOC2/GDPR control mappings.
 
-- No authentication mechanism implemented
-- No authorization layer
-- APIs are open by default
+### Authentication, RBAC & Row-Level Security
 
-### Security Implementation Plan
+1. **API Key Authentication & RBAC (`internal/store/rbac.go`)**
+   - Enable via `LONGBOW_RBAC_ENABLED=true` and `LONGBOW_RBAC_BOOTSTRAP_KEY="<admin-key>"`.
+   - Roles: `admin`, `tenant-admin`, `writer`, and `reader` with tenant and dataset scoping.
+   - Manage keys via Flight `DoAction`, REST `/api/v1/rbac/keys`, or `longbow-cli create-api-key` / `rotate-api-key` / `revoke-api-key` / `list-api-keys`.
 
-1. **Input Validation**
-   - Validate all gRPC messages
-   - Sanitize input parameters
-   - Implement request size limits
+2. **Row-Level Security (`internal/security/rls.go`)**
+   - Dynamic metadata predicates (`eq`, `neq`, `in`, `contains`) evaluated per row on query results via `SetRLSPolicy` (`POST /api/v1/rbac/rls`, `longbow-cli set-rls-policy`).
 
-2. **Authentication Methods**
-   - API Key authentication
-   - TLS/mTLS support
-   - JWT token validation (optional)
+3. **Transport Security (`internal/security/tls.go`)**
+   - TLS 1.2/1.3 and mutual TLS (`LONGBOW_TLS_ENABLED=true`, `LONGBOW_TLS_REQUIRE_CLIENT_CERT=true`) with zero-downtime certificate hot-reload (`security.CertReloader` on `SIGHUP` or interval).
 
-3. **Authorization Framework**
-   - RBAC (Role-Based Access Control)
-   - Namespace-level permissions
-   - Operation-level permissions
+4. **Encryption at Rest & KMS (`internal/storage/encryption.go`, `internal/security/kms.go`)**
+   - AES-256-GCM authenticated encryption for WAL segments, disk spill files, and snapshots (`LONGBOW_ENCRYPTION_AT_REST=true`) backed by HKDF local KMS or HashiCorp Vault Transit (`LONGBOW_KMS_PROVIDER=local|vault`).
 
-### Audit Logging
+### Audit Logging (`internal/security/audit.go`)
 
-```go
-// Security audit log entry
-type AuditEntry struct {
-    Timestamp   time.Time
-    UserID      string
-    Operation   string
-    Resource    string
-    IPAddress   string
-    Success     bool
-    Reason      string
-}
-```
-
-### Input Sanitization
-
-```go
-// Validate and sanitize input parameters
-func ValidateInput(input string) error {
-    // Length checks
-    // Character validation
-    // SQL injection prevention
-    // Path traversal protection
-}
-```
+All authentication, key lifecycle, policy updates, and data access operations are recorded in a structured ring buffer and optional JSON audit sink (`GetAuditLog` action, `GET /api/v1/rbac/audit`, `longbow-cli audit-log`).
 
 ### Security Scanning
 

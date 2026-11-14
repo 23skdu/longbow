@@ -95,7 +95,7 @@ Longbow supports a full spectrum of scalar, floating-point, complex, and quantiz
 
 ### 3.5 Full Search Modes Taxonomy
 
-Longbow engine and harness support 13 distinct search modalities:
+Longbow engine and harness (`cmd/bench-tool`, `cmd/io-bench`, and `scripts/unified_benchmark.py`) support 21 distinct search modalities:
 
 1. **`dense`**: Pure vector similarity search via HNSW multi-layer graph navigation.
 2. **`hybrid`**: Reciprocal rank fusion (RRF) combining dense vector similarity and sparse BM25 lexical token match.
@@ -104,12 +104,20 @@ Longbow engine and harness support 13 distinct search modalities:
 5. **`filtered_bool`**: Vector similarity search filtered by boolean metadata attributes (e.g. `active == true`).
 6. **`filtered_string`**: Vector similarity search filtered by categorical string attributes (e.g. `category == electronics`).
 7. **`by_id`**: Direct vector neighbor expansion and retrieval using existing vector ID as seed.
-8. **`graphrag`**: Local knowledge graph entity traversal and multi-hop neighborhood aggregation fused with vector distance.
-9. **`global_graphrag`**: Cluster-level global knowledge graph traversal and community summarization.
-10. **`recommend`**: Multi-seed item-to-item recommendation using BFS graph expansion with decay weighting.
-11. **`geo`**: Geospatial radius and bounding box search centered on coordinate pairs (latitude/longitude).
-12. **`temporal`**: Time-decay weighted vector ranking with temporal slicing (`temporal_as_of`, `temporal_range`, `temporal_window`).
-13. **`learned_index`**: Neural-accelerated candidate pruning using a learned CDF spline predictor.
+8. **`range`**: Distance-threshold bounded search (`range_search`) returning all vectors within a radius.
+9. **`text`**: Advanced full-text search (`AdvancedTextSearch`) with Boolean AST (`AND`/`OR`/`NOT`), phrase, fuzzy (`~N`), and facets.
+10. **`graphrag`**: Local knowledge graph entity traversal and multi-hop neighborhood aggregation fused with vector distance.
+11. **`global_graphrag`**: Cluster-level global knowledge graph traversal and community summarization.
+12. **`recommend`**: Multi-seed item-to-item recommendation using BFS graph expansion with decay weighting.
+13. **`geo`**: Geospatial Haversine radius search centered on coordinate pairs (latitude/longitude).
+14. **`geo_box`**: Geospatial bounding-box search (`min_lat`/`max_lat`, `min_lon`/`max_lon`).
+15. **`geo_hybrid`**: Combined geospatial proximity and vector similarity search.
+16. **`temporal`**: Point-in-time `as_of` temporal vector search.
+17. **`temporal_range`**: Time-range `[start_time, end_time]` temporal vector search.
+18. **`temporal_window`**: Sliding-window temporal vector search over the most recent records.
+19. **`multimodal`**: Cross-modal `MultiModalIngest` + `MultiModalSearch` pipeline across text, image, and audio embeddings.
+20. **`federated`**: Federated cross-collection k-NN search fused via Reciprocal Rank Fusion (`federated_search`).
+21. **`learned_index`**: Neural-accelerated candidate pruning using a learned k-NN index predictor.
 
 ### 3.6 Storage / Spillover Modes
 

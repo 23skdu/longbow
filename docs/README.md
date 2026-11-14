@@ -8,7 +8,7 @@ Longbow is a high-performance, distributed, and in-memory vector store implement
 
 ### 1. [Quick Start & Deployment](deploy.md)
 
-Get started with Longbow using Docker or Helm. Covers installation, environment configuration, CLI reference, limits, security, and troubleshooting.
+Get started with Longbow using Docker or Helm. Covers installation, environment configuration, CLI quickstart, limits, security, and troubleshooting. For the full command-line reference across all 65+ subcommands, see [CLI Reference](cli.md).
 
 ### 2. [Unified Search & Discovery](vectorsearch.md)
 
@@ -58,11 +58,11 @@ Deep dive into Longbow's design:
 
 ### 6. [API Reference](api.md)
 
-Technical specification for the Arrow Flight endpoints:
+Technical specification for Arrow Flight, REST v1 (`/api/v1/*`), OpenAPI 3.0.3 (`/api/v1/openapi.json`), and GraphQL (`/api/v1/graphql`):
 
-- **Data Plane**: DoPut ingestion, DoGet search, DoExchange sync.
-- **Control Plane**: Global search, admin operations, GraphRAG actions.
-- **Python SDK**: Zero-copy client with native Pandas/NumPy integration.
+- **Data Plane**: DoPut ingestion, DoGet search, DoExchange sync, and HTTP REST/GraphQL search & mutations.
+- **Control Plane**: Global search, RBAC/RLS/audit, backups/PITR, streaming CDC, multi-modal, metering/quotas, sharding, schemas, materialized views, and managed cloud clusters.
+- **Python SDK & CLI**: Zero-copy `LongbowClient` with Pandas/NumPy/Dask integration and [CLI Reference (`longbow-cli`)](cli.md).
 
 ### 7. [Native Tensor Calculus Engine](tensor_engine.md)
 

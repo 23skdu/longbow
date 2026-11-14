@@ -76,7 +76,12 @@ client.create_namespace(
 
 Full-text keyword retrieval using an inverted BM25 index (configured via `LONGBOW_HYBRID_TEXT_COLUMNS`, e.g. `text,category`).
 
-**Algorithm**: BM25 with configurable $k_1$ and $b$ parameters (tunable per dataset via `TuneBM25`).
+**Algorithm**: BM25 with configurable $k_1$ and $b$ parameters (tunable per dataset via `TuneBM25`, `POST /api/v1/datasets/{name}/bm25/tune`, or `longbow-cli tune-bm25`).
+
+**Engine Optimizations**:
+
+- **Precomputed Block-Max WAND Bounds (`BM25InvertedIndex`)**: `BM25PostingList` caches per-block `(BlockMaxTF, BlockMinLen)` metadata during `Add`/`Delete` so `BlockMaxWANDSearch` skips non-competitive blocks in O(1) without rescanning posting slices.
+- **Off-Heap Arena & SIMD Scoring (`BM25ArenaIndex`)**: Stores document IDs and `float32` term frequencies in paired off-heap `ArenaSlab` buffers (`docArena` and `postingArena`) and evaluates batch BM25 scores via `simd.BM25ScoreBatch`.
 
 **Use Case**: Exact keyword matching where semantic embeddings might be too "fuzzy".
 
@@ -600,13 +605,14 @@ fused_df = client.federated_search(vector=[0.1, 0.2, 0.3], tags=["prod"], k=10, 
 
 ---
 
-## 16. Companion Pipeline Actions (Reranking, Query Rewriting & Explainability)
+## 16. Companion Pipeline Actions (Reranking, Query Rewriting, Explainability & Provenance)
 
-Longbow provides pipeline stages around every search query:
+Longbow provides pipeline stages around every search query across Flight `DoAction`, REST v1, GraphQL, CLI, and Python SDK:
 
-- **Reranking (`Rerank`)**: Re-scores candidates using heuristic, cross-encoder, or MMR/hybrid strategies with LRU/TTL caching (`longbow-cli rerank`, `client.rerank()`).
-- **Query Rewriting (`RewriteQuery`)**: Expands queries using `synonyms`, `multi_query`, or `hyde` hypotheses (`longbow-cli rewrite-query`, `client.rewrite_query()`).
-- **Explainability & Hop Trace (`ExplainSearch`, `DebugSearchPath`)**: Inspects dense/sparse/RRF/graph score attribution and visited HNSW graph hops (`longbow-cli explain-search`, `client.explain_search()`).
+- **Reranking & Offline Evaluation (`Rerank`, `EvaluateReranker`)**: Re-scores candidates using `heuristic`, `cross_encoder`, `llm_api` (OpenAI / Cohere `/v1/rerank`), `mmr`, or `hybrid` strategies with LRU/TTL caching (`POST /api/v1/rerank`, `POST /api/v1/rerank/evaluate`, `longbow-cli rerank`, `longbow-cli eval-reranker`, `client.rerank()`, `client.evaluate_reranker()`).
+- **Query Rewriting (`RewriteQuery`)**: Expands queries using `synonyms`, `multi_query`, or `hyde` hypotheses (`POST /api/v1/query/rewrite`, `longbow-cli rewrite-query`, `client.rewrite_query()`).
+- **Explainability, Cost Planner & Hop Trace (`ExplainSearch`, `DebugSearchPath`, `ExplainQueryPlan`)**: Inspects dense/sparse/RRF/graph score attribution, visited HNSW graph hops, and cost-based query plans (`POST /api/v1/search/explain`, `POST /api/v1/search/debug`, `POST /api/v1/planner/explain`, `longbow-cli explain-search`, `longbow-cli explain-plan`, `client.explain_search()`, `client.debug_search_path()`, `client.plot_search_explanation()`).
+- **Vector Provenance (`RecordProvenance`, `GetProvenance`)**: Tracks source document, chunk index, embedding model, and pipeline version per vector (`POST /api/v1/provenance`, `GET /api/v1/datasets/{name}/provenance/{id}`, `longbow-cli record-provenance`, `longbow-cli get-provenance`, `client.record_provenance()`, `client.get_provenance()`).
 
 ---
 

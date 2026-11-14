@@ -234,7 +234,7 @@ This section details the test plan for running comprehensive regression benchmar
 #### Objectives
 
 - Measure ingest throughput (DoPut) per dtype x dim x count
-- Measure search QPS and latency (P50/P95/P99) for all 13 search modes
+- Measure search QPS and latency (P50/P95/P99) across all 21 search modes (or the 13 core baseline modes)
 - Validate all 17 data types at dims 128 and 384 within 16 GB memory budget
 - Identify regressions vs previous runs
 - Detect SIMD dispatch gaps (integer types, complex types)
@@ -248,7 +248,7 @@ This section details the test plan for running comprehensive regression benchmar
 | Vector counts | 10,000, 50,000 |
 | Data types | float32, float64, float16, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant (4-bit), turboquant4 (4-bit), turboquant8 (8-bit) |
 | Search queries | 500 per config |
-| Search modes | all (13 modes: dense, hybrid, filtered, filteredbool, filteredstring, sparse, byid, graphrag, globalgraphrag, recommend, geo, temporal, learnedindex) |
+| Search modes | all (21 modes: dense, hybrid, filtered, filteredbool, filteredstring, sparse, byid, range, text, graphrag, globalgraphrag, recommend, geo, geobox, geohybrid, temporal, temporalrange, temporalwindow, multimodal, federated, learnedindex) |
 | Memory limit | 16 GB (`LONGBOW_MAX_MEMORY=17179869184`) |
 | Disk spillover | Auto-spill enabled at 60% threshold (`LONGBOW_AUTO_SPILL_DISK=true`, `LONGBOW_SPILL_THRESHOLD_RATIO=0.60`) for 500k runs |
 | Workers | 8 |

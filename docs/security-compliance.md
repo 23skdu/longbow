@@ -44,12 +44,20 @@ longbow-cli revoke-api-key -key "$KEY_OR_ID"
 
 # List key metadata (redacted; never exposes hashes or raw secrets)
 longbow-cli list-api-keys
+
+# Configure Row-Level Security (RLS) predicate for a tenant dataset
+longbow-cli set-rls-policy -tenant acme -dataset acme/docs -field dept -op in -values eng,sec
+
+# Query the structured security audit log
+longbow-cli audit-log -tenant acme -limit 50
 ```
+
+Equivalent REST v1 endpoints are exposed at `GET/POST/DELETE /api/v1/rbac/keys`, `POST /api/v1/rbac/keys/rotate`, `POST /api/v1/rbac/rls`, and `GET /api/v1/rbac/audit`.
 
 ### Tenant Isolation & Row-Level Security (RLS)
 
-- **Dataset/Namespace Scoping**: `AuthorizeDatasetAccess` and `security.TenantContext.CanAccessDataset` enforce tenant and allowed-dataset boundaries across `DoPut`, `DoGet`, `ListFlights`, and `DoAction`.
-- **Row-Level Security (`security.RLSEvaluator`)**: Dynamic metadata predicates (`eq`, `neq`, `in`, `contains`) evaluated per row during query result assembly (`FilterResultsByRLS`) using the `SetRLSPolicy` Flight action or Python SDK `client.set_rls_policy(...)`.
+- **Dataset/Namespace Scoping**: `AuthorizeDatasetAccess` and `security.TenantContext.CanAccessDataset` enforce tenant and allowed-dataset boundaries across `DoPut`, `DoGet`, `ListFlights`, `DoAction`, and `/api/v1/*` HTTP handlers.
+- **Row-Level Security (`security.RLSEvaluator`)**: Dynamic metadata predicates (`eq`, `neq`, `in`, `contains`) evaluated per row during query result assembly (`FilterResultsByRLS`) using the `SetRLSPolicy` Flight action, `POST /api/v1/rbac/rls`, `longbow-cli set-rls-policy`, or Python SDK `client.set_rls_policy(...)`.
 
 ---
 

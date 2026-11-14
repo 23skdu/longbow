@@ -382,3 +382,21 @@ Transparently scales the HNSW index by migrating from a single monolithic graph 
 
 - **Detection**: Triggered when `dataset.Len()` exceeds the auto-sharding threshold.
 - **ShardedHNSW**: Splits the graph into multiple sub-graphs with lock-striping for higher concurrent write throughput and parallel search performance.
+- **Elastic Shard Split, Merge & Rebalance (`internal/store/elastic_sharding.go`)**: Supports live shard splitting (`TriggerShardSplit`), merging (`TriggerShardMerge`), and cluster node rebalancing (`TriggerRebalance`) via Flight `DoAction`, REST `/api/v1/sharding/*`, and `longbow-cli shard-*`.
+
+---
+
+## 9. BM25 Inverted Index & Arena Optimizations
+
+Longbow's full-text and hybrid BM25 engine (`internal/store/index/bm25_inverted_index.go`, `internal/store/index/bm25_arena.go`, `internal/store/text_search_advanced.go`) combines off-heap arena storage with SIMD batch scoring:
+
+- **Precomputed Block-Max WAND Bounds**: `BM25PostingList` caches per-block `(BlockMaxTF, BlockMinLen)` metadata on insert/delete so `BlockMaxWANDSearch` prunes non-competitive posting blocks without rescanning block elements at query time.
+- **Dual-Slab Off-Heap BM25 Arena (`BM25ArenaIndex`)**: Stores document IDs in `docArena` (`ArenaSlab[uint32]`) and contiguous `float32` term frequencies in `postingArena` (`ArenaSlab[float32]`), packed into a single atomic `uint64` `(docOffset, tfOffset)` slice reference, and dispatches `simd.BM25ScoreBatch` over contiguous TF slices.
+- **Dynamic Per-Dataset Parameter Tuning**: Adjust BM25 `k1` and `b` at runtime via `TuneBM25` (`POST /api/v1/datasets/{name}/bm25/tune`, `longbow-cli tune-bm25`).
+
+---
+
+## 10. Schema Constraints, Live Migration & Materialized Views
+
+- **Pre-Ingest Schema Validation (`internal/store/schema_constraints.go`)**: `StoreRecordBatch` invokes `SchemaRegistryManager.ValidateRecordBatch` prior to mutating memory or WAL, enforcing `strict`, `backward`, and `additive` evolution rules as well as `Required`, `NotNull`, `Unique`, `RegexPattern`, and `AllowedValues` column constraints.
+- **Streaming Materialized Views (`internal/store/materialized_views.go`)**: `applyBatchToMemory` invokes `MaterializedViewManager.OnBatchIngested`, incrementally updating views configured with `RefreshPolicy: "streaming"` (`count`, `sum`, `avg`, `min`, `max` grouped by metadata column).

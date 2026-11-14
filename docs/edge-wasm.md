@@ -8,9 +8,9 @@ Longbow provides a lightweight pure-Go WASM/edge vector engine (`pkg/wasmclient`
 
 - **Pure-Go Embedded HNSW (`pkg/wasmclient/hnsw_edge.go`)**: Zero-CGO `EdgeIndex` supporting `cosine`, `l2`, and `dot` metrics for client-side/offline low-latency ANN queries inside WASM or stateless workers.
 - **Offline-First Sync Engine (`pkg/wasmclient/sync_engine.go`)**: Buffers `upsert` and `delete` mutations while disconnected and resolves divergent concurrent writes using `ConflictLWW` (Last-Write-Wins) or `ConflictVectorClock` conflict strategies.
-- **HTTP Transport Fallback (`internal/store/edge_http.go`)**:
-  - `POST /api/v1/search` (`EdgeSearchHTTPHandler`): Executes authenticated vector search over HTTPS/JSON without native gRPC/HTTP2 trailers.
-  - `POST /api/v1/edge/sync` (`EdgeSyncHTTPHandler`): Applies batched offline edge mutations into the store's streaming ingestion pipeline.
+- **HTTP, Binary Arrow Columnar & gRPC-Web Transports (`pkg/wasmclient/transport.go`, `internal/store/edge_http.go`)**:
+  - `POST /api/v1/search` (`EdgeSearchHTTPHandler`): Executes authenticated vector search over HTTPS (`application/json`), compact binary Arrow columnar framing (`application/vnd.apache.arrow.stream` with `"LBAR"` magic header + contiguous float32 vector columns via `EncodeArrowColumnarBatch`/`DecodeArrowColumnarBatch`), or 5-byte length-prefixed gRPC-Web frames (`application/grpc-web+json` with `0x80` trailer frame via `EncodeGRPCWebFrame`/`DecodeGRPCWebFrame`).
+  - `POST /api/v1/edge/sync` (`EdgeSyncHTTPHandler`): Applies batched offline edge mutations into the store's streaming ingestion pipeline over JSON, Arrow columnar (`"LBAR"`), or gRPC-Web framing.
 
 ---
 

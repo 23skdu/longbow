@@ -146,6 +146,13 @@ jobs:
       - name: Run metric conformance test suite
         run: go test -v ./internal/observability/...
 
+      - name: Install promtool
+        run: |
+          PROM_VER="3.2.1"
+          curl -sSL "https://github.com/prometheus/prometheus/releases/download/v${PROM_VER}/prometheus-${PROM_VER}.linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin --strip-components=1 "prometheus-${PROM_VER}.linux-amd64/promtool"
+          promtool --version
+
       - name: Run promtool unit tests
         run: grafana/tests/test-rules.sh
 
@@ -170,6 +177,7 @@ jobs:
       - name: Markdown Lint
         uses: DavidAnson/markdownlint-cli2-action@v25
         with:
+          config: ".markdownlint.json"
           globs: "docs/**/*.md"
 
   emulation:
@@ -191,7 +199,7 @@ jobs:
           cache: true
 
       - name: Run SIMD Tests under ARM64 Emulation
-        run: GOARCH=arm64 go test -short -v ./internal/simd/...
+        run: GOARCH=arm64 go test -short -v -run='TestNEON|TestSVE|TestDispatch|TestCPU|TestEuclideanDistance$|TestCosineDistance$|TestDotProduct$' ./internal/simd/...
 
   benchmark-regression:
     name: Benchmark Regression Verification

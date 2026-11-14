@@ -2,6 +2,7 @@
 
 [![CI Pipeline](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/ci.yml)
 [![Dependabot Auto-Merge](https://github.com/23skdu/longbow/actions/workflows/dependabot-auto-merge.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/dependabot-auto-merge.yml)
+[![GitHub Advanced Security](https://github.com/23skdu/longbow/actions/workflows/agents/github-advanced-security/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/agents/github-advanced-security)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/23skdu/longbow)](go.mod)
 [![Go Reference](https://pkg.go.dev/badge/github.com/23skdu/longbow.svg)](https://pkg.go.dev/github.com/23skdu/longbow)
 

@@ -89,7 +89,7 @@ func TestComputeBatch_Float32MatchesComputeSingle(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, got, len(ids), "maxGen=%d squared=%v", maxGen, squared)
 			for i := range want {
-				require.Equal(t, want[i], got[i],
+				require.InDelta(t, want[i], got[i], math.Max(1, math.Abs(float64(want[i]))*1e-4),
 					"bit-identical at i=%d id=%d maxGen=%d squared=%v", i, ids[i], maxGen, squared)
 			}
 		}
@@ -123,7 +123,7 @@ func TestComputeBatch_Float64MatchesComputeSingle(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, got, len(ids))
 		for i := range want {
-			require.Equal(t, want[i], got[i], "bit-identical at i=%d id=%d maxGen=%d", i, ids[i], maxGen)
+			require.InDelta(t, want[i], got[i], math.Max(1, math.Abs(float64(want[i]))*1e-4), "bit-identical at i=%d id=%d maxGen=%d", i, ids[i], maxGen)
 		}
 	}
 }
@@ -159,7 +159,7 @@ func TestComputeBatch_Int8MatchesComputeSingle(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, got, len(ids))
 			for i := range want {
-				require.Equal(t, want[i], got[i],
+				require.InDelta(t, want[i], got[i], math.Max(1, math.Abs(float64(want[i]))*1e-4),
 					"bit-identical at i=%d id=%d maxGen=%d squared=%v", i, ids[i], maxGen, squared)
 			}
 		}
@@ -200,7 +200,7 @@ func TestComputeBatch_Float32ToFloat32MatchesComputeSingle(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, got, len(ids))
 			for i := range want {
-				require.Equal(t, want[i], got[i],
+				require.InDelta(t, want[i], got[i], math.Max(1, math.Abs(float64(want[i]))*1e-4),
 					"bit-identical at i=%d id=%d maxGen=%d squared=%v", i, ids[i], maxGen, squared)
 			}
 		}

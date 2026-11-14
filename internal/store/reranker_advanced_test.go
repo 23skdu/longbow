@@ -73,6 +73,28 @@ func TestAdvancedRerankersCacheRewriterAndEval(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, core.VectorID(2), llmOut[0].ID)
 
+	// Cohere /v1/rerank HTTP reranker
+	cohereSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{
+				{"index": 1, "relevance_score": 0.99},
+				{"index": 2, "relevance_score": 0.55},
+				{"index": 0, "relevance_score": 0.05},
+			},
+		})
+	}))
+	defer cohereSrv.Close()
+
+	cohereReranker, err := NewLLMReranker(LLMRerankConfig{
+		Provider: "cohere",
+		Endpoint: cohereSrv.URL,
+		APIKey:   "co-test",
+	})
+	require.NoError(t, err)
+	cohereOut, err := cohereReranker.Rerank(ctx, "vector database encryption", candidates)
+	require.NoError(t, err)
+	require.Equal(t, core.VectorID(2), cohereOut[0].ID)
+
 	// Cache hit/miss verification
 	cache := NewRerankCache(16, time.Minute)
 	_, hit := cache.Get("hybrid", "vector database encryption", candidates)

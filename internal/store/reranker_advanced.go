@@ -133,9 +133,12 @@ func NewLLMReranker(cfg LLMRerankConfig) (*LLMReranker, error) {
 		cfg.Provider = "local"
 	}
 	if cfg.Endpoint == "" {
-		if cfg.Provider == "openai" {
+		switch cfg.Provider {
+		case "openai":
 			cfg.Endpoint = "https://api.openai.com/v1/chat/completions"
-		} else {
+		case "cohere":
+			cfg.Endpoint = "https://api.cohere.com/v1/rerank"
+		default:
 			cfg.Endpoint = "http://localhost:11434/v1/chat/completions"
 		}
 	}
@@ -144,9 +147,12 @@ func NewLLMReranker(cfg LLMRerankConfig) (*LLMReranker, error) {
 		return nil, fmt.Errorf("invalid LLM reranker endpoint: %q", cfg.Endpoint)
 	}
 	if cfg.Model == "" {
-		if cfg.Provider == "openai" {
+		switch cfg.Provider {
+		case "openai":
 			cfg.Model = "gpt-4o-mini"
-		} else {
+		case "cohere":
+			cfg.Model = "rerank-english-v3.0"
+		default:
 			cfg.Model = "llama3.1"
 		}
 	}
@@ -168,26 +174,45 @@ func (l *LLMReranker) Rerank(ctx context.Context, query string, results []Search
 	if len(results) == 0 {
 		return results, nil
 	}
-	var sb strings.Builder
-	sb.WriteString("Score each document relevance (0.0 to 1.0) to query: ")
-	sb.WriteString(query)
-	sb.WriteString("\nReturn JSON {\"scores\": [s0, s1, ...]}.\n")
-	for i, r := range results {
-		doc := extractDocumentText(r)
-		if len(doc) > l.cfg.MaxDocChar {
-			doc = doc[:l.cfg.MaxDocChar]
-		}
-		fmt.Fprintf(&sb, "[%d] %s\n", i, doc)
-	}
 
-	reqBody, err := json.Marshal(map[string]any{
-		"model": l.cfg.Model,
-		"messages": []map[string]string{
-			{"role": "system", "content": "You are a search relevance judge. Output valid JSON only."},
-			{"role": "user", "content": sb.String()},
-		},
-		"temperature": 0.0,
-	})
+	var reqBody []byte
+	var err error
+	if strings.EqualFold(l.cfg.Provider, "cohere") {
+		docs := make([]string, len(results))
+		for i, r := range results {
+			doc := extractDocumentText(r)
+			if len(doc) > l.cfg.MaxDocChar {
+				doc = doc[:l.cfg.MaxDocChar]
+			}
+			docs[i] = doc
+		}
+		reqBody, err = json.Marshal(map[string]any{
+			"model":     l.cfg.Model,
+			"query":     query,
+			"documents": docs,
+			"top_n":     len(docs),
+		})
+	} else {
+		var sb strings.Builder
+		sb.WriteString("Score each document relevance (0.0 to 1.0) to query: ")
+		sb.WriteString(query)
+		sb.WriteString("\nReturn JSON {\"scores\": [s0, s1, ...]}.\n")
+		for i, r := range results {
+			doc := extractDocumentText(r)
+			if len(doc) > l.cfg.MaxDocChar {
+				doc = doc[:l.cfg.MaxDocChar]
+			}
+			fmt.Fprintf(&sb, "[%d] %s\n", i, doc)
+		}
+		reqBody, err = json.Marshal(map[string]any{
+			"model": l.cfg.Model,
+			"messages": []map[string]string{
+				{"role": "system", "content": "You are a search relevance judge. Output valid JSON only."},
+				{"role": "user", "content": sb.String()},
+			},
+			"temperature": 0.0,
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +237,10 @@ func (l *LLMReranker) Rerank(ctx context.Context, query string, results []Search
 
 	var chatResp struct {
 		Scores  []float32 `json:"scores"`
+		Results []struct {
+			Index          int     `json:"index"`
+			RelevanceScore float32 `json:"relevance_score"`
+		} `json:"results"`
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
@@ -222,6 +251,14 @@ func (l *LLMReranker) Rerank(ctx context.Context, query string, results []Search
 		return nil, err
 	}
 	scores := chatResp.Scores
+	if len(scores) == 0 && len(chatResp.Results) > 0 {
+		scores = make([]float32, len(results))
+		for _, item := range chatResp.Results {
+			if item.Index >= 0 && item.Index < len(scores) {
+				scores[item.Index] = item.RelevanceScore
+			}
+		}
+	}
 	if len(scores) == 0 && len(chatResp.Choices) > 0 {
 		var parsedContent struct {
 			Scores []float32 `json:"scores"`
@@ -713,6 +750,26 @@ func (s *VectorStore) handleRerankAction(action *flight.Action, stream flight.Fl
 		}
 		variants := s.GetRerankManager().Rewrite(req.Query, req.Mode)
 		body, _ := json.Marshal(map[string]any{"queries": variants})
+		return true, stream.Send(&flight.Result{Body: body})
+
+	case "EvaluateReranker":
+		var req struct {
+			Strategy string          `json:"strategy"`
+			Cases    []EvalQueryCase `json:"cases"`
+			K        int             `json:"k"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return true, status.Errorf(codes.InvalidArgument, "invalid json: %v", err)
+		}
+		var rr Reranker = s.GetRerankManager().hybrid
+		if req.Strategy == "heuristic" {
+			rr = &HeuristicReranker{ModelName: "default"}
+		}
+		res, err := EvaluateReranker(stream.Context(), rr, req.Cases, req.K)
+		if err != nil {
+			return true, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
+		body, _ := json.Marshal(res)
 		return true, stream.Send(&flight.Result{Body: body})
 	}
 	return false, nil

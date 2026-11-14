@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/IBM/sarama"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
@@ -102,6 +104,119 @@ func TestStreamingConnectorSchemaDedupDLQAndIngest(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 
 	require.NoError(t, mgr.StopConnector("orders-stream"))
+}
+
+func TestKafkaBrokerAndTestcontainersConnectorIntegration(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
+	vs.dataPath = t.TempDir()
+	vs.StartIngestionWorkers(2)
+	vs.StartIndexingWorkers(2)
+	defer func() { _ = vs.Close() }()
+
+	topic := "vectors.cdc.v1"
+	brokerAddr := os.Getenv("LONGBOW_TESTCONTAINERS_KAFKA")
+	var mockBroker *sarama.MockBroker
+	if brokerAddr == "" {
+		mockBroker = sarama.NewMockBroker(t, 1)
+		defer mockBroker.Close()
+		brokerAddr = mockBroker.Addr()
+
+		evBytes, _ := json.Marshal(StreamVectorEvent{
+			ID:             "kafka-vec-1",
+			Vector:         []float32{0.5, 0.5, 0.5, 0.5},
+			Text:           "kafka broker integration",
+			IdempotencyKey: "k-tcp-1",
+		})
+		metaResp := sarama.NewMockMetadataResponse(t).
+			SetBroker(mockBroker.Addr(), mockBroker.BrokerID()).
+			SetLeader(topic, 0, mockBroker.BrokerID())
+		prodSuccess := sarama.NewMockProduceResponse(t).
+			SetError(topic, 0, sarama.ErrNoError)
+		offsetResp := sarama.NewMockOffsetResponse(t).
+			SetOffset(topic, 0, sarama.OffsetOldest, 0).
+			SetOffset(topic, 0, sarama.OffsetNewest, 1)
+		fetchResp := sarama.NewMockFetchResponse(t, 1).
+			SetMessage(topic, 0, 0, sarama.ByteEncoder(evBytes))
+
+		mockBroker.SetHandlerByMap(map[string]sarama.MockResponse{
+			"MetadataRequest": metaResp,
+			"ProduceRequest":  prodSuccess,
+			"OffsetRequest":   offsetResp,
+			"FetchRequest":    fetchResp,
+		})
+	}
+
+	// Verify real TCP Kafka Producer + Consumer over the broker endpoint
+	prodCfg := sarama.NewConfig()
+	prodCfg.Version = sarama.V0_10_0_0
+	prodCfg.ApiVersionsRequest = false
+	prodCfg.Metadata.Full = false
+	prodCfg.Producer.Return.Successes = true
+	prodCfg.Metadata.Retry.Max = 1
+	producer, err := sarama.NewSyncProducer([]string{brokerAddr}, prodCfg)
+	require.NoError(t, err)
+	defer func() { _ = producer.Close() }()
+
+	msgPayload, _ := json.Marshal(StreamVectorEvent{
+		ID:             "kafka-vec-1",
+		Vector:         []float32{0.5, 0.5, 0.5, 0.5},
+		Text:           "kafka broker integration",
+		IdempotencyKey: "k-tcp-1",
+	})
+	part, off, err := producer.SendMessage(&sarama.ProducerMessage{
+		Topic: topic,
+		Key:   sarama.StringEncoder("kafka-vec-1"),
+		Value: sarama.ByteEncoder(msgPayload),
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(0), part)
+	require.GreaterOrEqual(t, off, int64(0))
+
+	consCfg := sarama.NewConfig()
+	consCfg.Version = sarama.V0_10_0_0
+	consCfg.ApiVersionsRequest = false
+	consCfg.Metadata.Full = false
+	consCfg.Metadata.Retry.Max = 1
+	consumer, err := sarama.NewConsumer([]string{brokerAddr}, consCfg)
+	require.NoError(t, err)
+	defer func() { _ = consumer.Close() }()
+
+	pc, err := consumer.ConsumePartition(topic, 0, sarama.OffsetOldest)
+	require.NoError(t, err)
+	defer func() { _ = pc.Close() }()
+
+	conn, err := vs.GetStreamManager().CreateConnector(StreamConnectorConfig{
+		Name:        "kafka-tcp-conn",
+		Dataset:     "kafka_vectors",
+		SourceType:  StreamSourceKafka,
+		Brokers:     brokerAddr,
+		Topic:       topic,
+		ExpectedDim: 4,
+		ExactlyOnce: true,
+	}, false)
+	require.NoError(t, err)
+
+	select {
+	case msg := <-pc.Messages():
+		committed, deduped, err := conn.ProcessEnvelopes(context.Background(), []StreamEnvelope{{
+			Topic:     msg.Topic,
+			Partition: msg.Partition,
+			Offset:    msg.Offset,
+			Key:       string(msg.Key),
+			Payload:   msg.Value,
+		}})
+		require.NoError(t, err)
+		require.Equal(t, 1, committed)
+		require.Equal(t, 0, deduped)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for message from Kafka TCP broker")
+	}
+
+	require.Eventually(t, func() bool {
+		ds, ok := vs.getDataset("kafka_vectors")
+		return ok && ds.IndexLen() >= 1
+	}, 2*time.Second, 20*time.Millisecond)
 }
 
 func FuzzStreamWireAndEventParse(f *testing.F) {

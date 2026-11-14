@@ -1578,3 +1578,382 @@ class LongbowClient:
             payload,
             http_endpoint=http_endpoint,
         ).get("results", [])
+
+    def list_api_keys(self) -> List[Dict[str, Any]]:
+        """List registered RBAC API keys."""
+        return self._do_action_json("ListAPIKeys", {}, default={}).get("keys", [])
+
+    def get_audit_log(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Fetch recent RBAC security audit log entries."""
+        return self._do_action_json("GetAuditLog", {"limit": limit}, default={}).get(
+            "entries", []
+        )
+
+    def list_backups(self, dataset: str = "") -> List[Dict[str, Any]]:
+        """List online backups (optionally filtered by dataset)."""
+        return self._do_action_json(
+            "ListBackups", {"dataset": dataset}, default={}
+        ).get("backups", [])
+
+    def verify_backup(self, backup_id: str, dataset: str = "") -> Dict[str, Any]:
+        """Verify backup integrity via dry-run PITR replay."""
+        return self._do_action_json(
+            "VerifyBackup", {"backup_id": backup_id, "dataset": dataset}, default={}
+        )
+
+    def create_stream_connector(
+        self,
+        name: str,
+        dataset: str,
+        source_type: str = "memory",
+        brokers: str = "",
+        topic: str = "",
+        format: str = "json",
+        start: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Create a streaming CDC connector (Kafka, Pulsar, or Memory)."""
+        payload: Dict[str, Any] = {
+            "name": name,
+            "dataset": dataset,
+            "source_type": source_type,
+            "brokers": brokers,
+            "topic": topic,
+            "format": format,
+            "start": start,
+        }
+        payload.update(kwargs)
+        return self._do_action_json("CreateStreamConnector", payload, default={})
+
+    def stop_stream_connector(self, name: str) -> Dict[str, Any]:
+        """Stop and remove a streaming CDC connector."""
+        return self._do_action_json("StopStreamConnector", {"name": name}, default={})
+
+    def list_stream_connectors(self) -> List[Dict[str, Any]]:
+        """List streaming CDC connectors and their runtime stats."""
+        return self._do_action_json("ListStreamConnectors", {}, default={}).get(
+            "connectors", []
+        )
+
+    def get_stream_stats(self) -> List[Dict[str, Any]]:
+        """Alias for list_stream_connectors returning connector throughput/lag stats."""
+        return self._do_action_json("GetStreamStats", {}, default={}).get(
+            "connectors", []
+        )
+
+    def ingest_stream_event(
+        self, connector: str, envelopes: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Ingest streaming envelopes into a named connector."""
+        return self._do_action_json(
+            "IngestStreamEvent",
+            {"connector": connector, "envelopes": envelopes},
+            default={},
+        )
+
+    def register_stream_schema(
+        self, subject: str, format: str = "json", fields: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """Register a local streaming schema subject."""
+        return self._do_action_json(
+            "RegisterStreamSchema",
+            {"subject": subject, "format": format, "fields": fields or {}},
+            default={},
+        )
+
+    def ingest_media_parquet(self, dataset: str, parquet_path: str) -> Dict[str, Any]:
+        """Bulk-ingest multi-modal items from a Parquet file."""
+        return self._do_action_json(
+            "MultiModalIngestParquet",
+            {"dataset": dataset, "parquet_path": parquet_path},
+            default={},
+        )
+
+    def evaluate_reranker(
+        self,
+        dataset: str,
+        queries: List[Dict[str, Any]],
+        reranker_type: str = "cross_encoder",
+        top_k: int = 10,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Evaluate reranker NDCG@10, MRR@10, and Recall@10 over relevance-labeled queries."""
+        payload: Dict[str, Any] = {
+            "dataset": dataset,
+            "type": reranker_type,
+            "top_k": top_k,
+            "queries": queries,
+        }
+        payload.update(kwargs)
+        return self._do_action_json("EvaluateReranker", payload, default={})
+
+    def get_tenant_usage(self, tenant_id: str = "") -> Dict[str, Any]:
+        """Retrieve per-tenant or global usage and billing metrics."""
+        return self._do_action_json(
+            "GetTenantUsage", {"tenant_id": tenant_id}, default={}
+        )
+
+    def set_tenant_quota(
+        self,
+        tenant_id: str,
+        max_queries: int = 0,
+        max_vectors: int = 0,
+        max_storage_bytes: int = 0,
+        soft_limit_ratio: float = 0.8,
+        enforcement_mode: str = "hard",
+    ) -> Dict[str, Any]:
+        """Configure tenant usage quotas and enforcement mode."""
+        return self._do_action_json(
+            "SetTenantQuota",
+            {
+                "tenant_id": tenant_id,
+                "max_queries": max_queries,
+                "max_vectors": max_vectors,
+                "max_storage_bytes": max_storage_bytes,
+                "soft_limit_ratio": soft_limit_ratio,
+                "enforcement_mode": enforcement_mode,
+            },
+            default={},
+        )
+
+    def export_billing_report(
+        self, format: str = "json", tenant_id: str = ""
+    ) -> Union[Dict[str, Any], str]:
+        """Export tenant billing report in json, csv, or stripe format."""
+        action = flight.Action(
+            "ExportBillingReport",
+            json.dumps({"format": format, "tenant_id": tenant_id}).encode("utf-8"),
+        )
+        results = list(
+            self._require_meta_client().do_action(
+                action, options=self._get_call_options()
+            )
+        )
+        if not results:
+            return {} if format == "json" else ""
+        raw = results[0].body.to_pybytes().decode("utf-8")
+        if format == "csv":
+            return raw
+        try:
+            return json.loads(raw)
+        except Exception:
+            return raw
+
+    def get_cluster_topology(self) -> Dict[str, Any]:
+        """Fetch the elastic sharding ring topology and shard assignment snapshot."""
+        return self._do_action_json("GetClusterTopology", {}, default={})
+
+    def get_autoscale_config(self) -> Dict[str, Any]:
+        """Fetch current elastic sharding & auto-scaling policy."""
+        return self._do_action_json("GetAutoScaleConfig", {}, default={})
+
+    def set_autoscale_config(self, policy: Dict[str, Any]) -> Dict[str, Any]:
+        """Update elastic sharding & auto-scaling policy."""
+        return self._do_action_json("SetAutoScaleConfig", policy, default={})
+
+    def trigger_shard_split(self, dataset: str, shard_id: str) -> Dict[str, Any]:
+        """Split a hot shard into left and right child shards."""
+        return self._do_action_json(
+            "TriggerShardSplit", {"dataset": dataset, "shard_id": shard_id}, default={}
+        )
+
+    def trigger_shard_merge(
+        self, dataset: str, left_shard_id: str, right_shard_id: str
+    ) -> Dict[str, Any]:
+        """Merge two adjacent shards."""
+        return self._do_action_json(
+            "TriggerShardMerge",
+            {
+                "dataset": dataset,
+                "left_shard_id": left_shard_id,
+                "right_shard_id": right_shard_id,
+            },
+            default={},
+        )
+
+    def trigger_rebalance(self, dataset: str = "") -> Dict[str, Any]:
+        """Trigger shard rebalancing across cluster nodes."""
+        return self._do_action_json(
+            "TriggerRebalance", {"dataset": dataset}, default={}
+        )
+
+    def register_schema(
+        self,
+        dataset: str,
+        constraints: List[Dict[str, Any]],
+        compatibility: str = "BACKWARD",
+        metadata_types: Optional[Dict[str, str]] = None,
+        strict_metadata: bool = False,
+    ) -> Dict[str, Any]:
+        """Register versioned field constraints and compatibility rules for a dataset."""
+        return self._do_action_json(
+            "RegisterSchema",
+            {
+                "dataset": dataset,
+                "compatibility": compatibility,
+                "constraints": constraints,
+                "metadata_types": metadata_types or {},
+                "strict_metadata": strict_metadata,
+            },
+            default={},
+        )
+
+    def get_schema_registry(self, dataset: str) -> Dict[str, Any]:
+        """Get the latest registered schema specification for a dataset."""
+        return self._do_action_json(
+            "GetSchemaRegistry", {"dataset": dataset}, default={}
+        )
+
+    def validate_schema(
+        self, dataset: str, vectors: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Dry-run validate a list of vector records against the dataset's registered schema."""
+        return self._do_action_json(
+            "ValidateSchema", {"dataset": dataset, "vectors": vectors}, default={}
+        )
+
+    def migrate_schema(
+        self,
+        dataset: str,
+        target_schema: Dict[str, Any],
+        add_string_cols: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Migrate dataset schema and backfill default values for newly added columns."""
+        target = dict(target_schema)
+        target["dataset"] = dataset
+        return self._do_action_json(
+            "MigrateSchema",
+            {"target": target, "add_string_cols": add_string_cols or {}},
+            default={},
+        )
+
+    def create_materialized_view(
+        self,
+        name: str,
+        source_dataset: str,
+        group_by: List[str],
+        aggregations: Optional[List[Dict[str, str]]] = None,
+        refresh_mode: str = "streaming",
+        filter_equals: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Create a pre-aggregated materialized view over a dataset."""
+        return self._do_action_json(
+            "CreateMaterializedView",
+            {
+                "name": name,
+                "source_dataset": source_dataset,
+                "group_by": group_by,
+                "aggregations": aggregations or [{"alias": "count", "op": "COUNT"}],
+                "refresh_mode": refresh_mode,
+                "filter_equals": filter_equals or {},
+            },
+            default={},
+        )
+
+    def refresh_materialized_view(self, name: str) -> Dict[str, Any]:
+        """Refresh a materialized view on demand."""
+        return self._do_action_json(
+            "RefreshMaterializedView", {"name": name}, default={}
+        )
+
+    def query_materialized_view(
+        self, name: str, group_filter: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """Query pre-aggregated rows from a materialized view."""
+        return self._do_action_json(
+            "QueryMaterializedView",
+            {"name": name, "group_filter": group_filter or {}},
+            default={},
+        )
+
+    def list_materialized_views(self) -> List[Dict[str, Any]]:
+        """List all materialized views and their snapshots."""
+        return self._do_action_json("ListMaterializedViews", {}, default={}).get(
+            "views", []
+        )
+
+    def record_provenance(
+        self,
+        dataset: str,
+        vector_id: str,
+        source_document_id: str = "",
+        source_uri: str = "",
+        chunk_index: int = 0,
+        embedding_model: str = "",
+        model_version: str = "",
+        extra: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Record lineage/provenance metadata for a stored vector."""
+        return self._do_action_json(
+            "RecordProvenance",
+            {
+                "dataset": dataset,
+                "vector_id": vector_id,
+                "source_document_id": source_document_id,
+                "source_uri": source_uri,
+                "chunk_index": chunk_index,
+                "embedding_model": embedding_model,
+                "model_version": model_version,
+                "extra": extra or {},
+            },
+            default={},
+        )
+
+    def debug_search_path(
+        self,
+        dataset: str,
+        vector: Optional[List[float]] = None,
+        text_query: str = "",
+        k: int = 5,
+    ) -> Dict[str, Any]:
+        """Return detailed HNSW traversal hop trace and score breakdown via DebugSearchPath."""
+        return self._do_action_json(
+            "DebugSearchPath",
+            {
+                "dataset": dataset,
+                "vector": vector or [],
+                "text_query": text_query,
+                "k": k,
+                "trace_hops": True,
+            },
+            default={},
+        )
+
+    @staticmethod
+    def plot_search_explanation(explanation: Dict[str, Any]) -> str:
+        """Render an HTML/SVG score breakdown and HNSW hop-trace visualization from explain_search."""
+        hits = explanation.get("hits", [])
+        hops = explanation.get("hops", [])
+        dataset = explanation.get("dataset", "")
+        bars_svg = []
+        for idx, hit in enumerate(hits):
+            vid = hit.get("id", str(idx))
+            bd = hit.get("breakdown", {})
+            v_score = float(bd.get("vector_score", 0.0))
+            b_score = float(bd.get("bm25_score", 0.0))
+            g_score = float(bd.get("graph_boost", 0.0))
+            y = 25 + idx * 32
+            w_v = max(0, min(200, int(v_score * 160)))
+            w_b = max(0, min(200, int(b_score * 40)))
+            w_g = max(0, min(200, int(g_score * 80)))
+            bars_svg.append(
+                f'<g transform="translate(0,{y})">'
+                f'<text x="8" y="16" font-family="monospace" font-size="12">{vid}</text>'
+                f'<rect x="90" y="4" width="{w_v}" height="16" fill="#3b82f6" />'
+                f'<rect x="{90 + w_v}" y="4" width="{w_b}" height="16" fill="#10b981" />'
+                f'<rect x="{90 + w_v + w_b}" y="4" width="{w_g}" height="16" fill="#f59e0b" />'
+                f"</g>"
+            )
+        hop_items = "".join(
+            f"<li>Step {h.get('step', i)}: node <code>{h.get('node_id', '')}</code> "
+            f"(dist={h.get('distance', 0):.4f}, improved={h.get('improved', False)})</li>"
+            for i, h in enumerate(hops)
+        )
+        svg_height = max(80, 40 + len(hits) * 32)
+        return (
+            f'<div class="longbow-explain-viz" data-dataset="{dataset}">'
+            f'<svg width="480" height="{svg_height}" xmlns="http://www.w3.org/2000/svg">'
+            + "".join(bars_svg)
+            + "</svg>"
+            + f"<ul class=\"longbow-hop-trace\">{hop_items}</ul></div>"
+        )

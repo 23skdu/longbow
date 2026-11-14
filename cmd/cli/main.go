@@ -101,6 +101,68 @@ func main() {
 		runCloudSLAReport(ctx, os.Args[2:])
 	case "graphql":
 		runGraphQLCommand(ctx, os.Args[2:])
+	case "set-rls-policy":
+		runSetRLSPolicy(ctx, os.Args[2:])
+	case "audit-log":
+		runAuditLog(ctx, os.Args[2:])
+	case "list-backups":
+		runListBackups(ctx, os.Args[2:])
+	case "verify-backup":
+		runVerifyBackup(ctx, os.Args[2:])
+	case "stream-create":
+		runStreamCreate(ctx, os.Args[2:])
+	case "stream-stop":
+		runStreamStop(ctx, os.Args[2:])
+	case "stream-list", "stream-stats":
+		runStreamList(ctx, os.Args[2:])
+	case "stream-ingest":
+		runStreamIngest(ctx, os.Args[2:])
+	case "multimodal-ingest":
+		runMultiModalIngest(ctx, os.Args[2:])
+	case "eval-reranker":
+		runEvalReranker(ctx, os.Args[2:])
+	case "usage":
+		runTenantUsage(ctx, os.Args[2:])
+	case "set-quota":
+		runSetQuota(ctx, os.Args[2:])
+	case "export-billing":
+		runExportBilling(ctx, os.Args[2:])
+	case "shard-topology":
+		runShardTopology(ctx, os.Args[2:])
+	case "shard-split":
+		runShardSplit(ctx, os.Args[2:])
+	case "shard-merge":
+		runShardMerge(ctx, os.Args[2:])
+	case "shard-rebalance":
+		runShardRebalance(ctx, os.Args[2:])
+	case "autoscale-config":
+		runAutoScaleConfig(ctx, os.Args[2:])
+	case "register-schema":
+		runRegisterSchema(ctx, os.Args[2:])
+	case "get-schema":
+		runGetSchema(ctx, os.Args[2:])
+	case "validate-schema":
+		runValidateSchema(ctx, os.Args[2:])
+	case "migrate-schema":
+		runMigrateSchema(ctx, os.Args[2:])
+	case "create-view":
+		runCreateView(ctx, os.Args[2:])
+	case "refresh-view":
+		runRefreshView(ctx, os.Args[2:])
+	case "query-view":
+		runQueryView(ctx, os.Args[2:])
+	case "list-views":
+		runListViews(ctx, os.Args[2:])
+	case "tune-bm25":
+		runTuneBM25(ctx, os.Args[2:])
+	case "search-facets":
+		runSearchFacets(ctx, os.Args[2:])
+	case "search-analytics":
+		runSearchAnalytics(ctx, os.Args[2:])
+	case "record-provenance":
+		runRecordProvenance(ctx, os.Args[2:])
+	case "get-provenance":
+		runGetProvenance(ctx, os.Args[2:])
 	case "version", "-v", "--version":
 		version.Print()
 	case "help", "-h", "--help":
@@ -152,6 +214,37 @@ Commands:
   cloud-promote        Promote a replica region in failover
   cloud-sla            Evaluate cluster SLA compliance
   graphql              Execute a GraphQL query or mutation
+  set-rls-policy       Register row-level security policy
+  audit-log            Fetch RBAC security audit log
+  list-backups         List online snapshots/backups
+  verify-backup        Verify backup integrity
+  stream-create        Create streaming CDC connector
+  stream-stop          Stop streaming CDC connector
+  stream-list          List streaming connectors & stats
+  stream-ingest        Ingest streaming envelopes
+  multimodal-ingest    Ingest multi-modal items or Parquet file
+  eval-reranker        Evaluate reranker NDCG@10/MRR@10/Recall@10
+  usage                Get tenant usage & metering metrics
+  set-quota            Set tenant usage quota
+  export-billing       Export billing report (json|csv|stripe)
+  shard-topology       Inspect elastic shard ring topology
+  shard-split          Split a hot shard
+  shard-merge          Merge adjacent shards
+  shard-rebalance      Rebalance shards across nodes
+  autoscale-config     Get or update elastic autoscale policy
+  register-schema      Register dataset schema & constraints
+  get-schema           Inspect registered dataset schema
+  validate-schema      Validate vector records against dataset schema
+  migrate-schema       Migrate dataset schema & backfill columns
+  create-view          Create a materialized view
+  refresh-view         Refresh a materialized view
+  query-view           Query a materialized view
+  list-views           List materialized views
+  tune-bm25            Configure dataset BM25 k1/b parameters
+  search-facets        Compute search facet counts
+  search-analytics     Inspect search query analytics
+  record-provenance    Record vector provenance lineage
+  get-provenance       Inspect vector provenance lineage
 
 Global Options:
   -uri string    Longbow server URI (default: grpc://127.0.0.1:3000)

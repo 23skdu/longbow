@@ -3,13 +3,15 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/23skdu/longbow/pkg/wasmclient"
 )
 
-// EdgeSearchHTTPHandler provides HTTP/edge search transport for WASM, Browser,
-// Cloudflare Workers, and Deno clients without requiring native gRPC.
+// EdgeSearchHTTPHandler provides HTTP and gRPC-Web search transport for WASM, Browser,
+// Cloudflare Workers, and Deno clients without requiring native HTTP/2 gRPC.
 func (s *VectorStore) EdgeSearchHTTPHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -17,12 +19,26 @@ func (s *VectorStore) EdgeSearchHTTPHandler() http.Handler {
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
+		rawBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		isGRPCWeb := strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc-web") || r.Header.Get("X-Grpc-Web") == "1"
+		if isGRPCWeb && len(rawBody) >= 5 && rawBody[0] == 0x00 {
+			unframed, _, fErr := wasmclient.DecodeGRPCWebFrame(rawBody)
+			if fErr != nil {
+				http.Error(w, fErr.Error(), http.StatusBadRequest)
+				return
+			}
+			rawBody = unframed
+		}
 		var req struct {
 			Dataset string    `json:"dataset"`
 			Vector  []float32 `json:"vector"`
 			K       int       `json:"k"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.Unmarshal(rawBody, &req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -46,8 +62,14 @@ func (s *VectorStore) EdgeSearchHTTPHandler() http.Handler {
 				Score:    item.Score,
 			}
 		}
+		respJSON, _ := json.Marshal(map[string]any{"results": edgeRes})
+		if isGRPCWeb {
+			w.Header().Set("Content-Type", "application/grpc-web+json")
+			_, _ = w.Write(wasmclient.EncodeGRPCWebFrame(respJSON, true))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"results": edgeRes})
+		_, _ = w.Write(respJSON)
 	})
 }
 

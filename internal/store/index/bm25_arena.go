@@ -2,11 +2,13 @@ package index
 
 import (
 	"math"
+	"sort"
 	"sync"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // BM25ArenaIndex implements BM25 text indexing using arena-based storage
@@ -22,10 +24,12 @@ type BM25ArenaIndex struct {
 	tokenDict   map[string]uint32
 	nextTokenID uint32
 
-	// Inverted index: tokenID -> posting list (docIDs)
+	// Inverted index: tokenID -> sorted posting list (docIDs)
 	postings *PackedAdjacency
+	// Parallel arena-backed term frequency slices per tokenID (aligned with postings)
+	postingTFs []memory.SliceRef
 
-	// Term frequencies: (docID << 32 | tokenID) -> frequency
+	// Fallback term frequencies map when arena is full: (docID << 32 | tokenID) -> frequency
 	termFreqs map[uint64]uint32
 
 	// Document frequencies: tokenID -> DF
@@ -50,6 +54,7 @@ func NewBM25ArenaIndex(arena *memory.SlabArena, initialCapacity int) *BM25ArenaI
 		tokenDict:    make(map[string]uint32),
 		nextTokenID:  1, // Start from 1, 0 is reserved
 		postings:     NewPackedAdjacency(arena, initialCapacity),
+		postingTFs:   make([]memory.SliceRef, 0, 1000),
 		termFreqs:    make(map[uint64]uint32),
 		docFreqs:     make([]uint32, 0, 1000),
 		docLengths:   make([]uint32, 0, initialCapacity),
@@ -108,35 +113,56 @@ func (idx *BM25ArenaIndex) IndexDocuments(docs []BM25ArenaDocument) error {
 		idx.totalDocs++
 		idx.avgDocLength = (idx.avgDocLength*float64(idx.totalDocs-1) + float64(len(doc.Tokens))) / float64(idx.totalDocs)
 
-		// Update term frequencies and posting lists
+		// Update term frequencies and sorted posting lists in arena
 		for tokenID, freq := range localTF {
-			// Store term frequency
 			key := (uint64(doc.ID) << 32) | uint64(tokenID)
 			idx.termFreqs[key] = freq
 
-			// Update posting list
+			idx.ensureDocFreqCapacity(tokenID)
 			postings, exists := idx.postings.GetNeighbors(tokenID)
 			if !exists {
-				postings = []uint32{}
+				postings = nil
+			}
+			var existingTFs []uint32
+			if int(tokenID) < len(idx.postingTFs) && idx.postingTFs[tokenID].Len > 0 {
+				existingTFs = idx.postingArena.Get(idx.postingTFs[tokenID])
 			}
 
-			// Add docID if not already in posting list
-			found := false
-			for _, id := range postings {
-				if id == doc.ID {
-					found = true
-					break
+			pos := sort.Search(len(postings), func(i int) bool { return postings[i] >= doc.ID })
+			if pos < len(postings) && postings[pos] == doc.ID {
+				if pos < len(existingTFs) {
+					existingTFs[pos] = freq
 				}
+				continue
 			}
-			if !found {
-				postings = append(postings, doc.ID)
-				idx.postings.EnsureCapacity(tokenID)
-				_ = idx.postings.SetNeighbors(tokenID, postings)
 
-				// Update document frequency
-				idx.ensureDocFreqCapacity(tokenID)
-				idx.docFreqs[tokenID]++
+			newLen := len(postings) + 1
+			newPostings := make([]uint32, newLen)
+			copy(newPostings[:pos], postings[:pos])
+			newPostings[pos] = doc.ID
+			copy(newPostings[pos+1:], postings[pos:])
+
+			idx.postings.EnsureCapacity(tokenID)
+			_ = idx.postings.SetNeighbors(tokenID, newPostings)
+
+			if tfRef, err := idx.postingArena.AllocSlice(newLen); err == nil {
+				newTFs := idx.postingArena.Get(tfRef)
+				if len(existingTFs) == len(postings) {
+					copy(newTFs[:pos], existingTFs[:pos])
+					copy(newTFs[pos+1:], existingTFs[pos:])
+				} else {
+					for i, pid := range newPostings {
+						if i == pos {
+							continue
+						}
+						newTFs[i] = idx.termFreqs[(uint64(pid)<<32)|uint64(tokenID)]
+					}
+				}
+				newTFs[pos] = freq
+				idx.postingTFs[tokenID] = tfRef
 			}
+
+			idx.docFreqs[tokenID]++
 		}
 
 		tokenTotal += float64(len(doc.Tokens))
@@ -174,10 +200,13 @@ func (idx *BM25ArenaIndex) getOrCreateTokenID(token string) uint32 {
 	return tokenID
 }
 
-// ensureDocFreqCapacity ensures docFreqs array is large enough
+// ensureDocFreqCapacity ensures docFreqs and postingTFs arrays are large enough
 func (idx *BM25ArenaIndex) ensureDocFreqCapacity(tokenID uint32) {
 	for uint32(len(idx.docFreqs)) <= tokenID { // #nosec G115
 		idx.docFreqs = append(idx.docFreqs, 0)
+	}
+	for uint32(len(idx.postingTFs)) <= tokenID { // #nosec G115
+		idx.postingTFs = append(idx.postingTFs, memory.SliceRef{})
 	}
 }
 
@@ -203,6 +232,21 @@ func (idx *BM25ArenaIndex) GetTermFrequency(docID, tokenID uint32) uint32 {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
+	return idx.getTermFrequencyLocked(docID, tokenID)
+}
+
+func (idx *BM25ArenaIndex) getTermFrequencyLocked(docID, tokenID uint32) uint32 {
+	if int(tokenID) < len(idx.postingTFs) && idx.postingTFs[tokenID].Len > 0 {
+		if postings, ok := idx.postings.GetNeighbors(tokenID); ok {
+			pos := sort.Search(len(postings), func(i int) bool { return postings[i] >= docID })
+			if pos < len(postings) && postings[pos] == docID {
+				tfs := idx.postingArena.Get(idx.postingTFs[tokenID])
+				if pos < len(tfs) {
+					return tfs[pos]
+				}
+			}
+		}
+	}
 	key := (uint64(docID) << 32) | uint64(tokenID)
 	return idx.termFreqs[key]
 }
@@ -254,31 +298,44 @@ func (idx *BM25ArenaIndex) Score(query []string, docIDs []uint32) map[uint32]flo
 		avgDL = 1.0
 	}
 
-	// 2. Compute BM25 score for each document
-	// Optimization: Pre-calculate constants for each query token
+	// 2. Compute BM25 score across documents using SIMD BM25ScoreBatch per query token
+	validDocs := make([]uint32, 0, len(docIDs))
 	for _, docID := range docIDs {
-		if int(docID) >= len(idx.docLengths) {
-			continue
+		if int(docID) < len(idx.docLengths) {
+			validDocs = append(validDocs, docID)
 		}
+	}
+	if len(validDocs) == 0 {
+		return scores
+	}
 
-		docLen := float64(idx.docLengths[docID])
-		var score float64
+	batchTFs := make([]int, 0, len(validDocs))
+	batchLens := make([]int, 0, len(validDocs))
+	matchedDocs := make([]uint32, 0, len(validDocs))
+	avgDL32 := float32(avgDL)
+	k132 := float32(idx.k1)
+	b32 := float32(idx.b)
 
-		for _, ts := range queryStats {
-			// Get term frequency
-			key := (uint64(docID) << 32) | uint64(ts.id)
-			tf := float64(idx.termFreqs[key])
-
+	for _, ts := range queryStats {
+		batchTFs = batchTFs[:0]
+		batchLens = batchLens[:0]
+		matchedDocs = matchedDocs[:0]
+		for _, docID := range validDocs {
+			tf := idx.getTermFrequencyLocked(docID, ts.id)
 			if tf > 0 {
-				// BM25 formula: IDF * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * docLen/avgDocLen))
-				numerator := tf * (idx.k1 + 1.0)
-				denominator := tf + idx.k1*(1.0-idx.b+idx.b*(docLen/avgDL))
-				score += ts.idf * (numerator / denominator)
+				matchedDocs = append(matchedDocs, docID)
+				batchTFs = append(batchTFs, int(tf))
+				batchLens = append(batchLens, int(idx.docLengths[docID]))
 			}
 		}
-
-		if score > 0 {
-			scores[docID] = float32(score)
+		if len(matchedDocs) == 0 {
+			continue
+		}
+		termScores := simd.BM25ScoreBatch(batchTFs, batchLens, avgDL32, float32(ts.idf), k132, b32)
+		for i, docID := range matchedDocs {
+			if i < len(termScores) && termScores[i] > 0 {
+				scores[docID] += termScores[i]
+			}
 		}
 	}
 

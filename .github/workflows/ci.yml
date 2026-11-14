@@ -283,7 +283,7 @@ jobs:
           context: .
           file: ./Dockerfile.cpu
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -307,7 +307,7 @@ jobs:
           context: .
           file: Dockerfile.nvidia
           platforms: linux/amd64
-          push: true
+          push: false
           tags: ${{ steps.meta-nvidia.outputs.tags }}
           labels: ${{ steps.meta-nvidia.outputs.labels }}
           cache-from: type=gha
@@ -331,7 +331,7 @@ jobs:
           context: .
           file: Dockerfile.emlgo-cpu
           platforms: linux/amd64
-          push: true
+          push: false
           tags: ${{ steps.meta-emlgo-cpu.outputs.tags }}
           labels: ${{ steps.meta-emlgo-cpu.outputs.labels }}
           cache-from: type=gha
@@ -355,7 +355,7 @@ jobs:
           context: .
           file: Dockerfile.emlgo-gpu
           platforms: linux/amd64
-          push: true
+          push: false
           tags: ${{ steps.meta-emlgo-gpu.outputs.tags }}
           labels: ${{ steps.meta-emlgo-gpu.outputs.labels }}
           cache-from: type=gha
@@ -379,7 +379,7 @@ jobs:
           context: .
           file: Dockerfile.tpu
           platforms: linux/amd64
-          push: true
+          push: false
           tags: ${{ steps.meta-tpu.outputs.tags }}
           labels: ${{ steps.meta-tpu.outputs.labels }}
           cache-from: type=gha

@@ -261,7 +261,14 @@ func FindNearestCentroidInCodebook(query []float32, codebook [][]float32, m, k, 
 }
 
 func adcBatchGeneric(table []float32, flatCodes []byte, m int, results []float32) error {
-	for i := 0; i < len(results); i++ {
+	n := len(results)
+	if n == 0 {
+		return nil
+	}
+	if len(flatCodes) < n*m {
+		return errors.New("simd: flatCodes too short")
+	}
+	for i := 0; i < n; i++ {
 		var sum float32
 		codes := flatCodes[i*m : (i+1)*m]
 		for jj, code := range codes {

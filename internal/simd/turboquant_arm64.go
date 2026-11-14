@@ -6,12 +6,10 @@ import (
 	"unsafe"
 )
 
-// PackTQ2NEON is implemented in assembly.
+// PackTQ2NEON falls back to the generic implementation, which uses the
+// updated 2-bit angle grid (midpoints) shared with the rest of the codec.
 func PackTQ2NEON(src []float32, dst []byte) {
-	if len(src) == 0 {
-		return
-	}
-	packTQ2NEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
+	PackTQ2Generic(src, dst)
 }
 
 // PackTQ4NEON is implemented in assembly.

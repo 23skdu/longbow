@@ -30,3 +30,4 @@ reports/
 .sdk_venv/
 .perf_venv/
 *.txt
+!vendor/modules.txt

@@ -182,7 +182,7 @@ func TestCPUFeatureDetectionComprehensive(t *testing.T) {
 	// ordinary runner has - scripts/check_avx512_coverage.sh emulates one, and
 	// without them here the detector's own output is reported as invalid on
 	// exactly the hardware it was written for.
-	validImpls := []string{"emerald", "granite", "avx512", "avx2", "neon", "generic"}
+	validImpls := []string{"emerald", "granite", "avx512", "avx2", "sve2", "neon", "generic"}
 	found := false
 	for _, valid := range validImpls {
 		if impl == valid {
@@ -200,6 +200,8 @@ func TestCPUFeatureDetectionComprehensive(t *testing.T) {
 	case "avx2":
 		assert.True(t, features.HasAVX2, "AVX2 implementation requires AVX2 support")
 		assert.False(t, features.HasAVX512, "AVX2 implementation should not have AVX512")
+	case "sve2":
+		assert.True(t, features.HasSVE2 || features.HasSVE, "SVE2 implementation requires SVE/SVE2 support")
 	case "neon":
 		assert.True(t, features.HasNEON, "NEON implementation requires NEON support")
 	case "generic":

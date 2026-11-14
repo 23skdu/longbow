@@ -6,6 +6,9 @@ import (
 )
 
 func TestAtan2Float32AVX2(t *testing.T) {
+	if !features.HasAVX2 {
+		t.Skip("AVX2 not supported")
+	}
 	y := []float32{0, 1, 1, -1, -1, 0.5, -0.5}
 	x := []float32{1, 1, -1, 1, -1, 0.5, 0.5}
 	dstAVX2 := make([]float32, len(y))

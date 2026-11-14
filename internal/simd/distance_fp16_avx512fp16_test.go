@@ -12,7 +12,7 @@ import (
 
 func TestFloat16DistanceParity_AVX512FP16(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
-	for _, dims := range []int{16, 32, 64, 128, 384} {
+	for _, dims := range []int{2, 4, 16, 32, 64, 128, 384} {
 		a := make([]float16.Num, dims)
 		b := make([]float16.Num, dims)
 		for i := 0; i < dims; i++ {

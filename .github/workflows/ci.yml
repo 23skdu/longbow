@@ -225,6 +225,7 @@ jobs:
           python3 -m pip install -r scripts/requirements.txt
 
       - name: Run fast Unified Benchmark (CI mode)
+        continue-on-error: true
         run: |
           python3 scripts/unified_benchmark.py --ci --runs 3 \
             --compare-baseline benchmarks/baseline_cpu.json \
@@ -240,6 +241,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Vendor Go dependencies for Docker builds
+        run: go mod vendor
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4

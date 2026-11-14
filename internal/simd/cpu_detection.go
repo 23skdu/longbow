@@ -63,8 +63,13 @@ func detectCPU() {
 	hasSVE := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.SVE)
 	hasSVE2 := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.SVE2)
 
+	vendor := cpuid.CPU.VendorString
+	if vendor == "" {
+		vendor = runtime.GOARCH
+	}
+
 	features = CPUFeatures{
-		Vendor:        cpuid.CPU.VendorString,
+		Vendor:        vendor,
 		HasAVX2:       cpuid.CPU.Supports(cpuid.AVX2),
 		HasAVX512:     hasAVX512,
 		HasVNNI:       hasVNNI,

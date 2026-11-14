@@ -51,6 +51,7 @@ func TestDispatchSelection(t *testing.T) {
 		"granite": true,
 		"avx512":  true,
 		"avx2":    true,
+		"sve2":    true,
 		"neon":    true,
 		"generic": true,
 	}

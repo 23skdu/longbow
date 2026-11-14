@@ -33,7 +33,7 @@ func cosineSVE2(a, b []float32) (float32, error) {
 	normB := dotSVE2Kernel(b, b)
 	denom := float32(math.Sqrt(float64(normA * normB)))
 	if denom == 0 {
-		return 0, nil
+		return 1.0, nil
 	}
 	cos := dot / denom
 	return 1.0 - cos, nil

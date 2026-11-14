@@ -97,7 +97,7 @@ func TestPackTQ8NEONIsMonotonic(t *testing.T) {
 	for _, n := range []int{4, 8, 16, 17, 32, 64, 1023} {
 		src := make([]float32, n)
 		for i := range src {
-			src[i] = float32(-pi + 2*pi*float64(i)/float64(n))
+			src[i] = float32(-pi + 2*pi*float64(i)/float64(n-1))
 		}
 		got := make([]byte, n)
 		PackTQ8NEON(src, got)

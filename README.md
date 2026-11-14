@@ -1,8 +1,9 @@
 # Longbow
 
-![CI](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)
-![Helm Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)
-![Markdown Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)
+[![CI Pipeline](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/ci.yml)
+[![Dependabot Auto-Merge](https://github.com/23skdu/longbow/actions/workflows/dependabot-auto-merge.yml/badge.svg)](https://github.com/23skdu/longbow/actions/workflows/dependabot-auto-merge.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/23skdu/longbow)](go.mod)
+[![Go Reference](https://pkg.go.dev/badge/github.com/23skdu/longbow.svg)](https://pkg.go.dev/github.com/23skdu/longbow)
 
 ![image](https://github.com/user-attachments/assets/775eb0b4-7e55-4524-abda-c9489de0194e)
 

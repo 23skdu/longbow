@@ -56,6 +56,7 @@ type MaterializedViewSpec struct {
 	Aggregations      []AggSpec         `json:"aggregations"`
 	FilterEquals      map[string]string `json:"filter_equals,omitempty"`
 	RefreshPolicy     ViewRefreshPolicy `json:"refresh_policy"`
+	RefreshMode       ViewRefreshPolicy `json:"refresh_mode,omitempty"`
 	RefreshIntervalMs int               `json:"refresh_interval_ms,omitempty"`
 }
 
@@ -97,6 +98,19 @@ func NewMaterializedViewManager(s *VectorStore) *MaterializedViewManager {
 	}
 }
 
+// ListViews returns snapshots for all registered materialized views.
+func (m *MaterializedViewManager) ListViews() []*MaterializedViewSnapshot {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]*MaterializedViewSnapshot, 0, len(m.views))
+	for _, ent := range m.views {
+		if ent.snapshot != nil {
+			out = append(out, ent.snapshot)
+		}
+	}
+	return out
+}
+
 // CreateView registers a materialized view, computes its initial snapshot, and starts
 // scheduled background refresh loops if configured.
 func (m *MaterializedViewManager) CreateView(ctx context.Context, spec MaterializedViewSpec) (*MaterializedViewSnapshot, error) {
@@ -107,9 +121,13 @@ func (m *MaterializedViewManager) CreateView(ctx context.Context, spec Materiali
 		return nil, errors.New("at least one aggregation is required")
 	}
 	for i := range spec.Aggregations {
+		spec.Aggregations[i].Op = AggOp(strings.ToLower(string(spec.Aggregations[i].Op)))
 		if spec.Aggregations[i].Alias == "" {
 			spec.Aggregations[i].Alias = fmt.Sprintf("%s_%s", spec.Aggregations[i].Op, spec.Aggregations[i].Field)
 		}
+	}
+	if spec.RefreshPolicy == "" && spec.RefreshMode != "" {
+		spec.RefreshPolicy = spec.RefreshMode
 	}
 	if spec.RefreshPolicy == "" {
 		spec.RefreshPolicy = RefreshManual
@@ -525,6 +543,11 @@ func (s *VectorStore) handleMaterializedViewAction(action *flight.Action, stream
 			return true, status.Errorf(codes.NotFound, "%v", err)
 		}
 		body, _ := json.Marshal(snap)
+		return true, stream.Send(&flight.Result{Body: body})
+
+	case "ListMaterializedViews":
+		views := s.GetMaterializedViewManager().ListViews()
+		body, _ := json.Marshal(map[string]any{"views": views, "count": len(views)})
 		return true, stream.Send(&flight.Result{Body: body})
 	}
 	return false, nil

@@ -186,8 +186,8 @@ func permissionAndDatasetForAction(action *flight.Action) (Permission, string) {
 		"TemporalAggregation", "RangeSearch", "FederatedSearch", "ListFederatedCollections",
 		"traverse-graph", "GetGraphStats", "calculate-pagerank", "detect-communities",
 		"GraphRAGExpand", "ListNamespaces", "ListDatasetsInNamespace", "ExplainSearch", "DebugSearchPath",
-		"SearchFacets", "SearchAnalytics", "AdvancedTextSearch", "QueryMaterializedView", "GetProvenance",
-		"Rerank", "RewriteQuery", "MultiModalSearch", "ValidateSchema", "GetSchemaRegistry", "GetTenantUsage",
+		"SearchFacets", "SearchAnalytics", "AdvancedTextSearch", "QueryMaterializedView", "ListMaterializedViews", "GetProvenance",
+		"Rerank", "RewriteQuery", "EvaluateReranker", "MultiModalSearch", "ValidateSchema", "GetSchemaRegistry", "GetTenantUsage",
 		"ListStreamConnectors", "GetStreamStats", "GetCloudCluster", "ListCloudClusters", "GetCloudSLAReport",
 		"GraphQLQuery":
 		return PermRead, target

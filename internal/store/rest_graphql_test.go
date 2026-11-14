@@ -269,6 +269,90 @@ func TestGraphQL_QueriesMutationsIntrospection(t *testing.T) {
 	require.Contains(t, string(stream.results[0].Body), `"status":"ok"`)
 }
 
+func TestRESTAndGraphQLExtendedRoadmapEndpoints(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
+	vs.dataPath = t.TempDir()
+	vs.StartIngestionWorkers(1)
+	vs.StartIndexingWorkers(1)
+	defer func() { _ = vs.Close() }()
+
+	mux := http.NewServeMux()
+	vs.RegisterHTTPHandlers(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	// 1. Register schema via REST POST /api/v1/datasets/ext_ds/schema
+	code, schemaResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/schema", "", map[string]any{
+		"compatibility": "BACKWARD",
+		"constraints": []map[string]any{
+			{"field": "vector", "vector_dim": 4},
+		},
+	})
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, float64(1), schemaResp["version"])
+
+	// 2. Verify StoreRecordBatch enforces registered schema constraint on wrong dimension
+	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/vectors", "", map[string]any{
+		"vectors": []map[string]any{
+			{"id": "bad_dim", "vector": []float32{1, 0}},
+		},
+	})
+	require.Equal(t, http.StatusBadRequest, code)
+
+	// 3. Create a streaming materialized view before ingesting valid vectors
+	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/views", "", map[string]any{
+		"name":           "ext_by_cat",
+		"source_dataset": "ext_ds",
+		"group_by":       []string{"category"},
+		"aggregations":   []map[string]any{{"alias": "count", "op": "COUNT"}},
+		"refresh_mode":   "streaming",
+	})
+	require.Equal(t, http.StatusCreated, code)
+
+	// 4. Ingest valid 4D vectors and verify streaming view auto-refreshes & planner serves /aggregations
+	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/vectors", "", map[string]any{
+		"vectors": []map[string]any{
+			{"id": "v1", "vector": []float32{1, 0, 0, 0}, "text": "gpu cluster", "metadata": map[string]any{"category": "infra"}},
+			{"id": "v2", "vector": []float32{0, 1, 0, 0}, "text": "cpu node", "metadata": map[string]any{"category": "infra"}},
+		},
+	})
+	require.Equal(t, http.StatusOK, code)
+
+	code, aggResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/aggregations", "", map[string]any{
+		"group_by": []string{"category"},
+	})
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, float64(2), aggResp["source_rows"])
+
+	// 5. Provenance, Explain, Sharding Topology, Search Analytics, and Extended GraphQL fields
+	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/provenance", "", map[string]any{
+		"vector_id":          "v1",
+		"source_document_id": "doc-99",
+		"embedding_model":    "bge-small",
+	})
+	require.Equal(t, http.StatusOK, code)
+
+	code, expResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/explain", "", map[string]any{
+		"vector": []float32{1, 0, 0, 0},
+		"k":      1,
+	})
+	require.Equal(t, http.StatusOK, code)
+	require.NotEmpty(t, expResp["candidates"])
+
+	code, gqlExt := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/graphql", "", map[string]any{
+		"query": `{
+			provenance(dataset: "ext_ds", vectorId: "v1") { vectorId sourceDocumentId }
+			materializedViews(name: "ext_by_cat") { sourceRows }
+			schemaRegistry(dataset: "ext_ds") { version compatibility }
+			clusterTopology { ringSize }
+			searchAnalytics { totalQueries }
+		}`,
+	})
+	require.Equal(t, http.StatusOK, code)
+	require.Nil(t, gqlExt["errors"])
+}
+
 func FuzzGraphQLParser(f *testing.F) {
 	f.Add(`{ health { status } }`)
 	f.Add(`query Q($k: Int = 5) { search(dataset: "ds", vector: [1.0, 0.5], k: $k) { id score } }`)

@@ -545,6 +545,50 @@ func (s *VectorStore) handleSchemaRegistryAction(action *flight.Action, stream f
 		}
 		body, _ := json.Marshal(spec)
 		return true, stream.Send(&flight.Result{Body: body})
+
+	case "ValidateSchema":
+		var req struct {
+			Dataset string              `json:"dataset"`
+			Vectors []StreamVectorEvent `json:"vectors"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return true, status.Errorf(codes.InvalidArgument, "invalid json: %v", err)
+		}
+		rec, err := buildStreamArrowBatch(s.mem, req.Vectors)
+		if err != nil {
+			return true, status.Errorf(codes.InvalidArgument, "invalid vector batch: %v", err)
+		}
+		defer rec.Release()
+		if err := s.GetSchemaRegistry().ValidateBatch(stream.Context(), req.Dataset, rec); err != nil {
+			body, _ := json.Marshal(map[string]any{"valid": false, "error": err.Error()})
+			return true, stream.Send(&flight.Result{Body: body})
+		}
+		body, _ := json.Marshal(map[string]any{"valid": true, "rows": rec.NumRows()})
+		return true, stream.Send(&flight.Result{Body: body})
+
+	case "MigrateSchema":
+		var req struct {
+			Target        DatasetSchemaSpec `json:"target"`
+			AddStringCols map[string]string `json:"add_string_cols,omitempty"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return true, status.Errorf(codes.InvalidArgument, "invalid json: %v", err)
+		}
+		ds, ok := s.getDataset(req.Target.Dataset)
+		if !ok {
+			ver, err := s.GetSchemaRegistry().RegisterSchema(req.Target)
+			if err != nil {
+				return true, status.Errorf(codes.InvalidArgument, "%v", err)
+			}
+			body, _ := json.Marshal(map[string]any{"dataset": req.Target.Dataset, "version": ver, "migrated_batches": 0})
+			return true, stream.Send(&flight.Result{Body: body})
+		}
+		ver, err := s.GetSchemaRegistry().MigrateDatasetSchema(ds, req.Target, req.AddStringCols)
+		if err != nil {
+			return true, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
+		body, _ := json.Marshal(map[string]any{"dataset": req.Target.Dataset, "version": ver})
+		return true, stream.Send(&flight.Result{Body: body})
 	}
 	return false, nil
 }

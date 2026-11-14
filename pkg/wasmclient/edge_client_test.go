@@ -84,6 +84,26 @@ func TestEdgeIndexSearchExportAndOfflineSync(t *testing.T) {
 	)
 	require.Equal(t, int64(200), winner.UpdatedAt)
 	require.Equal(t, int64(1), merged["edge-b"])
+
+	// Arrow columnar binary serialization round-trip
+	colRaw, err := EncodeArrowColumnarDocs([]EdgeDocument{
+		{ID: "c1", Vector: []float32{0.1, 0.9, 0.0, 0.0}, UpdatedAt: 111},
+		{ID: "c2", Vector: []float32{0.8, 0.2, 0.0, 0.0}, UpdatedAt: 222},
+	})
+	require.NoError(t, err)
+	decodedDocs, err := DecodeArrowColumnarDocs(colRaw)
+	require.NoError(t, err)
+	require.Len(t, decodedDocs, 2)
+	require.Equal(t, "c1", decodedDocs[0].ID)
+	require.InDelta(t, 0.9, decodedDocs[0].Vector[1], 1e-6)
+
+	// gRPC-Web binary framing round-trip
+	grpcPayload := []byte(`{"results":[{"id":"gw-1","distance":0.01,"score":0.99}]}`)
+	framed := EncodeGRPCWebFrame(grpcPayload, true)
+	unframed, trailer, err := DecodeGRPCWebFrame(framed)
+	require.NoError(t, err)
+	require.Equal(t, grpcPayload, unframed)
+	require.Contains(t, trailer, "grpc-status: 0")
 }
 
 func FuzzEdgeIndexAndSync(f *testing.F) {

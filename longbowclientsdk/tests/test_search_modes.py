@@ -253,6 +253,134 @@ class TestLongbowClientSearchModes(unittest.TestCase):
             ],
         )
 
+    def test_extended_enterprise_and_roadmap_sdk_methods(self):
+        client = LongbowClient()
+        actions = []
+
+        def fake_do_action(action_type, payload, default=None):
+            actions.append((action_type, payload))
+            if action_type == "ListAPIKeys":
+                return {"keys": [{"key_id": "k1"}]}
+            if action_type == "GetAuditLog":
+                return {"entries": [{"action": "search"}]}
+            if action_type == "ListBackups":
+                return {"backups": [{"backup_id": "b1"}]}
+            if action_type in ("ListStreamConnectors", "GetStreamStats"):
+                return {"connectors": [{"name": "c1"}]}
+            if action_type == "ListMaterializedViews":
+                return {"views": [{"name": "v1"}]}
+            return {"status": "ok", "action": action_type}
+
+        client._do_action_json = fake_do_action  # type: ignore[method-assign]
+        self.assertEqual(len(client.list_api_keys()), 1)
+        self.assertEqual(len(client.get_audit_log(limit=10)), 1)
+        self.assertEqual(len(client.list_backups("kb")), 1)
+        self.assertEqual(client.verify_backup("b1", "kb")["action"], "VerifyBackup")
+        self.assertEqual(
+            client.create_stream_connector("c1", "kb", source_type="kafka")["action"],
+            "CreateStreamConnector",
+        )
+        self.assertEqual(client.stop_stream_connector("c1")["action"], "StopStreamConnector")
+        self.assertEqual(len(client.list_stream_connectors()), 1)
+        self.assertEqual(len(client.get_stream_stats()), 1)
+        self.assertEqual(
+            client.ingest_stream_event("c1", [{"payload": "e30="}])["action"],
+            "IngestStreamEvent",
+        )
+        self.assertEqual(
+            client.register_stream_schema("sub1")["action"], "RegisterStreamSchema"
+        )
+        self.assertEqual(
+            client.ingest_media_parquet("media", "/tmp/m.parquet")["action"],
+            "MultiModalIngestParquet",
+        )
+        self.assertEqual(
+            client.evaluate_reranker("kb", [{"query_text": "q"}])["action"],
+            "EvaluateReranker",
+        )
+        self.assertEqual(client.get_tenant_usage("t1")["action"], "GetTenantUsage")
+        self.assertEqual(
+            client.set_tenant_quota("t1", max_queries=100)["action"], "SetTenantQuota"
+        )
+        self.assertEqual(
+            client.get_cluster_topology()["action"], "GetClusterTopology"
+        )
+        self.assertEqual(
+            client.get_autoscale_config()["action"], "GetAutoScaleConfig"
+        )
+        self.assertEqual(
+            client.set_autoscale_config({"min_shards": 2})["action"],
+            "SetAutoScaleConfig",
+        )
+        self.assertEqual(
+            client.trigger_shard_split("kb", "s0")["action"], "TriggerShardSplit"
+        )
+        self.assertEqual(
+            client.trigger_shard_merge("kb", "s0", "s1")["action"], "TriggerShardMerge"
+        )
+        self.assertEqual(
+            client.trigger_rebalance("kb")["action"], "TriggerRebalance"
+        )
+        self.assertEqual(
+            client.register_schema("kb", [{"field": "id", "not_null": True}])["action"],
+            "RegisterSchema",
+        )
+        self.assertEqual(
+            client.get_schema_registry("kb")["action"], "GetSchemaRegistry"
+        )
+        self.assertEqual(
+            client.validate_schema("kb", [{"id": "1"}])["action"], "ValidateSchema"
+        )
+        self.assertEqual(
+            client.migrate_schema("kb", {"compatibility": "BACKWARD"})["action"],
+            "MigrateSchema",
+        )
+        self.assertEqual(
+            client.create_materialized_view("v1", "kb", ["category"])["action"],
+            "CreateMaterializedView",
+        )
+        self.assertEqual(
+            client.refresh_materialized_view("v1")["action"], "RefreshMaterializedView"
+        )
+        self.assertEqual(
+            client.query_materialized_view("v1")["action"], "QueryMaterializedView"
+        )
+        self.assertEqual(len(client.list_materialized_views()), 1)
+        self.assertEqual(client.tune_bm25("kb", k1=1.5, b=0.6)["action"], "TuneBM25")
+        self.assertEqual(
+            client.search_facets("kb", "gpu", facet_fields=["category"])["action"],
+            "SearchFacets",
+        )
+        self.assertEqual(
+            client.search_analytics(limit=5)["action"], "SearchAnalytics"
+        )
+        self.assertEqual(
+            client.record_provenance("kb", "v1", source_document_id="doc1")["action"],
+            "RecordProvenance",
+        )
+        self.assertEqual(
+            client.debug_search_path("kb", vector=[1.0, 0.0])["action"],
+            "DebugSearchPath",
+        )
+        html = LongbowClient.plot_search_explanation(
+            {
+                "dataset": "kb",
+                "hits": [
+                    {
+                        "id": "v1",
+                        "breakdown": {
+                            "vector_score": 0.9,
+                            "bm25_score": 1.2,
+                            "graph_boost": 0.1,
+                        },
+                    }
+                ],
+                "hops": [{"step": 0, "node_id": 1, "distance": 0.1, "improved": True}],
+            }
+        )
+        self.assertIn("<svg", html)
+        self.assertIn("longbow-hop-trace", html)
+
 
 if __name__ == "__main__":
     unittest.main()

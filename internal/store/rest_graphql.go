@@ -364,11 +364,39 @@ func buildOpenAPISpec() map[string]any {
 			"/api/v1/datasets/{name}/geo-search":        map[string]any{"post": map[string]any{"summary": "Geospatial radius, bounding-box, or geo+vector hybrid search", "responses": okResp("Geospatial results")}},
 			"/api/v1/datasets/{name}/temporal-search":   map[string]any{"post": map[string]any{"summary": "Temporal as-of, range, or sliding-window search", "responses": okResp("Temporal results")}},
 			"/api/v1/datasets/{name}/multimodal-search": map[string]any{"post": map[string]any{"summary": "Cross-modal text/image/audio search", "responses": okResp("Multi-modal results")}},
+			"/api/v1/datasets/{name}/multimodal-ingest": map[string]any{"post": map[string]any{"summary": "Multi-modal item ingestion", "responses": okResp("Ingested")}},
 			"/api/v1/datasets/{name}/range-search":      map[string]any{"post": map[string]any{"summary": "Distance-threshold range search", "responses": okResp("Range results")}},
 			"/api/v1/datasets/{name}/recommend":         map[string]any{"post": map[string]any{"summary": "Seed recommendations", "responses": okResp("Recommended results")}},
 			"/api/v1/datasets/{name}/aggregations":      map[string]any{"post": map[string]any{"summary": "Columnar & metadata aggregations", "responses": okResp("Aggregation rows")}},
+			"/api/v1/datasets/{name}/bm25":              map[string]any{"post": map[string]any{"summary": "Tune BM25 k1/b parameters", "responses": okResp("Tuned")}},
+			"/api/v1/datasets/{name}/facets":            map[string]any{"post": map[string]any{"summary": "Compute search facet counts", "responses": okResp("Facets")}},
+			"/api/v1/datasets/{name}/explain":           map[string]any{"post": map[string]any{"summary": "Explain vector/hybrid search scoring & HNSW path", "responses": okResp("Explanation")}},
+			"/api/v1/datasets/{name}/provenance":        map[string]any{"get": map[string]any{"summary": "Get vector provenance lineage", "responses": okResp("Provenance")}, "post": map[string]any{"summary": "Record vector provenance", "responses": okResp("Recorded")}},
+			"/api/v1/datasets/{name}/schema":            map[string]any{"get": map[string]any{"summary": "Get registered dataset schema", "responses": okResp("Schema")}, "post": map[string]any{"summary": "Register dataset schema constraints", "responses": okResp("Registered")}},
+			"/api/v1/datasets/{name}/schema/migrate":    map[string]any{"post": map[string]any{"summary": "Migrate dataset schema & backfill columns", "responses": okResp("Migrated")}},
 			"/api/v1/search/federated":                  map[string]any{"post": map[string]any{"summary": "Federated cross-collection vector search (RRF)", "responses": okResp("Federated results")}},
+			"/api/v1/search/analytics":                  map[string]any{"get": map[string]any{"summary": "Search query analytics & zero-hit telemetry", "responses": okResp("Analytics")}},
 			"/api/v1/federated/collections":             map[string]any{"get": map[string]any{"summary": "List federated collections", "responses": okResp("Federated collections")}, "post": map[string]any{"summary": "Register collection tags/metadata for federated routing", "responses": okResp("Registered")}},
+			"/api/v1/rbac/keys":                         map[string]any{"get": map[string]any{"summary": "List API keys", "responses": okResp("Keys")}, "post": map[string]any{"summary": "Create API key", "responses": okResp("Created")}},
+			"/api/v1/rbac/rls":                          map[string]any{"post": map[string]any{"summary": "Register row-level security policy", "responses": okResp("Policy set")}},
+			"/api/v1/rbac/audit":                        map[string]any{"get": map[string]any{"summary": "Fetch security audit log", "responses": okResp("Audit events")}},
+			"/api/v1/backups":                           map[string]any{"get": map[string]any{"summary": "List online backups", "responses": okResp("Backups")}, "post": map[string]any{"summary": "Trigger online backup", "responses": okResp("Backup metadata")}},
+			"/api/v1/backups/restore":                   map[string]any{"post": map[string]any{"summary": "Restore backup with PITR", "responses": okResp("Restore report")}},
+			"/api/v1/backups/verify":                    map[string]any{"post": map[string]any{"summary": "Verify backup integrity", "responses": okResp("Verification report")}},
+			"/api/v1/streams/connectors":                map[string]any{"get": map[string]any{"summary": "List streaming CDC connectors", "responses": okResp("Connectors")}, "post": map[string]any{"summary": "Create streaming connector", "responses": okResp("Connector stats")}, "delete": map[string]any{"summary": "Stop streaming connector", "responses": okResp("Stopped")}},
+			"/api/v1/streams/ingest":                    map[string]any{"post": map[string]any{"summary": "Ingest streaming envelopes", "responses": okResp("Ingest stats")}},
+			"/api/v1/streams/schemas":                   map[string]any{"post": map[string]any{"summary": "Register stream schema", "responses": okResp("Registered schema")}},
+			"/api/v1/rerank":                            map[string]any{"post": map[string]any{"summary": "Cross-encoder / ColBERT / LLM / MMR reranking", "responses": okResp("Reranked candidates")}},
+			"/api/v1/rerank/evaluate":                   map[string]any{"post": map[string]any{"summary": "Evaluate reranker NDCG@10 / MRR@10 / Recall@10", "responses": okResp("Evaluation report")}},
+			"/api/v1/rewrite-query":                     map[string]any{"post": map[string]any{"summary": "HyDE / Synonym / Step-Back query expansion", "responses": okResp("Expanded query")}},
+			"/api/v1/sharding/topology":                 map[string]any{"get": map[string]any{"summary": "Get elastic sharding ring topology", "responses": okResp("Topology")}},
+			"/api/v1/sharding/autoscale":                map[string]any{"get": map[string]any{"summary": "Get autoscale policy", "responses": okResp("Policy")}, "post": map[string]any{"summary": "Set autoscale policy", "responses": okResp("Updated")}},
+			"/api/v1/sharding/split":                    map[string]any{"post": map[string]any{"summary": "Split hot shard", "responses": okResp("Split result")}},
+			"/api/v1/sharding/merge":                    map[string]any{"post": map[string]any{"summary": "Merge adjacent shards", "responses": okResp("Merge result")}},
+			"/api/v1/sharding/rebalance":                map[string]any{"post": map[string]any{"summary": "Rebalance dataset shards", "responses": okResp("Rebalance tasks")}},
+			"/api/v1/views":                             map[string]any{"get": map[string]any{"summary": "List materialized views", "responses": okResp("Views")}, "post": map[string]any{"summary": "Create materialized view", "responses": okResp("View snapshot")}},
+			"/api/v1/views/query":                       map[string]any{"post": map[string]any{"summary": "Query materialized view", "responses": okResp("View rows")}},
+			"/api/v1/views/refresh":                     map[string]any{"post": map[string]any{"summary": "Refresh materialized view", "responses": okResp("Refreshed snapshot")}},
 			"/api/v1/admin/usage":                       map[string]any{"get": map[string]any{"summary": "Tenant metering & billing summary", "responses": okResp("Usage summary")}},
 			"/api/v1/cloud/clusters":                    map[string]any{"get": map[string]any{"summary": "List managed cloud clusters", "responses": okResp("Clusters")}, "post": map[string]any{"summary": "Create managed cloud cluster", "responses": okResp("Cluster created")}},
 			"/api/v1/cloud/clusters/{id}/scale":         map[string]any{"post": map[string]any{"summary": "Scale cloud cluster", "responses": okResp("Scaled cluster")}},
@@ -535,9 +563,16 @@ func (s *VectorStore) datasetItemHTTPHandler() http.Handler {
 			"/geo-search",
 			"/temporal-search",
 			"/multimodal-search",
+			"/multimodal-ingest",
 			"/range-search",
 			"/recommend",
 			"/aggregations",
+			"/bm25",
+			"/facets",
+			"/explain",
+			"/provenance",
+			"/schema/migrate",
+			"/schema",
 		} {
 			if strings.HasSuffix(rawPath, suffix) {
 				dsName, _ := url.PathUnescape(strings.TrimSuffix(rawPath, suffix))
@@ -616,7 +651,8 @@ func (s *VectorStore) handleDatasetSubAction(w http.ResponseWriter, r *http.Requ
 		writeRESTError(w, action[1:], r.Method, http.StatusBadRequest, "invalid dataset name")
 		return
 	}
-	if r.Method != http.MethodPost {
+	allowsGet := action == "/schema" || action == "/provenance"
+	if r.Method != http.MethodPost && (!allowsGet || r.Method != http.MethodGet) {
 		writeRESTError(w, action[1:], r.Method, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
@@ -919,6 +955,186 @@ func (s *VectorStore) handleDatasetSubAction(w http.ResponseWriter, r *http.Requ
 			"source_rows": sourceRows,
 			"rows":        rows,
 		})
+
+	case "/multimodal-ingest":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermWrite, dsName); err != nil {
+			writeRESTError(w, "multimodal_ingest", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req struct {
+			Items       []MultiModalItem `json:"items,omitempty"`
+			ParquetPath string           `json:"parquet_path,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "multimodal_ingest", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		var n int
+		var err error
+		if req.ParquetPath != "" {
+			n, err = s.GetMultiModalPipeline().IngestParquetFile(r.Context(), dsName, req.ParquetPath)
+		} else {
+			n, err = s.GetMultiModalPipeline().IngestItems(r.Context(), dsName, req.Items)
+		}
+		if err != nil {
+			writeRESTError(w, "multimodal_ingest", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "multimodal_ingest", r.Method, http.StatusOK, map[string]any{"dataset": dsName, "ingested": n})
+
+	case "/bm25":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermManageTenant, dsName); err != nil {
+			writeRESTError(w, "bm25", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req struct {
+			K1 float64 `json:"k1"`
+			B  float64 `json:"b"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "bm25", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := s.GetTextSearchManager().SetBM25Params(dsName, BM25TuningParams{K1: req.K1, B: req.B}); err != nil {
+			writeRESTError(w, "bm25", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "bm25", r.Method, http.StatusOK, map[string]any{"dataset": dsName, "status": "bm25_tuned", "k1": req.K1, "b": req.B})
+
+	case "/facets":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
+			writeRESTError(w, "facets", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req AdvancedTextQueryRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "facets", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Dataset = dsName
+		resp, err := s.GetTextSearchManager().Search(r.Context(), req)
+		if err != nil {
+			writeRESTError(w, "facets", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "facets", r.Method, http.StatusOK, map[string]any{"facets": resp.Facets, "total_hits": resp.TotalHits})
+
+	case "/explain":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
+			writeRESTError(w, "explain", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req ExplainSearchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "explain", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Dataset = dsName
+		exp, err := s.GetProvenanceManager().ExplainSearch(r.Context(), req)
+		if err != nil {
+			writeRESTError(w, "explain", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "explain", r.Method, http.StatusOK, exp)
+
+	case "/provenance":
+		if r.Method == http.MethodGet {
+			if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
+				writeRESTError(w, "provenance", r.Method, http.StatusForbidden, err.Error())
+				return
+			}
+			vecID := r.URL.Query().Get("vector_id")
+			if vecID != "" {
+				prov, ok := s.GetProvenanceManager().Get(dsName, vecID)
+				if !ok {
+					writeRESTError(w, "provenance", r.Method, http.StatusNotFound, "provenance not found")
+					return
+				}
+				writeRESTJSON(w, "provenance", r.Method, http.StatusOK, prov)
+				return
+			}
+			limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+			list := s.GetProvenanceManager().ListByDataset(dsName, limit)
+			writeRESTJSON(w, "provenance", r.Method, http.StatusOK, map[string]any{"provenance": list, "count": len(list)})
+			return
+		}
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermWrite, dsName); err != nil {
+			writeRESTError(w, "provenance", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var prov VectorProvenance
+		if err := json.NewDecoder(r.Body).Decode(&prov); err != nil {
+			writeRESTError(w, "provenance", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		prov.Dataset = dsName
+		if err := s.GetProvenanceManager().Record(prov); err != nil {
+			writeRESTError(w, "provenance", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "provenance", r.Method, http.StatusOK, map[string]any{"status": "recorded", "dataset": dsName, "vector_id": prov.VectorID})
+
+	case "/schema":
+		if r.Method == http.MethodGet {
+			if _, err := s.AuthorizeDatasetAccess(r.Context(), PermRead, dsName); err != nil {
+				writeRESTError(w, "schema", r.Method, http.StatusForbidden, err.Error())
+				return
+			}
+			spec, ok := s.GetSchemaRegistry().LatestSchema(dsName)
+			if !ok {
+				writeRESTError(w, "schema", r.Method, http.StatusNotFound, "no registered schema")
+				return
+			}
+			writeRESTJSON(w, "schema", r.Method, http.StatusOK, spec)
+			return
+		}
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermManageTenant, dsName); err != nil {
+			writeRESTError(w, "schema", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var spec DatasetSchemaSpec
+		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+			writeRESTError(w, "schema", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		spec.Dataset = dsName
+		ver, err := s.GetSchemaRegistry().RegisterSchema(spec)
+		if err != nil {
+			writeRESTError(w, "schema", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "schema", r.Method, http.StatusOK, map[string]any{"dataset": dsName, "version": ver})
+
+	case "/schema/migrate":
+		if _, err := s.AuthorizeDatasetAccess(r.Context(), PermManageTenant, dsName); err != nil {
+			writeRESTError(w, "schema_migrate", r.Method, http.StatusForbidden, err.Error())
+			return
+		}
+		var req struct {
+			Target        DatasetSchemaSpec `json:"target"`
+			AddStringCols map[string]string `json:"add_string_cols,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "schema_migrate", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Target.Dataset = dsName
+		ds, ok := s.getDataset(dsName)
+		if !ok {
+			ver, err := s.GetSchemaRegistry().RegisterSchema(req.Target)
+			if err != nil {
+				writeRESTError(w, "schema_migrate", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeRESTJSON(w, "schema_migrate", r.Method, http.StatusOK, map[string]any{"dataset": dsName, "version": ver})
+			return
+		}
+		ver, err := s.GetSchemaRegistry().MigrateDatasetSchema(ds, req.Target, req.AddStringCols)
+		if err != nil {
+			writeRESTError(w, "schema_migrate", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "schema_migrate", r.Method, http.StatusOK, map[string]any{"dataset": dsName, "version": ver})
 	}
 }
 
@@ -995,12 +1211,17 @@ func (s *VectorStore) federatedCollectionsHTTPHandler() http.Handler {
 }
 
 func (s *VectorStore) runDatasetAggregation(dsName string, groupBy []string, aggs []AggSpec, filters map[string]string) ([]MaterializedViewRow, int64, error) {
+	if len(aggs) == 0 {
+		aggs = []AggSpec{{Alias: "count", Op: AggCount}}
+	}
+	if len(filters) == 0 {
+		if snap, ok := s.GetMaterializedViewManager().TryPlanQuery(dsName, groupBy, aggs); ok && snap != nil {
+			return snap.Rows, snap.SourceRows, nil
+		}
+	}
 	ds, ok := s.getDataset(dsName)
 	if !ok {
 		return nil, 0, NewNotFoundError("dataset", dsName)
-	}
-	if len(aggs) == 0 {
-		aggs = []AggSpec{{Alias: "count", Op: AggCount}}
 	}
 	ds.dataMu.RLock()
 	batches := ds.Records.Read()
@@ -1048,6 +1269,560 @@ func (s *VectorStore) adminUsageHTTPHandler() http.Handler {
 			"tenants":      reports,
 			"generated_at": time.Now().UTC().Format(time.RFC3339),
 		})
+	})
+}
+
+func (s *VectorStore) rbacKeysHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mgr := s.ensureRBACManager()
+		switch r.Method {
+		case http.MethodGet:
+			keys := mgr.ListAPIKeys()
+			writeRESTJSON(w, "rbac_keys", r.Method, http.StatusOK, map[string]any{"keys": keys, "count": len(keys)})
+		case http.MethodPost:
+			r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+			var req struct {
+				Name       string            `json:"name"`
+				Role       string            `json:"role"`
+				TenantID   string            `json:"tenant_id"`
+				Namespace  string            `json:"namespace"`
+				Datasets   []string          `json:"datasets"`
+				RowFilters map[string]string `json:"row_filters"`
+				TTLSeconds int64             `json:"ttl_seconds"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeRESTError(w, "rbac_keys", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			ak, raw, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{
+				Name:       req.Name,
+				Role:       Role(req.Role),
+				TenantID:   req.TenantID,
+				Namespace:  req.Namespace,
+				Datasets:   req.Datasets,
+				RowFilters: req.RowFilters,
+				TTL:        time.Duration(req.TTLSeconds) * time.Second,
+			})
+			if err != nil {
+				writeRESTError(w, "rbac_keys", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeRESTJSON(w, "rbac_keys", r.Method, http.StatusCreated, map[string]any{
+				"key_id":     ak.KeyID,
+				"api_key":    raw,
+				"role":       ak.Role,
+				"tenant_id":  ak.TenantID,
+				"namespace":  ak.Namespace,
+				"expires_at": ak.ExpiresAt,
+			})
+		case http.MethodDelete:
+			keyID := r.URL.Query().Get("key_id")
+			if keyID == "" {
+				keyID = r.URL.Query().Get("api_key")
+			}
+			if err := mgr.RevokeAPIKey(keyID); err != nil {
+				writeRESTError(w, "rbac_keys", r.Method, http.StatusNotFound, err.Error())
+				return
+			}
+			writeRESTJSON(w, "rbac_keys", r.Method, http.StatusOK, map[string]any{"status": "revoked"})
+		default:
+			writeRESTError(w, "rbac_keys", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+}
+
+func (s *VectorStore) rbacRLSHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "rbac_rls", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var pol security.RLSPolicy
+		if err := json.NewDecoder(r.Body).Decode(&pol); err != nil {
+			writeRESTError(w, "rbac_rls", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := s.ensureRBACManager().RLSEvaluator().SetPolicy(pol); err != nil {
+			writeRESTError(w, "rbac_rls", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "rbac_rls", r.Method, http.StatusOK, map[string]any{"status": "rls_policy_set"})
+	})
+}
+
+func (s *VectorStore) rbacAuditHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeRESTError(w, "rbac_audit", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		if limit <= 0 {
+			limit = 100
+		}
+		entries := s.AuditLogger().RecentEntries(limit)
+		writeRESTJSON(w, "rbac_audit", r.Method, http.StatusOK, map[string]any{"entries": entries, "count": len(entries)})
+	})
+}
+
+func (s *VectorStore) backupsHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			ds := r.URL.Query().Get("dataset")
+			if s.backupManager == nil {
+				writeRESTJSON(w, "backups", r.Method, http.StatusOK, map[string]any{"backups": []any{}, "count": 0})
+				return
+			}
+			backups := s.backupManager.ListBackups(ds)
+			writeRESTJSON(w, "backups", r.Method, http.StatusOK, map[string]any{"backups": backups, "count": len(backups)})
+		case http.MethodPost:
+			r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+			var req struct {
+				Dataset     string `json:"dataset"`
+				Destination string `json:"destination"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeRESTError(w, "backups", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			meta, err := s.CreateOnlineBackup(r.Context(), req.Dataset, req.Destination)
+			if err != nil {
+				writeRESTError(w, "backups", r.Method, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeRESTJSON(w, "backups", r.Method, http.StatusCreated, meta)
+		default:
+			writeRESTError(w, "backups", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+}
+
+func (s *VectorStore) backupsRestoreHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "backups_restore", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			BackupID      string `json:"backup_id"`
+			Dataset       string `json:"dataset"`
+			WALDir        string `json:"wal_dir"`
+			PITRTimestamp int64  `json:"pitr_timestamp"`
+			MaxSeq        uint64 `json:"max_seq"`
+			VerifyOnly    bool   `json:"verify_only"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "backups_restore", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		var targetTime time.Time
+		if req.PITRTimestamp > 0 {
+			targetTime = time.Unix(0, req.PITRTimestamp)
+		}
+		rep, err := s.RestoreWithPITR(r.Context(), PITRConfig{
+			BackupID:     req.BackupID,
+			DatasetName:  req.Dataset,
+			WALDir:       req.WALDir,
+			TargetTime:   targetTime,
+			TargetMaxSeq: req.MaxSeq,
+			VerifyOnly:   req.VerifyOnly,
+		})
+		if err != nil {
+			writeRESTError(w, "backups_restore", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "backups_restore", r.Method, http.StatusOK, rep)
+	})
+}
+
+func (s *VectorStore) backupsVerifyHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "backups_verify", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			BackupID string `json:"backup_id"`
+			Dataset  string `json:"dataset"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "backups_verify", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		rep, err := s.RestoreWithPITR(r.Context(), PITRConfig{
+			BackupID:    req.BackupID,
+			DatasetName: req.Dataset,
+			VerifyOnly:  true,
+		})
+		if err != nil {
+			writeRESTError(w, "backups_verify", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "backups_verify", r.Method, http.StatusOK, rep)
+	})
+}
+
+func (s *VectorStore) streamsConnectorsHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			stats := s.GetStreamManager().ListStats()
+			writeRESTJSON(w, "stream_connectors", r.Method, http.StatusOK, map[string]any{"connectors": stats, "count": len(stats)})
+		case http.MethodPost:
+			r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+			var req struct {
+				StreamConnectorConfig
+				Start bool `json:"start"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeRESTError(w, "stream_connectors", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			conn, err := s.GetStreamManager().CreateConnector(req.StreamConnectorConfig, req.Start)
+			if err != nil {
+				writeRESTError(w, "stream_connectors", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeRESTJSON(w, "stream_connectors", r.Method, http.StatusCreated, conn.Stats())
+		case http.MethodDelete:
+			name := r.URL.Query().Get("name")
+			if name == "" {
+				var req struct {
+					Name string `json:"name"`
+				}
+				_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)).Decode(&req)
+				name = req.Name
+			}
+			if err := s.GetStreamManager().StopConnector(name); err != nil {
+				writeRESTError(w, "stream_connectors", r.Method, http.StatusNotFound, err.Error())
+				return
+			}
+			writeRESTJSON(w, "stream_connectors", r.Method, http.StatusOK, map[string]any{"status": "stopped", "name": name})
+		default:
+			writeRESTError(w, "stream_connectors", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+}
+
+func (s *VectorStore) streamsIngestHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "stream_ingest", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			Connector string           `json:"connector"`
+			Envelopes []StreamEnvelope `json:"envelopes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "stream_ingest", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		conn, ok := s.GetStreamManager().GetConnector(req.Connector)
+		if !ok {
+			writeRESTError(w, "stream_ingest", r.Method, http.StatusNotFound, fmt.Sprintf("connector %q not found", req.Connector))
+			return
+		}
+		committed, deduped, err := conn.ProcessEnvelopes(r.Context(), req.Envelopes)
+		if err != nil {
+			writeRESTError(w, "stream_ingest", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "stream_ingest", r.Method, http.StatusOK, map[string]any{
+			"committed":    committed,
+			"deduplicated": deduped,
+			"stats":        conn.Stats(),
+		})
+	})
+}
+
+func (s *VectorStore) streamsSchemasHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "stream_schemas", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req RegisteredStreamSchema
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "stream_schemas", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		id := s.GetStreamManager().Registry().RegisterLocal(req.Subject, req)
+		writeRESTJSON(w, "stream_schemas", r.Method, http.StatusCreated, map[string]any{"schema_id": id, "subject": req.Subject})
+	})
+}
+
+func (s *VectorStore) rerankHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "rerank", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			Strategy string         `json:"strategy"`
+			Query    string         `json:"query"`
+			Results  []SearchResult `json:"results"`
+			TopK     int            `json:"top_k"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "rerank", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		tenant := resolveTenantIDFromCtx(r.Context(), "")
+		res, cacheHit, err := s.GetRerankManager().Rerank(r.Context(), req.Strategy, req.Query, req.Results, tenant)
+		if err != nil {
+			writeRESTError(w, "rerank", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		if req.TopK > 0 && req.TopK < len(res) {
+			res = res[:req.TopK]
+		}
+		writeRESTJSON(w, "rerank", r.Method, http.StatusOK, map[string]any{"results": res, "count": len(res), "cache_hit": cacheHit})
+	})
+}
+
+func (s *VectorStore) rerankEvaluateHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "rerank_evaluate", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			Strategy string          `json:"strategy"`
+			Cases    []EvalQueryCase `json:"cases"`
+			K        int             `json:"k"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "rerank_evaluate", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		var rr Reranker = s.GetRerankManager().hybrid
+		if req.Strategy == "heuristic" {
+			rr = &HeuristicReranker{ModelName: "default"}
+		}
+		rep, err := EvaluateReranker(r.Context(), rr, req.Cases, req.K)
+		if err != nil {
+			writeRESTError(w, "rerank_evaluate", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "rerank_evaluate", r.Method, http.StatusOK, rep)
+	})
+}
+
+func (s *VectorStore) rewriteQueryHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "rewrite_query", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			Query string           `json:"query"`
+			Mode  QueryRewriteMode `json:"mode"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "rewrite_query", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		variants := s.GetRerankManager().Rewrite(req.Query, req.Mode)
+		writeRESTJSON(w, "rewrite_query", r.Method, http.StatusOK, map[string]any{"queries": variants})
+	})
+}
+
+func (s *VectorStore) shardingTopologyHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeRESTError(w, "sharding_topology", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		writeRESTJSON(w, "sharding_topology", r.Method, http.StatusOK, s.GetElasticController().TopologySnapshot())
+	})
+}
+
+func (s *VectorStore) shardingAutoScaleHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeRESTJSON(w, "sharding_autoscale", r.Method, http.StatusOK, s.GetElasticController().Policy())
+		case http.MethodPost:
+			r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+			var pol ElasticScalingPolicy
+			if err := json.NewDecoder(r.Body).Decode(&pol); err != nil {
+				writeRESTError(w, "sharding_autoscale", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			if err := s.GetElasticController().SetPolicy(pol); err != nil {
+				writeRESTError(w, "sharding_autoscale", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeRESTJSON(w, "sharding_autoscale", r.Method, http.StatusOK, map[string]any{"status": "policy_updated"})
+		default:
+			writeRESTError(w, "sharding_autoscale", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+}
+
+func (s *VectorStore) shardingSplitHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "sharding_split", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			Dataset string `json:"dataset"`
+			ShardID string `json:"shard_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "sharding_split", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		left, right, migrated, err := s.GetElasticController().SplitShard(req.Dataset, req.ShardID)
+		if err != nil {
+			writeRESTError(w, "sharding_split", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "sharding_split", r.Method, http.StatusOK, map[string]any{"left": left, "right": right, "migrated": migrated})
+	})
+}
+
+func (s *VectorStore) shardingMergeHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "sharding_merge", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			Dataset      string `json:"dataset"`
+			LeftShardID  string `json:"left_shard_id"`
+			RightShardID string `json:"right_shard_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "sharding_merge", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		merged, moved, err := s.GetElasticController().MergeShards(req.Dataset, req.LeftShardID, req.RightShardID)
+		if err != nil {
+			writeRESTError(w, "sharding_merge", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "sharding_merge", r.Method, http.StatusOK, map[string]any{"merged": merged, "moved": moved})
+	})
+}
+
+func (s *VectorStore) shardingRebalanceHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "sharding_rebalance", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			Dataset string `json:"dataset"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "sharding_rebalance", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		tasks, err := s.GetElasticController().RebalanceShards(req.Dataset)
+		if err != nil {
+			writeRESTError(w, "sharding_rebalance", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeRESTJSON(w, "sharding_rebalance", r.Method, http.StatusOK, map[string]any{"tasks": tasks, "count": len(tasks)})
+	})
+}
+
+func (s *VectorStore) viewsHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			views := s.GetMaterializedViewManager().ListViews()
+			writeRESTJSON(w, "views", r.Method, http.StatusOK, map[string]any{"views": views, "count": len(views)})
+		case http.MethodPost:
+			r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+			var spec MaterializedViewSpec
+			if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+				writeRESTError(w, "views", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			snap, err := s.GetMaterializedViewManager().CreateView(r.Context(), spec)
+			if err != nil {
+				writeRESTError(w, "views", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeRESTJSON(w, "views", r.Method, http.StatusCreated, snap)
+		default:
+			writeRESTError(w, "views", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+}
+
+func (s *VectorStore) viewsQueryHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "views_query", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			Name        string            `json:"name"`
+			GroupFilter map[string]string `json:"group_filter,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "views_query", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		snap, err := s.GetMaterializedViewManager().QueryView(req.Name, req.GroupFilter)
+		if err != nil {
+			writeRESTError(w, "views_query", r.Method, http.StatusNotFound, err.Error())
+			return
+		}
+		writeRESTJSON(w, "views_query", r.Method, http.StatusOK, snap)
+	})
+}
+
+func (s *VectorStore) viewsRefreshHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "views_refresh", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeRESTError(w, "views_refresh", r.Method, http.StatusBadRequest, err.Error())
+			return
+		}
+		snap, err := s.GetMaterializedViewManager().RefreshView(r.Context(), req.Name)
+		if err != nil {
+			writeRESTError(w, "views_refresh", r.Method, http.StatusNotFound, err.Error())
+			return
+		}
+		writeRESTJSON(w, "views_refresh", r.Method, http.StatusOK, snap)
+	})
+}
+
+func (s *VectorStore) searchAnalyticsHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeRESTError(w, "search_analytics", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		snap := s.GetTextSearchManager().Analytics(limit)
+		writeRESTJSON(w, "search_analytics", r.Method, http.StatusOK, snap)
 	})
 }
 
@@ -1886,6 +2661,15 @@ func graphqlSchemaIntrospection() map[string]any {
 				{"name": "usage", "type": "[TenantUsageReport!]!"},
 				{"name": "cloudClusters", "type": "[CloudCluster!]!"},
 				{"name": "cloudSla", "type": "SLAReport"},
+				{"name": "explainSearch", "type": "SearchExplanationReport"},
+				{"name": "provenance", "type": "[VectorProvenance!]!"},
+				{"name": "searchAnalytics", "type": "SearchAnalyticsSnapshot"},
+				{"name": "materializedViews", "type": "[MaterializedViewSnapshot!]!"},
+				{"name": "schemaRegistry", "type": "DatasetSchemaSpec"},
+				{"name": "clusterTopology", "type": "ElasticTopologySnapshot"},
+				{"name": "streamConnectors", "type": "[StreamConnectorStats!]!"},
+				{"name": "backups", "type": "[BackupMetadata!]!"},
+				{"name": "rewriteQuery", "type": "QueryRewriteResult"},
 			},
 		},
 		{
@@ -1899,6 +2683,20 @@ func graphqlSchemaIntrospection() map[string]any {
 				{"name": "deleteVector", "type": "StatusResult"},
 				{"name": "createCloudCluster", "type": "CloudCluster"},
 				{"name": "promoteCloudRegion", "type": "CloudCluster"},
+				{"name": "recordProvenance", "type": "StatusResult"},
+				{"name": "createMaterializedView", "type": "MaterializedViewSnapshot"},
+				{"name": "refreshMaterializedView", "type": "MaterializedViewSnapshot"},
+				{"name": "registerSchema", "type": "SchemaVersionResult"},
+				{"name": "triggerBackup", "type": "BackupMetadata"},
+				{"name": "restoreBackup", "type": "PITRRestoreReport"},
+				{"name": "createStreamConnector", "type": "StreamConnectorStats"},
+				{"name": "stopStreamConnector", "type": "StatusResult"},
+				{"name": "setTenantQuota", "type": "StatusResult"},
+				{"name": "triggerShardSplit", "type": "ShardSplitResult"},
+				{"name": "triggerShardMerge", "type": "ShardMergeResult"},
+				{"name": "triggerRebalance", "type": "ShardRebalanceResult"},
+				{"name": "ingestMedia", "type": "UpsertResult"},
+				{"name": "rerank", "type": "[RerankCandidate!]!"},
 			},
 		},
 		{"name": "HealthStatus", "kind": "OBJECT"},
@@ -2195,6 +2993,82 @@ func (s *VectorStore) execGQLQueryField(ctx context.Context, field string, args 
 			return nil, err
 		}
 		return s.GetCloudControlPlane().EvaluateSLA(argString(args, "clusterId"), float64(argFloat32(args, "observedP99Ms", 0)))
+	case "explainSearch":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
+			return nil, err
+		}
+		return s.GetProvenanceManager().ExplainSearch(ctx, ExplainSearchRequest{
+			Dataset:   ds,
+			Vector:    argFloat64Slice(args["vector"]),
+			TextQuery: argString(args, "textQuery"),
+			K:         argInt(args, "k", 10),
+			Alpha:     float64(argFloat32(args, "alpha", 0.5)),
+		})
+	case "provenance":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
+			return nil, err
+		}
+		if vecID := argString(args, "vectorId"); vecID != "" {
+			prov, ok := s.GetProvenanceManager().Get(ds, vecID)
+			if !ok {
+				return []VectorProvenance{}, nil
+			}
+			return []VectorProvenance{prov}, nil
+		}
+		return s.GetProvenanceManager().ListByDataset(ds, argInt(args, "limit", 50)), nil
+	case "searchAnalytics":
+		if err := s.requireHTTPGlobalPermission(ctx, PermRead, ""); err != nil {
+			return nil, err
+		}
+		return s.GetTextSearchManager().Analytics(argInt(args, "limit", 20)), nil
+	case "materializedViews":
+		if err := s.requireHTTPGlobalPermission(ctx, PermRead, ""); err != nil {
+			return nil, err
+		}
+		if name := argString(args, "name"); name != "" {
+			snap, err := s.GetMaterializedViewManager().QueryView(name, nil)
+			if err != nil {
+				return nil, err
+			}
+			return []*MaterializedViewSnapshot{snap}, nil
+		}
+		return s.GetMaterializedViewManager().ListViews(), nil
+	case "schemaRegistry":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermRead, ds); err != nil {
+			return nil, err
+		}
+		spec, ok := s.GetSchemaRegistry().LatestSchema(ds)
+		if !ok {
+			return nil, NewNotFoundError("schema", ds)
+		}
+		return spec, nil
+	case "clusterTopology":
+		if err := s.requireHTTPGlobalPermission(ctx, PermRead, ""); err != nil {
+			return nil, err
+		}
+		return s.GetElasticController().TopologySnapshot(), nil
+	case "streamConnectors":
+		if err := s.requireHTTPGlobalPermission(ctx, PermRead, ""); err != nil {
+			return nil, err
+		}
+		return s.GetStreamManager().ListStats(), nil
+	case "backups":
+		if err := s.requireHTTPGlobalPermission(ctx, PermBackup, ""); err != nil {
+			return nil, err
+		}
+		if s.backupManager == nil {
+			return []any{}, nil
+		}
+		return s.backupManager.ListBackups(argString(args, "dataset")), nil
+	case "rewriteQuery":
+		if err := s.requireHTTPGlobalPermission(ctx, PermRead, ""); err != nil {
+			return nil, err
+		}
+		variants := s.GetRerankManager().Rewrite(argString(args, "query"), QueryRewriteMode(argString(args, "mode")))
+		return map[string]any{"queries": variants}, nil
 	default:
 		return nil, fmt.Errorf("unknown GraphQL query field %q", field)
 	}
@@ -2289,6 +3163,151 @@ func (s *VectorStore) execGQLMutationField(ctx context.Context, field string, ar
 			return nil, err
 		}
 		return s.GetCloudControlPlane().PromoteRegion(ctx, argString(args, "clusterId"), argString(args, "targetRegion"), argString(args, "reason"))
+	case "recordProvenance":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermWrite, ds); err != nil {
+			return nil, err
+		}
+		prov := VectorProvenance{
+			Dataset:      ds,
+			VectorID:     argString(args, "vectorId"),
+			SourceURI:    argString(args, "sourceUri"),
+			ChunkIndex:   argInt(args, "chunkIndex", 0),
+			Model:        argString(args, "model"),
+			ModelVersion: argString(args, "modelVersion"),
+		}
+		if err := s.GetProvenanceManager().Record(prov); err != nil {
+			return nil, err
+		}
+		return map[string]any{"status": "recorded", "dataset": ds, "vectorId": prov.VectorID}, nil
+	case "createMaterializedView":
+		if err := s.requireHTTPGlobalPermission(ctx, PermManageTenant, ""); err != nil {
+			return nil, err
+		}
+		return s.GetMaterializedViewManager().CreateView(ctx, MaterializedViewSpec{
+			Name:          argString(args, "name"),
+			SourceDataset: argString(args, "sourceDataset"),
+			GroupBy:       argStringSlice(args["groupBy"]),
+			Aggregations:  []AggSpec{{Alias: "count", Op: AggCount}},
+			RefreshPolicy: ViewRefreshPolicy(argString(args, "refreshMode")),
+		})
+	case "refreshMaterializedView":
+		if err := s.requireHTTPGlobalPermission(ctx, PermManageTenant, ""); err != nil {
+			return nil, err
+		}
+		return s.GetMaterializedViewManager().RefreshView(ctx, argString(args, "name"))
+	case "registerSchema":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermManageTenant, ds); err != nil {
+			return nil, err
+		}
+		ver, err := s.GetSchemaRegistry().RegisterSchema(DatasetSchemaSpec{
+			Dataset:       ds,
+			Compatibility: SchemaCompatibilityMode(argString(args, "compatibility")),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"dataset": ds, "version": ver}, nil
+	case "triggerBackup":
+		if err := s.requireHTTPGlobalPermission(ctx, PermBackup, ""); err != nil {
+			return nil, err
+		}
+		return s.CreateOnlineBackup(ctx, argString(args, "dataset"), argString(args, "destination"))
+	case "restoreBackup":
+		if err := s.requireHTTPGlobalPermission(ctx, PermBackup, ""); err != nil {
+			return nil, err
+		}
+		return s.RestoreWithPITR(ctx, PITRConfig{
+			BackupID:    argString(args, "backupId"),
+			DatasetName: argString(args, "dataset"),
+			VerifyOnly:  argString(args, "verifyOnly") == "true",
+		})
+	case "createStreamConnector":
+		if err := s.requireHTTPGlobalPermission(ctx, PermManageTenant, ""); err != nil {
+			return nil, err
+		}
+		conn, err := s.GetStreamManager().CreateConnector(StreamConnectorConfig{
+			Name:       argString(args, "name"),
+			Dataset:    argString(args, "dataset"),
+			SourceType: StreamSourceType(argString(args, "sourceType")),
+			Brokers:    argString(args, "brokers"),
+			Topic:      argString(args, "topic"),
+		}, argString(args, "start") == "true")
+		if err != nil {
+			return nil, err
+		}
+		return conn.Stats(), nil
+	case "stopStreamConnector":
+		if err := s.requireHTTPGlobalPermission(ctx, PermManageTenant, ""); err != nil {
+			return nil, err
+		}
+		name := argString(args, "name")
+		if err := s.GetStreamManager().StopConnector(name); err != nil {
+			return nil, err
+		}
+		return map[string]any{"name": name, "status": "stopped"}, nil
+	case "setTenantQuota":
+		if err := s.requireHTTPGlobalPermission(ctx, PermManageTenant, ""); err != nil {
+			return nil, err
+		}
+		tenant := argString(args, "tenantId")
+		if err := s.GetUsageMeter().SetQuota(tenant, TenantQuota{
+			MaxQueriesPerWindow: int64(argInt(args, "maxQueries", 0)),
+			MaxVectors:          int64(argInt(args, "maxVectors", 0)),
+			MaxStorageBytes:     int64(argInt(args, "maxStorageBytes", 0)),
+		}); err != nil {
+			return nil, err
+		}
+		return map[string]any{"tenantId": tenant, "status": "quota_set"}, nil
+	case "triggerShardSplit":
+		if err := s.requireHTTPGlobalPermission(ctx, PermAdmin, ""); err != nil {
+			return nil, err
+		}
+		left, right, migrated, err := s.GetElasticController().SplitShard(argString(args, "dataset"), argString(args, "shardId"))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"left": left, "right": right, "migrated": migrated}, nil
+	case "triggerShardMerge":
+		if err := s.requireHTTPGlobalPermission(ctx, PermAdmin, ""); err != nil {
+			return nil, err
+		}
+		merged, moved, err := s.GetElasticController().MergeShards(argString(args, "dataset"), argString(args, "leftShardId"), argString(args, "rightShardId"))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"merged": merged, "moved": moved}, nil
+	case "triggerRebalance":
+		if err := s.requireHTTPGlobalPermission(ctx, PermAdmin, ""); err != nil {
+			return nil, err
+		}
+		tasks, err := s.GetElasticController().RebalanceShards(argString(args, "dataset"))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"tasks": tasks, "count": len(tasks)}, nil
+	case "ingestMedia":
+		ds := argString(args, "dataset")
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermWrite, ds); err != nil {
+			return nil, err
+		}
+		n, err := s.GetMultiModalPipeline().IngestItems(ctx, ds, []MultiModalItem{{
+			ID:        argString(args, "id"),
+			Modality:  MediaModality(argString(args, "modality")),
+			Caption:   argString(args, "caption"),
+			SourceURI: argString(args, "sourceUri"),
+		}})
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"dataset": ds, "upserted": n}, nil
+	case "rerank":
+		if err := s.requireHTTPGlobalPermission(ctx, PermRead, ""); err != nil {
+			return nil, err
+		}
+		res, _, err := s.GetRerankManager().Rerank(ctx, argString(args, "strategy"), argString(args, "query"), nil, resolveTenantIDFromCtx(ctx, ""))
+		return res, err
 	default:
 		return nil, fmt.Errorf("unknown GraphQL mutation field %q", field)
 	}

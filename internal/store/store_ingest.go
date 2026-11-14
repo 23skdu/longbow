@@ -382,6 +382,9 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	if rec == nil {
 		return errors.New("nil record batch")
 	}
+	if err := s.GetSchemaRegistry().ValidateBatch(ctx, name, rec); err != nil {
+		return err
+	}
 	ts := time.Now().UnixNano()
 
 	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
@@ -833,6 +836,9 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	ds.UpdatePrimaryIndexAsync(batchIdx, idMap)
 	idMap.Release()
 	s.updateLWWAndMerkle(ds, rec, ts)
+	if s.features != nil && s.features.matViews != nil {
+		s.features.matViews.OnDatasetIngest(context.Background(), name)
+	}
 
 	// Batch append to DiskStore outside main dataset lock to avoid blocking other workers
 	if diskVecColIdx != -1 {

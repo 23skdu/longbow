@@ -22,11 +22,48 @@ type BM25InvertedIndex struct {
 	totalLen   atomic.Int64 // total document length for avgdl
 }
 
+const bm25BlockSize = 64
+
 // BM25PostingList stores parallel slices for SIMD-accelerated scoring
+// along with precomputed per-block (maxTF, minDocLen) upper-bound metadata for Block-Max WAND.
 type BM25PostingList struct {
-	DocIDs  []VectorID
-	TFs     []int
-	DocLens []int
+	DocIDs      []VectorID
+	TFs         []int
+	DocLens     []int
+	BlockMaxTF  []int
+	BlockMinLen []int
+}
+
+func newBM25PostingList(docIDs []VectorID, tfs, docLens []int) *BM25PostingList {
+	numBlocks := (len(docIDs) + bm25BlockSize - 1) / bm25BlockSize
+	blockMaxTF := make([]int, numBlocks)
+	blockMinLen := make([]int, numBlocks)
+	for bi := 0; bi < numBlocks; bi++ {
+		start := bi * bm25BlockSize
+		end := start + bm25BlockSize
+		if end > len(docIDs) {
+			end = len(docIDs)
+		}
+		maxTF := 0
+		minLen := 99999999
+		for i := start; i < end; i++ {
+			if i < len(tfs) && tfs[i] > maxTF {
+				maxTF = tfs[i]
+			}
+			if i < len(docLens) && docLens[i] > 0 && docLens[i] < minLen {
+				minLen = docLens[i]
+			}
+		}
+		blockMaxTF[bi] = maxTF
+		blockMinLen[bi] = minLen
+	}
+	return &BM25PostingList{
+		DocIDs:      docIDs,
+		TFs:         tfs,
+		DocLens:     docLens,
+		BlockMaxTF:  blockMaxTF,
+		BlockMinLen: blockMinLen,
+	}
 }
 
 // bm25TermShard holds the inverted index for a subset of terms
@@ -297,7 +334,7 @@ func (idx *BM25InvertedIndex) AddBatch(docs []BM25Document) {
 				}
 			}
 
-			updates[term] = &BM25PostingList{DocIDs: newDocIDs, TFs: newTFs, DocLens: newDocLens}
+			updates[term] = newBM25PostingList(newDocIDs, newTFs, newDocLens)
 		}
 
 		shard.index.BulkStore(updates)
@@ -367,11 +404,7 @@ func (idx *BM25InvertedIndex) Delete(id VectorID) {
 							copy(newDocLens[:removeIdx], oldPL.DocLens[:removeIdx])
 							copy(newDocLens[removeIdx:], oldPL.DocLens[removeIdx+1:])
 						}
-						updates[term] = &BM25PostingList{
-							DocIDs:  newDocIDs,
-							TFs:     newTFs,
-							DocLens: newDocLens,
-						}
+						updates[term] = newBM25PostingList(newDocIDs, newTFs, newDocLens)
 					}
 				}
 			}
@@ -589,31 +622,37 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 		df := termDF[term]
 		idf := float32(idx.scorer.IDF(df))
 
-		blockSize := 64
+		blockSize := bm25BlockSize
 		numBlocks := (len(pl.DocIDs) + blockSize - 1) / blockSize
 		blockMaxScores := make([]float32, numBlocks)
 		globalMaxScore := float32(0.0)
 
 		for bi := 0; bi < numBlocks; bi++ {
-			maxTF := 0
-			minLen := 99999999
-			start := bi * blockSize
-			end := start + blockSize
-			if end > len(pl.DocIDs) {
-				end = len(pl.DocIDs)
-			}
-			for i := start; i < end; i++ {
-				if pl.TFs[i] > maxTF {
-					maxTF = pl.TFs[i]
+			var maxTF, minLen int
+			if bi < len(pl.BlockMaxTF) && bi < len(pl.BlockMinLen) && pl.BlockMinLen[bi] < 99999999 {
+				maxTF = pl.BlockMaxTF[bi]
+				minLen = pl.BlockMinLen[bi]
+			} else {
+				maxTF = 0
+				minLen = 99999999
+				start := bi * blockSize
+				end := start + blockSize
+				if end > len(pl.DocIDs) {
+					end = len(pl.DocIDs)
 				}
-				l := 0
-				if i < len(pl.DocLens) {
-					l = pl.DocLens[i]
-				} else {
-					l = idx.GetDocLength(pl.DocIDs[i])
-				}
-				if l < minLen {
-					minLen = l
+				for i := start; i < end; i++ {
+					if pl.TFs[i] > maxTF {
+						maxTF = pl.TFs[i]
+					}
+					l := 0
+					if i < len(pl.DocLens) {
+						l = pl.DocLens[i]
+					} else {
+						l = idx.GetDocLength(pl.DocIDs[i])
+					}
+					if l < minLen {
+						minLen = l
+					}
 				}
 			}
 			score := scoreSingle(maxTF, minLen, avgDL, idf, k1, b)

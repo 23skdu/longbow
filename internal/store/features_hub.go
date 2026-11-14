@@ -225,4 +225,32 @@ func (s *VectorStore) RegisterHTTPHandlers(mux *http.ServeMux) {
 	mux.Handle("/api/v1/cloud/clusters", s.httpMethodAuthWrap(PermRead, PermManageTenant, s.cloudClustersCollectionHTTPHandler()))
 	mux.Handle("/api/v1/cloud/clusters/", s.httpAuthWrap(PermRead, s.cloudClusterItemHTTPHandler()))
 	mux.Handle("/api/v1/cloud/internal/replicate", s.httpAuthWrap(PermWrite, s.cloudInternalReplicateHTTPHandler()))
+
+	mux.Handle("/api/v1/rbac/keys", s.httpAuthWrap(PermManageKeys, s.rbacKeysHTTPHandler()))
+	mux.Handle("/api/v1/rbac/rls", s.httpAuthWrap(PermManageTenant, s.rbacRLSHTTPHandler()))
+	mux.Handle("/api/v1/rbac/audit", s.httpAuthWrap(PermAdmin, s.rbacAuditHTTPHandler()))
+
+	mux.Handle("/api/v1/backups", s.httpAuthWrap(PermBackup, s.backupsHTTPHandler()))
+	mux.Handle("/api/v1/backups/restore", s.httpAuthWrap(PermBackup, s.backupsRestoreHTTPHandler()))
+	mux.Handle("/api/v1/backups/verify", s.httpAuthWrap(PermBackup, s.backupsVerifyHTTPHandler()))
+
+	mux.Handle("/api/v1/streams/connectors", s.httpMethodAuthWrap(PermRead, PermManageTenant, s.streamsConnectorsHTTPHandler()))
+	mux.Handle("/api/v1/streams/ingest", s.httpAuthWrap(PermWrite, s.streamsIngestHTTPHandler()))
+	mux.Handle("/api/v1/streams/schemas", s.httpAuthWrap(PermManageTenant, s.streamsSchemasHTTPHandler()))
+
+	mux.Handle("/api/v1/rerank", s.httpAuthWrap(PermRead, s.rerankHTTPHandler()))
+	mux.Handle("/api/v1/rerank/evaluate", s.httpAuthWrap(PermRead, s.rerankEvaluateHTTPHandler()))
+	mux.Handle("/api/v1/rewrite-query", s.httpAuthWrap(PermRead, s.rewriteQueryHTTPHandler()))
+
+	mux.Handle("/api/v1/sharding/topology", s.httpAuthWrap(PermRead, s.shardingTopologyHTTPHandler()))
+	mux.Handle("/api/v1/sharding/autoscale", s.httpMethodAuthWrap(PermRead, PermAdmin, s.shardingAutoScaleHTTPHandler()))
+	mux.Handle("/api/v1/sharding/split", s.httpAuthWrap(PermAdmin, s.shardingSplitHTTPHandler()))
+	mux.Handle("/api/v1/sharding/merge", s.httpAuthWrap(PermAdmin, s.shardingMergeHTTPHandler()))
+	mux.Handle("/api/v1/sharding/rebalance", s.httpAuthWrap(PermAdmin, s.shardingRebalanceHTTPHandler()))
+
+	mux.Handle("/api/v1/views", s.httpMethodAuthWrap(PermRead, PermManageTenant, s.viewsHTTPHandler()))
+	mux.Handle("/api/v1/views/query", s.httpAuthWrap(PermRead, s.viewsQueryHTTPHandler()))
+	mux.Handle("/api/v1/views/refresh", s.httpAuthWrap(PermManageTenant, s.viewsRefreshHTTPHandler()))
+
+	mux.Handle("/api/v1/search/analytics", s.httpAuthWrap(PermRead, s.searchAnalyticsHTTPHandler()))
 }

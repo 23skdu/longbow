@@ -8,5 +8,5 @@ matplotlib>=3.11.2
 requests>=2.34.2
 grpcio>=1.85.1
 grpcio-tools>=1.85.1
-protobuf>=4.25.0
+protobuf>=7.36.2
 pydantic>=2.14.3

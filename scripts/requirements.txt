@@ -1,6 +1,6 @@
 pyarrow>=26.0.1
 numpy>=1.26.0
-pandas>=2.2.0
+pandas>=3.1.1
 sentence-transformers>=6.2.0
 lorem-text>=3.0
 psutil>=7.2.2

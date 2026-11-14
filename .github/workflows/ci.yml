@@ -242,6 +242,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Checkout emlgo dependency
+        run: git clone https://github.com/23skdu/emlgo.git ../emlgo
+
       - name: Setup Go
         uses: actions/setup-go@v7
         with:

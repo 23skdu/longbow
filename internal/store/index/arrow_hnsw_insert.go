@@ -1773,10 +1773,6 @@ func (h *ArrowHNSW) selectNeighborsComplex128(ctx *ArrowSearchContext, candidate
 		selectedVecs = make([][]complex128, 0, m)
 	}
 
-	// Pre-allocated scratch buffers for diversity checks (avoids per-candidate allocations).
-	divDists := make([]float32, 0, m)
-	divF64Vecs := make([][]float64, m)
-
 	for i, cand := range candidates {
 		if len(selected) >= m {
 			break
@@ -1787,26 +1783,22 @@ func (h *ArrowHNSW) selectNeighborsComplex128(ctx *ArrowSearchContext, candidate
 		}
 		isDiverse := true
 		if len(selectedVecs) > 0 {
-			if cap(divDists) < len(selectedVecs) {
-				divDists = make([]float32, len(selectedVecs))
-			} else {
-				divDists = divDists[:len(selectedVecs)]
-			}
-			dists := divDists
-			f64Vecs := divF64Vecs
-			switch h.config.Metric {
-			case core.MetricCosine:
-				_ = simd.CosineDistanceComplex128Batch(v1, selectedVecs, dists, f64Vecs)
-			case core.MetricDotProduct:
-				_ = simd.DotProductComplex128Batch(v1, selectedVecs, dists, f64Vecs)
-				for j := range dists {
-					dists[j] = -dists[j]
-				}
-			default:
-				_ = simd.EuclideanDistanceComplex128Batch(v1, selectedVecs, dists, f64Vecs)
-			}
 			for j := range selectedVecs {
-				if dists[j] < cand.Dist {
+				var d float32
+				var err error
+				switch h.config.Metric {
+				case core.MetricCosine:
+					d, err = simd.CosineDistanceComplex128(v1, selectedVecs[j])
+				case core.MetricDotProduct:
+					d, err = simd.DotProductComplex128(v1, selectedVecs[j])
+					d = -d
+				default:
+					d, err = simd.EuclideanDistanceComplex128(v1, selectedVecs[j])
+				}
+				if err != nil {
+					continue
+				}
+				if d < cand.Dist {
 					isDiverse = false
 					break
 				}

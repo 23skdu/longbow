@@ -1778,6 +1778,10 @@ func (h *ArrowHNSW) selectNeighborsComplex128(ctx *ArrowSearchContext, candidate
 		selectedVecs = make([][]complex128, 0, m)
 	}
 
+	// Pre-allocated scratch buffers for diversity checks (avoids per-candidate allocations).
+	divDists := make([]float32, 0, m)
+	divF64Vecs := make([][]float64, m)
+
 	for i, cand := range candidates {
 		if len(selected) >= m {
 			break
@@ -1788,8 +1792,13 @@ func (h *ArrowHNSW) selectNeighborsComplex128(ctx *ArrowSearchContext, candidate
 		}
 		isDiverse := true
 		if len(selectedVecs) > 0 {
-			dists := make([]float32, len(selectedVecs))
-			var f64Vecs [][]float64
+			if cap(divDists) < len(selectedVecs) {
+				divDists = make([]float32, len(selectedVecs))
+			} else {
+				divDists = divDists[:len(selectedVecs)]
+			}
+			dists := divDists
+			f64Vecs := divF64Vecs
 			switch h.config.Metric {
 			case core.MetricCosine:
 				_ = simd.CosineDistanceComplex128Batch(v1, selectedVecs, dists, f64Vecs)

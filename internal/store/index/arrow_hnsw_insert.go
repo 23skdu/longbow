@@ -1542,30 +1542,25 @@ func (h *ArrowHNSW) selectNeighborsFloat64(ctx *ArrowSearchContext, candidates [
 		}
 		isDiverse := true
 		if len(selectedVecs) > 0 {
-			var dists []float32
-			if ctx != nil {
-				if cap(ctx.scratchDists) < len(selectedVecs) {
-					ctx.scratchDists = make([]float32, len(selectedVecs))
-				} else {
-					ctx.scratchDists = ctx.scratchDists[:len(selectedVecs)]
-				}
-				dists = ctx.scratchDists
-			} else {
-				dists = make([]float32, len(selectedVecs))
-			}
-			switch h.config.Metric {
-			case core.MetricCosine:
-				_ = simd.CosineDistanceFloat64Batch(v1, selectedVecs, dists)
-			case core.MetricDotProduct:
-				_ = simd.DotProductFloat64Batch(v1, selectedVecs, dists)
-				for j := range dists {
-					dists[j] = -dists[j]
-				}
-			default:
-				_ = simd.EuclideanDistanceFloat64Batch(v1, selectedVecs, dists)
-			}
+			// Compute distances incrementally and break early on the first
+			// selected vector that is closer than cand.Dist, avoiding the
+			// full O(selectedVecs) batch when the candidate is not diverse.
 			for j := range selectedVecs {
-				if dists[j] < cand.Dist {
+				var d float32
+				var err error
+				switch h.config.Metric {
+				case core.MetricCosine:
+					d, err = simd.CosineDistanceFloat64(v1, selectedVecs[j])
+				case core.MetricDotProduct:
+					d, err = simd.DotProductF64(v1, selectedVecs[j])
+					d = -d
+				default:
+					d, err = simd.EuclideanDistanceFloat64(v1, selectedVecs[j])
+				}
+				if err != nil {
+					continue
+				}
+				if d < cand.Dist {
 					isDiverse = false
 					break
 				}

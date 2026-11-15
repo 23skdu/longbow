@@ -3,6 +3,8 @@ package simd
 import (
 	"errors"
 	"math"
+	"runtime"
+	"sync"
 	"unsafe"
 )
 
@@ -137,6 +139,39 @@ func EuclideanDistanceComplex128Batch(query []complex128, vectors [][]complex128
 		f64Vecs[i] = unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
 	}
 
+	// Parallel tiled dispatch for large batches to improve throughput.
+	if len(f64Vecs) >= 32 {
+		workers := runtime.NumCPU()
+		if workers > 8 {
+			workers = 8
+		}
+		chunkSize := (len(f64Vecs) + workers - 1) / workers
+		var wg sync.WaitGroup
+		for w := 0; w < workers; w++ {
+			start := w * chunkSize
+			end := start + chunkSize
+			if end > len(f64Vecs) {
+				end = len(f64Vecs)
+			}
+			if start >= end {
+				continue
+			}
+			wg.Add(1)
+			go func(s, e int) {
+				defer wg.Done()
+				for i := s; i < e; i++ {
+					if f64Vecs[i] == nil {
+						continue
+					}
+					d, _ := EuclideanDistanceFloat64(qF64, f64Vecs[i])
+					results[i] = d
+				}
+			}(start, end)
+		}
+		wg.Wait()
+		return nil
+	}
+
 	i := 0
 	for ; i+4 <= len(f64Vecs); i += 4 {
 		if f64Vecs[i] != nil {
@@ -195,6 +230,38 @@ func DotProductComplex128Batch(query []complex128, vectors [][]complex128, resul
 		f64Vecs[i] = unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
 	}
 
+	if len(f64Vecs) >= 32 {
+		workers := runtime.NumCPU()
+		if workers > 8 {
+			workers = 8
+		}
+		chunkSize := (len(f64Vecs) + workers - 1) / workers
+		var wg sync.WaitGroup
+		for w := 0; w < workers; w++ {
+			start := w * chunkSize
+			end := start + chunkSize
+			if end > len(f64Vecs) {
+				end = len(f64Vecs)
+			}
+			if start >= end {
+				continue
+			}
+			wg.Add(1)
+			go func(s, e int) {
+				defer wg.Done()
+				for i := s; i < e; i++ {
+					if f64Vecs[i] == nil {
+						continue
+					}
+					d, _ := DotProductF64(qF64, f64Vecs[i])
+					results[i] = d
+				}
+			}(start, end)
+		}
+		wg.Wait()
+		return nil
+	}
+
 	i := 0
 	for ; i+4 <= len(f64Vecs); i += 4 {
 		if f64Vecs[i] != nil {
@@ -251,6 +318,38 @@ func CosineDistanceComplex128Batch(query []complex128, vectors [][]complex128, r
 			continue
 		}
 		f64Vecs[i] = unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
+	}
+
+	if len(f64Vecs) >= 32 {
+		workers := runtime.NumCPU()
+		if workers > 8 {
+			workers = 8
+		}
+		chunkSize := (len(f64Vecs) + workers - 1) / workers
+		var wg sync.WaitGroup
+		for w := 0; w < workers; w++ {
+			start := w * chunkSize
+			end := start + chunkSize
+			if end > len(f64Vecs) {
+				end = len(f64Vecs)
+			}
+			if start >= end {
+				continue
+			}
+			wg.Add(1)
+			go func(s, e int) {
+				defer wg.Done()
+				for i := s; i < e; i++ {
+					if f64Vecs[i] == nil {
+						continue
+					}
+					d, _ := CosineDistanceFloat64(qF64, f64Vecs[i])
+					results[i] = d
+				}
+			}(start, end)
+		}
+		wg.Wait()
+		return nil
 	}
 
 	i := 0

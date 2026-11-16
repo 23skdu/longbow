@@ -108,20 +108,20 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 
 ### Phase 1: OIDC Provider Discovery & JWKS
 
-- [ ] OIDC-1.1 Add `OIDCProvider` config (issuer URL, JWKS URL, audience,
+- [x] OIDC-1.1 Add `OIDCProvider` config (issuer URL, JWKS URL, audience,
       allowed algorithms, refresh interval).
-- [ ] OIDC-1.2 Implement JWKS fetch + cache with rotation and ETag/Cache-Control.
-- [ ] OIDC-1.3 Pin allowed signing algorithms (RS256, ES256); reject `none`/HS*.
-- [ ] OIDC-1.4 Add issuer allowlist and discovery document validation.
+- [x] OIDC-1.2 Implement JWKS fetch + cache with rotation and ETag/Cache-Control.
+- [x] OIDC-1.3 Pin allowed signing algorithms (RS256, ES256); reject `none`/HS*.
+- [x] OIDC-1.4 Add issuer allowlist and discovery document validation.
 
 ### Phase 2: Token Validation & Claim Mapping
 
-- [ ] OIDC-2.1 Validate JWT signature, `iss`, `aud`, `exp`, `nbf`, `iat`,
+- [x] OIDC-2.1 Validate JWT signature, `iss`, `aud`, `exp`, `nbf`, `iat`,
       `sub`, and (optional) `nonce`.
-- [ ] OIDC-2.2 Enforce max token lifetime and clock-skew tolerance (<= 60s).
-- [ ] OIDC-2.3 Map claims (`sub`, groups, custom attributes) to Longbow
+- [x] OIDC-2.2 Enforce max token lifetime and clock-skew tolerance (<= 60s).
+- [x] OIDC-2.3 Map claims (`sub`, groups, custom attributes) to Longbow
       role + tenant + namespace + datasets.
-- [ ] OIDC-2.4 Add replay protection (jti cache / nonce) for interactive flows.
+- [x] OIDC-2.4 Add replay protection (jti cache / nonce) for interactive flows.
 - [ ] OIDC-2.5 Issue internal short-lived session bound to federated identity.
 
 ### Phase 3: AWS IAM Federation

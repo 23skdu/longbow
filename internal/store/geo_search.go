@@ -98,6 +98,7 @@ type GeoPointIndex interface {
 	QueryBoxAppend(box GeoBoundingBox, results *[]*GeoIndexedVector)
 	QueryBoxBitmap(box GeoBoundingBox, bm *roaring.Bitmap)
 	QueryRadius(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector)
+	QueryRadiusPruned(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector)
 }
 
 // geoIndexHandle boxes a spatial index so it can be published through an
@@ -331,10 +332,9 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 	}
 
 	// Get candidate bounding box
-	box := BoundingBox(center, radiusKm)
 	candidatesPtr := geoCandidatePool.Get().(*[]*GeoIndexedVector)
 	candidatesSlice := (*candidatesPtr)[:0]
-	index.QueryBoxAppend(box, &candidatesSlice)
+	index.QueryRadiusPruned(center, radiusKm, &candidatesSlice)
 	defer func() {
 		if cap(candidatesSlice) <= 8192 {
 			*candidatesPtr = candidatesSlice[:0]

@@ -35,9 +35,9 @@ subtasks required to close it. Tasks are ordered by expected impact.
 ## P0-4: Geo Search (12–35 QPS at 500k)
 
 ### Subtasks
-- [ ] P0-4.1 Add annulus cell pruning to Quadtree traversal.
-- [ ] P0-4.2 Add annulus cell pruning to MortonGrid traversal.
-- [ ] P0-4.3 Add radius-aware QueryBox/QueryRadius methods.
+- [x] P0-4.1 Add annulus cell pruning to Quadtree traversal (QueryRadiusPruned).
+- [x] P0-4.2 Add radius filter to MortonGrid QueryRadiusPruned.
+- [x] P0-4.3 Add radius-aware QueryRadiusPruned method.
 - [ ] P0-4.4 Benchmark geo search before/after.
 
 ## P0-5: Uint32 Dense Search (518 QPS vs ~3,000+)

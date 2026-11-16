@@ -166,6 +166,22 @@ func (g *MortonGrid) QueryRadius(center GeoPoint, radiusKm float64, results *[]*
 	g.appendBox(BoundingBox(center, radiusKm), results)
 }
 
+// QueryRadiusPruned returns vectors within radiusKm, filtering points by
+// Haversine distance (MortonGrid has no tree to prune, so this is a leaf filter).
+func (g *MortonGrid) QueryRadiusPruned(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector) {
+	box := BoundingBox(center, radiusKm)
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	for _, e := range g.entries {
+		if e.lat >= box.MinLat && e.lat <= box.MaxLat &&
+			e.lon >= box.MinLon && e.lon <= box.MaxLon {
+			if HaversineDistance(center, GeoPoint{Lat: e.lat, Lon: e.lon}, 6371.0) <= radiusKm {
+				*results = append(*results, e.vec)
+			}
+		}
+	}
+}
+
 // QueryBox returns all vectors within a bounding box.
 func (g *MortonGrid) QueryBox(box GeoBoundingBox) []*GeoIndexedVector {
 	results := make([]*GeoIndexedVector, 0, 128)

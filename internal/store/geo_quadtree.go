@@ -149,10 +149,21 @@ func (q *Quadtree) QueryRadius(center GeoPoint, radiusKm float64, results *[]*Ge
 		MinLon: center.Lon - lonDelta,
 		MaxLon: center.Lon + lonDelta,
 	}
-	q.queryRadiusIterative(box, results)
+	q.queryBoxIterative(box, results)
 }
 
-func (q *Quadtree) queryRadiusIterative(box GeoBoundingBox, results *[]*GeoIndexedVector) {
+// QueryRadiusPruned returns vectors within radiusKm, pruning subtrees whose
+// bounding box does not intersect the search circle and filtering points at
+// leaves by Haversine distance.
+func (q *Quadtree) QueryRadiusPruned(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector) {
+	cosLat := math.Cos(center.Lat * math.Pi / 180)
+	lonDelta := radiusKm / (111.0 * cosLat)
+	box := GeoBoundingBox{
+		MinLat: center.Lat - radiusKm/111.0,
+		MaxLat: center.Lat + radiusKm/111.0,
+		MinLon: center.Lon - lonDelta,
+		MaxLon: center.Lon + lonDelta,
+	}
 	if !q.intersects(box) {
 		return
 	}
@@ -169,16 +180,25 @@ func (q *Quadtree) queryRadiusIterative(box GeoBoundingBox, results *[]*GeoIndex
 		if !curr.intersects(box) {
 			continue
 		}
+		if !boxIntersectsCircle(curr.bounds, center, radiusKm) {
+			continue
+		}
 
 		curr.mu.RLock()
 		if !curr.divided.Load() {
-			*results = append(*results, curr.vectors...)
+			for _, v := range curr.vectors {
+				if v.GeoPoint.Lat >= box.MinLat && v.GeoPoint.Lat <= box.MaxLat &&
+					v.GeoPoint.Lon >= box.MinLon && v.GeoPoint.Lon <= box.MaxLon {
+					if HaversineDistance(center, v.GeoPoint, 6371.0) <= radiusKm {
+						*results = append(*results, v)
+					}
+				}
+			}
 			curr.mu.RUnlock()
 			continue
 		}
 		curr.mu.RUnlock()
 
-		// Push in reverse order so northwest is popped first
 		if curr.southeast != nil {
 			stack = append(stack, curr.southeast)
 		}
@@ -192,6 +212,23 @@ func (q *Quadtree) queryRadiusIterative(box GeoBoundingBox, results *[]*GeoIndex
 			stack = append(stack, curr.northwest)
 		}
 	}
+}
+
+// boxIntersectsCircle reports whether a bounding box intersects a circle.
+func boxIntersectsCircle(box GeoBoundingBox, center GeoPoint, radiusKm float64) bool {
+	lat := center.Lat
+	if lat < box.MinLat {
+		lat = box.MinLat
+	} else if lat > box.MaxLat {
+		lat = box.MaxLat
+	}
+	lon := center.Lon
+	if lon < box.MinLon {
+		lon = box.MinLon
+	} else if lon > box.MaxLon {
+		lon = box.MaxLon
+	}
+	return HaversineDistance(center, GeoPoint{Lat: lat, Lon: lon}, 6371.0) <= radiusKm
 }
 
 // QueryBox returns all vectors within a bounding box.

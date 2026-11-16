@@ -120,6 +120,26 @@ jobs:
           trivyignores: .trivyignore
           skip-dirs: vendor,data,bin
 
+  oidc-federation-security:
+    name: OIDC Federation Security Audit
+    runs-on: ubuntu-latest
+    needs: [validate, security]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Run OIDC federation security audit
+        run: make sec-oidc
+
+      - name: Run targeted OIDC federation tests
+        run: go test -short -run 'OIDC|Federation|WebIdentity|WorkloadIdentity|JWKS' ./internal/security/... ./internal/store/... ./internal/middleware/...
+
   observability:
     name: Observability & Metric Conformance
     runs-on: ubuntu-latest
@@ -233,7 +253,7 @@ jobs:
 
   release-containers:
     name: Build & Push Release Containers
-    needs: [validate, security, observability, helm-and-docs]
+    needs: [validate, security, observability, helm-and-docs, oidc-federation-security]
     runs-on: ubuntu-latest
     permissions:
       contents: read

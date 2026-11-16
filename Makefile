@@ -263,7 +263,7 @@ lint-docs: markdown-lint
 # Security Analysis
 # ==============================================================================
 
-security: sec-gosec sec-vulncheck
+security: sec-gosec sec-vulncheck sec-oidc
 	@echo "Security analysis passed cleanly."
 
 GOSEC_FLAGS ?= -quiet -exclude=G115
@@ -279,6 +279,10 @@ sec-vulncheck:
 sec-audit: sec-vulncheck
 	@echo "Auditing module dependencies..."
 	$(GO) list -m all > /dev/null
+
+sec-oidc:
+	@echo "Running OIDC federation security audit checks..."
+	./scripts/check_oidc_federation_security.sh
 
 # ==============================================================================
 # Performance & Memory Profiling Analysis

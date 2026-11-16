@@ -143,11 +143,11 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 
 ### Phase 5: Dataset & Namespace Authorization Binding
 
-- [ ] OIDC-5.1 Extend `APIKey`/`TenantContext` model with federated identity
+- [x] OIDC-5.1 Extend `APIKey`/`TenantContext` model with federated identity
       provenance (`provider`, `issuer`, `subject`).
-- [ ] OIDC-5.2 Enforce namespace/dataset scoping for federated identities.
+- [x] OIDC-5.2 Enforce namespace/dataset scoping for federated identities.
 - [ ] OIDC-5.3 Integrate with RLS policies for row-level restrictions.
-- [ ] OIDC-5.4 Add per-identity audit attribution (stable subject ID).
+- [x] OIDC-5.4 Add per-identity audit attribution (stable subject ID).
 
 ### Phase 6: Audit Logging & Observability
 

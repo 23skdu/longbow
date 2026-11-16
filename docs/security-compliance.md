@@ -127,7 +127,45 @@ and RLS.
 
 - `OIDCConfig` / `OIDCIssuerConfig` (issuer URL, JWKS URL, audience, allowed
   algorithms, claim mappings, clock skew).
+- Environment variables: `LONGBOW_OIDC_ENABLED=true`, `LONGBOW_OIDC_ISSUERS='[...]'`.
+- Runtime endpoints: `/api/v1/oidc/providers`, `/api/v1/oidc/token`.
+- CLI commands: `oidc-list-providers`, `oidc-add-provider`, `oidc-remove-provider`, `oidc-exchange`.
 - Helpers: `AWSOIDCIssuerConfig`, `GoogleOIDCIssuerConfig`.
+
+### Least-Privilege Cloud IAM Policy Examples
+
+#### AWS IAM Trust Policy (IRSA / EKS Pod Identity)
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "oidc.eks.us-west-2.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE:aud": "sts.amazonaws.com",
+          "oidc.eks.us-west-2.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE:sub": "system:serviceaccount:acme-ns:longbow-reader"
+        }
+      }
+    }
+  ]
+}
+```
+
+#### Google Cloud Workload Identity Federation Binding
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding \
+  longbow-reader@my-gcp-project.iam.gserviceaccount.com \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/longbow-pool/attribute.tenant_id/acme" \
+  --condition='expression=assertion.sub.startsWith("repo:23skdu/"),title=scope-to-org,description=Least-privilege WIF binding'
+```
 
 ### Verification
 

@@ -160,3 +160,79 @@ func executeCLIAction(ctx context.Context, sc *client.SmartClient, actionType st
 		}
 	}
 }
+
+func runOIDCListProviders(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("oidc-list-providers", flag.ExitOnError)
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Server URI")
+	apiKey := fs.String("api-key", os.Getenv("LONGBOW_API_KEY"), "Admin API key")
+	_ = fs.Parse(args)
+	sc := getCLIAuthClient(*uri, *apiKey, "", "", "", "")
+	defer func() { _ = sc.Close() }()
+	executeCLIAction(sc.WithAuthContext(ctx), sc, "ListOIDCProviders", nil)
+}
+
+func runOIDCAddProvider(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("oidc-add-provider", flag.ExitOnError)
+	provider := fs.String("provider", "generic", "Provider kind: generic, aws, google")
+	issuer := fs.String("issuer", "", "OIDC issuer URL")
+	jwks := fs.String("jwks", "", "Optional explicit JWKS URL")
+	audience := fs.String("audience", "longbow", "Expected JWT audience")
+	tenantClaim := fs.String("tenant-claim", "tenant_id", "JWT claim mapped to tenant_id")
+	roleClaim := fs.String("role-claim", "groups", "JWT claim mapped to roles")
+	rowFilterClaim := fs.String("row-filter-claim", "row_filters", "JWT claim mapped to RLS row filters")
+	adminClaim := fs.String("admin-claim", "role", "JWT claim checked for admin elevation")
+	adminValue := fs.String("admin-value", "admin", "Claim value granting admin role")
+	trustARN := fs.String("trust-arn", "", "Optional AWS role ARN or Google service account principal")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Server URI")
+	apiKey := fs.String("api-key", os.Getenv("LONGBOW_API_KEY"), "Admin API key")
+	_ = fs.Parse(args)
+	if *issuer == "" || *audience == "" {
+		log.Fatal("Usage: longbow-cli oidc-add-provider -issuer <url> -audience <aud> [-provider aws|google|generic]")
+	}
+	sc := getCLIAuthClient(*uri, *apiKey, "", "", "", "")
+	defer func() { _ = sc.Close() }()
+	body, _ := json.Marshal(security.OIDCIssuerConfig{
+		Provider:       security.OIDCProviderKind(*provider),
+		IssuerURL:      *issuer,
+		JWKSURL:        *jwks,
+		Audience:       *audience,
+		AllowedAlgs:    []string{"RS256", "ES256"},
+		TenantClaim:    *tenantClaim,
+		RoleClaim:      *roleClaim,
+		RowFilterClaim: *rowFilterClaim,
+		AdminClaim:     *adminClaim,
+		AdminValue:     *adminValue,
+		TrustPolicyARN: *trustARN,
+	})
+	executeCLIAction(sc.WithAuthContext(ctx), sc, "AddOIDCProvider", body)
+}
+
+func runOIDCRemoveProvider(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("oidc-remove-provider", flag.ExitOnError)
+	issuer := fs.String("issuer", "", "OIDC issuer URL to remove")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Server URI")
+	apiKey := fs.String("api-key", os.Getenv("LONGBOW_API_KEY"), "Admin API key")
+	_ = fs.Parse(args)
+	if *issuer == "" {
+		log.Fatal("Usage: longbow-cli oidc-remove-provider -issuer <url>")
+	}
+	sc := getCLIAuthClient(*uri, *apiKey, "", "", "", "")
+	defer func() { _ = sc.Close() }()
+	body, _ := json.Marshal(map[string]any{"issuer_url": *issuer})
+	executeCLIAction(sc.WithAuthContext(ctx), sc, "RemoveOIDCProvider", body)
+}
+
+func runOIDCExchange(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("oidc-exchange", flag.ExitOnError)
+	token := fs.String("token", os.Getenv("LONGBOW_OIDC_TOKEN"), "Federated OIDC JWT")
+	ttl := fs.Int64("ttl", 900, "Requested session TTL in seconds (max 3600)")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Server URI")
+	_ = fs.Parse(args)
+	if *token == "" {
+		log.Fatal("Usage: longbow-cli oidc-exchange -token <jwt> [-ttl 900]")
+	}
+	sc := getCLIAuthClient(*uri, *token, "", "", "", "")
+	defer func() { _ = sc.Close() }()
+	body, _ := json.Marshal(map[string]any{"ttl_seconds": *ttl})
+	executeCLIAction(sc.WithAuthContext(ctx), sc, "ExchangeOIDCToken", body)
+}

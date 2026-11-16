@@ -177,3 +177,32 @@ When an alert fires in Longbow:
 - **Symptoms**: A dataset was removed or evicted from VectorStore.
 - **Mitigation**:
   - Verify whether drop was intentional via admin API or triggered by storage eviction policies.
+
+---
+
+## 8. OIDC Federation & Authentication Alerts
+
+### LongbowOIDCAuthFailuresHigh
+
+- **Severity**: Warning
+- **Symptoms**: Rate of failed OIDC token validations exceeds 0.1/s over 5 minutes for an issuer.
+- **Diagnosis**:
+  - Inspect `longbow_oidc_auth_failures_total` grouped by `reason` and `issuer`.
+  - Query audit log via `longbow-cli audit-log` or `GET /api/v1/rbac/audit` to identify failing subjects or `jti` replay spikes.
+  - Verify clock synchronization (`ntpd`/`chrony`) if failures report `token is expired` or `token used before issued`.
+- **Mitigation**:
+  - If failure reason is `disallowed alg`, confirm the IdP signs tokens with `RS256` or `ES256` (Longbow rejects `HS*` and `none`).
+  - If failure reason is `missing kid` or unknown `kid`, check JWKS rotation status and verify `jwks_url` connectivity.
+  - If replay (`jti`) spikes are observed from an unexpected source, revoke active short-lived sessions and investigate potential token leakage.
+
+### LongbowOIDCJWKSFetchFailures
+
+- **Severity**: Critical
+- **Symptoms**: Longbow cannot fetch JWKS keys from an issuer discovery or JWKS endpoint.
+- **Diagnosis**:
+  - Check outbound DNS/TLS connectivity from Longbow pods to the issuer `jwks_url` or `.well-known/openid-configuration`.
+  - Inspect Kubernetes `NetworkPolicy` egress rules (`helm/longbow/templates/networkpolicy.yaml`) to ensure HTTPS (443) egress to the IdP is permitted.
+- **Mitigation**:
+  - Restore network/egress path to the OIDC IdP or update the issuer `jwks_url` via `POST /api/v1/oidc/providers` or `longbow-cli oidc-add-provider`.
+  - Cached JWKS keys continue validating existing key IDs until `RefreshInterval` expires or an unseen `kid` is encountered.
+

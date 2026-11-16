@@ -380,6 +380,8 @@ func buildOpenAPISpec() map[string]any {
 			"/api/v1/rbac/keys":                         map[string]any{"get": map[string]any{"summary": "List API keys", "responses": okResp("Keys")}, "post": map[string]any{"summary": "Create API key", "responses": okResp("Created")}},
 			"/api/v1/rbac/rls":                          map[string]any{"post": map[string]any{"summary": "Register row-level security policy", "responses": okResp("Policy set")}},
 			"/api/v1/rbac/audit":                        map[string]any{"get": map[string]any{"summary": "Fetch security audit log", "responses": okResp("Audit events")}},
+			"/api/v1/oidc/providers":                    map[string]any{"get": map[string]any{"summary": "List configured OIDC federation providers", "responses": okResp("Providers")}, "post": map[string]any{"summary": "Register or update an OIDC federation provider", "responses": okResp("Provider registered")}, "delete": map[string]any{"summary": "Remove an OIDC federation provider", "responses": okResp("Provider removed")}},
+			"/api/v1/oidc/token":                        map[string]any{"post": map[string]any{"summary": "Exchange federated OIDC JWT for short-lived Longbow session token", "responses": okResp("Session token")}},
 			"/api/v1/backups":                           map[string]any{"get": map[string]any{"summary": "List online backups", "responses": okResp("Backups")}, "post": map[string]any{"summary": "Trigger online backup", "responses": okResp("Backup metadata")}},
 			"/api/v1/backups/restore":                   map[string]any{"post": map[string]any{"summary": "Restore backup with PITR", "responses": okResp("Restore report")}},
 			"/api/v1/backups/verify":                    map[string]any{"post": map[string]any{"summary": "Verify backup integrity", "responses": okResp("Verification report")}},
@@ -1363,6 +1365,86 @@ func (s *VectorStore) rbacAuditHTTPHandler() http.Handler {
 		}
 		entries := s.AuditLogger().RecentEntries(limit)
 		writeRESTJSON(w, "rbac_audit", r.Method, http.StatusOK, map[string]any{"entries": entries, "count": len(entries)})
+	})
+}
+
+func (s *VectorStore) oidcProvidersHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			issuers := s.OIDC().ListIssuers()
+			writeRESTJSON(w, "oidc_providers", r.Method, http.StatusOK, map[string]any{"providers": issuers, "count": len(issuers)})
+		case http.MethodPost:
+			r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+			var cfg security.OIDCIssuerConfig
+			if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+				writeRESTError(w, "oidc_providers", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			if err := s.ensureOIDCManager().AddIssuer(cfg); err != nil {
+				writeRESTError(w, "oidc_providers", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+			s.AuditLogger().RecordEvent(r.Context(), "", "", "add_oidc_provider", cfg.IssuerURL, r.RemoteAddr, true, "")
+			writeRESTJSON(w, "oidc_providers", r.Method, http.StatusCreated, map[string]any{"status": "added", "issuer_url": cfg.IssuerURL})
+		case http.MethodDelete:
+			issuerURL := r.URL.Query().Get("issuer_url")
+			if issuerURL == "" {
+				writeRESTError(w, "oidc_providers", r.Method, http.StatusBadRequest, "issuer_url query parameter is required")
+				return
+			}
+			if !s.OIDC().RemoveIssuer(issuerURL) {
+				writeRESTError(w, "oidc_providers", r.Method, http.StatusNotFound, "provider not found")
+				return
+			}
+			s.AuditLogger().RecordEvent(r.Context(), "", "", "remove_oidc_provider", issuerURL, r.RemoteAddr, true, "")
+			writeRESTJSON(w, "oidc_providers", r.Method, http.StatusOK, map[string]any{"status": "removed", "issuer_url": issuerURL})
+		default:
+			writeRESTError(w, "oidc_providers", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+}
+
+func (s *VectorStore) oidcTokenExchangeHTTPHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeRESTError(w, "oidc_token", r.Method, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
+		var req struct {
+			Token      string `json:"token"`
+			TTLSeconds int64  `json:"ttl_seconds"`
+		}
+		if r.Body != nil && r.ContentLength != 0 {
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeRESTError(w, "oidc_token", r.Method, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+		rawToken := strings.TrimSpace(req.Token)
+		if rawToken == "" {
+			if authz := r.Header.Get("Authorization"); strings.HasPrefix(strings.ToLower(authz), "bearer ") {
+				rawToken = strings.TrimSpace(authz[7:])
+			}
+		}
+		if rawToken == "" {
+			writeRESTError(w, "oidc_token", r.Method, http.StatusUnauthorized, "missing OIDC token")
+			return
+		}
+		ak, raw, err := s.ExchangeOIDCToken(r.Context(), rawToken, time.Duration(req.TTLSeconds)*time.Second)
+		if err != nil {
+			writeRESTError(w, "oidc_token", r.Method, http.StatusUnauthorized, err.Error())
+			return
+		}
+		writeRESTJSON(w, "oidc_token", r.Method, http.StatusOK, map[string]any{
+			"key_id":     ak.KeyID,
+			"token":      raw,
+			"role":       ak.Role,
+			"tenant_id":  ak.TenantID,
+			"namespace":  ak.Namespace,
+			"expires_at": ak.ExpiresAt,
+		})
 	})
 }
 

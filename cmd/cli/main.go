@@ -85,6 +85,14 @@ func main() {
 		runRevokeAPIKey(ctx, os.Args[2:])
 	case "list-api-keys":
 		runListAPIKeys(ctx, os.Args[2:])
+	case "oidc-list-providers":
+		runOIDCListProviders(ctx, os.Args[2:])
+	case "oidc-add-provider":
+		runOIDCAddProvider(ctx, os.Args[2:])
+	case "oidc-remove-provider":
+		runOIDCRemoveProvider(ctx, os.Args[2:])
+	case "oidc-exchange":
+		runOIDCExchange(ctx, os.Args[2:])
 	case "backup":
 		runBackup(ctx, os.Args[2:])
 	case "restore":
@@ -245,6 +253,10 @@ Commands:
   search-analytics     Inspect search query analytics
   record-provenance    Record vector provenance lineage
   get-provenance       Inspect vector provenance lineage
+  oidc-list-providers  List configured OIDC federation providers
+  oidc-add-provider    Register or update an OIDC federation provider
+  oidc-remove-provider Remove an OIDC federation provider
+  oidc-exchange        Exchange an OIDC JWT for a short-lived session token
 
 Global Options:
   -uri string    Longbow server URI (default: grpc://127.0.0.1:3000)

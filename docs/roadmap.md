@@ -122,7 +122,7 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 - [x] OIDC-2.3 Map claims (`sub`, groups, custom attributes) to Longbow
       role + tenant + namespace + datasets.
 - [x] OIDC-2.4 Add replay protection (jti cache / nonce) for interactive flows.
-- [ ] OIDC-2.5 Issue internal short-lived session bound to federated identity.
+- [x] OIDC-2.5 Issue internal short-lived session bound to federated identity.
 
 ### Phase 3: AWS IAM Federation
 
@@ -131,7 +131,7 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 - [x] OIDC-3.3 Map AWS role/session tags to tenant and dataset scopes.
 - [x] OIDC-3.4 Document AWS trust policy templates (IRSA, EKS pod identity,
       EC2 instance profile).
-- [ ] OIDC-3.5 Add example IAM policies for least-privilege access.
+- [x] OIDC-3.5 Add example IAM policies for least-privilege access.
 
 ### Phase 4: Google IAM Federation
 
@@ -139,14 +139,14 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 - [x] OIDC-4.2 Validate Google ID tokens and service account impersonation.
 - [x] OIDC-4.3 Map Google principal/attributes to tenant and dataset scopes.
 - [x] OIDC-4.4 Document Google WIF pool/provider and attribute conditions.
-- [ ] OIDC-4.5 Add example IAM bindings for least-privilege access.
+- [x] OIDC-4.5 Add example IAM bindings for least-privilege access.
 
 ### Phase 5: Dataset & Namespace Authorization Binding
 
 - [x] OIDC-5.1 Extend `APIKey`/`TenantContext` model with federated identity
       provenance (`provider`, `issuer`, `subject`).
 - [x] OIDC-5.2 Enforce namespace/dataset scoping for federated identities.
-- [ ] OIDC-5.3 Integrate with RLS policies for row-level restrictions.
+- [x] OIDC-5.3 Integrate with RLS policies for row-level restrictions.
 - [x] OIDC-5.4 Add per-identity audit attribution (stable subject ID).
 
 ### Phase 6: Audit Logging & Observability
@@ -159,10 +159,10 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 
 ### Phase 7: CLI, SDK & API Integration
 
-- [ ] OIDC-7.1 Add CLI commands for configuring OIDC providers and mappings.
-- [ ] OIDC-7.2 Add REST v1 endpoints for provider CRUD and token exchange.
+- [x] OIDC-7.1 Add CLI commands for configuring OIDC providers and mappings.
+- [x] OIDC-7.2 Add REST v1 endpoints for provider CRUD and token exchange.
 - [ ] OIDC-7.3 Add Python/Go SDK helpers for cloud identity token acquisition.
-- [ ] OIDC-7.4 Update OpenAPI schema and docs.
+- [x] OIDC-7.4 Update OpenAPI schema and docs.
 
 ### Phase 8: Hardening & GA
 
@@ -319,4 +319,4 @@ observability for the latest features (OIDC federation, security auditing).
 - [ ] DS-8 Add Trivy image scan gate to release pipeline.
 - [ ] DS-9 Add gitleaks secret scanning to pre-commit and CI.
 - [x] DS-10 Add OIDC metrics and dashboards (auth success/failure, latency).
-- [ ] DS-11 Add runbooks for OIDC incident response.
+- [x] DS-11 Add runbooks for OIDC incident response.

@@ -229,6 +229,8 @@ func (s *VectorStore) RegisterHTTPHandlers(mux *http.ServeMux) {
 	mux.Handle("/api/v1/rbac/keys", s.httpAuthWrap(PermManageKeys, s.rbacKeysHTTPHandler()))
 	mux.Handle("/api/v1/rbac/rls", s.httpAuthWrap(PermManageTenant, s.rbacRLSHTTPHandler()))
 	mux.Handle("/api/v1/rbac/audit", s.httpAuthWrap(PermAdmin, s.rbacAuditHTTPHandler()))
+	mux.Handle("/api/v1/oidc/providers", s.httpAuthWrap(PermAdmin, s.oidcProvidersHTTPHandler()))
+	mux.Handle("/api/v1/oidc/token", s.oidcTokenExchangeHTTPHandler())
 
 	mux.Handle("/api/v1/backups", s.httpAuthWrap(PermBackup, s.backupsHTTPHandler()))
 	mux.Handle("/api/v1/backups/restore", s.httpAuthWrap(PermBackup, s.backupsRestoreHTTPHandler()))

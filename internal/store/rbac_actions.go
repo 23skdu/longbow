@@ -207,8 +207,11 @@ func permissionAndDatasetForAction(action *flight.Action) (Permission, string) {
 		return PermManageTenant, target
 	case "GetAuditLog", "ReplicateWAL", "cluster-status", "MeshIdentity", "MeshStatus", "DiscoveryStatus",
 		"GetAutoScaleConfig", "SetAutoScaleConfig", "TriggerShardSplit", "TriggerShardMerge",
-		"TriggerRebalance", "GetClusterTopology":
+		"TriggerRebalance", "GetClusterTopology",
+		"ListOIDCProviders", "AddOIDCProvider", "RemoveOIDCProvider":
 		return PermAdmin, ""
+	case "ExchangeOIDCToken":
+		return PermRead, ""
 	default:
 		return PermAdmin, target
 	}
@@ -337,6 +340,86 @@ func (s *VectorStore) handleRBACAction(action *flight.Action, stream flight.Flig
 		entries := s.AuditLogger().RecentEntries(req.Limit)
 		body, _ := json.Marshal(map[string]any{"entries": entries})
 		return true, stream.Send(&flight.Result{Body: body})
+
+	case "ListOIDCProviders":
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermAdmin, ""); err != nil {
+			return true, err
+		}
+		issuers := s.OIDC().ListIssuers()
+		body, _ := json.Marshal(map[string]any{"providers": issuers, "count": len(issuers)})
+		return true, stream.Send(&flight.Result{Body: body})
+
+	case "AddOIDCProvider":
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermAdmin, ""); err != nil {
+			return true, err
+		}
+		var cfg security.OIDCIssuerConfig
+		if err := json.Unmarshal(action.Body, &cfg); err != nil {
+			return true, status.Errorf(codes.InvalidArgument, "invalid json: %v", err)
+		}
+		mgr := s.ensureOIDCManager()
+		if err := mgr.AddIssuer(cfg); err != nil {
+			return true, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
+		s.AuditLogger().RecordEvent(ctx, "", "", "add_oidc_provider", cfg.IssuerURL, "flight", true, "")
+		return true, stream.Send(&flight.Result{Body: []byte(`{"status":"oidc_provider_added"}`)})
+
+	case "RemoveOIDCProvider":
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermAdmin, ""); err != nil {
+			return true, err
+		}
+		var req struct {
+			IssuerURL string `json:"issuer_url"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return true, status.Errorf(codes.InvalidArgument, "invalid json: %v", err)
+		}
+		if req.IssuerURL == "" || !s.OIDC().RemoveIssuer(req.IssuerURL) {
+			return true, status.Error(codes.NotFound, "oidc provider not found")
+		}
+		s.AuditLogger().RecordEvent(ctx, "", "", "remove_oidc_provider", req.IssuerURL, "flight", true, "")
+		return true, stream.Send(&flight.Result{Body: []byte(`{"status":"oidc_provider_removed"}`)})
+
+	case "ExchangeOIDCToken":
+		var req struct {
+			Token      string `json:"token"`
+			TTLSeconds int64  `json:"ttl_seconds"`
+		}
+		if len(action.Body) > 0 {
+			if err := json.Unmarshal(action.Body, &req); err != nil {
+				return true, status.Errorf(codes.InvalidArgument, "invalid json: %v", err)
+			}
+		}
+		ttl := time.Duration(req.TTLSeconds) * time.Second
+		var (
+			ak  *APIKey
+			raw string
+			err error
+		)
+		if req.Token != "" {
+			ak, raw, err = s.ExchangeOIDCToken(ctx, req.Token, ttl)
+		} else if tc, ok := security.TenantFromContext(ctx); ok && tc != nil && strings.HasPrefix(tc.KeyID, "oidc:") {
+			ak, raw, err = s.issueSessionForTenantContext(ctx, tc, ttl)
+		} else if tok := extractTokenFromMetadata(ctx); tok != "" {
+			ak, raw, err = s.ExchangeOIDCToken(ctx, tok, ttl)
+		} else {
+			return true, status.Error(codes.Unauthenticated, "missing OIDC token")
+		}
+		if err != nil {
+			if errors.Is(err, security.ErrUnauthorized) {
+				return true, status.Error(codes.Unauthenticated, err.Error())
+			}
+			return true, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
+		body, _ := json.Marshal(map[string]any{
+			"key_id":     ak.KeyID,
+			"token":      raw,
+			"role":       ak.Role,
+			"tenant_id":  ak.TenantID,
+			"namespace":  ak.Namespace,
+			"expires_at": ak.ExpiresAt,
+		})
+		return true, stream.Send(&flight.Result{Body: body})
 	}
 	return false, nil
 }
@@ -380,6 +463,77 @@ func (s *VectorStore) ensureOIDCValidator() *security.OIDCAccessValidator {
 	v := security.NewOIDCAccessValidator(mgr)
 	v.SetAuditLogger(s.AuditLogger())
 	return v
+}
+
+func (s *VectorStore) ensureOIDCManager() *security.OIDCManager {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	if s.auditLogger == nil {
+		s.auditLogger = security.NewAuditLogger()
+	}
+	if s.oidcManager == nil {
+		s.oidcManager = security.NewOIDCManager(security.OIDCConfig{Enabled: true})
+	}
+	return s.oidcManager
+}
+
+// ExchangeOIDCToken validates a federated OIDC JWT and issues a short-lived
+// Longbow session API key bound to the federated identity's tenant and scope.
+func (s *VectorStore) ExchangeOIDCToken(ctx context.Context, rawToken string, ttl time.Duration) (*APIKey, string, error) {
+	mgr := s.OIDC()
+	if mgr == nil || !mgr.Enabled() {
+		return nil, "", errors.New("oidc federation disabled")
+	}
+	claims, err := mgr.ValidateToken(ctx, rawToken)
+	if err != nil {
+		s.AuditLogger().RecordEvent(ctx, "", "", "oidc_token_exchange", "", "auth", false, err.Error())
+		return nil, "", err
+	}
+	if claims.Expiry > 0 {
+		remaining := time.Until(time.Unix(claims.Expiry, 0))
+		if remaining <= 0 {
+			return nil, "", errors.New("oidc token expired")
+		}
+		if ttl <= 0 || ttl > remaining {
+			ttl = remaining
+		}
+	}
+	return s.issueSessionForTenantContext(ctx, claims.ToTenantContext(), ttl)
+}
+
+func (s *VectorStore) issueSessionForTenantContext(ctx context.Context, tc *security.TenantContext, ttl time.Duration) (*APIKey, string, error) {
+	if tc == nil {
+		return nil, "", errors.New("missing tenant context")
+	}
+	if ttl <= 0 {
+		ttl = 15 * time.Minute
+	}
+	const maxSessionTTL = time.Hour
+	if ttl > maxSessionTTL {
+		ttl = maxSessionTTL
+	}
+	role := RoleReader
+	switch {
+	case tc.IsAdmin:
+		role = RoleAdmin
+	case tc.HasPermission(string(PermWrite)):
+		role = RoleWriter
+	}
+	rbac := s.ensureRBACManager()
+	ak, raw, err := rbac.CreateAPIKeyWithOptions(APIKeyOptions{
+		Name:       tc.KeyID,
+		Role:       role,
+		TenantID:   tc.TenantID,
+		Namespace:  tc.Namespace,
+		Datasets:   tc.Datasets,
+		RowFilters: tc.RowFilters,
+		TTL:        ttl,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	s.AuditLogger().RecordEvent(ctx, tc.KeyID, tc.TenantID, "oidc_token_exchange", ak.KeyID, "auth", true, "")
+	return ak, raw, nil
 }
 
 // AccessValidator returns the active AccessValidator combining RBAC and OIDC

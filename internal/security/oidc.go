@@ -220,9 +220,10 @@ func (m *OIDCManager) getJWKS(ctx context.Context, cfg OIDCIssuerConfig) (map[st
 
 // ValidateToken validates a federated OIDC JWT and returns claims.
 func (m *OIDCManager) ValidateToken(ctx context.Context, rawToken string) (claims *OIDCClaims, err error) {
-	if !m.config.Enabled {
+	if !m.Enabled() {
 		return nil, errors.New("oidc federation disabled")
 	}
+	start := time.Now()
 	// peek issuer for metrics labels
 	parser := jwt.NewParser()
 	unverified, _, perr := parser.ParseUnverified(rawToken, jwt.MapClaims{})
@@ -240,6 +241,7 @@ func (m *OIDCManager) ValidateToken(ctx context.Context, rawToken string) (claim
 	}
 	metrics.OIDCAuthAttempts.WithLabelValues(providerLabel, issuerLabel).Inc()
 	defer func() {
+		metrics.OIDCTokenValidationLatency.WithLabelValues(providerLabel, issuerLabel).Observe(time.Since(start).Seconds())
 		if err != nil {
 			metrics.OIDCAuthFailures.WithLabelValues(providerLabel, issuerLabel, err.Error()).Inc()
 		} else {
@@ -512,6 +514,75 @@ func (c *OIDCClaims) ToTenantContext() *TenantContext {
 		tc.Permissions = []string{"read"}
 	}
 	return tc
+}
+
+// Enabled returns whether OIDC federation is active.
+func (m *OIDCManager) Enabled() bool {
+	if m == nil {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.config.Enabled
+}
+
+// ListIssuers returns a copy of all configured OIDC issuers.
+func (m *OIDCManager) ListIssuers() []OIDCIssuerConfig {
+	if m == nil {
+		return nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]OIDCIssuerConfig, len(m.config.Issuers))
+	copy(out, m.config.Issuers)
+	return out
+}
+
+// AddIssuer registers or updates a trusted OIDC issuer configuration.
+func (m *OIDCManager) AddIssuer(cfg OIDCIssuerConfig) error {
+	if cfg.IssuerURL == "" {
+		return errors.New("issuer_url is required")
+	}
+	if cfg.Audience == "" {
+		return errors.New("audience is required")
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = OIDCProviderGeneric
+	}
+	for _, alg := range cfg.AllowedAlgs {
+		upper := strings.ToUpper(alg)
+		if upper == "NONE" || strings.HasPrefix(upper, "HS") {
+			return fmt.Errorf("disallowed signing algorithm %q: only asymmetric algorithms allowed", alg)
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.config.Enabled = true
+	for i, existing := range m.config.Issuers {
+		if existing.IssuerURL == cfg.IssuerURL {
+			m.config.Issuers[i] = cfg
+			delete(m.cache, cfg.JWKSURL)
+			return nil
+		}
+	}
+	m.config.Issuers = append(m.config.Issuers, cfg)
+	return nil
+}
+
+// RemoveIssuer removes a configured issuer by URL.
+func (m *OIDCManager) RemoveIssuer(issuerURL string) bool {
+	if m == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, existing := range m.config.Issuers {
+		if existing.IssuerURL == issuerURL {
+			m.config.Issuers = append(m.config.Issuers[:i], m.config.Issuers[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 // AWSOIDCIssuerConfig returns a sensible default config for AWS IAM / IRSA

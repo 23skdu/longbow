@@ -38,4 +38,8 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+        {{- if .Values.oidc.enabled }}
+        - protocol: TCP
+          port: 443
+        {{- end }}
 {{- end }}

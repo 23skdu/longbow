@@ -203,6 +203,8 @@ type Config struct {
 	EncryptionAtRest     bool          `envconfig:"ENCRYPTION_AT_REST" default:"false"`
 	KMSProvider          string        `envconfig:"KMS_PROVIDER" default:"local"`
 	KMSMasterKey         string        `envconfig:"KMS_MASTER_KEY" default:""`
+	OIDCEnabled          bool          `envconfig:"OIDC_ENABLED" default:"false"`
+	OIDCIssuers          string        `envconfig:"OIDC_ISSUERS" default:""`
 }
 
 // Global config instance for hook functions
@@ -638,20 +640,36 @@ func run() error {
 		}
 	}()
 
-	// Initialize RBAC & Audit Logging before HTTP/gRPC server registration (Item 3)
-	var authValidator security.AccessValidator
-	var auditLog *security.AuditLogger
+	// Initialize RBAC, OIDC Federation & Audit Logging before HTTP/gRPC server registration (Item 3)
 	if cfg.RBACEnabled {
 		rbacMgr := store.NewRBACManager()
 		vectorStore.EnableRBAC(rbacMgr)
-		authValidator = rbacMgr
-		auditLog = vectorStore.AuditLogger()
 		if _, bootstrapRaw, err := rbacMgr.CreateAPIKeyWithOptions(store.APIKeyOptions{
 			Name: "bootstrap-admin",
 			Role: store.RoleAdmin,
 		}); err == nil {
 			logger.Info().Str("key_id", "bootstrap-admin").Int("key_len", len(bootstrapRaw)).Msg("RBAC enabled with bootstrap admin API key")
 		}
+	}
+	if cfg.OIDCEnabled {
+		var issuers []security.OIDCIssuerConfig
+		if strings.TrimSpace(cfg.OIDCIssuers) != "" {
+			if err := json.Unmarshal([]byte(cfg.OIDCIssuers), &issuers); err != nil {
+				logger.Error().Err(err).Msg("Failed to parse LONGBOW_OIDC_ISSUERS JSON")
+				return err
+			}
+		}
+		oidcMgr := security.NewOIDCManager(security.OIDCConfig{
+			Enabled: true,
+			Issuers: issuers,
+		})
+		vectorStore.EnableOIDC(oidcMgr)
+		logger.Info().Int("issuers", len(issuers)).Msg("OIDC federation enabled")
+	}
+	authValidator := vectorStore.AccessValidator()
+	var auditLog *security.AuditLogger
+	if authValidator != nil {
+		auditLog = vectorStore.AuditLogger()
 	}
 
 	// Initialize TLS / mTLS Certificate Reloader before HTTP/gRPC servers start (Item 11)

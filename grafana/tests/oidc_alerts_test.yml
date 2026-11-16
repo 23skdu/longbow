@@ -21,7 +21,7 @@ tests:
   - interval: 1m
     input_series:
       - series: 'longbow_oidc_auth_failures_total{provider="generic",issuer="https://issuer.example"}'
-        values: '10x60'
+        values: '0+10x60'
       - series: 'longbow_oidc_jwks_fetch_failures_total{issuer="https://issuer.example"}'
         values: '1+1x60'
     alert_rule_test:
@@ -31,9 +31,15 @@ tests:
           - exp_labels:
               severity: warning
               issuer: https://issuer.example
+            exp_annotations:
+              summary: "High OIDC authentication failure rate for https://issuer.example"
+              description: "OIDC federation authentication failures exceed threshold for issuer https://issuer.example."
       - eval_time: 5m
         alertname: LongbowOIDCJWKSFetchFailures
         exp_alerts:
           - exp_labels:
               severity: critical
               issuer: https://issuer.example
+            exp_annotations:
+              summary: "OIDC JWKS fetch failures for https://issuer.example"
+              description: "Unable to fetch JWKS for issuer https://issuer.example, token validation may fail."

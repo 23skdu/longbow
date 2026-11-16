@@ -41,6 +41,11 @@ RUN CGO_ENABLED=1 go build -mod=vendor -tags="${BUILD_TAGS},tpu" \
 # -------------------------------------------------------------------
 FROM debian:bookworm-slim AS runtime
 
+LABEL org.opencontainers.image.title="longbow-tpu" \
+      org.opencontainers.image.description="High-performance vector store with Arrow Flight (Cloud TPU)" \
+      org.opencontainers.image.source="https://github.com/23skdu/longbow" \
+      org.opencontainers.image.licenses="MIT"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libc6 \
     ca-certificates \

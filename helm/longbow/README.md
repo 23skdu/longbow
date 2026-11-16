@@ -214,3 +214,13 @@ graph was left partly disconnected; see `docs/roadmap.md` §9.2.
 | `metrics.serviceMonitor.enabled` | Create Prometheus Operator ServiceMonitor | `false` |
 | `config.logFormat` | Log format (`json` or `console`) | `json` |
 | `config.logLevel` | Log level (`debug`, `info`, `warn`, `error`) | `info` |
+
+### Security, OIDC Federation & Resilience
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `oidc.enabled` | Enable AWS/Google OIDC federation | `false` |
+| `oidc.issuers` | List of trusted `OIDCIssuerConfig` objects | `[]` |
+| `networkPolicy.enabled` | Create Kubernetes `NetworkPolicy` (permits TCP 443 egress when OIDC is enabled) | `false` |
+| `podDisruptionBudget.enabled` | Create `PodDisruptionBudget` | `false` |
+| `podDisruptionBudget.minAvailable` | Minimum available pods during disruptions | `1` |

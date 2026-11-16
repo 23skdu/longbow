@@ -10,6 +10,11 @@
 
 FROM debian:bookworm-slim
 
+LABEL org.opencontainers.image.title="longbow-metal" \
+      org.opencontainers.image.description="High-performance vector store with Arrow Flight (Apple Metal)" \
+      org.opencontainers.image.source="https://github.com/23skdu/longbow" \
+      org.opencontainers.image.licenses="MIT"
+
 RUN groupadd -r longbow && useradd -r -g longbow -d /app -s /sbin/nologin longbow
 
 WORKDIR /app

@@ -1178,3 +1178,4 @@ groups:
         annotations:
           summary: "OIDC JWKS fetch failures for {{ $labels.issuer }}"
           description: "Unable to fetch JWKS for issuer {{ $labels.issuer }}, token validation may fail."
+          runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowOIDCJWKSFetchFailures"

@@ -42,6 +42,11 @@ fi
 # -------------------------------------------------------------------
 FROM scratch
 
+LABEL org.opencontainers.image.title="longbow-emlgo-cpu" \
+      org.opencontainers.image.description="High-performance vector store with Arrow Flight (EMLGo CPU)" \
+      org.opencontainers.image.source="https://github.com/23skdu/longbow" \
+      org.opencontainers.image.licenses="MIT"
+
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group

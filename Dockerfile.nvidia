@@ -71,6 +71,11 @@ RUN go build -mod=vendor -tags "gpu" -ldflags="-s -w" -buildvcs=false -trimpath 
 # -------------------------------------------------------------------
 FROM nvidia/cuda:13.5.0-runtime-ubuntu24.04
 
+LABEL org.opencontainers.image.title="longbow-nvidia" \
+      org.opencontainers.image.description="High-performance vector store with Arrow Flight (NVIDIA CUDA)" \
+      org.opencontainers.image.source="https://github.com/23skdu/longbow" \
+      org.opencontainers.image.licenses="MIT"
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app

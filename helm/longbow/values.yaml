@@ -478,3 +478,16 @@ monitoring:
     enabled: false
     labels: {}
 
+
+# DevSecOps: Network Policy & Pod Disruption Budget
+networkPolicy:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# OIDC Federation (AWS/Google IAM)
+oidc:
+  enabled: false
+  issuers: []  # list of OIDC issuer configs

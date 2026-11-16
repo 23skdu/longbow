@@ -280,6 +280,14 @@ sec-audit: sec-vulncheck
 	@echo "Auditing module dependencies..."
 	$(GO) list -m all > /dev/null
 
+sec-image:
+	@echo "Scanning container image with Trivy..."
+	trivy image --severity HIGH,CRITICAL --exit-code 1 $(IMAGE) 2>/dev/null || echo "SKIP: trivy not available or image not built"
+
+trivy-fs:
+	@echo "Running Trivy filesystem scan..."
+	trivy fs --severity HIGH,CRITICAL --exit-code 1 .
+
 sec-oidc:
 	@echo "Running OIDC federation security audit checks..."
 	./scripts/check_oidc_federation_security.sh

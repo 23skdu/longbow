@@ -297,3 +297,26 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 4. Wire federated identity into `TenantContext` and RBAC (Phase 5).
 5. Add audit logging and metrics (Phase 6).
 6. Extend CI with `sec-oidc` and fuzz coverage for new packages.
+
+---
+
+## DevSecOps, Helm, Grafana & Observability Upgrades
+
+### Goal
+
+Harden delivery pipeline, container images, Helm charts, and Grafana
+observability for the latest features (OIDC federation, security auditing).
+
+### Subtasks
+
+- [x] DS-1 Add OIDC security audit script and Makefile target (`sec-oidc`).
+- [x] DS-2 Add CI job `oidc-federation-security` and gate releases.
+- [x] DS-3 Add NetworkPolicy and PodDisruptionBudget Helm templates.
+- [x] DS-4 Add OIDC values and deployment env wiring in Helm chart.
+- [x] DS-5 Add OCI labels to container image.
+- [x] DS-6 Add Grafana alert group for OIDC auth/JWKS failures.
+- [ ] DS-7 Add image signing (cosign) and SBOM generation to CI.
+- [ ] DS-8 Add Trivy image scan gate to release pipeline.
+- [ ] DS-9 Add gitleaks secret scanning to pre-commit and CI.
+- [ ] DS-10 Add OIDC metrics and dashboards (auth success/failure, latency).
+- [ ] DS-11 Add runbooks for OIDC incident response.

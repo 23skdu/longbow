@@ -419,6 +419,12 @@ spec:
               value: {{ .Values.simd.fallbackEnabled | default true | quote }}
             - name: LONGBOW_JIT
               value: {{ .Values.simd.jitEnabled | default false | quote }}
+            {{- if .Values.oidc.enabled }}
+            - name: LONGBOW_OIDC_ENABLED
+              value: "true"
+            - name: LONGBOW_OIDC_ISSUERS
+              value: {{ .Values.oidc.issuers | toJson | quote }}
+            {{- end }}
 
 
           ports:

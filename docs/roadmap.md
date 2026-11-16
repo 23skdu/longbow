@@ -10,9 +10,9 @@ subtasks required to close it. Tasks are ordered by expected impact.
 ## P0-1: TurboQuant Index Time (429s at 500k; polar reconstruction 47.8% of distance time)
 
 ### Subtasks
-- [ ] P0-1.1 Profile polar reconstruction to confirm Sincos LUT hit rate and hot loops.
-- [ ] P0-1.2 Batch reconstruction across multiple candidates to amortize kernel setup.
-- [ ] P0-1.3 Add Sincos LUT for angle reconstruction (if not already hit).
+- [x] P0-1.1 Sincos LUT exists (tqPolarLUT) and is used in reconstruction.
+- [x] P0-1.2 Batched reconstruction across tqBatchWidth candidates (turboquant_batch.go).
+- [ ] P0-1.3 Profile polar reconstruction to confirm hot loops.
 - [ ] P0-1.4 Validate numerical parity vs scalar reference.
 - [ ] P0-1.5 Benchmark index time before/after.
 

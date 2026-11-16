@@ -309,3 +309,236 @@ func TestSearchModes_RangeAndFederatedAndHTTP(t *testing.T) {
 	assert.NotEmpty(t, gqlData["r"])
 	assert.NotEmpty(t, gqlData["f"])
 }
+
+func TestSearchModes_All21Modalities(t *testing.T) {
+	vs, mem := newSearchModesTestStore(t)
+	baseTs := time.Now().UnixNano()
+	ctx := context.Background()
+
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "rank", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
+		{Name: "active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
+		{Name: "category", Type: arrow.BinaryTypes.String, Nullable: true},
+		{Name: "text", Type: arrow.BinaryTypes.String, Nullable: true},
+		{Name: "timestamp", Type: arrow.FixedWidthTypes.Timestamp_ns, Nullable: false},
+		{Name: "geo_point", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float64), Nullable: false},
+		{Name: "vector", Type: arrow.FixedSizeListOf(4, arrow.PrimitiveTypes.Float32), Nullable: false},
+	}, nil)
+
+	idB := array.NewStringBuilder(mem)
+	defer idB.Release()
+	rankB := array.NewInt64Builder(mem)
+	defer rankB.Release()
+	activeB := array.NewBooleanBuilder(mem)
+	defer activeB.Release()
+	catB := array.NewStringBuilder(mem)
+	defer catB.Release()
+	textB := array.NewStringBuilder(mem)
+	defer textB.Release()
+	tsB := array.NewTimestampBuilder(mem, arrow.FixedWidthTypes.Timestamp_ns.(*arrow.TimestampType))
+	defer tsB.Release()
+	geoB := array.NewFixedSizeListBuilder(mem, 2, arrow.PrimitiveTypes.Float64)
+	defer geoB.Release()
+	geoValB := geoB.ValueBuilder().(*array.Float64Builder)
+	vecB := array.NewFixedSizeListBuilder(mem, 4, arrow.PrimitiveTypes.Float32)
+	defer vecB.Release()
+	vecValB := vecB.ValueBuilder().(*array.Float32Builder)
+
+	rows := []struct {
+		id     string
+		rank   int64
+		active bool
+		cat    string
+		text   string
+		ts     int64
+		lat    float64
+		lon    float64
+		vec    []float32
+	}{
+		{"0", 5, true, "security", "encryption quantum zero trust mesh", baseTs - 300, 37.7749, -122.4194, []float32{1, 0, 0, 0}},
+		{"1", 15, true, "electronics", "solid state semiconductor storage", baseTs - 200, 37.7849, -122.4094, []float32{0.9, 0.1, 0, 0}},
+		{"2", 25, false, "storage", "columnar apache arrow snapshot storage", baseTs - 100, 40.7128, -74.0060, []float32{0, 1, 0, 0}},
+		{"3", 35, true, "network", "high throughput rdma transport", baseTs - 50, 37.7755, -122.4180, []float32{0, 0, 1, 0}},
+	}
+	for _, r := range rows {
+		idB.Append(r.id)
+		rankB.Append(r.rank)
+		activeB.Append(r.active)
+		catB.Append(r.cat)
+		textB.Append(r.text)
+		tsB.Append(arrow.Timestamp(r.ts))
+		geoB.Append(true)
+		geoValB.Append(r.lat)
+		geoValB.Append(r.lon)
+		vecB.Append(true)
+		for _, v := range r.vec {
+			vecValB.Append(v)
+		}
+	}
+	cols := []arrow.Array{idB.NewArray(), rankB.NewArray(), activeB.NewArray(), catB.NewArray(), textB.NewArray(), tsB.NewArray(), geoB.NewArray(), vecB.NewArray()}
+	for _, c := range cols {
+		defer c.Release()
+	}
+	rec := array.NewRecordBatch(schema, cols, int64(len(rows)))
+	defer rec.Release()
+
+	require.NoError(t, vs.StoreRecordBatch(ctx, "all_modes", rec))
+	waitDatasetIndexed(t, vs, "all_modes", 4)
+
+	ds, ok := vs.getDataset("all_modes")
+	require.True(t, ok)
+	require.NotNil(t, ds.Graph)
+	require.NoError(t, ds.Graph.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 1, Weight: 1.0}))
+	require.NoError(t, ds.Graph.AddEdge(Edge{Subject: 1, Predicate: "related", Object: 2, Weight: 0.9}))
+
+	mux := http.NewServeMux()
+	vs.RegisterHTTPHandlers(mux)
+
+	doGetCount := func(name string, tq query.TicketQuery) int {
+		t.Helper()
+		raw, err := json.Marshal(tq)
+		require.NoError(t, err, name)
+		dg := newCapturingDoGetStream(ctx)
+		require.NoError(t, vs.DoGet(&flight.Ticket{Ticket: raw}, dg), name)
+		total := 0
+		for _, f := range dg.frames {
+			if len(f.DataBody) > 0 {
+				total++
+			}
+		}
+		require.GreaterOrEqual(t, total, 1, "mode %s returned no frames", name)
+		return total
+	}
+
+	postJSON := func(name, path string, payload any) map[string]any {
+		t.Helper()
+		raw, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, "mode=%s path=%s body=%s", name, path, w.Body.String())
+		var out map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &out))
+		return out
+	}
+
+	// 1. dense
+	doGetCount("dense", query.TicketQuery{Search: &query.VectorSearchRequest{
+		Dataset: "all_modes", Vector: []float32{1, 0, 0, 0}, K: 3,
+	}})
+
+	// 2. hybrid
+	doGetCount("hybrid", query.TicketQuery{Search: &query.VectorSearchRequest{
+		Dataset: "all_modes", Vector: []float32{1, 0, 0, 0}, TextQuery: "encryption", K: 3, Alpha: 0.5,
+	}})
+
+	// 3. sparse
+	doGetCount("sparse", query.TicketQuery{Search: &query.VectorSearchRequest{
+		Dataset: "all_modes", TextQuery: "encryption", K: 3, Alpha: 0.0,
+	}})
+
+	// 4. filtered (numeric predicate)
+	doGetCount("filtered", query.TicketQuery{Search: &query.VectorSearchRequest{
+		Dataset: "all_modes", Vector: []float32{1, 0, 0, 0}, K: 3,
+		Filters: []query.Filter{{Field: "rank", Operator: ">", Value: "10"}},
+	}})
+
+	// 5. filtered_bool
+	doGetCount("filtered_bool", query.TicketQuery{Search: &query.VectorSearchRequest{
+		Dataset: "all_modes", Vector: []float32{1, 0, 0, 0}, K: 3,
+		Filters: []query.Filter{{Field: "active", Operator: "==", Value: "true"}},
+	}})
+
+	// 6. filtered_string
+	doGetCount("filtered_string", query.TicketQuery{Search: &query.VectorSearchRequest{
+		Dataset: "all_modes", Vector: []float32{1, 0, 0, 0}, K: 3,
+		Filters: []query.Filter{{Field: "category", Operator: "==", Value: "electronics"}},
+	}})
+
+	// 7. by_id
+	assert.GreaterOrEqual(t, int(postJSON("by_id", "/api/v1/datasets/all_modes/search/by-id", map[string]any{
+		"id": "0", "k": 2,
+	})["count"].(float64)), 1)
+
+	// 8. range
+	doGetCount("range", query.TicketQuery{RangeSearch: &query.RangeSearchRequest{
+		Dataset: "all_modes", Vector: []float32{1, 0, 0, 0}, Threshold: 5.0,
+	}})
+
+	// 9. text (AdvancedTextSearch)
+	assert.GreaterOrEqual(t, int(postJSON("text", "/api/v1/datasets/all_modes/text-search", map[string]any{
+		"query": "encryption AND mesh", "k": 3, "facet_fields": []string{"category"},
+	})["total_hits"].(float64)), 1)
+
+	// 10. graphrag
+	doGetCount("graphrag", query.TicketQuery{Search: &query.VectorSearchRequest{
+		Dataset: "all_modes", Vector: []float32{1, 0, 0, 0}, K: 3, GraphAlpha: 0.5, GraphDepth: 2,
+	}})
+
+	// 11. global_graphrag (GlobalSearchCoordinator scatter-gather + GraphAlpha)
+	coord := NewGlobalSearchCoordinator(zerolog.Nop(), nil)
+	vs.SetCoordinator(coord)
+	doGetCount("global_graphrag", query.TicketQuery{Search: &query.VectorSearchRequest{
+		Dataset: "all_modes", Vector: []float32{1, 0, 0, 0}, K: 3, GraphAlpha: 0.5, LocalOnly: false,
+	}})
+
+	// 12. recommend
+	assert.GreaterOrEqual(t, int(postJSON("recommend", "/api/v1/datasets/all_modes/recommend", map[string]any{
+		"seed_ids": []string{"0", "1"}, "k": 2, "alpha": 0.5, "max_hops": 2, "decay": 0.8,
+	})["count"].(float64)), 1)
+
+	// 13. geo (radius)
+	assert.GreaterOrEqual(t, int(postJSON("geo", "/api/v1/datasets/all_modes/geo-search", map[string]any{
+		"search_type": "radius", "center": map[string]float64{"lat": 37.7749, "lon": -122.4194}, "radius_km": 5.0, "k": 4,
+	})["count"].(float64)), 1)
+
+	// 14. geo_box
+	assert.GreaterOrEqual(t, int(postJSON("geo_box", "/api/v1/datasets/all_modes/geo-search", map[string]any{
+		"search_type": "box", "box": map[string]float64{"min_lat": 37.7, "max_lat": 37.8, "min_lon": -122.5, "max_lon": -122.4}, "k": 4,
+	})["count"].(float64)), 1)
+
+	// 15. geo_hybrid
+	assert.GreaterOrEqual(t, int(postJSON("geo_hybrid", "/api/v1/datasets/all_modes/geo-search", map[string]any{
+		"search_type": "hybrid", "center": map[string]float64{"lat": 37.7749, "lon": -122.4194}, "radius_km": 5.0, "query_vector": []float32{1, 0, 0, 0}, "k": 4,
+	})["count"].(float64)), 1)
+
+	// 16. temporal (as_of)
+	assert.GreaterOrEqual(t, int(postJSON("temporal", "/api/v1/datasets/all_modes/temporal-search", map[string]any{
+		"search_type": "as_of", "timestamp": baseTs, "k": 4,
+	})["count"].(float64)), 1)
+
+	// 17. temporal_range
+	assert.GreaterOrEqual(t, int(postJSON("temporal_range", "/api/v1/datasets/all_modes/temporal-search", map[string]any{
+		"search_type": "range", "start_time": baseTs - 400, "end_time": baseTs, "k": 4,
+	})["count"].(float64)), 1)
+
+	// 18. temporal_window
+	assert.GreaterOrEqual(t, int(postJSON("temporal_window", "/api/v1/datasets/all_modes/temporal-search", map[string]any{
+		"search_type": "sliding_window", "window_size": 2, "k": 4,
+	})["count"].(float64)), 1)
+
+	// 19. multimodal
+	_, err := vs.GetMultiModalPipeline().IngestItems(ctx, "mm_all_modes", []MultiModalItem{
+		{ID: "mm-0", Modality: ModalityText, Caption: "quantum encryption"},
+	})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		mmds, ok := vs.getDataset("mm_all_modes")
+		return ok && mmds.IndexLen() >= 1
+	}, 5*time.Second, 25*time.Millisecond)
+	assert.GreaterOrEqual(t, int(postJSON("multimodal", "/api/v1/datasets/mm_all_modes/multimodal-search", map[string]any{
+		"modality": "text", "text_query": "quantum", "k": 1,
+	})["count"].(float64)), 1)
+
+	// 20. federated
+	assert.GreaterOrEqual(t, int(postJSON("federated", "/api/v1/search/federated", map[string]any{
+		"collections": []string{"all_modes"}, "vector": []float32{1, 0, 0, 0}, "k": 3, "rrf_k": 60,
+	})["count"].(float64)), 1)
+
+	// 21. learned_index
+	doGetCount("learned_index", query.TicketQuery{Search: &query.VectorSearchRequest{
+		Dataset: "all_modes", Vector: []float32{1, 0, 0, 0}, K: 3, EnableLearnedIndex: true,
+	}})
+}

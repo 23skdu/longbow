@@ -685,14 +685,22 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 		searchCtx.filterBitmap = upperFilterBitmap
 	}
 
+	ef := maxNodeCount
+	if searchOptions.MaxResults > 0 {
+		ef = max(searchOptions.MaxResults*4, int(h.config.EfSearch), 64)
+		if ef > maxNodeCount {
+			ef = maxNodeCount
+		}
+	}
+
 	var res []types.Candidate
 	var err error
 	if compF32, ok := computer.(*float32ToFloat32Computer); ok {
-		res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, maxNodeCount, 0, searchCtx, data)
+		res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, ef, 0, searchCtx, data)
 	} else if compF64, ok := computer.(*float64Computer); ok {
-		res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, maxNodeCount, 0, searchCtx, data)
+		res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, ef, 0, searchCtx, data)
 	} else {
-		res, err = h.searchLayer(ctx, computer, currObj.ID, maxNodeCount, 0, searchCtx, data, queryVec)
+		res, err = h.searchLayer(ctx, computer, currObj.ID, ef, 0, searchCtx, data, queryVec)
 	}
 	if err != nil {
 		return nil, err

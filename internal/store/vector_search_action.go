@@ -207,7 +207,7 @@ func (s *VectorStore) HandleVectorSearchAction(action *flight.Action, stream fli
 		searchResults = s.FilterResultsByRLS(stream.Context(), req.Dataset, searchResults)
 
 		// Perform Global Search (Scatter-Gather) if not local-only
-		if !req.LocalOnly && s.Mesh != nil {
+		if !req.LocalOnly && s.Mesh != nil && s.coordinator != nil {
 			peers := s.Mesh.GetMembers()
 			var remotePeers []mesh.Member
 			selfID := s.Mesh.GetIdentity().ID

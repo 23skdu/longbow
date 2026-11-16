@@ -186,24 +186,36 @@ func runOIDCAddProvider(ctx context.Context, args []string) {
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Server URI")
 	apiKey := fs.String("api-key", os.Getenv("LONGBOW_API_KEY"), "Admin API key")
 	_ = fs.Parse(args)
-	if *issuer == "" || *audience == "" {
+	if *issuer == "" && *provider != "google" {
 		log.Fatal("Usage: longbow-cli oidc-add-provider -issuer <url> -audience <aud> [-provider aws|google|generic]")
 	}
 	sc := getCLIAuthClient(*uri, *apiKey, "", "", "", "")
 	defer func() { _ = sc.Close() }()
-	body, _ := json.Marshal(security.OIDCIssuerConfig{
-		Provider:       security.OIDCProviderKind(*provider),
-		IssuerURL:      *issuer,
-		JWKSURL:        *jwks,
-		Audience:       *audience,
-		AllowedAlgs:    []string{"RS256", "ES256"},
-		TenantClaim:    *tenantClaim,
-		RoleClaim:      *roleClaim,
-		RowFilterClaim: *rowFilterClaim,
-		AdminClaim:     *adminClaim,
-		AdminValue:     *adminValue,
-		TrustPolicyARN: *trustARN,
-	})
+	var oidcCfg security.OIDCIssuerConfig
+	switch security.OIDCProviderKind(*provider) {
+	case security.OIDCProviderAWS:
+		oidcCfg = security.AWSOIDCIssuerConfig(*issuer, *audience)
+	case security.OIDCProviderGoogle:
+		oidcCfg = security.GoogleOIDCIssuerConfig(*audience)
+		if *issuer != "" {
+			oidcCfg.IssuerURL = *issuer
+		}
+	default:
+		oidcCfg = security.OIDCIssuerConfig{
+			Provider:    security.OIDCProviderKind(*provider),
+			IssuerURL:   *issuer,
+			Audience:    *audience,
+			AllowedAlgs: []string{"RS256", "ES256"},
+		}
+	}
+	oidcCfg.JWKSURL = *jwks
+	oidcCfg.TenantClaim = *tenantClaim
+	oidcCfg.RoleClaim = *roleClaim
+	oidcCfg.RowFilterClaim = *rowFilterClaim
+	oidcCfg.AdminClaim = *adminClaim
+	oidcCfg.AdminValue = *adminValue
+	oidcCfg.TrustPolicyARN = *trustARN
+	body, _ := json.Marshal(oidcCfg)
 	executeCLIAction(sc.WithAuthContext(ctx), sc, "AddOIDCProvider", body)
 }
 

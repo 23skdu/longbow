@@ -21,6 +21,8 @@ type SchemaVersion struct {
 type ColumnMetadata struct {
 	Name      string
 	Type      arrow.DataType
+	Nullable  bool
+	Metadata  arrow.Metadata
 	AddedAt   uint64 // version when added
 	DroppedAt uint64 // version when dropped (0 = not dropped)
 }
@@ -32,7 +34,8 @@ type SchemaEvolutionManager struct {
 	versions    map[uint64]*SchemaVersion
 	columns     map[string]*ColumnMetadata
 	columnOrder []string // maintain column order
-	datasetName string   // for metrics
+	schemaMeta  arrow.Metadata
+	datasetName string // for metrics
 
 	// cachedSchema is the last reconstructed schema, invalidated on any schema mutation.
 	cachedSchema atomic.Pointer[arrow.Schema]
@@ -48,12 +51,15 @@ func NewSchemaEvolutionManager(initialSchema *arrow.Schema, datasetName string) 
 
 	if initialSchema != nil {
 		mgr.currentVer.Store(1)
+		mgr.schemaMeta = initialSchema.Metadata()
 		fields := make([]arrow.Field, 0, len(initialSchema.Fields()))
 		for _, field := range initialSchema.Fields() {
 			mgr.columns[field.Name] = &ColumnMetadata{
-				Name:    field.Name,
-				Type:    field.Type,
-				AddedAt: 1,
+				Name:     field.Name,
+				Type:     field.Type,
+				Nullable: field.Nullable,
+				Metadata: field.Metadata,
+				AddedAt:  1,
 			}
 			mgr.columnOrder = append(mgr.columnOrder, field.Name)
 			fields = append(fields, field)
@@ -97,13 +103,20 @@ func (m *SchemaEvolutionManager) GetCurrentSchema() *arrow.Schema {
 		col := m.columns[name]
 		if col.DroppedAt == 0 { // not dropped
 			fields = append(fields, arrow.Field{
-				Name: col.Name,
-				Type: col.Type,
+				Name:     col.Name,
+				Type:     col.Type,
+				Nullable: col.Nullable,
+				Metadata: col.Metadata,
 			})
 		}
 	}
 
-	schema := arrow.NewSchema(fields, nil)
+	var metaPtr *arrow.Metadata
+	if m.schemaMeta.Len() > 0 {
+		metaCopy := m.schemaMeta
+		metaPtr = &metaCopy
+	}
+	schema := arrow.NewSchema(fields, metaPtr)
 	m.cachedSchema.Store(schema)
 	return schema
 }
@@ -151,8 +164,10 @@ func (m *SchemaEvolutionManager) AddColumn(name string, dtype arrow.DataType) er
 		col := m.columns[colName]
 		if col.DroppedAt == 0 {
 			fields = append(fields, arrow.Field{
-				Name: col.Name,
-				Type: col.Type,
+				Name:     col.Name,
+				Type:     col.Type,
+				Nullable: col.Nullable,
+				Metadata: col.Metadata,
 			})
 		}
 	}
@@ -206,8 +221,10 @@ func (m *SchemaEvolutionManager) DropColumn(name string) error {
 		c := m.columns[colName]
 		if c.DroppedAt == 0 {
 			fields = append(fields, arrow.Field{
-				Name: c.Name,
-				Type: c.Type,
+				Name:     c.Name,
+				Type:     c.Type,
+				Nullable: c.Nullable,
+				Metadata: c.Metadata,
 			})
 		}
 	}
@@ -353,7 +370,7 @@ func (m *SchemaEvolutionManager) Evolve(newSchema *arrow.Schema) error {
 	var changesMade bool
 	for _, field := range newSchema.Fields() {
 		m.mu.RLock()
-		_, exists := m.columns[field.Name]
+		col, exists := m.columns[field.Name]
 		m.mu.RUnlock()
 
 		if !exists {
@@ -361,8 +378,29 @@ func (m *SchemaEvolutionManager) Evolve(newSchema *arrow.Schema) error {
 			if err := m.AddColumn(field.Name, field.Type); err != nil {
 				return err
 			}
+			m.mu.Lock()
+			if c, ok := m.columns[field.Name]; ok {
+				c.Nullable = field.Nullable
+				c.Metadata = field.Metadata
+			}
+			m.cachedSchema.Store(nil)
+			m.mu.Unlock()
+			changesMade = true
+		} else if field.Metadata.Len() > 0 && col.Metadata.Len() == 0 {
+			m.mu.Lock()
+			col.Metadata = field.Metadata
+			col.Nullable = field.Nullable
+			m.cachedSchema.Store(nil)
+			m.mu.Unlock()
 			changesMade = true
 		}
+	}
+	if newSchema.Metadata().Len() > 0 && m.schemaMeta.Len() == 0 {
+		m.mu.Lock()
+		m.schemaMeta = newSchema.Metadata()
+		m.cachedSchema.Store(nil)
+		m.mu.Unlock()
+		changesMade = true
 	}
 
 	if changesMade {

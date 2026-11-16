@@ -176,7 +176,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 		}
 
 		// 4. Global Scatter-Gather (if not local-only)
-		if !req.LocalOnly && s.Mesh != nil {
+		if !req.LocalOnly && s.Mesh != nil && s.coordinator != nil {
 			peers := s.Mesh.GetMembers()
 			var remotePeers []mesh.Member //nolint:prealloc // Unknown size
 			selfID := s.Mesh.GetIdentity().ID

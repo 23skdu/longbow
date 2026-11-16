@@ -190,7 +190,8 @@ type VectorStore struct {
 	evictionManager *lbcore.GraphLayerEvictionManager
 
 	// Learned Index Predictor (Part 16)
-	indexPredictor *IndexPerformancePredictor
+	indexPredictor  *IndexPerformancePredictor
+	ollamaPredictor *LearnedIndexWithOllama
 	// activeEmbeddingProvider and activeEmbeddingModel track the currently active
 	// EmbeddingGenerator backend (set via SetActiveEmbedding). These are propagated
 	// into QueryFeatures by RecordQueryPerformance for learned index training.
@@ -198,6 +199,7 @@ type VectorStore struct {
 	activeEmbeddingModel    string
 
 	temporalConfig TemporalConfig
+	ttlPolicy      *TTLPolicy
 
 	// Quantization auto-tuner (v0.1.9)
 	quantTuner *QuantizationTuner
@@ -324,8 +326,9 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	vs.indexAdapter.WithIndexSwitcher(vs)
 	vs.indexAdapter.Start()
 
-	// Initialize Flight client pool for distributed coordination
+	// Initialize Flight client pool and global search coordinator for distributed coordination
 	vs.pool = NewFlightClientPool(DefaultFlightClientPoolConfig())
+	vs.coordinator = NewGlobalSearchCoordinator(vs.logger, vs.pool)
 
 	vs.admission = NewAdmissionController(&vs.maxMemory, &vs.currentMemory, nil, vs.logger)
 

@@ -477,12 +477,33 @@ func GenerateSnippetHighlight(text string, matchedTerms []string, openTag, close
 	return out.String(), highlights
 }
 
+type cachedTextDoc struct {
+	id        string
+	vectorID  uint32
+	text      string
+	lowerText string
+	meta      map[string]any
+	tokens    []string
+	tf        map[string]int
+}
+
+type cachedTextCorpus struct {
+	numBatches    int
+	totalRows     int64
+	tombstoneCard uint64
+	docs          []cachedTextDoc
+	df            map[string]int
+	avgDL         float64
+	postings      map[string][]int
+}
+
 // AdvancedTextSearchManager provides full-text boolean/phrase/fuzzy search, highlighting,
 // faceted counts, dynamic BM25 k1/b tuning, and search analytics tracking.
 type AdvancedTextSearchManager struct {
 	mu           sync.RWMutex
 	store        *VectorStore
 	datasetBM25  map[string]BM25TuningParams
+	corpusCache  map[string]*cachedTextCorpus
 	totalQueries int64
 	zeroQueries  int64
 	analytics    map[string]*QueryAnalyticsEntry
@@ -493,6 +514,7 @@ func NewAdvancedTextSearchManager(s *VectorStore) *AdvancedTextSearchManager {
 	return &AdvancedTextSearchManager{
 		store:       s,
 		datasetBM25: make(map[string]BM25TuningParams),
+		corpusCache: make(map[string]*cachedTextCorpus),
 		analytics:   make(map[string]*QueryAnalyticsEntry),
 	}
 }
@@ -544,14 +566,7 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 		closeTag = "</" + req.HighlightTag + ">"
 	}
 
-	type textDoc struct {
-		id       string
-		vectorID uint32
-		text     string
-		meta     map[string]any
-		tokens   []string
-	}
-	var docs []textDoc
+	var corpus *cachedTextCorpus
 	if m.store != nil {
 		ds, ok := m.store.getDataset(req.Dataset)
 		if !ok {
@@ -561,81 +576,122 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 		ds.dataMu.RLock()
 		records := ds.Records.Read()
 		tombstones := ds.Tombstones
-		var vid uint32
-		for bIdx, rec := range records {
-			ts := tombstones[bIdx]
-			colIdx := make(map[string]int, len(rec.Schema().Fields()))
-			for i, f := range rec.Schema().Fields() {
-				colIdx[f.Name] = i
+		var totalRows int64
+		for _, rec := range records {
+			totalRows += rec.NumRows()
+		}
+		var tombCard uint64
+		for _, ts := range tombstones {
+			if ts != nil {
+				tombCard += ts.Count()
 			}
-			for r := 0; r < int(rec.NumRows()); r++ {
-				if ts != nil && ts.Contains(r) {
-					vid++
-					continue
+		}
+		numBatches := len(records)
+
+		m.mu.RLock()
+		cached := m.corpusCache[req.Dataset]
+		m.mu.RUnlock()
+
+		if cached != nil && cached.numBatches == numBatches && cached.totalRows == totalRows && cached.tombstoneCard == tombCard {
+			corpus = cached
+			ds.dataMu.RUnlock()
+		} else {
+			docs := make([]cachedTextDoc, 0, totalRows)
+			df := make(map[string]int)
+			postings := make(map[string][]int)
+			var totalTokens int
+			var vid uint32
+			for bIdx, rec := range records {
+				ts := tombstones[bIdx]
+				colIdx := make(map[string]int, len(rec.Schema().Fields()))
+				for i, f := range rec.Schema().Fields() {
+					colIdx[f.Name] = i
 				}
-				var meta map[string]any
-				if mi, hasMeta := colIdx["metadata"]; hasMeta {
-					if sa, ok := rec.Column(mi).(*array.String); ok && !sa.IsNull(r) {
-						_ = json.Unmarshal([]byte(sa.Value(r)), &meta)
+				for r := 0; r < int(rec.NumRows()); r++ {
+					if ts != nil && ts.Contains(r) {
+						vid++
+						continue
 					}
+					var meta map[string]any
+					if mi, hasMeta := colIdx["metadata"]; hasMeta {
+						if sa, ok := rec.Column(mi).(*array.String); ok && !sa.IsNull(r) {
+							_ = json.Unmarshal([]byte(sa.Value(r)), &meta)
+						}
+					}
+					idVal := readRowStringValue(rec, colIdx, meta, r, "id")
+					if idVal == "" {
+						idVal = strconv.FormatUint(uint64(vid), 10)
+					}
+					text := collectDocumentText(rec, colIdx, meta, r)
+					tokens := tokenizeAlphaNum(text)
+					tf := make(map[string]int, len(tokens))
+					docPos := len(docs)
+					for _, tok := range tokens {
+						tf[tok]++
+						if tf[tok] == 1 {
+							df[tok]++
+							postings[tok] = append(postings[tok], docPos)
+						}
+					}
+					totalTokens += len(tokens)
+					docs = append(docs, cachedTextDoc{
+						id:        idVal,
+						vectorID:  vid,
+						text:      text,
+						lowerText: strings.ToLower(text),
+						meta:      meta,
+						tokens:    tokens,
+						tf:        tf,
+					})
+					vid++
 				}
-				idVal := readRowStringValue(rec, colIdx, meta, r, "id")
-				if idVal == "" {
-					idVal = fmt.Sprintf("%d", vid)
-				}
-				text := collectDocumentText(rec, colIdx, meta, r)
-				docs = append(docs, textDoc{
-					id:       idVal,
-					vectorID: vid,
-					text:     text,
-					meta:     meta,
-					tokens:   tokenizeAlphaNum(text),
-				})
-				vid++
 			}
+			ds.dataMu.RUnlock()
+
+			avgDL := 1.0
+			if len(docs) > 0 {
+				avgDL = max(1.0, float64(totalTokens)/float64(len(docs)))
+			}
+			corpus = &cachedTextCorpus{
+				numBatches:    numBatches,
+				totalRows:     totalRows,
+				tombstoneCard: tombCard,
+				docs:          docs,
+				df:            df,
+				avgDL:         avgDL,
+				postings:      postings,
+			}
+			m.mu.Lock()
+			m.corpusCache[req.Dataset] = corpus
+			m.mu.Unlock()
 		}
-		ds.dataMu.RUnlock()
+	} else {
+		corpus = &cachedTextCorpus{avgDL: 1.0}
 	}
 
-	// Corpus statistics for dynamic BM25 (IDF + avgdl)
-	nDocs := len(docs)
-	var totalTokens int
-	df := make(map[string]int)
-	for _, d := range docs {
-		totalTokens += len(d.tokens)
-		seen := make(map[string]struct{}, len(d.tokens))
-		for _, tok := range d.tokens {
-			if _, ok := seen[tok]; !ok {
-				seen[tok] = struct{}{}
-				df[tok]++
-			}
-		}
+	nDocs := len(corpus.docs)
+	type candidateHit struct {
+		docIdx       int
+		score        float64
+		matchedTerms []string
 	}
-	avgDL := 1.0
-	if nDocs > 0 {
-		avgDL = max(1.0, float64(totalTokens)/float64(nDocs))
-	}
-
-	var hits []HighlightedTextHit
+	var cands []candidateHit
 	facetMaps := make(map[string]map[string]int)
 	for _, f := range req.FacetFields {
 		facetMaps[f] = make(map[string]int)
 	}
 
-	for _, d := range docs {
-		ok, matchedTerms := ast.evaluate(strings.ToLower(d.text), d.tokens, req.FuzzyMaxDist)
+	evalDoc := func(idx int) {
+		d := &corpus.docs[idx]
+		ok, matchedTerms := ast.evaluate(d.lowerText, d.tokens, req.FuzzyMaxDist)
 		if !ok {
-			continue
+			return
 		}
-		score := scoreDocBM25(d.tokens, matchedTerms, nDocs, avgDL, df, bm25)
-		snippet, hl := GenerateSnippetHighlight(d.text, matchedTerms, openTag, closeTag, req.SnippetChars)
-		hits = append(hits, HighlightedTextHit{
-			ID:         d.id,
-			VectorID:   d.vectorID,
-			Score:      score,
-			Snippet:    snippet,
-			Highlights: hl,
-			Metadata:   d.meta,
+		score := scoreCachedDocBM25(d.tf, len(d.tokens), matchedTerms, nDocs, corpus.avgDL, corpus.df, bm25)
+		cands = append(cands, candidateHit{
+			docIdx:       idx,
+			score:        score,
+			matchedTerms: matchedTerms,
 		})
 		for _, ff := range req.FacetFields {
 			if val, exists := d.meta[ff]; exists && val != nil {
@@ -644,15 +700,39 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 		}
 	}
 
-	sort.Slice(hits, func(i, j int) bool {
-		if hits[i].Score == hits[j].Score {
-			return hits[i].ID < hits[j].ID
+	if postIdxs, ok := collectCandidatePostings(ast, corpus.postings, req.FuzzyMaxDist); ok {
+		for _, idx := range postIdxs {
+			evalDoc(idx)
 		}
-		return hits[i].Score > hits[j].Score
+	} else {
+		for idx := range corpus.docs {
+			evalDoc(idx)
+		}
+	}
+
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].score == cands[j].score {
+			return corpus.docs[cands[i].docIdx].id < corpus.docs[cands[j].docIdx].id
+		}
+		return cands[i].score > cands[j].score
 	})
-	totalHits := len(hits)
-	if len(hits) > req.K {
-		hits = hits[:req.K]
+	totalHits := len(cands)
+	if len(cands) > req.K {
+		cands = cands[:req.K]
+	}
+
+	hits := make([]HighlightedTextHit, len(cands))
+	for i, c := range cands {
+		d := &corpus.docs[c.docIdx]
+		snippet, hl := GenerateSnippetHighlight(d.text, c.matchedTerms, openTag, closeTag, req.SnippetChars)
+		hits[i] = HighlightedTextHit{
+			ID:         d.id,
+			VectorID:   d.vectorID,
+			Score:      c.score,
+			Snippet:    snippet,
+			Highlights: hl,
+			Metadata:   d.meta,
+		}
 	}
 
 	var facets map[string][]FacetCount
@@ -742,16 +822,12 @@ func (m *AdvancedTextSearchManager) recordAnalytics(query string, hits int, dur 
 	ent.LastSeen = time.Now().UTC()
 }
 
-func scoreDocBM25(docTokens, matchedTerms []string, nDocs int, avgDL float64, df map[string]int, params BM25TuningParams) float64 {
-	if len(matchedTerms) == 0 || len(docTokens) == 0 {
+func scoreCachedDocBM25(tfMap map[string]int, docLen int, matchedTerms []string, nDocs int, avgDL float64, df map[string]int, params BM25TuningParams) float64 {
+	if len(matchedTerms) == 0 || docLen == 0 {
 		return 0
 	}
-	tfMap := make(map[string]int, len(docTokens))
-	for _, t := range docTokens {
-		tfMap[t]++
-	}
 	uniq := dedupStrings(matchedTerms)
-	dl := float64(len(docTokens))
+	dl := float64(docLen)
 	var score float64
 	for _, term := range uniq {
 		// Split phrases into component words when scoring BM25
@@ -768,6 +844,101 @@ func scoreDocBM25(docTokens, matchedTerms []string, nDocs int, avgDL float64, df
 		}
 	}
 	return score
+}
+
+func collectCandidatePostings(node queryNode, postings map[string][]int, defFuzzy int) ([]int, bool) {
+	if node == nil || len(postings) == 0 {
+		return nil, false
+	}
+	switch n := node.(type) {
+	case termNode:
+		dist := n.maxDist
+		if dist <= 0 {
+			dist = defFuzzy
+		}
+		if dist > 0 || strings.ContainsAny(n.term, "*?") {
+			return nil, false
+		}
+		return postings[strings.ToLower(n.term)], true
+	case phraseNode:
+		toks := tokenizeAlphaNum(n.phrase)
+		if len(toks) == 0 {
+			return nil, true
+		}
+		cur := postings[toks[0]]
+		for _, t := range toks[1:] {
+			cur = intersectSortedInts(cur, postings[t])
+			if len(cur) == 0 {
+				return nil, true
+			}
+		}
+		return cur, true
+	case andNode:
+		left, okL := collectCandidatePostings(n.left, postings, defFuzzy)
+		right, okR := collectCandidatePostings(n.right, postings, defFuzzy)
+		if okL && okR {
+			return intersectSortedInts(left, right), true
+		}
+		if okL {
+			return left, true
+		}
+		if okR {
+			return right, true
+		}
+		return nil, false
+	case orNode:
+		left, okL := collectCandidatePostings(n.left, postings, defFuzzy)
+		right, okR := collectCandidatePostings(n.right, postings, defFuzzy)
+		if okL && okR {
+			return unionSortedInts(left, right), true
+		}
+		return nil, false
+	default:
+		return nil, false
+	}
+}
+
+func intersectSortedInts(a, b []int) []int {
+	if len(a) == 0 || len(b) == 0 {
+		return nil
+	}
+	out := make([]int, 0, min(len(a), len(b)))
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] == b[j]:
+			out = append(out, a[i])
+			i++
+			j++
+		case a[i] < b[j]:
+			i++
+		default:
+			j++
+		}
+	}
+	return out
+}
+
+func unionSortedInts(a, b []int) []int {
+	out := make([]int, 0, len(a)+len(b))
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] == b[j]:
+			out = append(out, a[i])
+			i++
+			j++
+		case a[i] < b[j]:
+			out = append(out, a[i])
+			i++
+		default:
+			out = append(out, b[j])
+			j++
+		}
+	}
+	out = append(out, a[i:]...)
+	out = append(out, b[j:]...)
+	return out
 }
 
 func collectDocumentText(rec arrow.RecordBatch, colIdx map[string]int, meta map[string]any, row int) string {

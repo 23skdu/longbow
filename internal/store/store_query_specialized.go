@@ -98,10 +98,12 @@ func (s *VectorStore) GeoSearch(ctx context.Context, req *types.GeoSearchRequest
 			}
 		}
 
-		var globalErr error
-		results, globalErr = s.coordinator.GlobalGeoSearch(ctx, results, req, remotePeers)
-		if globalErr != nil {
-			s.logger.Warn().Err(globalErr).Msg("GlobalGeoSearch partial failure")
+		if s.coordinator != nil {
+			var globalErr error
+			results, globalErr = s.coordinator.GlobalGeoSearch(ctx, results, req, remotePeers)
+			if globalErr != nil {
+				s.logger.Warn().Err(globalErr).Msg("GlobalGeoSearch partial failure")
+			}
 		}
 	}
 
@@ -193,10 +195,12 @@ func (s *VectorStore) TemporalSearch(ctx context.Context, req *types.TemporalSea
 			}
 		}
 
-		var globalErr error
-		results, globalErr = s.coordinator.GlobalTemporalSearch(ctx, results, req, remotePeers)
-		if globalErr != nil {
-			s.logger.Warn().Err(globalErr).Msg("GlobalTemporalSearch partial failure")
+		if s.coordinator != nil {
+			var globalErr error
+			results, globalErr = s.coordinator.GlobalTemporalSearch(ctx, results, req, remotePeers)
+			if globalErr != nil {
+				s.logger.Warn().Err(globalErr).Msg("GlobalTemporalSearch partial failure")
+			}
 		}
 	}
 

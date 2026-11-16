@@ -21,12 +21,23 @@ func (s *VectorStore) GetIndexPredictor() *IndexPerformancePredictor {
 	return s.indexPredictor
 }
 
+// SetOllamaPredictor sets the Ollama-backed learned index predictor.
+func (s *VectorStore) SetOllamaPredictor(predictor *LearnedIndexWithOllama) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	s.ollamaPredictor = predictor
+}
+
 // GetIndexRecommendation returns an index recommendation based on query features.
 func (s *VectorStore) GetIndexRecommendation(features QueryFeatures) IndexPrediction {
 	s.configMu.RLock()
 	predictor := s.indexPredictor
+	ollama := s.ollamaPredictor
 	s.configMu.RUnlock()
 
+	if ollama != nil {
+		return ollama.Predict(s.ctx, features)
+	}
 	if predictor == nil {
 		return IndexPrediction{
 			RecommendedIndex: IndexTypeHNSW,

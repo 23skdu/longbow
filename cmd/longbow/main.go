@@ -50,7 +50,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/keepalive"
 )
 
 // Config holds the application configuration
@@ -479,14 +478,7 @@ func run() error {
 	}
 
 	// Start eviction ticker if TTL is enabled
-	if cfg.TTL > 0 {
-		checkInterval := time.Minute
-		if cfg.TTL/10 < checkInterval {
-			checkInterval = cfg.TTL / 10
-		}
-		if checkInterval < time.Second {
-			checkInterval = time.Second
-		}
+	if checkInterval := CalculateEvictionInterval(cfg.TTL); checkInterval > 0 {
 		vectorStore.StartEvictionTicker(checkInterval)
 		vectorStore.StartWALCheckTicker(10 * time.Second)
 		logger.Info().Dur("interval", checkInterval).Msg("Eviction ticker started")
@@ -555,7 +547,6 @@ func run() error {
 
 	// Initialize Learned Index Predictor (Part 16)
 	var indexPredictor *store.IndexPerformancePredictor
-	var learnedWithOllama *store.LearnedIndexWithOllama
 	if cfg.LearnedIndexEnabled {
 		indexPredictor = store.NewIndexPerformancePredictor(logger, store.LearnedIndexConfig{
 			EnableAutoSelection: true,
@@ -571,8 +562,9 @@ func run() error {
 				Model:    cfg.OllamaModel,
 				Timeout:  cfg.OllamaTimeout,
 			}
-			learnedWithOllama = store.NewLearnedIndexWithOllama(logger, indexPredictor, ollamaConfig)
+			learnedWithOllama := store.NewLearnedIndexWithOllama(logger, indexPredictor, ollamaConfig)
 			vectorStore.SetIndexPredictor(indexPredictor)
+			vectorStore.SetOllamaPredictor(learnedWithOllama)
 			logger.Info().
 				Str("endpoint", cfg.OllamaEndpoint).
 				Str("model", cfg.OllamaModel).
@@ -585,10 +577,8 @@ func run() error {
 				Msg("Learned index predictor initialized")
 		}
 	}
-	_ = learnedWithOllama
 
 	// Initialize Temporal Index (Part 22)
-	var temporalIndex *store.TemporalIndex
 	if cfg.TemporalEnabled {
 		temporalConfig := store.TemporalConfig{
 			Enabled:            cfg.TemporalEnabled,
@@ -601,13 +591,6 @@ func run() error {
 			AggregationEnabled: cfg.TemporalAggregationEnabled,
 			MaxBuckets:         cfg.TemporalMaxBuckets,
 		}
-		temporalDim := 128
-		if dimStr := os.Getenv("LONGBOW_TEMPORAL_DIM"); dimStr != "" {
-			if d, err := strconv.Atoi(dimStr); err == nil {
-				temporalDim = d
-			}
-		}
-		temporalIndex = store.NewTemporalIndex(temporalDim)
 		vectorStore.SetTemporalIndex(temporalConfig)
 		logger.Info().
 			Bool("version_history", cfg.TemporalVersionHistory).
@@ -617,7 +600,6 @@ func run() error {
 			Bool("aggregation_enabled", cfg.TemporalAggregationEnabled).
 			Msg("Temporal index initialized")
 	}
-	_ = temporalIndex // Wired via vectorStore.SetTemporalIndex above
 
 	// Start background indexing
 	indexingWorkers := runtime.NumCPU() / 2
@@ -918,14 +900,8 @@ func run() error {
 		grpc.InitialWindowSize(cfg.GRPCInitialWindowSize),
 		grpc.InitialConnWindowSize(cfg.GRPCInitialConnWindowSize),
 		grpc.MaxConcurrentStreams(cfg.GRPCMaxConcurrentStreams),
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:    cfg.KeepAliveTime,
-			Timeout: cfg.KeepAliveTimeout,
-		}),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             cfg.KeepAliveMinTime,
-			PermitWithoutStream: cfg.KeepAlivePermitWithoutStream,
-		}),
+		grpc.KeepaliveParams(BuildKeepaliveParams(&cfg)),
+		grpc.KeepaliveEnforcementPolicy(BuildKeepalivePolicy(&cfg)),
 	)
 
 	// Initialize Rate Limiter

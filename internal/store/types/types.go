@@ -222,6 +222,7 @@ type SearchOptions struct {
 	TurboQuantBits int            // Bit depth for TurboQuant search (2, 4, 8)
 	Predicate      HNSWPredicate  // Predicate for early-exit filtering
 	ForceQuantized bool           // Internal flag to force quantized navigation on upper HNSW layers
+	MaxResults     int            // Optional result cap for bounded range queries
 }
 
 // DefaultSearchOptions returns SearchOptions with production defaults.

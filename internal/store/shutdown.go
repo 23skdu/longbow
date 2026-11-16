@@ -32,6 +32,9 @@ func (s *VectorStore) stopWorkers() {
 		if s.nodeMonitor != nil {
 			s.nodeMonitor.Stop()
 		}
+		if s.ttlPolicy != nil {
+			s.ttlPolicy.Stop()
+		}
 		if s.stopChan != nil {
 			close(s.stopChan)
 		}

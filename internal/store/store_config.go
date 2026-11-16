@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/23skdu/longbow/internal/autoscale"
 	"github.com/23skdu/longbow/internal/gc"
@@ -216,7 +217,29 @@ func (vs *VectorStore) SetAutoGPUConfig(deviceID int32) {
 
 // SetTemporalIndex configures the temporal index for Part 22
 func (vs *VectorStore) SetTemporalIndex(cfg TemporalConfig) {
+	vs.configMu.Lock()
 	vs.temporalConfig = cfg
+	if vs.ttlPolicy != nil {
+		vs.ttlPolicy.Stop()
+		vs.ttlPolicy = nil
+	}
+	if cfg.Enabled && cfg.TTLEnabled {
+		cleanupInterval := cfg.CleanupInterval
+		if cleanupInterval <= 0 {
+			cleanupInterval = time.Hour
+		}
+		defaultTTL := cfg.DefaultTTL
+		if defaultTTL <= 0 {
+			defaultTTL = 30 * 24 * time.Hour
+		}
+		vs.ttlPolicy = NewTTLPolicy(vs, TTLPolicyConfig{
+			Enabled:         true,
+			DefaultTTL:      defaultTTL,
+			CleanupInterval: cleanupInterval,
+		})
+		vs.ttlPolicy.Start(vs.ctx)
+	}
+	vs.configMu.Unlock()
 
 	// Apply to existing datasets
 	vs.IterateDatasets(func(name string, ds *Dataset) {

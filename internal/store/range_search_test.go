@@ -4,8 +4,14 @@ import (
 	"context"
 	"math/rand"
 	"testing"
+	"time"
 
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 )
 
 func TestArrowHNSW_RangeSearch(t *testing.T) {
@@ -89,4 +95,76 @@ func TestArrowHNSW_RangeSearch_Empty(t *testing.T) {
 	}
 
 	_ = idx.Close()
+}
+
+func TestVectorStore_RangeSearch_Complex64AndComplex128(t *testing.T) {
+	const (
+		dims  = 8
+		nrows = 16
+	)
+	for _, tc := range []struct {
+		name     string
+		elemType arrow.DataType
+		metaType string
+	}{
+		{"complex64", arrow.PrimitiveTypes.Float32, "complex64"},
+		{"complex128", arrow.PrimitiveTypes.Float64, "complex128"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mem := memory.NewGoAllocator()
+			vs := NewVectorStore(mem, zerolog.Nop(), 32*1024*1024, 32*1024*1024, 10*time.Millisecond)
+			vs.dataPath = t.TempDir()
+			vs.StartIngestionWorkers(2)
+			vs.StartIndexingWorkers(2)
+			defer func() { _ = vs.Close() }()
+
+			vecMeta := arrow.NewMetadata([]string{"longbow.vector_type"}, []string{tc.metaType})
+			schema := arrow.NewSchema([]arrow.Field{
+				{Name: "id", Type: arrow.BinaryTypes.String, Nullable: false},
+				{Name: "vector", Type: arrow.FixedSizeListOf(dims*2, tc.elemType), Nullable: false, Metadata: vecMeta},
+			}, nil)
+
+			idB := array.NewStringBuilder(mem)
+			defer idB.Release()
+			fslB := array.NewFixedSizeListBuilder(mem, dims*2, tc.elemType)
+			defer fslB.Release()
+			for r := 0; r < nrows; r++ {
+				idB.Append(string(rune('a' + r)))
+				fslB.Append(true)
+				switch vb := fslB.ValueBuilder().(type) {
+				case *array.Float32Builder:
+					for d := 0; d < dims*2; d++ {
+						vb.Append(float32(r*dims*2+d) * 0.01)
+					}
+				case *array.Float64Builder:
+					for d := 0; d < dims*2; d++ {
+						vb.Append(float64(r*dims*2+d) * 0.01)
+					}
+				}
+			}
+			cols := []arrow.Array{idB.NewArray(), fslB.NewArray()}
+			defer cols[0].Release()
+			defer cols[1].Release()
+			rec := array.NewRecordBatch(schema, cols, nrows)
+			defer rec.Release()
+
+			dsName := "rs_" + tc.name
+			if err := vs.StoreRecordBatch(context.Background(), dsName, rec); err != nil {
+				t.Fatalf("StoreRecordBatch: %v", err)
+			}
+			require.Eventually(t, func() bool {
+				ds, ok := vs.getDataset(dsName)
+				return ok && ds.IndexLen() >= nrows
+			}, 5*time.Second, 25*time.Millisecond)
+
+			q := make([]float32, dims*2)
+			res, err := vs.RangeSearch(context.Background(), dsName, q, 10.0, nil, 5)
+			if err != nil {
+				t.Fatalf("RangeSearch failed: %v", err)
+			}
+			if len(res) == 0 {
+				t.Fatalf("expected non-empty RangeSearch results for %s", tc.name)
+			}
+		})
+	}
 }

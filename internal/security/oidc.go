@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -183,10 +184,12 @@ func (m *OIDCManager) getJWKS(ctx context.Context, cfg OIDCIssuerConfig) (map[st
 	}
 	resp, err := m.httpc.Do(req) // #nosec G704 - admin-configured JWKS endpoint
 	if err != nil {
+		metrics.OIDCJWKSFetchFailures.WithLabelValues(cfg.IssuerURL).Inc()
 		return nil, fmt.Errorf("jwks fetch failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		metrics.OIDCJWKSFetchFailures.WithLabelValues(cfg.IssuerURL).Inc()
 		return nil, fmt.Errorf("jwks status %d", resp.StatusCode)
 	}
 	var jwks jose.JSONWebKeySet
@@ -216,15 +219,35 @@ func (m *OIDCManager) getJWKS(ctx context.Context, cfg OIDCIssuerConfig) (map[st
 }
 
 // ValidateToken validates a federated OIDC JWT and returns claims.
-func (m *OIDCManager) ValidateToken(ctx context.Context, rawToken string) (*OIDCClaims, error) {
+func (m *OIDCManager) ValidateToken(ctx context.Context, rawToken string) (claims *OIDCClaims, err error) {
 	if !m.config.Enabled {
 		return nil, errors.New("oidc federation disabled")
 	}
-	// Peek issuer without verification.
+	// peek issuer for metrics labels
 	parser := jwt.NewParser()
-	unverified, _, err := parser.ParseUnverified(rawToken, jwt.MapClaims{})
-	if err != nil {
-		return nil, fmt.Errorf("token parse: %w", err)
+	unverified, _, perr := parser.ParseUnverified(rawToken, jwt.MapClaims{})
+	issuerLabel := "unknown"
+	providerLabel := "unknown"
+	if perr == nil {
+		if mc, ok := unverified.Claims.(jwt.MapClaims); ok {
+			if iss, _ := mc["iss"].(string); iss != "" {
+				issuerLabel = iss
+				if cfg, ok := m.findIssuer(iss); ok {
+					providerLabel = string(cfg.Provider)
+				}
+			}
+		}
+	}
+	metrics.OIDCAuthAttempts.WithLabelValues(providerLabel, issuerLabel).Inc()
+	defer func() {
+		if err != nil {
+			metrics.OIDCAuthFailures.WithLabelValues(providerLabel, issuerLabel, err.Error()).Inc()
+		} else {
+			metrics.OIDCAuthSuccesses.WithLabelValues(providerLabel, issuerLabel).Inc()
+		}
+	}()
+	if perr != nil {
+		return nil, fmt.Errorf("token parse: %w", perr)
 	}
 	mc, ok := unverified.Claims.(jwt.MapClaims)
 	if !ok {
@@ -290,23 +313,23 @@ func (m *OIDCManager) ValidateToken(ctx context.Context, rawToken string) (*OIDC
 	if !token.Valid {
 		return nil, ErrInvalidToken
 	}
-	claims, ok := token.Claims.(jwt.MapClaims)
+	mapClaims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return nil, errors.New("invalid claims type")
 	}
 
 	oidc := &OIDCClaims{
 		Issuer:    iss,
-		Raw:       map[string]interface{}(claims),
+		Raw:       map[string]interface{}(mapClaims),
 		Provider:  cfg.Provider,
 		IssuerCfg: cfg,
 	}
-	if sub, _ := claims["sub"].(string); sub != "" {
+	if sub, _ := mapClaims["sub"].(string); sub != "" {
 		oidc.Subject = sub
 	} else {
 		return nil, errors.New("missing sub")
 	}
-	if aud, ok := claims["aud"]; ok {
+	if aud, ok := mapClaims["aud"]; ok {
 		switch v := aud.(type) {
 		case string:
 			oidc.Audience = []string{v}
@@ -318,26 +341,26 @@ func (m *OIDCManager) ValidateToken(ctx context.Context, rawToken string) (*OIDC
 			}
 		}
 	}
-	if exp, ok := claims["exp"].(float64); ok {
+	if exp, ok := mapClaims["exp"].(float64); ok {
 		oidc.Expiry = int64(exp)
 	}
-	if iat, ok := claims["iat"].(float64); ok {
+	if iat, ok := mapClaims["iat"].(float64); ok {
 		oidc.IssuedAt = int64(iat)
 	}
-	if nbf, ok := claims["nbf"].(float64); ok {
+	if nbf, ok := mapClaims["nbf"].(float64); ok {
 		oidc.NotBefore = int64(nbf)
 	}
-	if jti, _ := claims["jti"].(string); jti != "" {
+	if jti, _ := mapClaims["jti"].(string); jti != "" {
 		oidc.JTI = jti
 	}
-	if email, _ := claims["email"].(string); email != "" {
+	if email, _ := mapClaims["email"].(string); email != "" {
 		oidc.Email = email
 	}
-	if name, _ := claims["name"].(string); name != "" {
+	if name, _ := mapClaims["name"].(string); name != "" {
 		oidc.Name = name
 	}
 	// groups
-	if g, ok := claims["groups"]; ok {
+	if g, ok := mapClaims["groups"]; ok {
 		switch v := g.(type) {
 		case []interface{}:
 			for _, x := range v {

@@ -1,0 +1,39 @@
+rule_files:
+  - oidc_alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'longbow_oidc_auth_failures_total{provider="generic",issuer="https://issuer.example"}'
+        values: '0x60'
+      - series: 'longbow_oidc_jwks_fetch_failures_total{issuer="https://issuer.example"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: LongbowOIDCAuthFailuresHigh
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: LongbowOIDCJWKSFetchFailures
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'longbow_oidc_auth_failures_total{provider="generic",issuer="https://issuer.example"}'
+        values: '10x60'
+      - series: 'longbow_oidc_jwks_fetch_failures_total{issuer="https://issuer.example"}'
+        values: '1+1x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: LongbowOIDCAuthFailuresHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              issuer: https://issuer.example
+      - eval_time: 5m
+        alertname: LongbowOIDCJWKSFetchFailures
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              issuer: https://issuer.example

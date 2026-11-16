@@ -900,3 +900,13 @@ The control-plane, HTTP API, and multi-tenant usage dashboards (`grafana/dashboa
 | `longbow_billing_tenant_egress_bytes_total` | `tenant` | Total egress payload bytes served per tenant |
 | `longbow_billing_tenant_quota_warnings_total` | `tenant`, `resource` | Soft quota warnings triggered per tenant |
 | `longbow_billing_tenant_quota_rejections_total` | `tenant`, `resource` | Hard quota rejections triggered per tenant |
+
+## OIDC Federation Metrics
+
+| Metric | Labels | Description |
+| :--- | :--- | :--- |
+| `longbow_oidc_auth_attempts_total` | `provider`, `issuer` | Total OIDC federation authentication attempts |
+| `longbow_oidc_auth_failures_total` | `provider`, `issuer`, `reason` | Total OIDC federation authentication failures |
+| `longbow_oidc_auth_successes_total` | `provider`, `issuer` | Total successful OIDC federation authentications |
+| `longbow_oidc_jwks_fetch_failures_total` | `issuer` | Total failures fetching OIDC JWKS |
+| `longbow_oidc_token_validation_seconds` | `provider`, `issuer` | OIDC token validation latency |

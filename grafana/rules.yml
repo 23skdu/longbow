@@ -1170,7 +1170,7 @@ groups:
           description: "OIDC federation authentication failures exceed threshold for issuer {{ $labels.issuer }}."
           runbook_url: "https://github.com/23skdu/longbow/blob/main/docs/runbooks.md#LongbowOIDCAuthFailuresHigh"
 
-      - alert: LongbowOIDCJWKSFechFailures
+      - alert: LongbowOIDCJWKSFetchFailures
         expr: sum(rate(longbow_oidc_jwks_fetch_failures_total[5m])) by (issuer) > 0
         for: 2m
         labels:

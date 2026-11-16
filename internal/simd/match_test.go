@@ -88,3 +88,45 @@ func BenchmarkMatchInt32(b *testing.B) {
 		})
 	}
 }
+
+func TestMatchUint16(t *testing.T) {
+	src := []uint16{1, 2, 3, 1, 5, 1, 7, 8, 1}
+	dst := make([]byte, len(src))
+	if err := MatchUint16(src, 1, CompareEq, dst); err != nil {
+		t.Fatalf("MatchUint16 Eq failed: %v", err)
+	}
+	wantEq := []byte{1, 0, 0, 1, 0, 1, 0, 0, 1}
+	for i := range wantEq {
+		if dst[i] != wantEq[i] {
+			t.Fatalf("Eq idx %d: got %d want %d", i, dst[i], wantEq[i])
+		}
+	}
+	if err := MatchUint16(src, 1, CompareNeq, dst); err != nil {
+		t.Fatalf("MatchUint16 Neq failed: %v", err)
+	}
+	wantNeq := []byte{0, 1, 1, 0, 1, 0, 1, 1, 0}
+	for i := range wantNeq {
+		if dst[i] != wantNeq[i] {
+			t.Fatalf("Neq idx %d: got %d want %d", i, dst[i], wantNeq[i])
+		}
+	}
+	if err := MatchUint16(src, 1, CompareEq, dst[:2]); err == nil {
+		t.Fatal("expected length mismatch error")
+	}
+}
+
+func BenchmarkMatchUint16(b *testing.B) {
+	for _, size := range []int{1024, 65536} {
+		src := make([]uint16, size)
+		dst := make([]byte, size)
+		for i := range src {
+			src[i] = uint16(i % 16)
+		}
+		b.Run(fmt.Sprintf("Size%d", size), func(b *testing.B) {
+			b.SetBytes(int64(size * 2))
+			for i := 0; i < b.N; i++ {
+				_ = MatchUint16(src, 3, CompareEq, dst)
+			}
+		})
+	}
+}

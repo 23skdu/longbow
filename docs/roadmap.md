@@ -13,9 +13,9 @@ subtasks required to close it. Tasks are ordered by expected impact.
 - [x] P0-1.1 Sincos LUT exists (tqPolarLUT) and is used in reconstruction.
 - [x] P0-1.2 Batched reconstruction across tqBatchWidth candidates (turboquant_batch.go).
 - [x] P0-1.3 AVX2 reconstruction kernel (TQPolarReconstructLevelAVX2).
-- [ ] P0-1.4 Profile polar reconstruction to confirm hot loops.
-- [ ] P0-1.5 Validate numerical parity vs scalar reference.
-- [ ] P0-1.6 Benchmark index time before/after.
+- [x] P0-1.4 Profile polar reconstruction to confirm hot loops.
+- [x] P0-1.5 Validate numerical parity vs scalar reference.
+- [x] P0-1.6 Benchmark index time before/after.
 
 ## P0-2: Complex128 Throughput & Memory (951 QPS, 11.5 GB RSS at 500k/384d)
 
@@ -39,29 +39,29 @@ subtasks required to close it. Tasks are ordered by expected impact.
 - [x] P0-4.1 Add annulus cell pruning to Quadtree traversal (QueryRadiusPruned).
 - [x] P0-4.2 Add radius filter to MortonGrid QueryRadiusPruned.
 - [x] P0-4.3 Add radius-aware QueryRadiusPruned method.
-- [ ] P0-4.4 Benchmark geo search before/after.
+- [x] P0-4.4 Benchmark geo search before/after.
 
 ## P0-5: Uint32 Dense Search (518 QPS vs ~3,000+)
 
 ### Subtasks
 - [x] P0-5.1 Add 128-dim high-dim uint32 kernel.
 - [x] P0-5.2 Add AVX2 kernel benchmark.
-- [ ] P0-5.3 Profile AVX2 assembly kernel.
-- [ ] P0-5.4 Compare against int32/float32 dispatch.
+- [x] P0-5.3 Profile AVX2 assembly kernel.
+- [x] P0-5.4 Compare against int32/float32 dispatch.
 
 ## P0-6: Filtered String Fast Path for Complex Types (436 QPS at 500k/384d)
 
 ### Subtasks
 - [x] P0-6.1 Dictionary codes already applied for all string columns (dataset.go).
 - [x] P0-6.2 SIMD MatchUint16 fast path for eq/neq (filter_text.go).
-- [ ] P0-6.3 Profile predicate evaluation during complex search.
-- [ ] P0-6.4 Benchmark filtered search before/after.
+- [x] P0-6.3 Profile predicate evaluation during complex search.
+- [x] P0-6.4 Benchmark filtered search before/after.
 
 ## P0-7: Memory Cap Enforcement
 
 ### Subtasks
 - [x] P0-7.1 Memory enforcement (checkMemoryBeforeWrite, eviction).
-- [ ] P0-7.2 Validate cap under load tests.
+- [x] P0-7.2 Validate cap under load tests.
 
 ---
 

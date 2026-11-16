@@ -50,6 +50,14 @@ func BenchmarkHighDim_Uint32_128(b *testing.B) {
 	benchmarkUint32(b, 128)
 }
 
+func BenchmarkHighDim_Int32_128(b *testing.B) {
+	benchmarkInt32(b, 128)
+}
+
+func BenchmarkHighDim_Float32_128(b *testing.B) {
+	benchmarkFloat32(b, 128)
+}
+
 // Helpers
 
 func benchmarkFloat64(b *testing.B, dim int) {
@@ -177,5 +185,33 @@ func benchmarkUint32(b *testing.B, dim int) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = EuclideanDistanceUint32(v1, v2)
+	}
+}
+
+func benchmarkInt32(b *testing.B, dim int) {
+	v1 := make([]int32, dim)
+	v2 := make([]int32, dim)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for i := 0; i < dim; i++ {
+		v1[i] = int32(rng.Intn(1000))
+		v2[i] = int32(rng.Intn(1000))
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = EuclideanDistanceInt32(v1, v2)
+	}
+}
+
+func benchmarkFloat32(b *testing.B, dim int) {
+	v1 := make([]float32, dim)
+	v2 := make([]float32, dim)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for i := 0; i < dim; i++ {
+		v1[i] = rng.Float32()
+		v2[i] = rng.Float32()
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = EuclideanDistance(v1, v2)
 	}
 }

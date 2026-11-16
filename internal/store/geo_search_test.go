@@ -351,3 +351,30 @@ func BenchmarkGeoIndex_SearchRadius(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkGeoQuadtree_QueryRadiusVsPruned(b *testing.B) {
+	qt := NewQuadtree(GeoBoundingBox{MinLat: -90, MaxLat: 90, MinLon: -180, MaxLon: 180}, 16, "bench")
+	for i := 0; i < 10000; i++ {
+		lat := -40.0 + float64(i%800)*0.1
+		lon := -120.0 + float64(i/800)*10.0
+		qt.Insert(&GeoIndexedVector{
+			ID:       uint64(i),
+			GeoPoint: GeoPoint{Lat: lat, Lon: lon},
+		})
+	}
+	center := GeoPoint{Lat: 0.0, Lon: -60.0}
+	var out []*GeoIndexedVector
+
+	b.Run("QueryRadius_Unpruned", func(b *testing.B) {
+		for b.Loop() {
+			out = out[:0]
+			qt.QueryRadius(center, 50.0, &out)
+		}
+	})
+	b.Run("QueryRadiusPruned", func(b *testing.B) {
+		for b.Loop() {
+			out = out[:0]
+			qt.QueryRadiusPruned(center, 50.0, &out)
+		}
+	})
+}

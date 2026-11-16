@@ -51,10 +51,8 @@ func MatchUint16(src []uint16, val uint16, op CompareOp, dst []byte) error {
 // matchUint16Generic compares uint16 elements, writing one byte per element.
 //
 // Written as a plain range loop to match the other five implementations here.
-// It was previously hand-unrolled 8-wide with one-line if/else, which gofmt
-// reformats into 96 lines of the same body and which bought nothing measurable:
-// Go does not vectorise byte stores, the function has no test and no benchmark,
-// and MatchUint16 - its only caller - is itself untested.
+// Go does not vectorise byte stores; see TestMatchUint16 and BenchmarkMatchUint16
+// in match_test.go.
 func matchUint16Generic(src []uint16, val uint16, op CompareOp, dst []byte) error {
 	switch op {
 	case CompareEq:

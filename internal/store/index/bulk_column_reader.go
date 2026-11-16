@@ -100,6 +100,7 @@ func (h *ArrowHNSW) extractAndIngestBatchVectors(
 		}
 		errMu.Unlock()
 
+		var c128Scratch []complex128
 		for j := start; j < end; j++ {
 			id := startID + uint32(j) // #nosec G115
 			cID := types.ChunkID(id)
@@ -125,8 +126,12 @@ func (h *ArrowHNSW) extractAndIngestBatchVectors(
 					v = c64s
 				case types.VectorTypeComplex128:
 					f32s := vs[j]
-					c128s := make([]complex128, len(f32s)/2)
-					for k := 0; k < len(f32s)/2; k++ {
+					nC := len(f32s) / 2
+					if cap(c128Scratch) < nC {
+						c128Scratch = make([]complex128, nC)
+					}
+					c128s := c128Scratch[:nC]
+					for k := 0; k < nC; k++ {
 						c128s[k] = complex(float64(f32s[2*k]), float64(f32s[2*k+1]))
 					}
 					v = c128s
@@ -148,7 +153,13 @@ func (h *ArrowHNSW) extractAndIngestBatchVectors(
 						idx = h.getVectorColumnIndex(rec)
 					}
 					if idx != -1 {
-						v = h.extractVector(rec, idx, j-recRowStart[recIdx])
+						rowInBatch := j - recRowStart[recIdx]
+						if h.config.DataType == types.VectorTypeComplex128 {
+							v = h.extractVectorComplex128Into(rec, idx, rowInBatch, &c128Scratch)
+						} else {
+							v = h.extractVector(rec, idx, rowInBatch)
+						}
+						h.SetLocation(types.VectorID(id), types.Location{BatchIdx: recIdx, RowIdx: rowInBatch})
 					}
 				}
 			case [][]uint32:

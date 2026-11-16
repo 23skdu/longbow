@@ -113,6 +113,66 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 	}
 }
 
+// extractVectorComplex128Into extracts a Complex128 vector from rec into *scratch
+// when widening from Float32, or returns a zero-copy slice when backed by Float64.
+func (h *ArrowHNSW) extractVectorComplex128Into(rec arrow.RecordBatch, colIdx, rowIdx int, scratch *[]complex128) []complex128 {
+	if rec == nil || colIdx < 0 || colIdx >= int(rec.NumCols()) || rowIdx < 0 || rowIdx >= int(rec.NumRows()) {
+		return nil
+	}
+	col := rec.Column(colIdx)
+	var start, end int
+	var values arrow.Array
+	if fsl, ok := col.(*arrowarray.FixedSizeList); ok {
+		if !fsl.IsValid(rowIdx) {
+			return nil
+		}
+		listSize := fsl.DataType().(*arrow.FixedSizeListType).Len()
+		start = rowIdx * int(listSize)
+		end = start + int(listSize)
+		values = fsl.ListValues()
+	} else if list, ok := col.(*arrowarray.List); ok {
+		if !list.IsValid(rowIdx) {
+			return nil
+		}
+		offsets := list.Offsets()
+		start = int(offsets[rowIdx])
+		end = int(offsets[rowIdx+1])
+		values = list.ListValues()
+	} else {
+		return nil
+	}
+	if end > values.Len() {
+		end = values.Len()
+	}
+	if start >= end {
+		return nil
+	}
+	switch arr := values.(type) {
+	case *arrowarray.Float64:
+		floats := arr.Float64Values()[start:end]
+		if len(floats) < 2 {
+			return nil
+		}
+		return unsafe.Slice((*complex128)(unsafe.Pointer(&floats[0])), len(floats)/2) // #nosec G103
+	case *arrowarray.Float32:
+		floats := arr.Float32Values()[start:end]
+		n := len(floats) / 2
+		if n == 0 {
+			return nil
+		}
+		if cap(*scratch) < n {
+			*scratch = make([]complex128, n)
+		}
+		out := (*scratch)[:n]
+		for i := 0; i < n; i++ {
+			out[i] = complex(float64(floats[2*i]), float64(floats[2*i+1]))
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 func (h *ArrowHNSW) getColumnIdx(rec arrow.RecordBatch, name string) int {
 	if rec == nil {
 		return -1

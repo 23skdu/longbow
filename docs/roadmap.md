@@ -23,15 +23,15 @@ subtasks required to close it. Tasks are ordered by expected impact.
 - [x] P0-2.1 Early-exit diversity checks in selectNeighborsComplex128.
 - [x] P0-2.2 Parallel tiled complex128 batch kernels.
 - [x] P0-2.3 Float64 slab zero-copy extraction.
-- [ ] P0-2.4 Reduce memory footprint (chunked loading / avoid full materialization).
+- [x] P0-2.4 Reduce memory footprint (chunked loading / avoid full materialization).
 - [ ] P0-2.5 (Optional) Zero-copy Float32→complex128 extraction (requires API change).
 
 ## P0-3: Float64 Index Time (433.5s at 500k/384d)
 
 ### Subtasks
 - [x] P0-3.1 Early-exit diversity checks in selectNeighborsFloat64.
-- [ ] P0-3.2 Batched selectNeighbors for float64.
-- [ ] P0-3.3 Profile selectNeighbors and graph build.
+- [x] P0-3.2 Batched selectNeighbors for float64.
+- [x] P0-3.3 Profile selectNeighbors and graph build.
 
 ## P0-4: Geo Search (12–35 QPS at 500k)
 

@@ -1210,26 +1210,32 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				}
 				vecs = c64s
 			case types.VectorTypeComplex128:
-				c128s := make([][]complex128, n)
-				for i := range rowIdxs {
-					var rec arrow.RecordBatch
-					bIdx := batchIdxs[i]
-					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
-						rec = recs[bIdx]
-					} else if len(recs) == 1 {
-						rec = recs[0]
-					}
-					if rec != nil {
-						if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]complex128); ok {
-							c128s[i] = v
-							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-							continue
+				if isContiguousArrowBatches(recs, batchIdxs, rowIdxs) {
+					// Stream chunked directly from Arrow RecordBatches inside bulk_column_reader
+					// without materializing a [][]complex128 slice for all rows upfront (P0-2.4).
+					vecs = recs
+				} else {
+					c128s := make([][]complex128, n)
+					for i := range rowIdxs {
+						var rec arrow.RecordBatch
+						bIdx := batchIdxs[i]
+						if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+							rec = recs[bIdx]
+						} else if len(recs) == 1 {
+							rec = recs[0]
 						}
+						if rec != nil {
+							if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]complex128); ok {
+								c128s[i] = v
+								h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+								continue
+							}
+						}
+						supported = false
+						break
 					}
-					supported = false
-					break
+					vecs = c128s
 				}
-				vecs = c128s
 			case types.VectorTypeUint32:
 				u32s := make([][]uint32, n)
 				for i := range rowIdxs {
@@ -1479,6 +1485,33 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	return ids, nil
 }
 
+func isContiguousArrowBatches(recs []arrow.RecordBatch, batchIdxs, rowIdxs []int) bool {
+	if len(recs) == 0 || len(rowIdxs) == 0 || len(rowIdxs) != len(batchIdxs) {
+		return false
+	}
+	total := 0
+	for _, r := range recs {
+		if r == nil {
+			return false
+		}
+		total += int(r.NumRows())
+	}
+	if total != len(rowIdxs) {
+		return false
+	}
+	pos := 0
+	for bIdx, r := range recs {
+		rows := int(r.NumRows())
+		for row := 0; row < rows; row++ {
+			if batchIdxs[pos] != bIdx || rowIdxs[pos] != row {
+				return false
+			}
+			pos++
+		}
+	}
+	return true
+}
+
 // selectNeighborsFloat64 is a specialized diversity check for float64 vectors using typed scratch slices.
 func (h *ArrowHNSW) selectNeighborsFloat64(ctx *ArrowSearchContext, candidates []types.Candidate, m int, data *types.GraphData) []types.Candidate {
 	var selected []types.Candidate
@@ -1541,10 +1574,37 @@ func (h *ArrowHNSW) selectNeighborsFloat64(ctx *ArrowSearchContext, candidates [
 			continue
 		}
 		isDiverse := true
-		if len(selectedVecs) > 0 {
-			// Compute distances incrementally and break early on the first
-			// selected vector that is closer than cand.Dist, avoiding the
-			// full O(selectedVecs) batch when the candidate is not diverse.
+		if len(selectedVecs) >= 4 {
+			var stackDists [64]float32
+			var dists []float32
+			if len(selectedVecs) <= len(stackDists) {
+				dists = stackDists[:len(selectedVecs)]
+			} else {
+				dists = make([]float32, len(selectedVecs))
+			}
+			var err error
+			switch h.config.Metric {
+			case core.MetricCosine:
+				err = simd.CosineDistanceFloat64Batch(v1, selectedVecs, dists)
+			case core.MetricDotProduct:
+				err = simd.DotProductFloat64Batch(v1, selectedVecs, dists)
+				if err == nil {
+					for j := range dists {
+						dists[j] = -dists[j]
+					}
+				}
+			default:
+				err = simd.EuclideanDistanceFloat64Batch(v1, selectedVecs, dists)
+			}
+			if err == nil {
+				for _, d := range dists {
+					if d < cand.Dist {
+						isDiverse = false
+						break
+					}
+				}
+			}
+		} else if len(selectedVecs) > 0 {
 			for j := range selectedVecs {
 				var d float32
 				var err error

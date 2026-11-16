@@ -16,10 +16,14 @@ package index
 // heuristic.
 
 import (
+	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow"
+	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 func TestSelectNeighborsIsTheSingleEntryPoint(t *testing.T) {
@@ -81,5 +85,122 @@ func TestSelectNeighborsIsTheSingleEntryPoint(t *testing.T) {
 	// No candidates: no selection, and no panic on the empty input.
 	if got := h.selectNeighbors(nil, nil, 2, data); len(got) != 0 {
 		t.Errorf("selectNeighbors(nil) returned %d candidates, want 0", len(got))
+	}
+}
+
+func TestSelectNeighborsFloat64Batched(t *testing.T) {
+	const dims = 8
+	data := types.NewGraphData(128, dims, false, false, 0, false, false, false,
+		types.VectorTypeFloat64, false, false, false, 16, "f64-select", nil, false)
+	defer data.Release()
+
+	for id := uint32(0); id < 32; id++ {
+		vec := make([]float64, dims)
+		for d := range vec {
+			vec[d] = float64(id) * 0.5
+		}
+		if err := data.SetVector(id, vec); err != nil {
+			t.Fatalf("SetVector(%d): %v", id, err)
+		}
+	}
+
+	cfg := types.DefaultArrowHNSWConfig()
+	cfg.DataType = types.VectorTypeFloat64
+	cfg.Dims = dims
+	cfg.M = 8
+	h := NewArrowHNSW(&MockDataset{}, &cfg, nil)
+
+	cands := make([]types.Candidate, 24)
+	for i := range cands {
+		cands[i] = types.Candidate{ID: uint32(i + 1), Dist: float32(i+1) * 1.4}
+	}
+
+	ctx := h.searchPool.Get()
+	defer h.searchPool.Put(ctx)
+	selected := h.selectNeighbors(ctx, cands, 8, data)
+	if len(selected) != 8 {
+		t.Fatalf("expected 8 selected neighbors, got %d", len(selected))
+	}
+}
+
+func BenchmarkSelectNeighborsFloat64(b *testing.B) {
+	const dims = 128
+	data := types.NewGraphData(256, dims, false, false, 0, false, false, false,
+		types.VectorTypeFloat64, false, false, false, 16, "f64-bench", nil, false)
+	defer data.Release()
+
+	for id := uint32(0); id < 64; id++ {
+		vec := make([]float64, dims)
+		for d := range vec {
+			vec[d] = float64((int(id)*31+d)%97) * 0.1
+		}
+		if err := data.SetVector(id, vec); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	cfg := types.DefaultArrowHNSWConfig()
+	cfg.DataType = types.VectorTypeFloat64
+	cfg.Dims = dims
+	cfg.M = 16
+	h := NewArrowHNSW(&MockDataset{}, &cfg, nil)
+
+	cands := make([]types.Candidate, 48)
+	for i := range cands {
+		cands[i] = types.Candidate{ID: uint32(i), Dist: float32(i+1) * 0.25}
+	}
+
+	ctx := h.searchPool.Get()
+	defer h.searchPool.Put(ctx)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = h.selectNeighbors(ctx, cands, 16, data)
+	}
+}
+
+func TestComplex128ChunkedBulkInsert(t *testing.T) {
+	const (
+		numRows = 64
+		dims    = 4
+	)
+	alloc := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "vector", Type: arrow.FixedSizeListOf(dims*2, arrow.PrimitiveTypes.Float32)},
+	}, nil)
+
+	bldr := arrowarray.NewFixedSizeListBuilder(alloc, dims*2, arrow.PrimitiveTypes.Float32)
+	defer bldr.Release()
+	vb := bldr.ValueBuilder().(*arrowarray.Float32Builder)
+	for r := 0; r < numRows; r++ {
+		bldr.Append(true)
+		for d := 0; d < dims*2; d++ {
+			vb.Append(float32(r*dims*2 + d))
+		}
+	}
+	arr := bldr.NewArray()
+	defer arr.Release()
+	rec := arrowarray.NewRecordBatch(schema, []arrow.Array{arr}, numRows)
+	defer rec.Release()
+
+	cfg := types.DefaultArrowHNSWConfig()
+	cfg.DataType = types.VectorTypeComplex128
+	cfg.Dims = dims
+	cfg.M = 8
+	cfg.EfConstruction = 32
+	h := NewArrowHNSW(&MockDataset{Schema: schema}, &cfg, nil)
+
+	rowIdxs := make([]int, numRows)
+	batchIdxs := make([]int, numRows)
+	for i := range rowIdxs {
+		rowIdxs[i] = i
+	}
+	ids, err := h.AddBatch(context.Background(), []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
+	if err != nil {
+		t.Fatalf("AddBatch Complex128: %v", err)
+	}
+	if len(ids) != numRows {
+		t.Fatalf("expected %d ids, got %d", numRows, len(ids))
 	}
 }

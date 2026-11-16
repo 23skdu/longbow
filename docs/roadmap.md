@@ -151,11 +151,11 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 
 ### Phase 6: Audit Logging & Observability
 
-- [ ] OIDC-6.1 Record federated auth events in `security.AuditLogger`.
-- [ ] OIDC-6.2 Add metrics for token validation success/failure and
+- [x] OIDC-6.1 Record federated auth events in `security.AuditLogger`.
+- [x] OIDC-6.2 Add metrics for token validation success/failure and
       provider latency.
-- [ ] OIDC-6.3 Alert on anomalous auth failures and replay attempts.
-- [ ] OIDC-6.4 Ensure tokens/secrets are never logged.
+- [x] OIDC-6.3 Alert on anomalous auth failures and replay attempts.
+- [x] OIDC-6.4 Ensure tokens/secrets are never logged.
 
 ### Phase 7: CLI, SDK & API Integration
 
@@ -318,5 +318,5 @@ observability for the latest features (OIDC federation, security auditing).
 - [ ] DS-7 Add image signing (cosign) and SBOM generation to CI.
 - [ ] DS-8 Add Trivy image scan gate to release pipeline.
 - [ ] DS-9 Add gitleaks secret scanning to pre-commit and CI.
-- [ ] DS-10 Add OIDC metrics and dashboards (auth success/failure, latency).
+- [x] DS-10 Add OIDC metrics and dashboards (auth success/failure, latency).
 - [ ] DS-11 Add runbooks for OIDC incident response.

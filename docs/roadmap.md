@@ -126,19 +126,19 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 
 ### Phase 3: AWS IAM Federation
 
-- [ ] OIDC-3.1 Support AWS STS `AssumeRoleWithWebIdentity` token exchange.
-- [ ] OIDC-3.2 Validate AWS web identity tokens and role ARN allowlist.
-- [ ] OIDC-3.3 Map AWS role/session tags to tenant and dataset scopes.
-- [ ] OIDC-3.4 Document AWS trust policy templates (IRSA, EKS pod identity,
+- [x] OIDC-3.1 Support AWS STS `AssumeRoleWithWebIdentity` token exchange.
+- [x] OIDC-3.2 Validate AWS web identity tokens and role ARN allowlist.
+- [x] OIDC-3.3 Map AWS role/session tags to tenant and dataset scopes.
+- [x] OIDC-3.4 Document AWS trust policy templates (IRSA, EKS pod identity,
       EC2 instance profile).
 - [ ] OIDC-3.5 Add example IAM policies for least-privilege access.
 
 ### Phase 4: Google IAM Federation
 
-- [ ] OIDC-4.1 Support Google Workload Identity Federation token exchange.
-- [ ] OIDC-4.2 Validate Google ID tokens and service account impersonation.
-- [ ] OIDC-4.3 Map Google principal/attributes to tenant and dataset scopes.
-- [ ] OIDC-4.4 Document Google WIF pool/provider and attribute conditions.
+- [x] OIDC-4.1 Support Google Workload Identity Federation token exchange.
+- [x] OIDC-4.2 Validate Google ID tokens and service account impersonation.
+- [x] OIDC-4.3 Map Google principal/attributes to tenant and dataset scopes.
+- [x] OIDC-4.4 Document Google WIF pool/provider and attribute conditions.
 - [ ] OIDC-4.5 Add example IAM bindings for least-privilege access.
 
 ### Phase 5: Dataset & Namespace Authorization Binding

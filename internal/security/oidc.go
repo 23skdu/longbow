@@ -137,11 +137,11 @@ func (m *OIDCManager) jwksEndpoint(ctx context.Context, cfg OIDCIssuerConfig) (s
 	}
 	// OpenID Connect discovery.
 	discURL := strings.TrimRight(cfg.IssuerURL, "/") + "/.well-known/openid-configuration"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discURL, nil) // #nosec G704 - issuer/JWKS URL is admin-configured trusted input
 	if err != nil {
 		return "", err
 	}
-	resp, err := m.httpc.Do(req)
+	resp, err := m.httpc.Do(req) // #nosec G704 - issuer/JWKS URL is admin-configured trusted input
 	if err != nil {
 		return "", fmt.Errorf("oidc discovery failed: %w", err)
 	}
@@ -176,11 +176,11 @@ func (m *OIDCManager) getJWKS(ctx context.Context, cfg OIDCIssuerConfig) (map[st
 	}
 	m.mu.Unlock()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil) // #nosec G704 - admin-configured JWKS endpoint
 	if err != nil {
 		return nil, err
 	}
-	resp, err := m.httpc.Do(req)
+	resp, err := m.httpc.Do(req) // #nosec G704 - admin-configured JWKS endpoint
 	if err != nil {
 		return nil, fmt.Errorf("jwks fetch failed: %w", err)
 	}

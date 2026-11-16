@@ -1589,6 +1589,83 @@ class LongbowClient:
             "entries", []
         )
 
+    def list_oidc_providers(self) -> List[Dict[str, Any]]:
+        """List configured OIDC federation providers."""
+        return self._do_action_json("ListOIDCProviders", {}, default={}).get(
+            "providers", []
+        )
+
+    def add_oidc_provider(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Register or update an OIDC federation provider."""
+        return self._do_action_json("AddOIDCProvider", config, default={})
+
+    def remove_oidc_provider(self, issuer_url: str) -> Dict[str, Any]:
+        """Remove a configured OIDC federation provider."""
+        return self._do_action_json(
+            "RemoveOIDCProvider", {"issuer_url": issuer_url}, default={}
+        )
+
+    def exchange_oidc_token(
+        self,
+        oidc_token: str,
+        ttl_seconds: int = 900,
+        http_endpoint: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Exchange a federated OIDC JWT for a short-lived Longbow session token."""
+        if http_endpoint:
+            resp = self._rest_request(
+                "POST",
+                "/api/v1/oidc/token",
+                {"token": oidc_token, "ttl_seconds": ttl_seconds},
+                http_endpoint=http_endpoint,
+            )
+        else:
+            resp = self._do_action_json(
+                "ExchangeOIDCToken",
+                {"token": oidc_token, "ttl_seconds": ttl_seconds},
+                default={},
+            )
+        if resp.get("token"):
+            self.api_key = resp["token"]
+        return resp
+
+    @staticmethod
+    def acquire_aws_web_identity_token() -> str:
+        """Read an AWS IRSA / EKS Pod Identity JWT from AWS_WEB_IDENTITY_TOKEN_FILE."""
+        import os
+
+        token_file = os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE", "").strip()
+        if not token_file:
+            raise ValueError("AWS_WEB_IDENTITY_TOKEN_FILE is not set")
+        with open(token_file, "r", encoding="utf-8") as fh:
+            tok = fh.read().strip()
+        if not tok:
+            raise ValueError("AWS web identity token file is empty")
+        return tok
+
+    @staticmethod
+    def acquire_google_id_token(
+        audience: str,
+        metadata_url: str = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity",
+    ) -> str:
+        """Fetch a Google Cloud IAM identity token from the GCE metadata server."""
+        import urllib.parse
+        import urllib.request
+
+        if not audience:
+            raise ValueError("audience is required")
+        qs = urllib.parse.urlencode({"audience": audience, "format": "full"})
+        req = urllib.request.Request(
+            f"{metadata_url}?{qs}",
+            headers={"Metadata-Flavor": "Google"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 - GCE metadata URL
+            tok = resp.read().decode("utf-8").strip()
+        if not tok:
+            raise ValueError("empty Google ID token response")
+        return tok
+
     def list_backups(self, dataset: str = "") -> List[Dict[str, Any]]:
         """List online backups (optionally filtered by dataset)."""
         return self._do_action_json(

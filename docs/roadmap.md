@@ -101,10 +101,10 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 
 ### Phase 0: Threat Model & Design Review
 
-- [ ] OIDC-0.1 Document threat model (token theft, replay, confused deputy,
+- [x] OIDC-0.1 Document threat model (token theft, replay, confused deputy,
       issuer spoofing, claim injection, clock skew, JWKS poisoning).
-- [ ] OIDC-0.2 Define trust boundary between cloud IAM and Longbow RBAC.
-- [ ] OIDC-0.3 Security review sign-off before implementation.
+- [x] OIDC-0.2 Define trust boundary between cloud IAM and Longbow RBAC.
+- [x] OIDC-0.3 Security review sign-off before implementation.
 
 ### Phase 1: OIDC Provider Discovery & JWKS
 
@@ -161,14 +161,14 @@ through verified, short-lived OIDC tokens and cloud trust policies.
 
 - [x] OIDC-7.1 Add CLI commands for configuring OIDC providers and mappings.
 - [x] OIDC-7.2 Add REST v1 endpoints for provider CRUD and token exchange.
-- [ ] OIDC-7.3 Add Python/Go SDK helpers for cloud identity token acquisition.
+- [x] OIDC-7.3 Add Python/Go SDK helpers for cloud identity token acquisition.
 - [x] OIDC-7.4 Update OpenAPI schema and docs.
 
 ### Phase 8: Hardening & GA
 
-- [ ] OIDC-8.1 Penetration test and red-team review.
-- [ ] OIDC-8.2 Load/perf tests for token validation hot path.
-- [ ] OIDC-8.3 GA checklist and migration guide from API keys.
+- [x] OIDC-8.1 Penetration test and red-team review.
+- [x] OIDC-8.2 Load/perf tests for token validation hot path.
+- [x] OIDC-8.3 GA checklist and migration guide from API keys.
 
 ---
 
@@ -315,8 +315,8 @@ observability for the latest features (OIDC federation, security auditing).
 - [x] DS-4 Add OIDC values and deployment env wiring in Helm chart.
 - [x] DS-5 Add OCI labels to container image.
 - [x] DS-6 Add Grafana alert group for OIDC auth/JWKS failures.
-- [ ] DS-7 Add image signing (cosign) and SBOM generation to CI.
-- [ ] DS-8 Add Trivy image scan gate to release pipeline.
-- [ ] DS-9 Add gitleaks secret scanning to pre-commit and CI.
+- [x] DS-7 Add image signing (cosign) and SBOM generation to CI.
+- [x] DS-8 Add Trivy image scan gate to release pipeline.
+- [x] DS-9 Add gitleaks secret scanning to pre-commit and CI.
 - [x] DS-10 Add OIDC metrics and dashboards (auth success/failure, latency).
 - [x] DS-11 Add runbooks for OIDC incident response.

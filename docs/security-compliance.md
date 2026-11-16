@@ -169,7 +169,37 @@ gcloud iam service-accounts add-iam-policy-binding \
 
 ### Verification
 
-- Unit tests: `internal/security/oidc_test.go`, `oidc_access_test.go`.
+- Unit tests: `internal/security/oidc_test.go`, `oidc_access_test.go`, `oidc_bench_test.go`.
+- Store integration tests: `internal/store/oidc_store_test.go`.
+- SDK tests: `client/oidc_test.go`, `longbowclientsdk/tests/test_search_modes.py`.
 - Fuzz target: `FuzzOIDCValidateToken`.
+- Benchmarks: `BenchmarkOIDCValidateToken`, `BenchmarkOIDCAccessValidator`.
 - CI: `oidc-federation-security` job runs `make sec-oidc`.
-- Grafana: `grafana/tests/oidc_alerts_test.yml`.
+- Grafana: `grafana/tests/oidc_alerts_test.yml`, `grafana/dashboards/oidc-federation.json`.
+
+---
+
+## 6. OIDC Federation GA Checklist & API Key Migration Guide
+
+### Threat Model & Trust Boundary Sign-Off
+
+- **Cloud IdP Trust Boundary**: Longbow accepts only asymmetric (`RS256`, `ES256`) JWTs from explicitly allowlisted HTTPS `issuer_url` / `jwks_url` providers, requires `kid`, enforces `iss`, `aud`, `exp`, `nbf`, `iat` within `<= 60s` clock skew, caps token payloads at 16 KiB, and tracks `jti` for replay prevention.
+- **Authorization Boundary**: Validated claims map strictly to `TenantContext` (`tenant_id`, `namespace`, `datasets`, `row_filters`, `roles`, `permissions`). Cloud claims never bypass `OIDCAccessValidator`, `CanAccessDataset`, or `RLSEvaluator`.
+
+### GA Readiness Checklist
+
+- [x] Asymmetric signing pinned (`RS256`, `ES256`), `alg=none` and `HS*` rejected.
+- [x] `jti` replay protection and <= 60s clock-skew tolerance enforced.
+- [x] Short-lived session token exchange (`POST /api/v1/oidc/token` & `ExchangeOIDCToken`, capped <= 1h).
+- [x] Namespace, dataset, and row-level security (`RowFilterClaim` + `RLSEvaluator`) enforced.
+- [x] Audit logging (`security.AuditLogger`), Prometheus metrics, Grafana dashboard & promtool-tested alerts.
+- [x] Helm chart OIDC config, NetworkPolicy egress (TCP 443), and incident response runbooks (`docs/runbooks.md`).
+- [x] Pen-test security vector suite (`TestOIDCRedTeamSecurityVectors`), fuzzing (`FuzzOIDCValidateToken`), and benchmarks (`BenchmarkOIDC*`).
+
+### Migrating from Static API Keys to OIDC Federation
+
+1. **Enable OIDC alongside RBAC** (`LONGBOW_RBAC_ENABLED=true`, `LONGBOW_OIDC_ENABLED=true`, `LONGBOW_OIDC_ISSUERS='[...]'`). Longbow's `compositeAccessValidator` evaluates both static `lbk_` API keys and federated OIDC JWTs concurrently during migration.
+2. **Acquire & Exchange Cloud Tokens** using the Go SDK (`client.AcquireAWSWebIdentityToken()` / `client.AcquireGoogleIDToken(...)` + `sc.ExchangeOIDCToken(...)`) or Python SDK (`LongbowClient.acquire_aws_web_identity_token()` / `acquire_google_id_token(...)` + `exchange_oidc_token(...)`).
+3. **Verify Audit Attribution** in `GET /api/v1/rbac/audit` (`oidc:<provider>:<sub>`) and monitor `grafana/dashboards/oidc-federation.json`.
+4. **Revoke Legacy API Keys** via `longbow-cli revoke-api-key` or `POST /api/v1/rbac/keys` rotation once workloads exclusively authenticate via OIDC.
+

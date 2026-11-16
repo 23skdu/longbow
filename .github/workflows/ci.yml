@@ -108,6 +108,11 @@ jobs:
       - name: Run govulncheck
         run: ./scripts/check_govuln.sh
 
+      - name: Run gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run Trivy filesystem scanner
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -258,6 +263,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -297,7 +303,37 @@ jobs:
             type=raw,value=latest
             type=sha,prefix=sha-
 
+      - name: Build local Standard Docker image for security scan & SBOM
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile.cpu
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+
+      - name: Run Trivy container image scan gate
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          trivyignores: .trivyignore
+
+      - name: Generate container SBOM (SPDX)
+        uses: anchore/sbom-action@v0.19.0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
+          format: spdx-json
+          output-file: longbow-cpu.spdx.json
+
+      - name: Install Cosign for container signing
+        uses: sigstore/cosign-installer@v3
+
       - name: Build and push Standard Docker image
+        id: build-cpu
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -308,6 +344,13 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Sign Standard Docker image with Cosign (when pushed)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-cpu.outputs.digest }}
 
       - name: Extract metadata for NVIDIA Image
         id: meta-nvidia

@@ -269,10 +269,26 @@ class TestLongbowClientSearchModes(unittest.TestCase):
                 return {"connectors": [{"name": "c1"}]}
             if action_type == "ListMaterializedViews":
                 return {"views": [{"name": "v1"}]}
+            if action_type == "ListOIDCProviders":
+                return {"providers": [{"issuer_url": "https://accounts.google.com"}]}
+            if action_type == "ExchangeOIDCToken":
+                return {"token": "lbk_sess_py", "role": "reader"}
             return {"status": "ok", "action": action_type}
 
         client._do_action_json = fake_do_action  # type: ignore[method-assign]
         self.assertEqual(len(client.list_api_keys()), 1)
+        self.assertEqual(len(client.list_oidc_providers()), 1)
+        self.assertEqual(
+            client.add_oidc_provider({"issuer_url": "https://issuer.example", "audience": "longbow"})["action"],
+            "AddOIDCProvider",
+        )
+        self.assertEqual(
+            client.remove_oidc_provider("https://issuer.example")["action"],
+            "RemoveOIDCProvider",
+        )
+        ex = client.exchange_oidc_token("jwt.a.b", ttl_seconds=600)
+        self.assertEqual(ex["token"], "lbk_sess_py")
+        self.assertEqual(client.api_key, "lbk_sess_py")
         self.assertEqual(len(client.get_audit_log(limit=10)), 1)
         self.assertEqual(len(client.list_backups("kb")), 1)
         self.assertEqual(client.verify_backup("b1", "kb")["action"], "VerifyBackup")

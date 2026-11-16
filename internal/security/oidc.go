@@ -218,10 +218,15 @@ func (m *OIDCManager) getJWKS(ctx context.Context, cfg OIDCIssuerConfig) (map[st
 	return keys, nil
 }
 
+const maxOIDCTokenBytes = 16 * 1024
+
 // ValidateToken validates a federated OIDC JWT and returns claims.
 func (m *OIDCManager) ValidateToken(ctx context.Context, rawToken string) (claims *OIDCClaims, err error) {
 	if !m.Enabled() {
 		return nil, errors.New("oidc federation disabled")
+	}
+	if len(rawToken) == 0 || len(rawToken) > maxOIDCTokenBytes {
+		return nil, errors.New("invalid token length")
 	}
 	start := time.Now()
 	// peek issuer for metrics labels
@@ -543,6 +548,12 @@ func (m *OIDCManager) AddIssuer(cfg OIDCIssuerConfig) error {
 	if cfg.IssuerURL == "" {
 		return errors.New("issuer_url is required")
 	}
+	if !isAllowedOIDCEndpoint(cfg.IssuerURL) {
+		return errors.New("issuer_url must use https")
+	}
+	if cfg.JWKSURL != "" && !isAllowedOIDCEndpoint(cfg.JWKSURL) {
+		return errors.New("jwks_url must use https")
+	}
 	if cfg.Audience == "" {
 		return errors.New("audience is required")
 	}
@@ -567,6 +578,12 @@ func (m *OIDCManager) AddIssuer(cfg OIDCIssuerConfig) error {
 	}
 	m.config.Issuers = append(m.config.Issuers, cfg)
 	return nil
+}
+
+func isAllowedOIDCEndpoint(raw string) bool {
+	return strings.HasPrefix(raw, "https://") ||
+		strings.HasPrefix(raw, "http://127.0.0.1") ||
+		strings.HasPrefix(raw, "http://localhost")
 }
 
 // RemoveIssuer removes a configured issuer by URL.

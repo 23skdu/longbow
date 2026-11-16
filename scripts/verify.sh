@@ -40,9 +40,12 @@ fi
 echo "    ✓ Gate 1 passed: Formatting, go vet, and fast linters clean."
 
 # 2. Go Security Check Gate
-echo "--> Gate 2/6: Running Go Security Checks (gosec AST analysis)..."
+echo "--> Gate 2/6: Running Go Security Checks (gosec AST analysis & secret scan)..."
 if command -v gosec >/dev/null 2>&1; then
     gosec -quiet -exclude=G115 $PKGS
+fi
+if command -v gitleaks >/dev/null 2>&1; then
+    gitleaks protect --staged --no-banner
 fi
 echo "    ✓ Gate 2 passed: Security AST checks clean."
 

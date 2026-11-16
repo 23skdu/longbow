@@ -263,7 +263,7 @@ lint-docs: markdown-lint
 # Security Analysis
 # ==============================================================================
 
-security: sec-gosec sec-vulncheck sec-oidc
+security: sec-gosec sec-vulncheck sec-oidc sec-secrets
 	@echo "Security analysis passed cleanly."
 
 GOSEC_FLAGS ?= -quiet -exclude=G115
@@ -291,6 +291,22 @@ trivy-fs:
 sec-oidc:
 	@echo "Running OIDC federation security audit checks..."
 	./scripts/check_oidc_federation_security.sh
+
+sec-secrets:
+	@echo "Running secret scan (gitleaks)..."
+	@if command -v gitleaks >/dev/null 2>&1; then \
+		gitleaks detect --source . --no-git --exit-code 1; \
+	else \
+		echo "SKIP: gitleaks not installed locally"; \
+	fi
+
+sbom:
+	@echo "Generating SPDX SBOM..."
+	@if command -v syft >/dev/null 2>&1; then \
+		syft . -o spdx-json=sbom.spdx.json; \
+	else \
+		echo "SKIP: syft not installed locally"; \
+	fi
 
 # ==============================================================================
 # Performance & Memory Profiling Analysis

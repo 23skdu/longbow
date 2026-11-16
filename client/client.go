@@ -107,15 +107,22 @@ func NewSmartClientWithConfig(cfg ClientConfig) (*SmartClient, error) {
 
 // WithAuthContext attaches Bearer API key and optional tenant header to an outgoing RPC context.
 func (c *SmartClient) WithAuthContext(ctx context.Context) context.Context {
-	if c == nil || (c.apiKey == "" && c.tenantID == "") {
+	if c == nil {
+		return ctx
+	}
+	c.mu.RLock()
+	apiKey := c.apiKey
+	tenantID := c.tenantID
+	c.mu.RUnlock()
+	if apiKey == "" && tenantID == "" {
 		return ctx
 	}
 	pairs := make([]string, 0, 4)
-	if c.apiKey != "" {
-		pairs = append(pairs, "authorization", "Bearer "+c.apiKey)
+	if apiKey != "" {
+		pairs = append(pairs, "authorization", "Bearer "+apiKey)
 	}
-	if c.tenantID != "" {
-		pairs = append(pairs, "x-tenant-id", c.tenantID)
+	if tenantID != "" {
+		pairs = append(pairs, "x-tenant-id", tenantID)
 	}
 	return metadata.AppendToOutgoingContext(ctx, pairs...)
 }

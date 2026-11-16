@@ -209,6 +209,9 @@ type VectorStore struct {
 	rbacManager *RBACManager
 	auditLogger *security.AuditLogger
 
+	// OIDC federation (AWS/Google IAM)
+	oidcManager *security.OIDCManager
+
 	// Lazily-initialized enterprise and extended feature suite (Items 5-15)
 	featuresMu sync.Mutex
 	features   *FeatureSuite

@@ -27,16 +27,16 @@ import (
 
 const maxRESTBodyBytes = 32 << 20
 
-// httpAuthWrap applies HTTP RBAC authentication dynamically at request time whenever
-// VectorStore RBAC is enabled (including when EnableRBAC is called after route registration).
+// httpAuthWrap applies HTTP RBAC/OIDC authentication dynamically at request time whenever
+// VectorStore RBAC or OIDC is enabled (including when enabled after route registration).
 func (s *VectorStore) httpAuthWrap(requiredPerm Permission, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rbac := s.RBAC()
-		if rbac == nil {
+		validator := s.AccessValidator()
+		if validator == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
-		security.HTTPAuthMiddleware(rbac, s.AuditLogger(), string(requiredPerm))(next).ServeHTTP(w, r)
+		security.HTTPAuthMiddleware(validator, s.AuditLogger(), string(requiredPerm))(next).ServeHTTP(w, r)
 	})
 }
 
@@ -51,7 +51,7 @@ func (s *VectorStore) httpMethodAuthWrap(readPerm, writePerm Permission, next ht
 }
 
 func (s *VectorStore) requireHTTPGlobalPermission(ctx context.Context, perm Permission, datasetPath string) error {
-	if s.RBAC() == nil {
+	if s.AccessValidator() == nil {
 		return nil
 	}
 	if datasetPath != "" {

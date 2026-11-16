@@ -68,8 +68,16 @@ func (tc *TenantContext) CanAccessDataset(namespace, dataset string) bool {
 		return false
 	}
 	if len(tc.Datasets) > 0 && dataset != "" {
+		full := dataset
+		if namespace != "" && !strings.HasPrefix(dataset, namespace+"/") {
+			full = namespace + "/" + dataset
+		}
+		short := dataset
+		if namespace != "" {
+			short = strings.TrimPrefix(dataset, namespace+"/")
+		}
 		for _, allowed := range tc.Datasets {
-			if allowed == "*" || allowed == dataset || strings.TrimPrefix(dataset, namespace+"/") == allowed {
+			if allowed == "*" || allowed == dataset || allowed == full || allowed == short {
 				return true
 			}
 		}

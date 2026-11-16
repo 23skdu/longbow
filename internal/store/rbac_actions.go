@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/23skdu/longbow/internal/core"
@@ -44,15 +45,13 @@ func (s *VectorStore) AuditLogger() *security.AuditLogger {
 	return s.auditLogger
 }
 
-// AuthorizeDatasetAccess validates RBAC & tenant boundaries when RBAC is enabled.
-// When RBAC is not configured (rbacManager == nil), all requests are allowed.
+// AuthorizeDatasetAccess validates RBAC, OIDC, & tenant boundaries when authentication is enabled.
+// When neither RBAC nor OIDC is configured, all requests are allowed.
 func (s *VectorStore) AuthorizeDatasetAccess(ctx context.Context, perm Permission, datasetPath string) (*security.TenantContext, error) {
-	s.configMu.RLock()
-	mgr := s.rbacManager
-	audit := s.auditLogger
-	s.configMu.RUnlock()
+	validator := s.AccessValidator()
+	audit := s.AuditLogger()
 
-	if mgr == nil {
+	if validator == nil {
 		tc, _ := security.TenantFromContext(ctx)
 		return tc, nil
 	}
@@ -85,7 +84,7 @@ func (s *VectorStore) AuthorizeDatasetAccess(ctx context.Context, perm Permissio
 		return nil, status.Error(codes.Unauthenticated, "missing authentication token")
 	}
 
-	tc, err := mgr.AuthorizeToken(ctx, rawKey, string(perm), ns, ds)
+	tc, err := validator.AuthorizeToken(ctx, rawKey, string(perm), ns, ds)
 	if err != nil {
 		if errors.Is(err, security.ErrForbidden) || errors.Is(err, security.ErrTenantIsolation) {
 			return nil, status.Error(codes.PermissionDenied, err.Error())
@@ -97,32 +96,31 @@ func (s *VectorStore) AuthorizeDatasetAccess(ctx context.Context, perm Permissio
 
 // CanTenantListDataset checks whether the caller's TenantContext allows seeing the named dataset.
 func (s *VectorStore) CanTenantListDataset(ctx context.Context, datasetPath string) bool {
-	s.configMu.RLock()
-	mgr := s.rbacManager
-	s.configMu.RUnlock()
-	if mgr == nil {
+	if s.AccessValidator() == nil {
 		return true
 	}
 	tc, err := s.AuthorizeDatasetAccess(ctx, PermRead, datasetPath)
 	return err == nil && (tc == nil || tc.CanAccessDataset(ParseNamespacedPath(datasetPath)))
 }
 
-// FilterResultsByRLS filters search results through row-level security policies when RBAC/RLS is active.
+// FilterResultsByRLS filters search results through row-level security policies when RBAC/OIDC/RLS is active.
 func (s *VectorStore) FilterResultsByRLS(ctx context.Context, datasetPath string, results []SearchResult) []SearchResult {
 	if len(results) == 0 {
+		return results
+	}
+	validator := s.AccessValidator()
+	if validator == nil {
 		return results
 	}
 	s.configMu.RLock()
 	mgr := s.rbacManager
 	s.configMu.RUnlock()
-	if mgr == nil {
-		return results
-	}
+
 	tc, ok := security.TenantFromContext(ctx)
 	if !ok || tc == nil {
 		rawKey := extractTokenFromMetadata(ctx)
 		if rawKey != "" {
-			if resolved, err := mgr.AuthorizeToken(ctx, rawKey, string(PermRead), "", ""); err == nil {
+			if resolved, err := validator.AuthorizeToken(ctx, rawKey, string(PermRead), "", ""); err == nil {
 				tc = resolved
 			}
 		}
@@ -130,7 +128,10 @@ func (s *VectorStore) FilterResultsByRLS(ctx context.Context, datasetPath string
 	if tc == nil || tc.IsAdmin {
 		return results
 	}
-	rls := mgr.RLSEvaluator()
+	var rls *security.RLSEvaluator
+	if mgr != nil {
+		rls = mgr.RLSEvaluator()
+	}
 	ns, ds := ParseNamespacedPath(datasetPath)
 
 	filtered := make([]SearchResult, 0, len(results))
@@ -351,4 +352,61 @@ func (s *VectorStore) ensureRBACManager() *RBACManager {
 	}
 	s.rbacManager.SetAuditLogger(s.auditLogger)
 	return s.rbacManager
+}
+
+// EnableOIDC configures OIDC federation on the VectorStore.
+func (s *VectorStore) EnableOIDC(mgr *security.OIDCManager) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	if s.auditLogger == nil {
+		s.auditLogger = security.NewAuditLogger()
+	}
+	s.oidcManager = mgr
+}
+
+// OIDCManager returns the active OIDCManager (nil if disabled).
+func (s *VectorStore) OIDC() *security.OIDCManager {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	return s.oidcManager
+}
+
+// ensureOIDCValidator returns an OIDCAccessValidator if OIDC is enabled.
+func (s *VectorStore) ensureOIDCValidator() *security.OIDCAccessValidator {
+	mgr := s.OIDC()
+	if mgr == nil {
+		return nil
+	}
+	v := security.NewOIDCAccessValidator(mgr)
+	v.SetAuditLogger(s.AuditLogger())
+	return v
+}
+
+// AccessValidator returns the active AccessValidator combining RBAC and OIDC
+// when enabled, or nil if authentication is disabled.
+func (s *VectorStore) AccessValidator() security.AccessValidator {
+	rbac := s.RBAC()
+	oidc := s.ensureOIDCValidator()
+	switch {
+	case rbac != nil && oidc != nil:
+		return &compositeAccessValidator{rbac: rbac, oidc: oidc}
+	case rbac != nil:
+		return rbac
+	case oidc != nil:
+		return oidc
+	default:
+		return nil
+	}
+}
+
+type compositeAccessValidator struct {
+	rbac *RBACManager
+	oidc *security.OIDCAccessValidator
+}
+
+func (c *compositeAccessValidator) AuthorizeToken(ctx context.Context, rawToken, permission, namespace, dataset string) (*security.TenantContext, error) {
+	if strings.Count(rawToken, ".") == 2 && c.oidc != nil {
+		return c.oidc.AuthorizeToken(ctx, rawToken, permission, namespace, dataset)
+	}
+	return c.rbac.AuthorizeToken(ctx, rawToken, permission, namespace, dataset)
 }

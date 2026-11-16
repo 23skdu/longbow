@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -358,7 +359,7 @@ func (r *RBACManager) AuthorizeToken(ctx context.Context, rawToken, permission, 
 		return nil, fmt.Errorf("%w: namespace mismatch (%s)", security.ErrTenantIsolation, namespace)
 	}
 
-	if len(apiKey.Datasets) > 0 && dataset != "" && !datasetAllowed(apiKey.Datasets, dataset) {
+	if len(apiKey.Datasets) > 0 && dataset != "" && !datasetAllowed(apiKey.Datasets, namespace, dataset) {
 		r.mu.RUnlock()
 		if audit != nil {
 			audit.RecordEvent(ctx, apiKey.KeyID, apiKey.TenantID, "authorize:"+permission, dataset, "rpc", false, "dataset not authorized")
@@ -419,16 +420,24 @@ func (r *RBACManager) CheckPermission(keyStr string, perm Permission, namespace,
 		return false, errors.New("namespace mismatch")
 	}
 
-	if len(apiKey.Datasets) > 0 && !datasetAllowed(apiKey.Datasets, dataset) {
+	if len(apiKey.Datasets) > 0 && !datasetAllowed(apiKey.Datasets, namespace, dataset) {
 		return false, errors.New("dataset not authorized")
 	}
 
 	return true, nil
 }
 
-func datasetAllowed(allowed []string, dataset string) bool {
+func datasetAllowed(allowed []string, namespace, dataset string) bool {
+	full := dataset
+	if namespace != "" && !strings.HasPrefix(dataset, namespace+"/") {
+		full = namespace + "/" + dataset
+	}
+	short := dataset
+	if namespace != "" {
+		short = strings.TrimPrefix(dataset, namespace+"/")
+	}
 	for _, ds := range allowed {
-		if ds == "*" || ds == dataset {
+		if ds == "*" || ds == dataset || ds == full || ds == short {
 			return true
 		}
 	}

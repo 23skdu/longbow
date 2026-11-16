@@ -205,7 +205,10 @@ clean:
 		fi; \
 		$(DOCKER) image prune -f >/dev/null 2>&1 || true; \
 	fi
-	$(GO) clean -testcache
+	$(GO) clean -testcache -cache -fuzzcache
+	@if command -v $(GO) >/dev/null 2>&1; then \
+		$(GO) clean -modcache 2>/dev/null || true; \
+	fi
 
 # ==============================================================================
 # Static Analysis & Linters

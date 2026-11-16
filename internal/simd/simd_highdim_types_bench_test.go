@@ -46,6 +46,10 @@ func BenchmarkHighDim_Complex128_3072(b *testing.B) {
 	benchmarkComplex128(b, dim3072)
 }
 
+func BenchmarkHighDim_Uint32_128(b *testing.B) {
+	benchmarkUint32(b, 128)
+}
+
 // Helpers
 
 func benchmarkFloat64(b *testing.B, dim int) {
@@ -159,5 +163,19 @@ func benchmarkComplex128(b *testing.B, dim int) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = EuclideanDistanceComplex128(v1, v2)
+	}
+}
+
+func benchmarkUint32(b *testing.B, dim int) {
+	v1 := make([]uint32, dim)
+	v2 := make([]uint32, dim)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for i := 0; i < dim; i++ {
+		v1[i] = uint32(rng.Intn(1000))
+		v2[i] = uint32(rng.Intn(1000))
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = EuclideanDistanceUint32(v1, v2)
 	}
 }

@@ -88,11 +88,13 @@ func registerDynamicKernels(impl string) {
 	Registry.Register(MetricDotProduct, DataTypeUint16, 1024, Dot1024Uint16)
 
 	Registry.Register(MetricEuclidean, DataTypeUint32, 0, EuclideanDistanceUint32)
+	Registry.Register(MetricEuclidean, DataTypeUint32, 128, Euclidean128Uint32)
 	Registry.Register(MetricEuclidean, DataTypeUint32, 384, Euclidean384Uint32)
 	Registry.Register(MetricEuclidean, DataTypeUint32, 768, Euclidean768Uint32)
 	Registry.Register(MetricEuclidean, DataTypeUint32, 1024, Euclidean1024Uint32)
 	Registry.Register(MetricCosine, DataTypeUint32, 0, CosineDistanceUint32)
 	Registry.Register(MetricDotProduct, DataTypeUint32, 0, DotProductUint32)
+	Registry.Register(MetricDotProduct, DataTypeUint32, 128, Dot128Uint32)
 	Registry.Register(MetricDotProduct, DataTypeUint32, 384, Dot384Uint32)
 	Registry.Register(MetricDotProduct, DataTypeUint32, 768, Dot768Uint32)
 	Registry.Register(MetricDotProduct, DataTypeUint32, 1024, Dot1024Uint32)

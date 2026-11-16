@@ -409,6 +409,34 @@ func Dot1024Uint16(a, b []uint16) (float32, error) {
 
 // --- Uint32 Specialized Kernels ---
 
+func l2Squared128Uint32(a, b []uint32) float32 {
+	var sum float64
+	for i := 0; i < 128; i += 4 {
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
+	}
+	return float32(sum)
+}
+
+func dot128Uint32(a, b []uint32) float32 {
+	var sum float64
+	for i := 0; i < 128; i += 4 {
+		sum += float64(a[i])*float64(b[i]) + float64(a[i+1])*float64(b[i+1]) + float64(a[i+2])*float64(b[i+2]) + float64(a[i+3])*float64(b[i+3])
+	}
+	return float32(sum)
+}
+
+func Euclidean128Uint32(a, b []uint32) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared128Uint32(a, b)))), nil
+}
+
+func Dot128Uint32(a, b []uint32) (float32, error) {
+	return dot128Uint32(a, b), nil
+}
+
 func l2Squared384Uint32(a, b []uint32) float32 {
 	var sum float64
 	for i := 0; i < 384; i += 4 {

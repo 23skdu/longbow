@@ -12,9 +12,10 @@ subtasks required to close it. Tasks are ordered by expected impact.
 ### Subtasks
 - [x] P0-1.1 Sincos LUT exists (tqPolarLUT) and is used in reconstruction.
 - [x] P0-1.2 Batched reconstruction across tqBatchWidth candidates (turboquant_batch.go).
-- [ ] P0-1.3 Profile polar reconstruction to confirm hot loops.
-- [ ] P0-1.4 Validate numerical parity vs scalar reference.
-- [ ] P0-1.5 Benchmark index time before/after.
+- [x] P0-1.3 AVX2 reconstruction kernel (TQPolarReconstructLevelAVX2).
+- [ ] P0-1.4 Profile polar reconstruction to confirm hot loops.
+- [ ] P0-1.5 Validate numerical parity vs scalar reference.
+- [ ] P0-1.6 Benchmark index time before/after.
 
 ## P0-2: Complex128 Throughput & Memory (951 QPS, 11.5 GB RSS at 500k/384d)
 

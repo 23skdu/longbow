@@ -34,6 +34,7 @@ type OIDCIssuerConfig struct {
 	TenantClaim     string           `json:"tenant_claim,omitempty"`
 	NamespaceClaim  string           `json:"namespace_claim,omitempty"`
 	DatasetsClaim   string           `json:"datasets_claim,omitempty"`
+	RowFilterClaim  string           `json:"row_filter_claim,omitempty"`
 	AdminClaim      string           `json:"admin_claim,omitempty"`
 	AdminValue      string           `json:"admin_value,omitempty"`
 	ClockSkew       time.Duration    `json:"clock_skew,omitempty"`
@@ -417,6 +418,23 @@ func (c *OIDCClaims) ToTenantContext() *TenantContext {
 			}
 		}
 	}
+	// row filters
+	rfClaim := cfg.RowFilterClaim
+	if rfClaim == "" {
+		rfClaim = "row_filters"
+	}
+	if v, ok := c.Raw[rfClaim]; ok {
+		switch val := v.(type) {
+		case map[string]interface{}:
+			tc.RowFilters = make(map[string]string, len(val))
+			for k, x := range val {
+				if s, ok := x.(string); ok {
+					tc.RowFilters[k] = s
+				}
+			}
+		}
+	}
+
 	// roles
 	roleClaim := cfg.RoleClaim
 	if roleClaim == "" {
@@ -471,4 +489,46 @@ func (c *OIDCClaims) ToTenantContext() *TenantContext {
 		tc.Permissions = []string{"read"}
 	}
 	return tc
+}
+
+// AWSOIDCIssuerConfig returns a sensible default config for AWS IAM / IRSA
+// style OIDC federation. issuerURL is the cluster/provider issuer (e.g.
+// https://oidc.eks.<region>.amazonaws.com/id/<id>).
+func AWSOIDCIssuerConfig(issuerURL, audience string) OIDCIssuerConfig {
+	if audience == "" {
+		audience = "sts.amazonaws.com"
+	}
+	return OIDCIssuerConfig{
+		Provider:       OIDCProviderAWS,
+		IssuerURL:      issuerURL,
+		Audience:       audience,
+		AllowedAlgs:    []string{"RS256"},
+		TenantClaim:    "tenant_id",
+		NamespaceClaim: "namespace",
+		DatasetsClaim:  "datasets",
+		RoleClaim:      "groups",
+		RowFilterClaim: "row_filters",
+		AdminClaim:     "role",
+		AdminValue:     "admin",
+		ClockSkew:      time.Minute,
+	}
+}
+
+// GoogleOIDCIssuerConfig returns a sensible default config for Google IAM /
+// Workload Identity Federation.
+func GoogleOIDCIssuerConfig(clientID string) OIDCIssuerConfig {
+	return OIDCIssuerConfig{
+		Provider:       OIDCProviderGoogle,
+		IssuerURL:      "https://accounts.google.com",
+		Audience:       clientID,
+		AllowedAlgs:    []string{"RS256"},
+		TenantClaim:    "tenant_id",
+		NamespaceClaim: "namespace",
+		DatasetsClaim:  "datasets",
+		RoleClaim:      "groups",
+		RowFilterClaim: "row_filters",
+		AdminClaim:     "role",
+		AdminValue:     "admin",
+		ClockSkew:      time.Minute,
+	}
 }

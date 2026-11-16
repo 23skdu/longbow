@@ -175,3 +175,44 @@ func FuzzOIDCValidateToken(f *testing.F) {
 		_, _ = mgr.ValidateToken(context.Background(), string(data))
 	})
 }
+
+func TestOIDCRowFiltersAndHelpers(t *testing.T) {
+	cfg := AWSOIDCIssuerConfig("https://issuer.example", "aud")
+	if cfg.Provider != OIDCProviderAWS {
+		t.Fatal("provider mismatch")
+	}
+	gc := GoogleOIDCIssuerConfig("client-123")
+	if gc.IssuerURL != "https://accounts.google.com" {
+		t.Fatal("google issuer mismatch")
+	}
+
+	_, priv, srv := testOIDCSetup(t)
+	mgr := NewOIDCManager(OIDCConfig{
+		Enabled: true,
+		Issuers: []OIDCIssuerConfig{{
+			Provider:       OIDCProviderGeneric,
+			IssuerURL:      "https://issuer.example",
+			JWKSURL:        srv.URL,
+			Audience:       "longbow",
+			AllowedAlgs:    []string{"RS256"},
+			RowFilterClaim: "row_filters",
+		}},
+	})
+	raw := signToken(t, priv, jwt.MapClaims{
+		"iss":         "https://issuer.example",
+		"aud":         "longbow",
+		"sub":         "user-rf",
+		"exp":         time.Now().Add(time.Hour).Unix(),
+		"iat":         time.Now().Unix(),
+		"jti":         "jti-rf",
+		"row_filters": map[string]interface{}{"dept": "eng"},
+	})
+	c, err := mgr.ValidateToken(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc := c.ToTenantContext()
+	if tc.RowFilters["dept"] != "eng" {
+		t.Fatalf("row filter not mapped: %+v", tc.RowFilters)
+	}
+}

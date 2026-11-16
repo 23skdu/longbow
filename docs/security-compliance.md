@@ -103,3 +103,35 @@ export LONGBOW_KMS_MASTER_KEY="<32-byte-hex-or-passphrase>"
 | **Audit Logging & Non-Repudiation** (SOC2 CC7.2) | Structured immutable JSON audit ring + writer (`security.AuditLogger`), `GetAuditLog` | `internal/security/audit.go`, `internal/store/rbac_actions.go` |
 | **Right to Erasure** (GDPR Art. 17) | Vector/dataset hard deletion (`delete-vector`, `Drop`), tombstone compaction, PITR backup exclusion | `internal/store/store_actions.go`, `internal/store/backup_pitr.go` |
 | **Resilience & Recovery** (SOC2 A1.2, A1.3) | Online checksum-verified snapshots, retention policies, WAL PITR replay | `internal/store/backup_test.go` |
+
+---
+
+## 5. OIDC Federation & Cloud IAM Authentication
+
+Longbow supports OIDC federation for AWS and Google IAM identities, mapping
+validated, short-lived tokens to `TenantContext` with namespace/dataset scoping
+and RLS.
+
+### Components
+
+- `internal/security/oidc.go`: `OIDCManager`, JWKS fetch/cache, token validation,
+  claim mapping, replay protection.
+- `internal/security/oidc_access.go`: `OIDCAccessValidator` (implements
+  `AccessValidator`) enforcing permissions and dataset boundaries.
+- `internal/metrics/oidc_metrics.go`: auth attempt/success/failure, JWKS fetch
+  failure, and validation latency metrics.
+- Grafana alert group `longbow_oidc_alerts` for auth failure rate and JWKS
+  fetch failures.
+
+### Configuration
+
+- `OIDCConfig` / `OIDCIssuerConfig` (issuer URL, JWKS URL, audience, allowed
+  algorithms, claim mappings, clock skew).
+- Helpers: `AWSOIDCIssuerConfig`, `GoogleOIDCIssuerConfig`.
+
+### Verification
+
+- Unit tests: `internal/security/oidc_test.go`, `oidc_access_test.go`.
+- Fuzz target: `FuzzOIDCValidateToken`.
+- CI: `oidc-federation-security` job runs `make sec-oidc`.
+- Grafana: `grafana/tests/oidc_alerts_test.yml`.

@@ -465,6 +465,31 @@ Baselines regenerated: `benchmarks/baseline_cpu_768_20261116.json` (50k/100k/200
 
 ---
 
+## 0d. 2026-11-16 Large-Scale Validation (dim 128, 500k & 1M)
+
+### 0d.1 Method
+
+- Binary: `bin/longbow` (CPU standard, AVX2), current tree.
+- Host: Intel Core i7-12650H, 4 pinned workers, 18 GiB memory ceiling, auto-spill disk enabled.
+- Seed: 42. Queries: 100 per mode, all 21 search modes.
+- Dimensions: 128. Counts: 500,000 / 1,000,000. Dtypes: float32, int8, uint8, float64 (500k); float32, int8, uint8 (1M).
+
+### 0d.2 Coverage & Findings
+
+- 500k: 4/4 configs completed (0 failures, 0 exhausted, 0 zero-QPS).
+- 1M: 3/3 configs completed (0 failures, 0 exhausted, 0 zero-QPS).
+- Memory is the binding constraint at 1M: float32 RSS 13.9 GB (near the 14 GiB effective ceiling), int8/uint8 ~10.5 GB. Auto-spill keeps RSS bounded but dense search latency degrades at 1M (geo/advancedtext/temporalrange become very slow: geo ~8 QPS, advancedtext ~45-120 QPS, temporalrange ~6-14 QPS).
+- Dense QPS at 1M dim128: float32 2881.5, int8 3302.1, uint8 3225.6 — within scaling expectations vs 500k (3038.7 / 3536.9 / 3468.6).
+- Index time scales sub-linearly: float32 187s (500k) → 420s (1M); int8 71.5s → 190s; uint8 72s → 183.5s.
+- Filtered/geo/temporal-range modes degrade at 1M due to O(N) scan paths; candidates for pruning (geo spatial index, temporal range) — consistent with §0a recommendations (P0-4, P0-7).
+- No functional regressions; all 21 modes return non-zero QPS.
+
+### 0d.3 Baselines
+
+Baselines regenerated: `benchmarks/baseline_cpu_large_20261116.json` (500k/1M, dim 128, float32/int8/uint8/float64).
+
+---
+
 ## 1. Streaming Chunk Upload Architecture
 
 Streaming chunk upload support is now active and set as the default across all client SDKs, CLI tools, and benchmark binaries:

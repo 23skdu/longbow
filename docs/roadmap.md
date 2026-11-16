@@ -51,9 +51,10 @@ subtasks required to close it. Tasks are ordered by expected impact.
 ## P0-6: Filtered String Fast Path for Complex Types (436 QPS at 500k/384d)
 
 ### Subtasks
-- [ ] P0-6.1 Profile predicate evaluation during complex search.
-- [ ] P0-6.2 Use dictionary codes for string filters in complex path.
-- [ ] P0-6.3 Benchmark filtered search before/after.
+- [x] P0-6.1 Dictionary codes already applied for all string columns (dataset.go).
+- [x] P0-6.2 SIMD MatchUint16 fast path for eq/neq (filter_text.go).
+- [ ] P0-6.3 Profile predicate evaluation during complex search.
+- [ ] P0-6.4 Benchmark filtered search before/after.
 
 ## P0-7: Memory Cap Enforcement
 

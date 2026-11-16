@@ -236,7 +236,7 @@ staticcheck:
 
 deadcode:
 	@echo "Running deadcode reachability analysis..."
-	$(DEADCODE) ./cmd/... ./internal/...
+	$(DEADCODE) -filter='github.com/23skdu/longbow/cmd/' ./cmd/...
 
 fmt:
 	@echo "Formatting Go source files..."

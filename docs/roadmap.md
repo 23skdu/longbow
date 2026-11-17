@@ -30,7 +30,7 @@ See `docs/performance.md` for benchmark results and baselines.
 | P4-6 | Filtered: scalability test | HIGH | Implemented (filtered_scale_test.go, 100k) |
 | P5-1 | Complex: tiled batch kernels | HIGH | Implemented (P0-2.2) |
 | P5-2 | Complex: zero-copy Float32→complex128 (API change) | HIGH | Open |
-| P5-3 | Complex: verify TurboQuant auto-standardization at ≥500k | HIGH | Open |
+| P5-3 | Complex: verify TurboQuant auto-standardization at ≥500k | HIGH | Implemented (ShouldAutoQuantize verified) |
 | P5-4 | Complex: chunked loading (disk-backed) | HIGH | Implemented (mmap/disk store) |
 | P5-5 | Complex: RSS < 20 GB at 500k | HIGH | Open |
 | P5-6 | Complex: scalability test | HIGH | Implemented (complex_scale_test.go, 100k) |

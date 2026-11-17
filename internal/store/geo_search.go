@@ -347,6 +347,33 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 		return []lbtypes.SearchResult{}, nil
 	}
 
+	// P1: bound candidate work at large N. When the spatial index returns more
+	// candidates than we can productively score, keep only the nearest by a
+	// cheap lat/lon bounding-box distance. This caps the O(N) haversine/heap
+	// work while preserving recall for the k-NN result.
+	const maxGeoCandidates = 4096
+	if len(candidates) > maxGeoCandidates && k > 0 {
+		// Cheap Manhattan-ish distance in degrees for ordering only.
+		type candDist struct {
+			idx  int
+			dist float64
+		}
+		order := make([]candDist, len(candidates))
+		for i, c := range candidates {
+			dlat := c.GeoPoint.Lat - center.Lat
+			dlon := c.GeoPoint.Lon - center.Lon
+			order[i] = candDist{idx: i, dist: dlat*dlat + dlon*dlon}
+		}
+		// partial sort: keep the nearest maxGeoCandidates
+		// Use sort by distance then truncate.
+		sort.Slice(order, func(a, b int) bool { return order[a].dist < order[b].dist })
+		trimmed := make([]*GeoIndexedVector, 0, maxGeoCandidates)
+		for i := 0; i < maxGeoCandidates && i < len(order); i++ {
+			trimmed = append(trimmed, candidates[order[i].idx])
+		}
+		candidates = trimmed
+	}
+
 	results := geoScoredResultPool.Get().([]scoredResult)
 	if cap(results) < len(candidates) {
 		results = make([]scoredResult, len(candidates))

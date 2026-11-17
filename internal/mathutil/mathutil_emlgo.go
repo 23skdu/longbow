@@ -6,11 +6,11 @@ import (
 	"math"
 	"sync/atomic"
 
-	"github.com/emlgo/eml/pkg/arithmetic"
-	"github.com/emlgo/eml/pkg/fastmath"
-	"github.com/emlgo/eml/pkg/hyper"
-	"github.com/emlgo/eml/pkg/logexp"
-	"github.com/emlgo/eml/pkg/trig"
+	"github.com/23skdu/emlgo/pkg/arithmetic"
+	"github.com/23skdu/emlgo/pkg/fastmath"
+	"github.com/23skdu/emlgo/pkg/hyper"
+	"github.com/23skdu/emlgo/pkg/logexp"
+	"github.com/23skdu/emlgo/pkg/trig"
 )
 
 // Backend identifies which math kernel backend is active.

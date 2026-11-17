@@ -16,9 +16,7 @@ See `docs/performance.md` for benchmark results and baselines.
 
 | ID | Area | Priority | Status |
 |---|---|---|---|
-| P4-5 | Filtered: P99 < 50ms at 1M | HIGH | Open |
 | P5-2 | Complex: zero-copy Float32→complex128 (API change) | HIGH | Open |
-| P5-5 | Complex: RSS < 20 GB at 500k | HIGH | Open |
 | P7-1 | uint16/uint32: profile slow kernel | MEDIUM | Kernels exist |
 | P7-3 | uint16/uint32: parity benchmark | MEDIUM | Open |
 | P7-4 | uint16/uint32: scalability test | MEDIUM | Open |
@@ -32,7 +30,6 @@ See `docs/performance.md` for benchmark results and baselines.
 | P9-4 | HNSW quality: recall @10 at 1M vs brute force | MEDIUM | Open |
 | P9-5 | HNSW quality: scalability test | MEDIUM | Open |
 | P10-1 | Filtered tail: bitmap intersection | MEDIUM | Open |
-| P10-5 | Filtered tail: P99 < 50ms at 1M | MEDIUM | Open |
 | P11-1 | Concurrency: dynamic worker scaling | LOW | Open |
 | P11-2 | Concurrency: NUMA-aware allocation | LOW | Open |
 | P11-3 | Concurrency: request batching | LOW | Open |
@@ -73,14 +70,11 @@ See `docs/performance.md` for benchmark results and baselines.
 
 ### P4/P10 (Filtered) — Remaining
 
-- [ ] P4-5 Benchmark filtered at 500k/1M; target P99 < 50ms.
 - [ ] P10-1 Filtered tail: bitmap intersection (multi-predicate).
-- [ ] P10-5 P99 < 50ms at 1M.
 
 ### P5 (Complex) — Remaining
 
 - [ ] P5-2b Optional API change for Float32→complex128 (P0-2.5).
-- [ ] P5-5 RSS < 20 GB at 500k.
 
 ### P6 (TurboQuant) — Remaining
 

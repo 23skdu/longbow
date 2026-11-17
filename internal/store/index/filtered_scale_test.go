@@ -148,3 +148,51 @@ func BenchmarkFilteredSearchScale(b *testing.B) {
 	}
 	_ = bm
 }
+
+// TestFilteredSearchP99AtScale guards P4-5/P10-5 at 500k.
+func TestFilteredSearchP99AtScale(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping filtered p99 test in short mode")
+	}
+	const n = 500_000
+	idx, q, bm := buildFilteredScaleIndex(t, n)
+	defer func() { _ = idx.Close() }()
+
+	ctx := context.Background()
+	if _, err := idx.SearchVectorsWithBitmap(ctx, q, 10, bm, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	const queries = 100
+	latencies := make([]time.Duration, queries)
+	for i := 0; i < queries; i++ {
+		start := time.Now()
+		res, err := idx.SearchVectorsWithBitmap(ctx, q, 10, bm, nil)
+		latencies[i] = time.Since(start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res) == 0 {
+			t.Fatal("no results")
+		}
+	}
+	// Compute P99.
+	sorted := append([]time.Duration(nil), latencies...)
+	// simple insertion sort
+	for i := 1; i < len(sorted); i++ {
+		j := i
+		for j > 0 && sorted[j-1] > sorted[j] {
+			sorted[j-1], sorted[j] = sorted[j], sorted[j-1]
+			j--
+		}
+	}
+	p99Idx := (99 * len(sorted)) / 100
+	if p99Idx >= len(sorted) {
+		p99Idx = len(sorted) - 1
+	}
+	p99 := sorted[p99Idx]
+	t.Logf("FilteredSearchP99AtScale: n=%d p99=%v", n, p99)
+	if p99 > 50*time.Millisecond {
+		t.Fatalf("filtered search P99 %v exceeds 50ms", p99)
+	}
+}

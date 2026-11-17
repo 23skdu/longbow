@@ -3,6 +3,9 @@ package store
 import (
 	"context"
 	"math/rand"
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,5 +143,35 @@ func BenchmarkComplexSearchScale(b *testing.B) {
 	b.StopTimer()
 	if elapsed := b.Elapsed().Seconds(); elapsed > 0 {
 		b.ReportMetric(float64(b.N)/elapsed, "qps")
+	}
+}
+
+// TestComplexRSSAtScale guards P5-5 at 500k.
+func TestComplexRSSAtScale(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping complex rss test in short mode")
+	}
+	const n = 500000
+	idx, _ := buildComplexScaleIndex(t, n)
+	defer func() { _ = idx.Close() }()
+
+	// Read RSS from /proc/self/statm (pages).
+	data, err := os.ReadFile("/proc/self/statm")
+	if err != nil {
+		t.Skipf("cannot read rss: %v", err)
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 2 {
+		t.Fatal("unexpected statm format")
+	}
+	rssPages, err := strconv.Atoi(fields[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	rssBytes := uint64(rssPages) * 4096
+	t.Logf("ComplexRSSAtScale: n=%d rss=%.2f GB", n, float64(rssBytes)/(1024*1024*1024))
+	const limit = 20 * 1024 * 1024 * 1024
+	if rssBytes > limit {
+		t.Fatalf("RSS %.2f GB exceeds 20 GB", float64(rssBytes)/(1024*1024*1024))
 	}
 }

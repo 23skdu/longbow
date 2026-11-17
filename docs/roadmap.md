@@ -16,7 +16,6 @@ See `docs/performance.md` for benchmark results and baselines.
 
 | ID | Area | Priority | Status |
 |---|---|---|---|
-| P5-2 | Complex: zero-copy Float32→complex128 (API change) | HIGH | Open |
 | P7-1 | uint16/uint32: profile slow kernel | MEDIUM | Kernels exist |
 | P7-3 | uint16/uint32: parity benchmark | MEDIUM | Open |
 | P8-5 | Memory: 1M complex128 RSS < 20 GB with disk spill | MEDIUM | Open |
@@ -68,10 +67,6 @@ See `docs/performance.md` for benchmark results and baselines.
 ### P4/P10 (Filtered) — Remaining
 
 - [ ] P10-1 Filtered tail: bitmap intersection (multi-predicate).
-
-### P5 (Complex) — Remaining
-
-- [ ] P5-2b Optional API change for Float32→complex128 (P0-2.5).
 
 ### P6 (TurboQuant) — Remaining
 

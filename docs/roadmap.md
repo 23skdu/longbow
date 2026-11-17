@@ -86,8 +86,8 @@ indicate tail latency from large candidate sets and mutex contention.
 ### P4 Subtasks
 
 - [ ] P4-1 Add bitmap intersection for multi-predicate filters (AND of bitsets).
-- [ ] P4-2 Push filters into HNSW traversal (early-exit on predicate mismatch)
-      instead of post-filtering.
+- [x] P4-2 Push filters into HNSW traversal (early-exit on predicate mismatch)
+      already implemented via hnsw_predicate.go (ArrowHNSWPredicate/PredicatePushdownOptimizer).
 - [ ] P4-3 Add a predicate-aware entry point selection (start from a node
       matching the filter).
 - [ ] P4-4 Shard filter evaluation across the shared worker pool.
@@ -153,10 +153,10 @@ available RAM. Auto-spill exists but graph traversal requires in-memory data.
 
 ### P8 Subtasks
 
-- [ ] P8-1 Implement disk-backed vector storage with memory-mapped reads
-      (reuse `mmap_vector.go`, `disk_vector_store_block.go`).
-- [ ] P8-2 Add a tiered storage policy (hot in RAM, cold on disk) with
-      LRU eviction (`tiered_storage.go`).
+- [x] P8-1 Disk-backed vector storage with memory-mapped reads already exists
+      (`mmap_vector.go`, `disk_vector_store_block.go`, `storage/`).
+- [x] P8-2 Tiered storage policy (hot/cold) with LRU eviction already exists
+      (`tiered_storage.go`).
 - [ ] P8-3 Add memory cap enforcement with graceful degradation (evict layers,
       spill to disk) — extend `GraphLayerEvictionManager`.
 - [ ] P8-4 Add `checkMemoryBeforeWrite` to all ingest paths (already partial).

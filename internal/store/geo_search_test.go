@@ -644,3 +644,35 @@ func BenchmarkGeoIndex_SearchRadiusScale(b *testing.B) {
 		})
 	}
 }
+
+func TestGeoIndex_ResultCacheInvalidation(t *testing.T) {
+	config := &GeoSearchConfig{
+		DistanceType: GeoDistanceHaversine,
+		EarthRadius:  6371.0,
+	}
+	idx := NewGeoIndex("cache_test", 2, config)
+	err := idx.Add(1, []float32{1.0, 2.0}, GeoPoint{Lat: 40.7128, Lon: -74.0060}, nil)
+	assert.NoError(t, err)
+
+	r1, err := idx.SearchRadius(context.Background(), GeoPoint{Lat: 40.7128, Lon: -74.0060}, 100, 5)
+	assert.NoError(t, err)
+	assert.Len(t, r1, 1)
+
+	// Cached repeat returns same.
+	r2, err := idx.SearchRadius(context.Background(), GeoPoint{Lat: 40.7128, Lon: -74.0060}, 100, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, r1, r2)
+
+	// Add a new point; cache must invalidate and include it.
+	err = idx.Add(2, []float32{1.1, 2.1}, GeoPoint{Lat: 40.72, Lon: -74.01}, nil)
+	assert.NoError(t, err)
+	r3, err := idx.SearchRadius(context.Background(), GeoPoint{Lat: 40.7128, Lon: -74.0060}, 100, 5)
+	assert.NoError(t, err)
+	assert.Len(t, r3, 2)
+
+	// Delete resets the cache (point may linger in spatial grid, but no panic).
+	idx.Delete(2)
+	r4, err := idx.SearchRadius(context.Background(), GeoPoint{Lat: 40.7128, Lon: -74.0060}, 100, 5)
+	assert.NoError(t, err)
+	assert.NotNil(t, r4)
+}

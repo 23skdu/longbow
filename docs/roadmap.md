@@ -33,7 +33,7 @@ See `docs/performance.md` for benchmark results and baselines.
 | P5-3 | Complex: verify TurboQuant auto-standardization at ≥500k | HIGH | Open |
 | P5-4 | Complex: chunked loading (disk-backed) | HIGH | Implemented (mmap/disk store) |
 | P5-5 | Complex: RSS < 20 GB at 500k | HIGH | Open |
-| P5-6 | Complex: scalability test | HIGH | Open |
+| P5-6 | Complex: scalability test | HIGH | Implemented (complex_scale_test.go, 100k) |
 | P6-5 | TurboQuant: benchmark 5× speedup | HIGH | Implemented (kernels/LUT) |
 | P6-6 | TurboQuant: scalability test | HIGH | Open |
 | P7-1 | uint16/uint32: profile slow kernel | MEDIUM | Kernels exist |

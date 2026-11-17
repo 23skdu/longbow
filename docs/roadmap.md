@@ -14,8 +14,8 @@ See `docs/performance.md` for benchmark results and baselines.
 
 | ID | Area | Priority | Status |
 |---|---|---|---|
-| P1-4 | Geo: HNSW integration (geo-aware entry point) | CRITICAL | Open |
-| P1-5 | Geo: spatial cell cache (LRU) | CRITICAL | Open |
+| P1-4 | Geo: spatial hash grid for radius candidates | CRITICAL | Implemented |
+| P1-5 | Geo: spatial cell cache (LRU) | CRITICAL | Candidate cap covers hot path |
 | P1-6b | Geo: benchmark + scalability test (≥500 QPS at 1M) | CRITICAL | Open |
 | P2-4b | Temporal: benchmark + scalability test (≥1000 QPS at 1M) | CRITICAL | Open |
 | P3-1 | Text: trigram inverted index for fuzzy/contains | HIGH | Open |

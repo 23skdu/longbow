@@ -2,9 +2,10 @@ package types
 
 import (
 	"fmt"
-	arrowmemory "github.com/apache/arrow-go/v18/arrow/memory"
 	"sync/atomic"
 	"unsafe"
+
+	arrowmemory "github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/23skdu/longbow/internal/memory"
 )

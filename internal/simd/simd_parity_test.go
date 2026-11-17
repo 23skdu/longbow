@@ -1,11 +1,12 @@
 package simd
 
 import (
-	"github.com/apache/arrow-go/v18/arrow/float16"
-	"github.com/stretchr/testify/assert"
 	"math"
 	"math/rand"
 	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow/float16"
+	"github.com/stretchr/testify/assert"
 )
 
 // Reference implementations using float64 for maximum precision

@@ -3,7 +3,9 @@ package store
 import (
 	"container/heap"
 	"context"
+	"math"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -151,6 +153,13 @@ type GeoIndex struct {
 	pointCount   atomic.Int64
 	gpuIndex     atomic.Value // holds gputypes.Index
 	ds           *Dataset     // parent dataset back-pointer
+
+	// spatialGrid is a coarse lat/lon hash grid for fast radius candidate
+	// lookup. Keyed by grid cell; values are lists of vectors in that cell.
+	// Populated alongside pointIndex in Add/AddBatch.
+	gridMu       sync.RWMutex
+	spatialGrid  map[string][]*GeoIndexedVector
+	gridCellSize float64
 }
 
 // GeoPredicate implements types.HNSWPredicate for geospatial filtering.
@@ -239,9 +248,11 @@ func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *Ge
 	}
 
 	gi := &GeoIndex{
-		datasetName: datasetName,
-		dimension:   dimension,
-		config:      config,
+		datasetName:  datasetName,
+		dimension:    dimension,
+		config:       config,
+		spatialGrid:  make(map[string][]*GeoIndexedVector),
+		gridCellSize: 0.5,
 	}
 	gi.nearestCache.Store(&sync.Map{})
 	gi.pointIndex.Store(newGeoIndexHandle(newGeoPointIndex(config.IndexType, datasetName, defaultQuadtreeCapacity)))
@@ -277,6 +288,7 @@ func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata []
 	if index != nil {
 		index.Insert(geoVec)
 	}
+	gi.addToSpatialGrid(geoVec)
 	gi.pointCount.Add(1)
 
 	// Reset nearestCache by creating a new sync.Map
@@ -309,6 +321,7 @@ func (gi *GeoIndex) AddBatch(ids []uint64, vectors [][]float32, points []GeoPoin
 		if index != nil {
 			index.Insert(geoVec)
 		}
+		gi.addToSpatialGrid(geoVec)
 	}
 	gi.pointCount.Add(int64(len(ids)))
 
@@ -319,6 +332,68 @@ func (gi *GeoIndex) AddBatch(ids []uint64, vectors [][]float32, points []GeoPoin
 }
 
 // SearchRadius finds the k-nearest neighbors within a radius.
+
+// addToSpatialGrid inserts a vector into the spatial hash grid.
+func (gi *GeoIndex) addToSpatialGrid(vec *GeoIndexedVector) {
+	if gi.gridCellSize <= 0 {
+		gi.gridCellSize = 0.5 // 0.5 degree cells
+	}
+	gi.gridMu.Lock()
+	if gi.spatialGrid == nil {
+		gi.spatialGrid = make(map[string][]*GeoIndexedVector)
+	}
+	key := gi.gridKey(vec.GeoPoint.Lat, vec.GeoPoint.Lon)
+	gi.spatialGrid[key] = append(gi.spatialGrid[key], vec)
+	gi.gridMu.Unlock()
+}
+
+func (gi *GeoIndex) gridKey(lat, lon float64) string {
+	cs := gi.gridCellSize
+	if cs <= 0 {
+		cs = 0.5
+	}
+	latCell := int(math.Floor(lat / cs))
+	lonCell := int(math.Floor(lon / cs))
+	return strconv.Itoa(latCell) + ":" + strconv.Itoa(lonCell)
+}
+
+// spatialGridCandidates returns vectors from grid cells intersecting the radius box.
+func (gi *GeoIndex) spatialGridCandidates(center GeoPoint, radiusKm float64) []*GeoIndexedVector {
+	if gi.gridCellSize <= 0 {
+		gi.gridCellSize = 0.5
+	}
+	cs := gi.gridCellSize
+	cosLat := math.Cos(center.Lat * math.Pi / 180)
+	lonDelta := radiusKm / (111.0 * cosLat)
+	minLat := center.Lat - radiusKm/111.0
+	maxLat := center.Lat + radiusKm/111.0
+	minLon := center.Lon - lonDelta
+	maxLon := center.Lon + lonDelta
+
+	gi.gridMu.RLock()
+	defer gi.gridMu.RUnlock()
+	if gi.spatialGrid == nil {
+		return nil
+	}
+
+	var out []*GeoIndexedVector
+	// Iterate cells covering the box.
+	for lat := minLat; lat <= maxLat; lat += cs {
+		for lon := minLon; lon <= maxLon; lon += cs {
+			key := gi.gridKey(lat, lon)
+			if vecs, ok := gi.spatialGrid[key]; ok {
+				out = append(out, vecs...)
+			}
+		}
+	}
+	// Also include the cell of maxLat/maxLon to avoid off-by-one.
+	key := gi.gridKey(maxLat, maxLon)
+	if vecs, ok := gi.spatialGrid[key]; ok {
+		out = append(out, vecs...)
+	}
+	return out
+}
+
 func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm float64, k int) ([]lbtypes.SearchResult, error) {
 	start := time.Now()
 	defer func() {
@@ -327,21 +402,24 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 	}()
 
 	index := gi.pointIndexRef()
-	if index == nil {
-		return []lbtypes.SearchResult{}, nil
-	}
 
-	// Get candidate bounding box
-	candidatesPtr := geoCandidatePool.Get().(*[]*GeoIndexedVector)
-	candidatesSlice := (*candidatesPtr)[:0]
-	index.QueryRadiusPruned(center, radiusKm, &candidatesSlice)
-	defer func() {
-		if cap(candidatesSlice) <= 8192 {
-			*candidatesPtr = candidatesSlice[:0]
-			geoCandidatePool.Put(candidatesPtr)
-		}
-	}()
-	candidates := candidatesSlice
+	// P1: prefer the spatial hash grid for candidate generation when populated.
+	gridCands := gi.spatialGridCandidates(center, radiusKm)
+	var candidates []*GeoIndexedVector
+	if len(gridCands) > 0 {
+		candidates = gridCands
+	} else if index != nil {
+		candidatesPtr := geoCandidatePool.Get().(*[]*GeoIndexedVector)
+		candidatesSlice := (*candidatesPtr)[:0]
+		index.QueryRadiusPruned(center, radiusKm, &candidatesSlice)
+		defer func() {
+			if cap(candidatesSlice) <= 8192 {
+				*candidatesPtr = candidatesSlice[:0]
+				geoCandidatePool.Put(candidatesPtr)
+			}
+		}()
+		candidates = candidatesSlice
+	}
 
 	if len(candidates) == 0 {
 		return []lbtypes.SearchResult{}, nil

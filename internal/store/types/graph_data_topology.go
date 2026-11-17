@@ -2,12 +2,13 @@ package types
 
 import (
 	"fmt"
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/simd"
 	"math"
 	"runtime"
 	"strconv"
 	"sync/atomic"
+
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {

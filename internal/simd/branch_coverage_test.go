@@ -1,9 +1,10 @@
 package simd
 
 import (
+	"testing"
+
 	lbcore "github.com/23skdu/longbow/internal/core"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestBranchCoverage(t *testing.T) {

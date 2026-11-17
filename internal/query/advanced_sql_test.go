@@ -1,10 +1,11 @@
 package query
 
 import (
+	"testing"
+
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestZeroAllocTicketParser_AdvancedSQL(t *testing.T) {

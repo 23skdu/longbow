@@ -876,9 +876,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
 import "C"
 import (
 	"fmt"
-	"math"
 	"runtime"
-	"sort"
 	"sync"
 	"time"
 	"unsafe"
@@ -887,7 +885,6 @@ import (
 	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
-	"github.com/23skdu/longbow/internal/simd"
 )
 
 const vectorsPerPage = 4096

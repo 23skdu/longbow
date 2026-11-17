@@ -4,8 +4,9 @@ package simd
 
 import (
 	"errors"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 	"unsafe"
+
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 func euclideanNEON(a, b []float32) (float32, error)     { return euclideanUnrolled4x(a, b) }

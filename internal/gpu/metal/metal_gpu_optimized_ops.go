@@ -3,20 +3,14 @@
 package metal
 
 import (
-	"context"
 	"fmt"
 	"math"
-	"math/rand"
 	"sort"
-	"sync"
 	"time"
 	"unsafe"
 
-	"github.com/23skdu/longbow/internal/gpu/memory"
-	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/pq"
-	"github.com/apache/arrow-go/v18/arrow/float16"
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {

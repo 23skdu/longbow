@@ -3,9 +3,10 @@ package metrics
 import (
 	"context"
 	"fmt"
-	"github.com/23skdu/longbow/internal/gpu/types"
 	"net/http"
 	"time"
+
+	"github.com/23skdu/longbow/internal/gpu/types"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )

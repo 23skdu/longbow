@@ -3,8 +3,9 @@
 package tpu
 
 import (
-	"golang.org/x/sys/unix"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // PinnedBuffer represents memory locked in RAM to prevent swapping,

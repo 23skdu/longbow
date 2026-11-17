@@ -1,10 +1,9 @@
 package store
 
-import "github.com/23skdu/longbow/internal/store/index"
-
 import (
 	"sort"
 
+	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/RoaringBitmap/roaring/v2"
 )
 

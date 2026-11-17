@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+
 	"github.com/23skdu/longbow/internal/gpu/types"
 )
 

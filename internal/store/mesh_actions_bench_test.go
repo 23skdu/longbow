@@ -2,8 +2,9 @@ package store
 
 import (
 	"fmt"
-	"github.com/23skdu/longbow/internal/store/cluster"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/cluster"
 
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/apache/arrow-go/v18/arrow/flight"

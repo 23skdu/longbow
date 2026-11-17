@@ -2,10 +2,11 @@ package store
 
 import (
 	"container/list"
-	"github.com/23skdu/longbow/internal/metrics"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/23skdu/longbow/internal/metrics"
 
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )

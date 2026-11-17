@@ -1,10 +1,11 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/store/index"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/index"
 
 	"github.com/rs/zerolog"
 

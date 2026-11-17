@@ -2,12 +2,13 @@ package types
 
 import (
 	"fmt"
-	"github.com/23skdu/longbow/internal/memory"
-	"github.com/23skdu/longbow/internal/simd"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 	"math"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/simd"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 func (g *GraphData) SetVectorPQ(id uint32, code []byte) error {

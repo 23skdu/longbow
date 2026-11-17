@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+
 	. "github.com/mmcloughlin/avo/build"
 	. "github.com/mmcloughlin/avo/operand"
 	"github.com/mmcloughlin/avo/reg"

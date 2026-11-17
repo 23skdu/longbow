@@ -1,8 +1,9 @@
 package memory
 
 import (
-	"github.com/apache/arrow-go/v18/arrow/memory"
 	"unsafe"
+
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // NUMAAllocator is a NUMA-aware memory allocator for Arrow buffers.

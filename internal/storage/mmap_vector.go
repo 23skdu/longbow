@@ -8,9 +8,10 @@ import (
 	"sync"
 	"unsafe"
 
+	"path/filepath"
+
 	"github.com/rs/zerolog"
 	"golang.org/x/sys/unix"
-	"path/filepath"
 )
 
 type MmapVectorStorage struct {

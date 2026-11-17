@@ -2,11 +2,12 @@ package store
 
 import (
 	"fmt"
-	"github.com/23skdu/longbow/internal/metrics"
 	"math"
 	"sort"
 	"sync"
 	"sync/atomic"
+
+	"github.com/23skdu/longbow/internal/metrics"
 
 	"github.com/23skdu/longbow/internal/memory"
 )

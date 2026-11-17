@@ -5,8 +5,9 @@ package memory
 import (
 	"runtime"
 
-	"golang.org/x/sys/unix"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // MPOL_BIND specifies that the memory must be allocated on the specified nodes.

@@ -2,10 +2,11 @@ package query
 
 import (
 	"fmt"
-	"github.com/23skdu/longbow/internal/metrics"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/23skdu/longbow/internal/metrics"
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"

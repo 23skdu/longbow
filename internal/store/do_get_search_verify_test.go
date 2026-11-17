@@ -3,10 +3,11 @@ package store
 import (
 	"context"
 	"fmt"
-	"github.com/23skdu/longbow/internal/store/cluster"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/cluster"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"

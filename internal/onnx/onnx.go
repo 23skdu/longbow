@@ -11,11 +11,12 @@ import (
 	"runtime"
 	"sync"
 
+	"time"
+
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/ml"
 	"github.com/23skdu/longbow/internal/onnx/metal"
 	ort "github.com/yalue/onnxruntime_go"
-	"time"
 )
 
 var (

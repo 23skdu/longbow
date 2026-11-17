@@ -3,8 +3,9 @@ package store
 import (
 	"errors"
 	"fmt"
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"

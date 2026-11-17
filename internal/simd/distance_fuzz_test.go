@@ -1,8 +1,9 @@
 package simd
 
 import (
-	"github.com/apache/arrow-go/v18/arrow/float16"
 	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 func FuzzDistances(f *testing.F) {

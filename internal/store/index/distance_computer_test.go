@@ -1,11 +1,12 @@
 package index
 
 import (
+	"testing"
+	"unsafe"
+
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"unsafe"
 )
 
 func TestFloat32ToFloat32Computer(t *testing.T) {

@@ -3,20 +3,8 @@
 package metal
 
 import (
-	"context"
 	"fmt"
-	"math"
-	"math/rand"
-	"sort"
-	"sync"
-	"time"
 	"unsafe"
-
-	"github.com/23skdu/longbow/internal/gpu/memory"
-	"github.com/23skdu/longbow/internal/gpu/types"
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/pq"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 func (idx *MetalIndexOptimized) SearchInt8(query []int8, k int) ([]int64, []float32, error) {

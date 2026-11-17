@@ -7,9 +7,10 @@ import (
 	"sort"
 	"unsafe"
 
+	"sync"
+
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
-	"sync"
 )
 
 // NewIndexWithBackend creates a GPU index with specified backend (delegates to implementation)

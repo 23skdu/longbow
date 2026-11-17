@@ -3,9 +3,10 @@
 package cuda
 
 import (
-	"github.com/23skdu/longbow/internal/gpu/types"
 	"math/rand"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
 func FuzzCUDAPagerEviction(f *testing.F) {

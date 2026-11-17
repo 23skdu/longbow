@@ -3,9 +3,10 @@
 package metal
 
 import (
+	"testing"
+
 	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestMetalIndexOptimized_Lifecycle(t *testing.T) {

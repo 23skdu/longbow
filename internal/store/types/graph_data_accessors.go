@@ -1,11 +1,12 @@
 package types
 
 import (
-	"github.com/23skdu/longbow/internal/memory"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 	"math"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/memory"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 func (g *GraphData) GetVectorsChunk(chunkID int) []float32 {

@@ -51,7 +51,7 @@ See `docs/performance.md` for benchmark results and baselines.
 | P9-5 | HNSW quality: scalability test | MEDIUM | Open |
 | P10-1 | Filtered tail: bitmap intersection | MEDIUM | Open |
 | P10-2 | Filtered tail: push filters into traversal | MEDIUM | Implemented (hnsw_predicate.go) |
-| P10-3 | Filtered tail: predicate-aware entry point | MEDIUM | Open |
+| P10-3 | Filtered tail: predicate-aware entry point | MEDIUM | Implemented (entry_points.go) |
 | P10-4 | Filtered tail: shard filter evaluation | MEDIUM | Open |
 | P10-5 | Filtered tail: P99 < 50ms at 1M | MEDIUM | Open |
 | P10-6 | Filtered tail: scalability test | MEDIUM | Open |

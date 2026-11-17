@@ -19,7 +19,16 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 	}
 
 	if layer == int(meta.MaxLevel) && h.multiCentroids != nil {
-		entryPoint = h.multiCentroids.SelectBestEntryPoint(entryPoint, computer)
+		allow := func(id uint32) bool {
+			if fm := ctx.filterMask; fm != nil && !fm.allows(id) {
+				return false
+			}
+			if p := ctx.predicate; p != nil && !p.IsMatch(id) {
+				return false
+			}
+			return true
+		}
+		entryPoint = h.multiCentroids.SelectBestEntryPoint(entryPoint, computer, allow)
 	}
 
 	maxGen := uint64(math.MaxUint64)

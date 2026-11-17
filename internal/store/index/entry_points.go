@@ -54,7 +54,12 @@ func (m *MultiCentroidTracker) GetCentroids() []uint32 {
 
 // SelectBestEntryPoint evaluates distances from the query to candidate centroids
 // and selects the entry node with minimum distance to seed the beam search.
-func (m *MultiCentroidTracker) SelectBestEntryPoint(defaultEP uint32, comp DistanceComputer) uint32 {
+//
+// An optional allow predicate (predicate-aware entry point selection, P10-3)
+// restricts candidates to nodes that satisfy the active filter; centroids that
+// fail it are skipped so traversal does not seed from a disallowed node. When
+// allow is nil every centroid is eligible, preserving the previous behaviour.
+func (m *MultiCentroidTracker) SelectBestEntryPoint(defaultEP uint32, comp DistanceComputer, allow ...func(uint32) bool) uint32 {
 	m.mu.RLock()
 	count := len(m.centroids)
 	if count == 0 || comp == nil {
@@ -66,10 +71,15 @@ func (m *MultiCentroidTracker) SelectBestEntryPoint(defaultEP uint32, comp Dista
 	n := copy(local[:], m.centroids)
 	m.mu.RUnlock()
 
+	var allowFn func(uint32) bool
+	if len(allow) > 0 {
+		allowFn = allow[0]
+	}
+
 	bestEP := defaultEP
 	bestDist := float32(math.MaxFloat32)
 
-	if defaultEP != math.MaxUint32 {
+	if defaultEP != math.MaxUint32 && (allowFn == nil || allowFn(defaultEP)) {
 		if d, err := comp.ComputeSingle(defaultEP); err == nil {
 			bestDist = d
 		}
@@ -78,6 +88,9 @@ func (m *MultiCentroidTracker) SelectBestEntryPoint(defaultEP uint32, comp Dista
 	for i := 0; i < n; i++ {
 		cID := local[i]
 		if cID == defaultEP || cID == math.MaxUint32 {
+			continue
+		}
+		if allowFn != nil && !allowFn(cID) {
 			continue
 		}
 		if d, err := comp.ComputeSingle(cID); err == nil {

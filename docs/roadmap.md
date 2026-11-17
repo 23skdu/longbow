@@ -27,7 +27,7 @@ See `docs/performance.md` for benchmark results and baselines.
 | P4-3 | Filtered: predicate-aware entry point selection | HIGH | Implemented (hnsw_predicate.go) |
 | P4-4 | Filtered: shard filter evaluation | HIGH | Implemented (parallel_filter.go) |
 | P4-5 | Filtered: P99 < 50ms at 1M | HIGH | Open |
-| P4-6 | Filtered: scalability test | HIGH | Open |
+| P4-6 | Filtered: scalability test | HIGH | Implemented (filtered_scale_test.go, 100k) |
 | P5-1 | Complex: tiled batch kernels | HIGH | Implemented (P0-2.2) |
 | P5-2 | Complex: zero-copy Float32→complex128 (API change) | HIGH | Open |
 | P5-3 | Complex: verify TurboQuant auto-standardization at ≥500k | HIGH | Open |
@@ -54,7 +54,7 @@ See `docs/performance.md` for benchmark results and baselines.
 | P10-3 | Filtered tail: predicate-aware entry point | MEDIUM | Implemented (entry_points.go) |
 | P10-4 | Filtered tail: shard filter evaluation | MEDIUM | Open |
 | P10-5 | Filtered tail: P99 < 50ms at 1M | MEDIUM | Open |
-| P10-6 | Filtered tail: scalability test | MEDIUM | Open |
+| P10-6 | Filtered tail: scalability test | MEDIUM | Implemented (filtered_scale_test.go) |
 | P11-1 | Concurrency: dynamic worker scaling | LOW | Open |
 | P11-2 | Concurrency: NUMA-aware allocation | LOW | Open |
 | P11-3 | Concurrency: request batching | LOW | Open |

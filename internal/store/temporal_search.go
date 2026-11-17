@@ -475,6 +475,10 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 	restoreStd := mathutil.PushStandard()
 	defer restoreStd()
 
+	if k <= 0 {
+		return []lbtypes.SearchResult{}, nil
+	}
+
 	cacheKey := fmt.Sprintf("asof:%d:%d", timestamp, k)
 	if results, ok := ti.cache.Get(cacheKey); ok {
 		return results, nil
@@ -551,15 +555,6 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 	h := &temporalMaxHeap{}
 	heap.Init(h)
 
-	// P2: bound work at large N. When the range returns more IDs than we can
-	// productively score, keep only the most recent (closest to endTime) since
-	// temporal range queries are typically interested in the latest records.
-	const maxTemporalCandidates = 4096
-	if len(validIDs) > maxTemporalCandidates {
-		// validIDs are in ascending timestamp order; keep the tail.
-		validIDs = validIDs[len(validIDs)-maxTemporalCandidates:]
-	}
-
 	for _, id := range validIDs {
 		var norm float32
 		var found bool
@@ -584,25 +579,11 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 		}
 
 		if found {
-			if h.Len() < k {
-				heap.Push(h, temporalScoredResult{id: id, distance: norm})
-			} else if norm < (*h)[0].distance {
-				heap.Pop(h)
-				heap.Push(h, temporalScoredResult{id: id, distance: norm})
-			}
+			offerTemporalCandidate(h, id, norm, k)
 		}
 	}
 
-	limit := h.Len()
-	searchResults := make([]lbtypes.SearchResult, limit)
-	for i := limit - 1; i >= 0; i-- {
-		res := heap.Pop(h).(temporalScoredResult)
-		searchResults[i] = lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(res.id), // #nosec G115
-			Distance: res.distance,
-			Score:    1.0 / (1.0 + res.distance),
-		}
-	}
+	searchResults := drainTemporalTopK(h)
 
 	ti.cache.Set(cacheKey, searchResults, 5*time.Minute)
 	return searchResults, nil
@@ -647,6 +628,10 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 	// Temporal path regresses -16-38% under emlgo (roadmap.md §2 temporal pin): pin standard math.
 	restoreStd := mathutil.PushStandard()
 	defer restoreStd()
+
+	if k <= 0 || startTime > endTime {
+		return []lbtypes.SearchResult{}, nil
+	}
 
 	vIdx := ti.GetVectorIndex()
 	if vIdx != nil {
@@ -702,18 +687,11 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 		ti.history.GetVersionsAtBatch(validIDs, endTime, versionMap)
 	}
 
-	// 3. Select top-k using max-heap
+	// 3. Select top-k using max-heap. The candidate set is not capped: the
+	// result is ranked by norm, so an exact top-k requires every id whose active
+	// version falls in [startTime, endTime], regardless of how many that is.
 	h := &temporalMaxHeap{}
 	heap.Init(h)
-
-	// P2: bound work at large N. When the range returns more IDs than we can
-	// productively score, keep only the most recent (closest to endTime) since
-	// temporal range queries are typically interested in the latest records.
-	const maxTemporalCandidates = 4096
-	if len(validIDs) > maxTemporalCandidates {
-		// validIDs are in ascending timestamp order; keep the tail.
-		validIDs = validIDs[len(validIDs)-maxTemporalCandidates:]
-	}
 
 	for _, id := range validIDs {
 		var norm float32
@@ -739,27 +717,11 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 		}
 
 		if found {
-			if h.Len() < k {
-				heap.Push(h, temporalScoredResult{id: id, distance: norm})
-			} else if norm < (*h)[0].distance {
-				heap.Pop(h)
-				heap.Push(h, temporalScoredResult{id: id, distance: norm})
-			}
+			offerTemporalCandidate(h, id, norm, k)
 		}
 	}
 
-	limit := h.Len()
-	searchResults := make([]lbtypes.SearchResult, limit)
-	for i := limit - 1; i >= 0; i-- {
-		res := heap.Pop(h).(temporalScoredResult)
-		searchResults[i] = lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(res.id), // #nosec G115
-			Distance: res.distance,
-			Score:    1.0 / (1.0 + res.distance),
-		}
-	}
-
-	return searchResults, nil
+	return drainTemporalTopK(h), nil
 }
 
 // SearchSlidingWindow performs a search over the last n vector updates.
@@ -767,6 +729,10 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 	// Temporal path regresses -16-38% under emlgo (roadmap.md §2 temporal pin): pin standard math.
 	restoreStd := mathutil.PushStandard()
 	defer restoreStd()
+
+	if windowSize <= 0 || k <= 0 {
+		return []lbtypes.SearchResult{}, nil
+	}
 
 	tree := ti.temporalTree.Load()
 	if tree == nil {
@@ -802,8 +768,9 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 		}
 	}
 
-	// Fallback: brute-force heap scan over latest windowSize unique IDs.
-	// Use optimized unique latest retrieval
+	// Fallback: heap scan over the newest windowSize unique IDs. The sorted
+	// index serves the tail, so this is O(windowSize) rather than O(N) for
+	// distinct timestamps.
 	validIDs := tree.GetUniqueLatest(windowSize)
 	if len(validIDs) == 0 {
 		return []lbtypes.SearchResult{}, nil
@@ -818,31 +785,12 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 		shard.mu.RLock()
 		vec, ok := shard.data[id]
 		shard.mu.RUnlock()
-		if ok {
-			if !vec.Tombstone {
-				norm := vec.Norm
-				if h.Len() < k {
-					heap.Push(h, temporalScoredResult{id: id, distance: norm})
-				} else if norm < (*h)[0].distance {
-					heap.Pop(h)
-					heap.Push(h, temporalScoredResult{id: id, distance: norm})
-				}
-			}
+		if ok && !vec.Tombstone {
+			offerTemporalCandidate(h, id, vec.Norm, k)
 		}
 	}
 
-	limit := h.Len()
-	searchResults := make([]lbtypes.SearchResult, limit)
-	for i := limit - 1; i >= 0; i-- {
-		res := heap.Pop(h).(temporalScoredResult)
-		searchResults[i] = lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(res.id), // #nosec G115
-			Distance: res.distance,
-			Score:    1.0 / (1.0 + res.distance),
-		}
-	}
-
-	return searchResults, nil
+	return drainTemporalTopK(h), nil
 }
 
 // SearchSlidingWindowByTime performs a search over vector updates from the last duration.
@@ -850,6 +798,10 @@ func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration
 	// Temporal path regresses -16-38% under emlgo (roadmap.md §2 temporal pin): pin standard math.
 	restoreStd := mathutil.PushStandard()
 	defer restoreStd()
+
+	if duration < 0 || k <= 0 {
+		return []lbtypes.SearchResult{}, nil
+	}
 
 	vIdx := ti.GetVectorIndex()
 	now := time.Now().UnixNano()
@@ -882,9 +834,22 @@ func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	validIDs := tree.GetRange(start, now)
+	// Each id contributes at most one result: its active version at the window
+	// end, which must itself fall inside the window. Using the distinct-id walk
+	// (rather than every entry) keeps duplicate versions from filling the k
+	// slots, matching SearchRange.
+	validIDs := tree.GetUniqueIDsInRange(start, now)
 	if len(validIDs) == 0 {
 		return []lbtypes.SearchResult{}, nil
+	}
+
+	versionMap := temporalVersionMapPool.Get().(map[uint64]VersionedVector)
+	defer func() {
+		clear(versionMap)
+		temporalVersionMapPool.Put(versionMap)
+	}()
+	if ti.history != nil {
+		ti.history.GetVersionsAtBatch(validIDs, now, versionMap)
 	}
 
 	// 2. Select top-k using max-heap
@@ -892,35 +857,31 @@ func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration
 	heap.Init(h)
 
 	for _, id := range validIDs {
-		shard := ti.getShard(id)
-		shard.mu.RLock()
-		vec, ok := shard.data[id]
-		shard.mu.RUnlock()
-		if ok {
-			if !vec.Tombstone {
-				norm := vec.Norm
-				if h.Len() < k {
-					heap.Push(h, temporalScoredResult{id: id, distance: norm})
-				} else if norm < (*h)[0].distance {
-					heap.Pop(h)
-					heap.Push(h, temporalScoredResult{id: id, distance: norm})
-				}
+		var norm float32
+		var found bool
+
+		if v, ok := versionMap[id]; ok && v.Timestamp >= start && v.Timestamp <= now {
+			norm = v.Norm
+			found = true
+		}
+
+		if !found {
+			shard := ti.getShard(id)
+			shard.mu.RLock()
+			vec, ok := shard.data[id]
+			shard.mu.RUnlock()
+			if ok && !vec.Tombstone && vec.Timestamp >= start && vec.Timestamp <= now {
+				norm = vec.Norm
+				found = true
 			}
 		}
-	}
 
-	limit := h.Len()
-	searchResults := make([]lbtypes.SearchResult, limit)
-	for i := limit - 1; i >= 0; i-- {
-		res := heap.Pop(h).(temporalScoredResult)
-		searchResults[i] = lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(res.id), // #nosec G115
-			Distance: res.distance,
-			Score:    1.0 / (1.0 + res.distance),
+		if found {
+			offerTemporalCandidate(h, id, norm, k)
 		}
 	}
 
-	return searchResults, nil
+	return drainTemporalTopK(h), nil
 }
 
 // DeleteByTime removes or tombstones vectors with timestamps before the specified value.
@@ -1097,12 +1058,19 @@ func (ti *TemporalIndex) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// temporalMaxHeap implements heap.Interface for top-k temporal results (Max-Heap by Distance).
+// temporalMaxHeap implements heap.Interface for top-k temporal results. It is a
+// max-heap by (distance, id): the root is the worst result currently retained,
+// so ties on norm are broken deterministically by keeping the smaller id.
 type temporalMaxHeap []temporalScoredResult
 
-func (h temporalMaxHeap) Len() int           { return len(h) }
-func (h temporalMaxHeap) Less(i, j int) bool { return h[i].distance > h[j].distance }
-func (h temporalMaxHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h temporalMaxHeap) Len() int { return len(h) }
+func (h temporalMaxHeap) Less(i, j int) bool {
+	if h[i].distance != h[j].distance {
+		return h[i].distance > h[j].distance
+	}
+	return h[i].id > h[j].id
+}
+func (h temporalMaxHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 func (h *temporalMaxHeap) Push(x any) {
 	*h = append(*h, x.(temporalScoredResult))
@@ -1114,4 +1082,36 @@ func (h *temporalMaxHeap) Pop() any {
 	x := old[n-1]
 	*h = old[0 : n-1]
 	return x
+}
+
+// offerTemporalCandidate keeps the k best (smallest norm, then smallest id)
+// candidates in h. k <= 0 retains nothing.
+func offerTemporalCandidate(h *temporalMaxHeap, id uint64, norm float32, k int) {
+	if k <= 0 {
+		return
+	}
+	if h.Len() < k {
+		heap.Push(h, temporalScoredResult{id: id, distance: norm})
+		return
+	}
+	worst := (*h)[0]
+	if norm < worst.distance || (norm == worst.distance && id < worst.id) {
+		heap.Pop(h)
+		heap.Push(h, temporalScoredResult{id: id, distance: norm})
+	}
+}
+
+// drainTemporalTopK empties h into ascending (distance, id) order.
+func drainTemporalTopK(h *temporalMaxHeap) []lbtypes.SearchResult {
+	limit := h.Len()
+	searchResults := make([]lbtypes.SearchResult, limit)
+	for i := limit - 1; i >= 0; i-- {
+		res := heap.Pop(h).(temporalScoredResult)
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(res.id), // #nosec G115
+			Distance: res.distance,
+			Score:    1.0 / (1.0 + res.distance),
+		}
+	}
+	return searchResults
 }

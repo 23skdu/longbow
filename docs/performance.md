@@ -478,10 +478,10 @@ Baselines regenerated: `benchmarks/baseline_cpu_768_20261116.json` (50k/100k/200
 
 - 500k: 4/4 configs completed (0 failures, 0 exhausted, 0 zero-QPS).
 - 1M: 3/3 configs completed (0 failures, 0 exhausted, 0 zero-QPS).
-- Memory is the binding constraint at 1M: float32 RSS 13.9 GB (near the 14 GiB effective ceiling), int8/uint8 ~10.5 GB. Auto-spill keeps RSS bounded but dense search latency degrades at 1M (geo/advancedtext/temporalrange become very slow: geo ~8 QPS before the P1 rewrite, see §0d.4; advancedtext ~45-120 QPS, temporalrange ~6-14 QPS).
+- Memory is the binding constraint at 1M: float32 RSS 13.9 GB (near the 14 GiB effective ceiling), int8/uint8 ~10.5 GB. Auto-spill keeps RSS bounded but dense search latency degrades at 1M (geo/advancedtext/temporalrange become very slow: geo ~8 QPS before the P1 rewrite, see §0d.4; advancedtext ~45-120 QPS, temporalrange ~6-14 QPS before the P2 rewrite, see §0d.5).
 - Dense QPS at 1M dim128: float32 2881.5, int8 3302.1, uint8 3225.6 — within scaling expectations vs 500k (3038.7 / 3536.9 / 3468.6).
 - Index time scales sub-linearly: float32 187s (500k) → 420s (1M); int8 71.5s → 190s; uint8 72s → 183.5s.
-- Filtered/geo/temporal-range modes degrade at 1M due to O(N) scan paths; candidates for pruning (geo spatial index, temporal range) — consistent with §0a recommendations (P0-4, P0-7). The geo path has since been replaced with a spatial-hash fast path (§0d.4).
+- Filtered/geo/temporal-range modes degrade at 1M due to O(N) scan paths; candidates for pruning (geo spatial index, temporal range) — consistent with §0a recommendations (P0-4, P0-7). The geo path has since been replaced with a spatial-hash fast path (§0d.4) and the temporal path with a sorted-index range walk (§0d.5).
 - No functional regressions; all 21 modes return non-zero QPS.
 
 ### 0d.3 Baselines
@@ -503,6 +503,24 @@ Measured with `BenchmarkGeoIndex_SearchRadiusScale` (deterministic clustered NYC
 This clears the ≥500 QPS P1 target at 1M, up from ~8 QPS on the previous full-stack O(N) geo path. Full-stack Flight figures remain in the 0d.3 baselines and should be re-baselined on the next large-scale run.
 
 Correctness is covered by `TestGeoIndex_SearchRadiusParity`, which compares the grid fast path against an exhaustive reference on clustered, high-latitude, polar, and Euclidean data, and by `TestGeoSearchScalability`, which asserts ≥500 QPS at 100k on the same clustered workload.
+
+### 0d.5 Temporal Range Rewrite (P2)
+
+Temporal range queries are served by the sorted `TemporalTree` leaves plus the columnar snapshot (`internal/store/temporal_columnar.go`). A range query lower-bounds both endpoints and reads only the covering timestamp groups, then scores one active version per id. The sliding window reads the newest tail of the same index, and the time window is the same range walk anchored at `now`.
+
+The previous 4096-candidate truncation was removed. Results are ranked by norm, so truncating the candidate list by timestamp silently returned the wrong top-k (and, because `GetUniqueIDsInRange` is newest-first, the old code kept the oldest slice). `TestTemporalRangeExactTopKBeyondOldCap` pins the exact top-100 over a 5000-id full range, and `SearchRange`/`SearchSlidingWindow*` now reject `k <= 0` instead of indexing an empty heap.
+
+Measured with `BenchmarkTemporalRangeScale` (in-process sorted index, one update per microsecond, k=10, warmed version-history index):
+
+| Vectors | 1k window QPS | 10k window QPS |
+|---|---|---|
+| 100,000 | 20,461 | 1,696 |
+| 500,000 | 19,984 | 1,649 |
+| 1,000,000 | 20,514 | 1,585 |
+
+The 1k window is flat from 100k to 1M, which is the expected O(window) shape; the 10k window stays above the ≥1000 QPS P2 target at 1M. `TestTemporalRangeScalability` asserts ≥1000 QPS at 1M for both a 1k `SearchRange` and `SearchSlidingWindow`, up from ~6-14 QPS on the previous full-stack path. Full-stack Flight figures remain in the 0d.3 baselines and should be re-baselined on the next large-scale run.
+
+Correctness is covered by `TestTemporalRangeParity` (exhaustive active-version reference across distinct, duplicate-id, same-timestamp, shuffled-insertion, empty, boundary, and inverted ranges on both columnar and chunked paths), `TestTemporalSlidingWindowByTimeParity`, `TestTemporalTreeChunkBoundaries`, and `TestTemporalSlidingWindowScansOnlyTheTail` (a 16-id window over 20k entries scans ≤64 nodes, proving the tail is not a corpus scan).
 
 ---
 

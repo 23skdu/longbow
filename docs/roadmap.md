@@ -17,7 +17,7 @@ See `docs/performance.md` for benchmark results and baselines.
 | P1-4 | Geo: spatial hash grid for radius candidates | CRITICAL | Implemented |
 | P1-5 | Geo: spatial cell cache (LRU) | CRITICAL | Candidate cap covers hot path |
 | P1-6b | Geo: benchmark + scalability test (≥500 QPS at 1M) | CRITICAL | Implemented |
-| P2-4b | Temporal: benchmark + scalability test (≥1000 QPS at 1M) | CRITICAL | Open |
+| P2-4b | Temporal: benchmark + scalability test (≥1000 QPS at 1M) | CRITICAL | Implemented |
 | P3-1 | Text: trigram inverted index for fuzzy/contains | HIGH | Open |
 | P3-2 | Text: SIMD-vectorized BM25 scoring | HIGH | Open |
 | P3-3 | Text: top-K heap with early termination | HIGH | Implemented |
@@ -102,13 +102,13 @@ See `docs/performance.md` for benchmark results and baselines.
 - [x] P1-6b Benchmark geo at 500k/1M; target ≥ 500 QPS. Measured with `BenchmarkGeoIndex_SearchRadiusScale`: 6,788 / 1,504 / 757 QPS at 100k / 500k / 1M (clustered, 50 km radius, k=10).
 - [x] P1-7 Add `TestGeoSearchScalability` plus `TestGeoIndex_SearchRadiusParity` (exhaustive-scan comparison on clustered, high-latitude, polar, and Euclidean data).
 
-### P2 (Temporal) — Remaining
+### P2 (Temporal) — Complete
 
-- [ ] P2-1 Add sorted timestamp B-tree/skip-list index per dataset.
-- [ ] P2-2 Implement range scan via B-tree leaf traversal.
-- [ ] P2-3 Sliding window as ring buffer over sorted index.
-- [ ] P2-4b Benchmark temporal range at 500k/1M; target ≥ 1000 QPS.
-- [ ] P2-5 Add `TestTemporalRangeScalability`.
+- [x] P2-1 Add sorted timestamp B-tree/skip-list index per dataset. `TemporalTree` already keeps timestamps in sorted 1024-node leaves and publishes a columnar `(ts, groupOff, ids, norms)` snapshot after batch ingest, so no second index was added. `TestTemporalTreeChunkBoundaries` pins ordering, duplicates, out-of-order inserts, and every chunk/group boundary.
+- [x] P2-2 Implement range scan via B-tree leaf traversal. `getRangeChunked` and the columnar `groupRange`/`entryRange` path lower-bound both endpoints and read only the covering groups instead of scanning the corpus. `TestTemporalRangeParity` compares range results against an exhaustive active-version reference for distinct, duplicate-id, same-timestamp, shuffled-insertion, empty, boundary, and inverted-range workloads, on both the columnar and chunked paths.
+- [x] P2-3 Sliding window as ring buffer over the sorted index (O(k) not O(N)). The sorted-index tail already provides this: `GetUniqueLatest` walks groups newest-first and stops once the requested number of distinct ids is collected, so the cost is O(window + duplicate runs). `TestTemporalSlidingWindowScansOnlyTheTail` asserts a 16-id window over 20k entries scans ≤64 nodes. A separate insertion-order ring buffer was deliberately not added: window selection is timestamp-ordered, and insertion order diverges from timestamp order once updates arrive out of order.
+- [x] P2-4b Benchmark temporal range at 500k/1M; target ≥ 1000 QPS. Measured with `BenchmarkTemporalRangeScale` (in-process sorted index, k=10) at 100k / 500k / 1M: **20,461 / 19,984 / 20,514 QPS** for a 1k window and **1,696 / 1,649 / 1,585 QPS** for a 10k window. The 4096-candidate truncation was removed because results are ranked by norm, so truncating by timestamp silently changed the top-k; `TestTemporalRangeExactTopKBeyondOldCap` pins the exact top-100 over a 5000-id full range.
+- [x] P2-5 Add `TestTemporalRangeScalability` (≥1000 QPS at 1M for a 1k `SearchRange` and `SearchSlidingWindow`, after warming the lazy version-history index) plus the exhaustive parity, chunk-boundary, degenerate-input, and tail-cost tests.
 
 ### P3 (Text) — Remaining
 

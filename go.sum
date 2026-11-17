@@ -94,6 +94,8 @@ github.com/apache/arrow-adbc/go/adbc v1.13.0 h1:MmZz52SJqESrQ3sE2YMTHE+2eUekp9jY
 github.com/apache/arrow-adbc/go/adbc v1.13.0/go.mod h1:ILVKSqqJ+fZLK2Hy5SDftJBAluQxHv33dvLL0Ad5ZaY=
 github.com/apache/arrow-go/v18 v18.8.0 h1:BLOzbPv7bxMPgXPacAg6HQjnxupYsZzC4tf+FkqPU/M=
 github.com/apache/arrow-go/v18 v18.8.0/go.mod h1:uJCFfCwq0KsxCmsCfQg4ft+LsW+iHYzAXiSDh5ug/8U=
+github.com/apache/arrow-go/v18 v18.9.0 h1:o+CdPvv7G7tXRc3UCq7sAkMOEEzvPFhunnWPMtIDZeQ=
+github.com/apache/arrow-go/v18 v18.9.0/go.mod h1:QbEIuSG88lfEwkBfq1OKoZ5/aFXLObsS2awz9F5OKak=
 github.com/apache/pulsar-client-go v0.21.0 h1:cLIsrhXCfQ12tG/wCk0SZs3/xJluH++yMZmxBVvTnhk=
 github.com/apache/pulsar-client-go v0.21.0/go.mod h1:IDGs98WESBYof6In1rFOokCBx5UvyAiqSdWogXNIEo8=
 github.com/apache/thrift v0.25.0 h1:6LLlvoPjy8Cc/0b5TYRcTR3RZa2W0at3WQRcOkDwVGs=

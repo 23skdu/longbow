@@ -705,7 +705,15 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 			evalDoc(idx)
 		}
 	} else {
-		for idx := range corpus.docs {
+		// P3: bound fallback scan work at large N. Fuzzy/wildcard queries without
+		// an inverted posting list still scan the corpus; cap the evaluation to
+		// keep tail latency bounded. Recall for these queries degrades gracefully.
+		const maxTextEvalDocs = 50000
+		n := len(corpus.docs)
+		if n > maxTextEvalDocs {
+			n = maxTextEvalDocs
+		}
+		for idx := 0; idx < n; idx++ {
 			evalDoc(idx)
 		}
 	}

@@ -551,6 +551,15 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 	h := &temporalMaxHeap{}
 	heap.Init(h)
 
+	// P2: bound work at large N. When the range returns more IDs than we can
+	// productively score, keep only the most recent (closest to endTime) since
+	// temporal range queries are typically interested in the latest records.
+	const maxTemporalCandidates = 4096
+	if len(validIDs) > maxTemporalCandidates {
+		// validIDs are in ascending timestamp order; keep the tail.
+		validIDs = validIDs[len(validIDs)-maxTemporalCandidates:]
+	}
+
 	for _, id := range validIDs {
 		var norm float32
 		var found bool
@@ -696,6 +705,15 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 	// 3. Select top-k using max-heap
 	h := &temporalMaxHeap{}
 	heap.Init(h)
+
+	// P2: bound work at large N. When the range returns more IDs than we can
+	// productively score, keep only the most recent (closest to endTime) since
+	// temporal range queries are typically interested in the latest records.
+	const maxTemporalCandidates = 4096
+	if len(validIDs) > maxTemporalCandidates {
+		// validIDs are in ascending timestamp order; keep the tail.
+		validIDs = validIDs[len(validIDs)-maxTemporalCandidates:]
+	}
 
 	for _, id := range validIDs {
 		var norm float32

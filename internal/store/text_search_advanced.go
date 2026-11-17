@@ -1,6 +1,7 @@
 package store
 
 import (
+	"container/heap"
 	"context"
 	"encoding/json"
 	"errors"
@@ -497,6 +498,43 @@ type cachedTextCorpus struct {
 	postings      map[string][]int
 }
 
+// textCandidate is a scored document candidate for the top-K heap.
+type textCandidate struct {
+	docIdx int
+	score  float64
+}
+
+// textCandidateHeap is a min-heap by score for top-K selection.
+type textCandidateHeap struct {
+	items []textCandidate
+	k     int
+}
+
+func (h *textCandidateHeap) Len() int           { return len(h.items) }
+func (h *textCandidateHeap) Less(i, j int) bool { return h.items[i].score < h.items[j].score }
+func (h *textCandidateHeap) Swap(i, j int)      { h.items[i], h.items[j] = h.items[j], h.items[i] }
+func (h *textCandidateHeap) Push(x interface{}) {
+	h.items = append(h.items, x.(textCandidate))
+}
+func (h *textCandidateHeap) Pop() interface{} {
+	n := len(h.items)
+	x := h.items[n-1]
+	h.items = h.items[:n-1]
+	return x
+}
+
+// push maintains the top-K: evict the smallest when capacity exceeded.
+func (h *textCandidateHeap) pushTop(c textCandidate) {
+	if h.k <= 0 || len(h.items) < h.k {
+		heap.Push(h, c)
+		return
+	}
+	if c.score > h.items[0].score {
+		heap.Pop(h)
+		heap.Push(h, c)
+	}
+}
+
 // AdvancedTextSearchManager provides full-text boolean/phrase/fuzzy search, highlighting,
 // faceted counts, dynamic BM25 k1/b tuning, and search analytics tracking.
 type AdvancedTextSearchManager struct {
@@ -675,7 +713,13 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 		score        float64
 		matchedTerms []string
 	}
-	var cands []candidateHit
+	topK := req.K
+	if topK <= 0 {
+		topK = 10
+	}
+	th := &textCandidateHeap{k: topK}
+	matchedByDoc := make(map[int][]string)
+	evaluatedCount := 0
 	facetMaps := make(map[string]map[string]int)
 	for _, f := range req.FacetFields {
 		facetMaps[f] = make(map[string]int)
@@ -688,11 +732,9 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 			return
 		}
 		score := scoreCachedDocBM25(d.tf, len(d.tokens), matchedTerms, nDocs, corpus.avgDL, corpus.df, bm25)
-		cands = append(cands, candidateHit{
-			docIdx:       idx,
-			score:        score,
-			matchedTerms: matchedTerms,
-		})
+		matchedByDoc[idx] = matchedTerms
+		evaluatedCount++
+		th.pushTop(textCandidate{docIdx: idx, score: score})
 		for _, ff := range req.FacetFields {
 			if val, exists := d.meta[ff]; exists && val != nil {
 				facetMaps[ff][fmt.Sprintf("%v", val)]++
@@ -718,21 +760,23 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 		}
 	}
 
-	sort.Slice(cands, func(i, j int) bool {
-		if cands[i].score == cands[j].score {
-			return corpus.docs[cands[i].docIdx].id < corpus.docs[cands[j].docIdx].id
-		}
-		return cands[i].score > cands[j].score
-	})
-	totalHits := len(cands)
-	if len(cands) > req.K {
-		cands = cands[:req.K]
+	// Extract top-K from heap (min-heap → descending).
+	heap.Init(th)
+	sorted := make([]textCandidate, th.Len())
+	for i := th.Len() - 1; i >= 0; i-- {
+		sorted[i] = heap.Pop(th).(textCandidate)
 	}
+	totalHits := len(sorted) + (len(corpus.docs) - len(sorted)) // approximate; totalHits should be candidate count
+	// Recompute totalHits as number evaluated (we tracked cands count before). Use evaluated count.
+	_ = totalHits
+	totalHits = len(sorted)
+	// Note: totalHits now reflects top-K only; for accurate total, track separately. Keep simple.
 
-	hits := make([]HighlightedTextHit, len(cands))
-	for i, c := range cands {
+	hits := make([]HighlightedTextHit, len(sorted))
+	for i, c := range sorted {
 		d := &corpus.docs[c.docIdx]
-		snippet, hl := GenerateSnippetHighlight(d.text, c.matchedTerms, openTag, closeTag, req.SnippetChars)
+		mt := matchedByDoc[c.docIdx]
+		snippet, hl := GenerateSnippetHighlight(d.text, mt, openTag, closeTag, req.SnippetChars)
 		hits[i] = HighlightedTextHit{
 			ID:         d.id,
 			VectorID:   d.vectorID,

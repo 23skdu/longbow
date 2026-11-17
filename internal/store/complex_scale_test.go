@@ -175,3 +175,32 @@ func TestComplexRSSAtScale(t *testing.T) {
 		t.Fatalf("RSS %.2f GB exceeds 20 GB", float64(rssBytes)/(1024*1024*1024))
 	}
 }
+
+// TestComplexRSS1M measures RSS for a 1M complex128 HNSW index (P8-5).
+func TestComplexRSS1M(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping complex 1m rss test in short mode")
+	}
+	const n = 1000000
+	idx, _ := buildComplexScaleIndex(t, n)
+	defer func() { _ = idx.Close() }()
+
+	data, err := os.ReadFile("/proc/self/statm")
+	if err != nil {
+		t.Skipf("cannot read rss: %v", err)
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 2 {
+		t.Fatal("unexpected statm format")
+	}
+	rssPages, err := strconv.Atoi(fields[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	rssBytes := uint64(rssPages) * 4096
+	t.Logf("ComplexRSS1M: n=%d rss=%.2f GB", n, float64(rssBytes)/(1024*1024*1024))
+	const limit = 20 * 1024 * 1024 * 1024
+	if rssBytes > limit {
+		t.Fatalf("RSS %.2f GB exceeds 20 GB", float64(rssBytes)/(1024*1024*1024))
+	}
+}

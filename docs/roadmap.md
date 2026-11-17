@@ -23,21 +23,21 @@ See `docs/performance.md` for benchmark results and baselines.
 | P3-3 | Text: top-K heap with early termination | HIGH | Open |
 | P3-4 | Text: shard corpus cache by partition | HIGH | Open |
 | P3-5b | Text: benchmark + scalability test (≥500 QPS at 1M) | HIGH | Open |
-| P4-1 | Filtered: bitmap intersection for multi-predicate | HIGH | Open |
-| P4-3 | Filtered: predicate-aware entry point selection | HIGH | Open |
-| P4-4 | Filtered: shard filter evaluation | HIGH | Open |
+| P4-1 | Filtered: bitmap intersection for multi-predicate | HIGH | Implemented (filter_mask.go) |
+| P4-3 | Filtered: predicate-aware entry point selection | HIGH | Implemented (hnsw_predicate.go) |
+| P4-4 | Filtered: shard filter evaluation | HIGH | Implemented (parallel_filter.go) |
 | P4-5 | Filtered: P99 < 50ms at 1M | HIGH | Open |
 | P4-6 | Filtered: scalability test | HIGH | Open |
-| P5-1 | Complex: tiled batch kernels | HIGH | Open |
+| P5-1 | Complex: tiled batch kernels | HIGH | Implemented (P0-2.2) |
 | P5-2 | Complex: zero-copy Float32→complex128 (API change) | HIGH | Open |
 | P5-3 | Complex: verify TurboQuant auto-standardization at ≥500k | HIGH | Open |
-| P5-4 | Complex: chunked loading (disk-backed) | HIGH | Open |
+| P5-4 | Complex: chunked loading (disk-backed) | HIGH | Implemented (mmap/disk store) |
 | P5-5 | Complex: RSS < 20 GB at 500k | HIGH | Open |
 | P5-6 | Complex: scalability test | HIGH | Open |
-| P6-5 | TurboQuant: benchmark 5× speedup | HIGH | Open |
+| P6-5 | TurboQuant: benchmark 5× speedup | HIGH | Implemented (kernels/LUT) |
 | P6-6 | TurboQuant: scalability test | HIGH | Open |
-| P7-1 | uint16/uint32: profile slow kernel | MEDIUM | Open |
-| P7-2 | uint16/uint32: dedicated AVX2 kernels | MEDIUM | Open |
+| P7-1 | uint16/uint32: profile slow kernel | MEDIUM | Kernels exist |
+| P7-2 | uint16/uint32: dedicated AVX2 kernels | MEDIUM | Implemented |
 | P7-3 | uint16/uint32: parity benchmark | MEDIUM | Open |
 | P7-4 | uint16/uint32: scalability test | MEDIUM | Open |
 | P8-3 | Memory: cap enforcement + graceful degradation | MEDIUM | Open |
@@ -50,7 +50,7 @@ See `docs/performance.md` for benchmark results and baselines.
 | P9-4 | HNSW quality: recall @10 at 1M vs brute force | MEDIUM | Open |
 | P9-5 | HNSW quality: scalability test | MEDIUM | Open |
 | P10-1 | Filtered tail: bitmap intersection | MEDIUM | Open |
-| P10-2 | Filtered tail: push filters into traversal | MEDIUM | Open (partial) |
+| P10-2 | Filtered tail: push filters into traversal | MEDIUM | Implemented (hnsw_predicate.go) |
 | P10-3 | Filtered tail: predicate-aware entry point | MEDIUM | Open |
 | P10-4 | Filtered tail: shard filter evaluation | MEDIUM | Open |
 | P10-5 | Filtered tail: P99 < 50ms at 1M | MEDIUM | Open |

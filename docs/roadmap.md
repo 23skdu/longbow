@@ -34,7 +34,8 @@ is ineffective at high density (cells overlap the query radius).
 - [ ] P1-4 Integrate geo with HNSW: build a secondary spatial HNSW or use the
       existing graph with a geo-aware entry point (k-NN seed from Quadtree).
 - [ ] P1-5 Add a spatial cell cache for repeated queries (LRU over cell results).
-- [ ] P1-6 Benchmark geo search before/after at 500k/1M; target ≥ 500 QPS.
+- [x] P1-6 Candidate cap implemented in SearchRadius (max 4096 nearest by lat/lon).
+- [ ] P1-6b Benchmark geo search before/after at 500k/1M; target ≥ 500 QPS.
 - [ ] P1-7 Add `TestGeoSearchScalability` verifying QPS ≥ threshold at 500k.
 
 ## P2: Temporal Range Search (6–14 QPS at 1M) — CRITICAL
@@ -51,7 +52,8 @@ No sorted temporal index exists; `TemporalTree` is a flat structure.
       (`TemporalTree` extension) mapping timestamp → vector IDs.
 - [ ] P2-2 Implement range scan via B-tree leaf traversal instead of full scan.
 - [ ] P2-3 Add sliding-window as a ring buffer over the sorted index (O(k) not O(N)).
-- [ ] P2-4 Benchmark temporal range at 500k/1M; target ≥ 1000 QPS.
+- [x] P2-4 Candidate cap implemented in SearchRange (keep most recent 4096).
+- [ ] P2-4b Benchmark temporal range at 500k/1M; target ≥ 1000 QPS.
 - [ ] P2-5 Add `TestTemporalRangeScalability`.
 
 ## P3: Advanced Text Search (45–120 QPS at 1M) — HIGH
@@ -69,7 +71,8 @@ Corpus cache + postings fast path added (§0b), but at 1M the corpus
 - [ ] P3-2 Vectorize BM25 scoring with SIMD over term frequencies.
 - [ ] P3-3 Add a top-K heap with early termination when score < current min.
 - [ ] P3-4 Shard the corpus cache by dataset partition to reduce lock contention.
-- [ ] P3-5 Benchmark advancedtext at 500k/1M; target ≥ 500 QPS.
+- [x] P3-5 Candidate cap implemented in fallback full-scan (50000 docs).
+- [ ] P3-5b Benchmark advancedtext at 500k/1M; target ≥ 500 QPS.
 - [ ] P3-6 Add `TestAdvancedTextScalability`.
 
 ## P4: Filtered Search P99 (200–600ms at 1M) — HIGH

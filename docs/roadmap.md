@@ -16,7 +16,7 @@ See `docs/performance.md` for benchmark results and baselines.
 |---|---|---|---|
 | P1-4 | Geo: spatial hash grid for radius candidates | CRITICAL | Implemented |
 | P1-5 | Geo: spatial cell cache (LRU) | CRITICAL | Candidate cap covers hot path |
-| P1-6b | Geo: benchmark + scalability test (≥500 QPS at 1M) | CRITICAL | Open |
+| P1-6b | Geo: benchmark + scalability test (≥500 QPS at 1M) | CRITICAL | Implemented |
 | P2-4b | Temporal: benchmark + scalability test (≥1000 QPS at 1M) | CRITICAL | Open |
 | P3-1 | Text: trigram inverted index for fuzzy/contains | HIGH | Open |
 | P3-2 | Text: SIMD-vectorized BM25 scoring | HIGH | Open |
@@ -95,12 +95,12 @@ See `docs/performance.md` for benchmark results and baselines.
 
 ### P1 (Geo) — Remaining
 
-- [ ] P1-2 Add annulus cell pruning to `Quadtree.QueryRadiusPruned` (skip cells whose bbox is entirely outside radius).
-- [ ] P1-3 Add radius filter to `MortonGrid.QueryRadiusPruned`.
-- [ ] P1-4b Build a finer-grained spatial hash grid for radius queries.
+- [x] P1-2 Add annulus cell pruning to `Quadtree.QueryRadiusPruned` (skip cells whose bbox is entirely outside radius).
+- [x] P1-3 Add radius filter to `MortonGrid.QueryRadiusPruned`.
+- [x] P1-4b Build a finer-grained spatial hash grid for radius queries.
 - [ ] P1-5 (Optional) LRU cell cache for repeated geo queries.
-- [ ] P1-6b Benchmark geo at 500k/1M; target ≥ 500 QPS.
-- [ ] P1-7 Add `TestGeoSearchScalability`.
+- [x] P1-6b Benchmark geo at 500k/1M; target ≥ 500 QPS. Measured with `BenchmarkGeoIndex_SearchRadiusScale`: 6,788 / 1,504 / 757 QPS at 100k / 500k / 1M (clustered, 50 km radius, k=10).
+- [x] P1-7 Add `TestGeoSearchScalability` plus `TestGeoIndex_SearchRadiusParity` (exhaustive-scan comparison on clustered, high-latitude, polar, and Euclidean data).
 
 ### P2 (Temporal) — Remaining
 

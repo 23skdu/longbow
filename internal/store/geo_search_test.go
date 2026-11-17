@@ -2,9 +2,14 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
+	"sort"
 	"sync"
 	"testing"
+	"time"
 
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -377,4 +382,265 @@ func BenchmarkGeoQuadtree_QueryRadiusVsPruned(b *testing.B) {
 			qt.QueryRadiusPruned(center, 50.0, &out)
 		}
 	})
+}
+
+// buildGeoTestIndex inserts n deterministic points produced by gen into a
+// fresh GeoIndex.
+func buildGeoTestIndex(tb testing.TB, n int, distType GeoDistanceType, gen func(*rand.Rand) GeoPoint) *GeoIndex {
+	tb.Helper()
+	config := &GeoSearchConfig{
+		DistanceType: distType,
+		EarthRadius:  6371.0,
+		IndexType:    GeoIndexTypeQuadtree,
+	}
+	gi := NewGeoIndex("geo-test", 16, config)
+	rng := rand.New(rand.NewSource(42))
+	vec := make([]float32, 16)
+	for i := 0; i < n; i++ {
+		if err := gi.Add(uint64(i), vec, gen(rng), nil); err != nil {
+			tb.Fatalf("add point %d: %v", i, err)
+		}
+	}
+	return gi
+}
+
+// bruteForceGeoRadius is the exhaustive reference implementation of
+// GeoIndex.SearchRadius. It ignores the spatial indexes entirely and filters
+// every stored point by its exact distance, then sorts the hits best-first.
+func bruteForceGeoRadius(gi *GeoIndex, center GeoPoint, radiusKm float64, k int, distType GeoDistanceType, earthRadius float64) []lbtypes.SearchResult {
+	hits := make([]lbtypes.SearchResult, 0, 64)
+	gi.vectors.Range(func(_, value any) bool {
+		v := value.(*GeoIndexedVector)
+		var dist float64
+		if distType == GeoDistanceEuclidean {
+			dist = EuclideanDistanceGeo(center, v.GeoPoint)
+		} else {
+			dist = HaversineDistance(center, v.GeoPoint, earthRadius)
+		}
+		if dist <= radiusKm {
+			hits = append(hits, lbtypes.SearchResult{
+				ID:       lbtypes.VectorID(v.ID), // #nosec G115
+				Distance: float32(dist),
+			})
+		}
+		return true
+	})
+	sortGeoResults(hits)
+	if k > 0 && len(hits) > k {
+		hits = hits[:k]
+	}
+	return hits
+}
+
+// sortGeoResults orders results best-first, breaking distance ties by ID so
+// the reference and the index produce a deterministic order.
+func sortGeoResults(results []lbtypes.SearchResult) {
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Distance != results[j].Distance {
+			return results[i].Distance < results[j].Distance
+		}
+		return results[i].ID < results[j].ID
+	})
+}
+
+// assertGeoRadiusParity compares SearchRadius against the exhaustive
+// reference for one query.
+func assertGeoRadiusParity(t *testing.T, label string, gi *GeoIndex, center GeoPoint, radiusKm float64, k int, distType GeoDistanceType, earthRadius float64) {
+	t.Helper()
+	got, err := gi.SearchRadius(context.Background(), center, radiusKm, k)
+	if err != nil {
+		t.Fatalf("%s: search failed: %v", label, err)
+	}
+	want := bruteForceGeoRadius(gi, center, radiusKm, k, distType, earthRadius)
+
+	if len(got) != len(want) {
+		t.Fatalf("%s: got %d hits, want %d (center=%+v radius=%.3f k=%d)",
+			label, len(got), len(want), center, radiusKm, k)
+	}
+	sortGeoResults(got)
+	for i := range want {
+		if got[i].ID != want[i].ID {
+			t.Fatalf("%s: hit %d id got %d want %d (center=%+v radius=%.3f k=%d)",
+				label, i, got[i].ID, want[i].ID, center, radiusKm, k)
+		}
+		if diff := float64(got[i].Distance) - float64(want[i].Distance); diff > 1e-3 || diff < -1e-3 {
+			t.Fatalf("%s: hit %d distance got %.6f want %.6f (id=%d)",
+				label, i, got[i].Distance, want[i].Distance, got[i].ID)
+		}
+	}
+}
+
+// TestGeoIndex_SearchRadiusParity verifies the spatial-hash fast path against
+// an exhaustive scan on clustered, high-latitude, polar, and Euclidean data.
+func TestGeoIndex_SearchRadiusParity(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping parity test in short mode")
+	}
+
+	t.Run("clustered", func(t *testing.T) {
+		gi := buildGeoTestIndex(t, 5000, GeoDistanceHaversine, func(rng *rand.Rand) GeoPoint {
+			return GeoPoint{
+				Lat: 40.7128 + (rng.Float64()-0.5)*0.2,
+				Lon: -74.0060 + (rng.Float64()-0.5)*0.2,
+			}
+		})
+		rng := rand.New(rand.NewSource(7))
+		for q := 0; q < 100; q++ {
+			center := GeoPoint{
+				Lat: 40.7128 + (rng.Float64()-0.5)*0.3,
+				Lon: -74.0060 + (rng.Float64()-0.5)*0.3,
+			}
+			radius := 1 + rng.Float64()*40
+			for _, k := range []int{0, 1, 10, 100} {
+				assertGeoRadiusParity(t,
+					fmt.Sprintf("query=%d k=%d", q, k),
+					gi, center, radius, k, GeoDistanceHaversine, 6371.0)
+			}
+		}
+	})
+
+	t.Run("high-latitude", func(t *testing.T) {
+		gi := buildGeoTestIndex(t, 2000, GeoDistanceHaversine, func(rng *rand.Rand) GeoPoint {
+			return GeoPoint{
+				Lat: 78.0 + (rng.Float64()-0.5)*0.2,
+				Lon: (rng.Float64() - 0.5) * 0.2,
+			}
+		})
+		for _, radius := range []float64{5, 50, 100, 200} {
+			assertGeoRadiusParity(t, fmt.Sprintf("radius=%v", radius),
+				gi, GeoPoint{Lat: 78.0, Lon: 0.0}, radius, 10, GeoDistanceHaversine, 6371.0)
+		}
+	})
+
+	t.Run("polar", func(t *testing.T) {
+		gi := buildGeoTestIndex(t, 1000, GeoDistanceHaversine, func(rng *rand.Rand) GeoPoint {
+			return GeoPoint{
+				Lat: 89.5 + rng.Float64()*0.5,
+				Lon: (rng.Float64() - 0.5) * 20,
+			}
+		})
+		for _, radius := range []float64{10, 60, 120} {
+			assertGeoRadiusParity(t, fmt.Sprintf("radius=%v", radius),
+				gi, GeoPoint{Lat: 89.9, Lon: 0.0}, radius, 10, GeoDistanceHaversine, 6371.0)
+		}
+	})
+
+	t.Run("euclidean", func(t *testing.T) {
+		gi := buildGeoTestIndex(t, 2000, GeoDistanceEuclidean, func(rng *rand.Rand) GeoPoint {
+			return GeoPoint{
+				Lat: 40.7128 + (rng.Float64()-0.5)*0.2,
+				Lon: -74.0060 + (rng.Float64()-0.5)*0.2,
+			}
+		})
+		for _, radius := range []float64{0.01, 0.05, 0.2} {
+			assertGeoRadiusParity(t, fmt.Sprintf("radius=%v", radius),
+				gi, GeoPoint{Lat: 40.7128, Lon: -74.0060}, radius, 10, GeoDistanceEuclidean, 6371.0)
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		gi := buildGeoTestIndex(t, 0, GeoDistanceHaversine, func(rng *rand.Rand) GeoPoint {
+			return GeoPoint{}
+		})
+		got, err := gi.SearchRadius(context.Background(), GeoPoint{Lat: 0, Lon: 0}, 10, 5)
+		if err != nil {
+			t.Fatalf("search failed: %v", err)
+		}
+		assert.Empty(t, got)
+	})
+}
+
+// TestGeoIndex_HybridSearch is a regression test for the pooled hybrid path:
+// the result pool must round-trip the same slice type across queries.
+func TestGeoIndex_HybridSearch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	gi := buildGeoTestIndex(t, 100, GeoDistanceHaversine, func(rng *rand.Rand) GeoPoint {
+		return GeoPoint{
+			Lat: 40.7128 + (rng.Float64()-0.5)*0.02,
+			Lon: -74.0060 + (rng.Float64()-0.5)*0.02,
+		}
+	})
+	query := make([]float32, 16)
+	center := GeoPoint{Lat: 40.7128, Lon: -74.0060}
+	for i := 0; i < 3; i++ {
+		res, err := gi.HybridSearch(context.Background(), query, center, 10, 5)
+		if err != nil {
+			t.Fatalf("query %d: hybrid search failed: %v", i, err)
+		}
+		assert.Len(t, res, 5)
+	}
+}
+
+// TestGeoSearchScalability exercises geo radius search on a realistic
+// clustered workload and asserts a minimum QPS (P1-6b/P1-7). The threshold is
+// deliberately below the measured rate so it stays green on shared CI hosts
+// while still catching accidental O(N) scans.
+func TestGeoSearchScalability(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping scalability test in short mode")
+	}
+	const n = 100000
+	gi := buildGeoTestIndex(t, n, GeoDistanceHaversine, func(rng *rand.Rand) GeoPoint {
+		return GeoPoint{
+			Lat: 40.7128 + rng.Float64()*0.1,
+			Lon: -74.0060 + rng.Float64()*0.1,
+		}
+	})
+
+	center := GeoPoint{Lat: 40.7128, Lon: -74.0060}
+	// Warm up caches and the size-class growth of the result slices.
+	if _, err := gi.SearchRadius(context.Background(), center, 50.0, 10); err != nil {
+		t.Fatalf("warm-up search failed: %v", err)
+	}
+
+	const numQueries = 200
+	start := time.Now()
+	for q := 0; q < numQueries; q++ {
+		res, err := gi.SearchRadius(context.Background(), center, 50.0, 10)
+		if err != nil {
+			t.Fatalf("search failed: %v", err)
+		}
+		if len(res) != 10 {
+			t.Fatalf("expected 10 hits, got %d", len(res))
+		}
+	}
+	elapsed := time.Since(start)
+	qps := float64(numQueries) / elapsed.Seconds()
+	t.Logf("GeoSearchScalability: n=%d clustered qps=%.1f", n, qps)
+	if qps < 500 {
+		t.Fatalf("geo search QPS %.1f below threshold 500", qps)
+	}
+}
+
+// BenchmarkGeoIndex_SearchRadiusScale measures the clustered radius workload
+// at the scale used for the P1-6b target. The large cases are skipped in short
+// mode because building them allocates hundreds of megabytes.
+func BenchmarkGeoIndex_SearchRadiusScale(b *testing.B) {
+	center := GeoPoint{Lat: 40.7128, Lon: -74.0060}
+	for _, n := range []int{100000, 500000, 1000000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			if testing.Short() && n > 100000 {
+				b.Skip("skipping large geo benchmark in short mode")
+			}
+			gi := buildGeoTestIndex(b, n, GeoDistanceHaversine, func(rng *rand.Rand) GeoPoint {
+				return GeoPoint{
+					Lat: 40.7128 + rng.Float64()*0.1,
+					Lon: -74.0060 + rng.Float64()*0.1,
+				}
+			})
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := gi.SearchRadius(context.Background(), center, 50.0, 10); err != nil {
+					b.Fatalf("search failed: %v", err)
+				}
+			}
+			b.StopTimer()
+			if elapsed := b.Elapsed().Seconds(); elapsed > 0 {
+				b.ReportMetric(float64(b.N)/elapsed, "qps")
+			}
+		})
+	}
 }

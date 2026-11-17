@@ -3,9 +3,7 @@ package store
 import (
 	"container/heap"
 	"context"
-	"math"
 	"sort"
-	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -53,10 +51,10 @@ type GeoBoundingBox = lbtypes.GeoBoundingBox
 // GeoPolygon represents a sequence of GeoPoints forming a closed area.
 type GeoPolygon []GeoPoint
 
+// scoredResult is the pooled intermediate of HybridSearch.
 type scoredResult struct {
-	id       uint64
-	distance float64
-	vector   []float32
+	id    uint64
+	score float64
 }
 
 // GeoDistanceType defines the method used for distance calculations.
@@ -158,7 +156,7 @@ type GeoIndex struct {
 	// lookup. Keyed by grid cell; values are lists of vectors in that cell.
 	// Populated alongside pointIndex in Add/AddBatch.
 	gridMu       sync.RWMutex
-	spatialGrid  map[string][]*GeoIndexedVector
+	spatialGrid  map[string]*geoGridCell
 	gridCellSize float64
 }
 
@@ -248,11 +246,13 @@ func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *Ge
 	}
 
 	gi := &GeoIndex{
-		datasetName:  datasetName,
-		dimension:    dimension,
-		config:       config,
-		spatialGrid:  make(map[string][]*GeoIndexedVector),
-		gridCellSize: 0.5,
+		datasetName: datasetName,
+		dimension:   dimension,
+		config:      config,
+		spatialGrid: make(map[string]*geoGridCell),
+		// Finer-grained spatial hash grid (P1-4b) reduces false-positive
+		// candidates for radius queries compared to the previous 0.5 deg cells.
+		gridCellSize: defaultGridCellSize,
 	}
 	gi.nearestCache.Store(&sync.Map{})
 	gi.pointIndex.Store(newGeoIndexHandle(newGeoPointIndex(config.IndexType, datasetName, defaultQuadtreeCapacity)))
@@ -333,67 +333,6 @@ func (gi *GeoIndex) AddBatch(ids []uint64, vectors [][]float32, points []GeoPoin
 
 // SearchRadius finds the k-nearest neighbors within a radius.
 
-// addToSpatialGrid inserts a vector into the spatial hash grid.
-func (gi *GeoIndex) addToSpatialGrid(vec *GeoIndexedVector) {
-	if gi.gridCellSize <= 0 {
-		gi.gridCellSize = 0.5 // 0.5 degree cells
-	}
-	gi.gridMu.Lock()
-	if gi.spatialGrid == nil {
-		gi.spatialGrid = make(map[string][]*GeoIndexedVector)
-	}
-	key := gi.gridKey(vec.GeoPoint.Lat, vec.GeoPoint.Lon)
-	gi.spatialGrid[key] = append(gi.spatialGrid[key], vec)
-	gi.gridMu.Unlock()
-}
-
-func (gi *GeoIndex) gridKey(lat, lon float64) string {
-	cs := gi.gridCellSize
-	if cs <= 0 {
-		cs = 0.5
-	}
-	latCell := int(math.Floor(lat / cs))
-	lonCell := int(math.Floor(lon / cs))
-	return strconv.Itoa(latCell) + ":" + strconv.Itoa(lonCell)
-}
-
-// spatialGridCandidates returns vectors from grid cells intersecting the radius box.
-func (gi *GeoIndex) spatialGridCandidates(center GeoPoint, radiusKm float64) []*GeoIndexedVector {
-	if gi.gridCellSize <= 0 {
-		gi.gridCellSize = 0.5
-	}
-	cs := gi.gridCellSize
-	cosLat := math.Cos(center.Lat * math.Pi / 180)
-	lonDelta := radiusKm / (111.0 * cosLat)
-	minLat := center.Lat - radiusKm/111.0
-	maxLat := center.Lat + radiusKm/111.0
-	minLon := center.Lon - lonDelta
-	maxLon := center.Lon + lonDelta
-
-	gi.gridMu.RLock()
-	defer gi.gridMu.RUnlock()
-	if gi.spatialGrid == nil {
-		return nil
-	}
-
-	var out []*GeoIndexedVector
-	// Iterate cells covering the box.
-	for lat := minLat; lat <= maxLat; lat += cs {
-		for lon := minLon; lon <= maxLon; lon += cs {
-			key := gi.gridKey(lat, lon)
-			if vecs, ok := gi.spatialGrid[key]; ok {
-				out = append(out, vecs...)
-			}
-		}
-	}
-	// Also include the cell of maxLat/maxLon to avoid off-by-one.
-	key := gi.gridKey(maxLat, maxLon)
-	if vecs, ok := gi.spatialGrid[key]; ok {
-		out = append(out, vecs...)
-	}
-	return out
-}
-
 func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm float64, k int) ([]lbtypes.SearchResult, error) {
 	start := time.Now()
 	defer func() {
@@ -401,189 +340,65 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 		metrics.GeoSearchDurationSeconds.WithLabelValues(gi.datasetName, "radius").Observe(time.Since(start).Seconds())
 	}()
 
-	index := gi.pointIndexRef()
-
-	// P1: prefer the spatial hash grid for candidate generation when populated.
-	gridCands := gi.spatialGridCandidates(center, radiusKm)
-	var candidates []*GeoIndexedVector
-	if len(gridCands) > 0 {
-		candidates = gridCands
-	} else if index != nil {
-		candidatesPtr := geoCandidatePool.Get().(*[]*GeoIndexedVector)
-		candidatesSlice := (*candidatesPtr)[:0]
-		index.QueryRadiusPruned(center, radiusKm, &candidatesSlice)
-		defer func() {
-			if cap(candidatesSlice) <= 8192 {
-				*candidatesPtr = candidatesSlice[:0]
-				geoCandidatePool.Put(candidatesPtr)
-			}
-		}()
-		candidates = candidatesSlice
+	// P1: the spatial hash grid answers the radius query in a single pass
+	// over the cells overlapping the search circle.
+	if results, ok := gi.searchRadiusGrid(center, radiusKm, k); ok {
+		return results, nil
 	}
 
+	index := gi.pointIndexRef()
+	if index == nil {
+		return []lbtypes.SearchResult{}, nil
+	}
+
+	// Fallback for an index without a populated grid: take the candidates
+	// from the point index and keep the k nearest ones.
+	candidatesPtr := geoCandidatePool.Get().(*[]*GeoIndexedVector)
+	candidatesSlice := (*candidatesPtr)[:0]
+	index.QueryRadiusPruned(center, radiusKm, &candidatesSlice)
+	defer func() {
+		if cap(candidatesSlice) <= 8192 {
+			*candidatesPtr = candidatesSlice[:0]
+			geoCandidatePool.Put(candidatesPtr)
+		}
+	}()
+	candidates := candidatesSlice
 	if len(candidates) == 0 {
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	// P1: bound candidate work at large N. When the spatial index returns more
-	// candidates than we can productively score, keep only the nearest by a
-	// cheap lat/lon bounding-box distance. This caps the O(N) haversine/heap
-	// work while preserving recall for the k-NN result.
-	const maxGeoCandidates = 4096
-	if len(candidates) > maxGeoCandidates && k > 0 {
-		// Cheap Manhattan-ish distance in degrees for ordering only.
-		type candDist struct {
-			idx  int
-			dist float64
-		}
-		order := make([]candDist, len(candidates))
-		for i, c := range candidates {
-			dlat := c.GeoPoint.Lat - center.Lat
-			dlon := c.GeoPoint.Lon - center.Lon
-			order[i] = candDist{idx: i, dist: dlat*dlat + dlon*dlon}
-		}
-		// partial sort: keep the nearest maxGeoCandidates
-		// Use sort by distance then truncate.
-		sort.Slice(order, func(a, b int) bool { return order[a].dist < order[b].dist })
-		trimmed := make([]*GeoIndexedVector, 0, maxGeoCandidates)
-		for i := 0; i < maxGeoCandidates && i < len(order); i++ {
-			trimmed = append(trimmed, candidates[order[i].idx])
-		}
-		candidates = trimmed
+	earthRadius := gi.config.EarthRadius
+	if earthRadius <= 0 {
+		earthRadius = 6371.0
 	}
 
-	results := geoScoredResultPool.Get().([]scoredResult)
-	if cap(results) < len(candidates) {
-		results = make([]scoredResult, len(candidates))
-	} else {
-		results = results[:len(candidates)]
-	}
-	defer geoScoredResultPool.Put(results) //nolint:staticcheck
-
-	pool := internalcore.GetSharedPool()
-
-	if gi.config.DistanceType == GeoDistanceHaversine {
-		distances := geoFloat32Pool.Get().([]float32)
-		if cap(distances) < len(candidates) {
-			distances = make([]float32, len(candidates))
-		} else {
-			distances = distances[:len(candidates)]
+	h := &geoRadiusHeap{}
+	for _, c := range candidates {
+		var dist float64
+		switch gi.config.DistanceType {
+		case GeoDistanceEuclidean:
+			dist = EuclideanDistanceGeo(center, c.GeoPoint)
+		default:
+			dist = HaversineDistance(center, c.GeoPoint, earthRadius)
 		}
-		defer geoFloat32Pool.Put(distances) //nolint:staticcheck
-
-		pts := geoPointPool.Get().([]lbcore.GeoPoint)
-		if cap(pts) < len(candidates) {
-			pts = make([]lbcore.GeoPoint, len(candidates))
-		} else {
-			pts = pts[:len(candidates)]
-		}
-		defer geoPointPool.Put(pts) //nolint:staticcheck
-
-		// Parallel point preparation
-		pool.ParallelFor(len(candidates), 2048, func(start, end int) {
-			for i := start; i < end; i++ {
-				pts[i] = candidates[i].GeoPoint
-			}
-		})
-
-		// Use GPU if available
-		var gpuIdx gputypes.Index
-		if val := gi.gpuIndex.Load(); val != nil {
-			gpuIdx = val.(gputypes.Index)
-		}
-
-		if gpuIdx != nil {
-			// GPU acceleration path
-			pointsF32 := geoFloat32Pool.Get().([]float32)
-			if cap(pointsF32) < len(candidates)*2 {
-				pointsF32 = make([]float32, len(candidates)*2)
-			} else {
-				pointsF32 = pointsF32[:len(candidates)*2]
-			}
-			defer geoFloat32Pool.Put(pointsF32) //nolint:staticcheck
-
-			pool.ParallelFor(len(candidates), 2048, func(start, end int) {
-				for i := start; i < end; i++ {
-					pointsF32[i*2] = float32(candidates[i].GeoPoint.Lat)
-					pointsF32[i*2+1] = float32(candidates[i].GeoPoint.Lon)
-				}
-			})
-			gpuRes, err := gpuIdx.HaversineSearch(float32(center.Lat), float32(center.Lon), pointsF32, float32(gi.config.EarthRadius))
-			if err == nil {
-				distances = gpuRes
-			} else {
-				// Fallback to Parallel CPU
-				pool.ParallelFor(len(candidates), 1024, func(start, end int) {
-					simd.HaversineBatch(center.Lat, center.Lon, pts[start:end], gi.config.EarthRadius, distances[start:end])
-				})
-			}
-		} else {
-			// CPU parallel path
-			pool.ParallelFor(len(candidates), 1024, func(start, end int) {
-				simd.HaversineBatch(center.Lat, center.Lon, pts[start:end], gi.config.EarthRadius, distances[start:end])
-			})
-		}
-
-		pool.ParallelFor(len(candidates), 2048, func(start, end int) {
-			for i := start; i < end; i++ {
-				c := candidates[i]
-				results[i] = scoredResult{id: c.ID, distance: float64(distances[i]), vector: c.Vector}
-			}
-		})
-	} else {
-		pool.ParallelFor(len(candidates), 1024, func(start, end int) {
-			for i := start; i < end; i++ {
-				c := candidates[i]
-				var dist float64
-				switch gi.config.DistanceType {
-				case GeoDistanceEuclidean:
-					dist = EuclideanDistanceGeo(center, c.GeoPoint)
-				default:
-					dist = HaversineDistance(center, c.GeoPoint, gi.config.EarthRadius)
-				}
-				results[i] = scoredResult{id: c.ID, distance: dist, vector: c.Vector}
-			}
-		})
-	}
-
-	// Use a max-heap to keep track of the k closest results (highest score)
-	h := &geoResultHeap{}
-	for _, res := range results {
-		if res.distance < 0 {
-			continue // Skip invalid distances
-		}
-		// Spatial annulus filtering: only keep candidates inside the requested radius.
-		if res.distance > radiusKm {
+		if dist > radiusKm {
 			continue
 		}
-		// k-NN early termination: once k results are retained, skip candidates that
-		// cannot beat the worst (largest distance / lowest score) retained result.
-		if k > 0 && h.Len() >= k && res.distance >= float64((*h)[0].Distance) {
+		if k <= 0 {
+			h.items = append(h.items, geoRadiusHit{id: c.ID, dist: dist})
 			continue
 		}
-		score := float32(1.0 / (1.0 + res.distance))
-		if h.Len() < k || k <= 0 {
-			heap.Push(h, lbtypes.SearchResult{
-				ID:       lbtypes.VectorID(res.id), // #nosec G115
-				Distance: float32(res.distance),
-				Score:    score,
-			})
-		} else if score > (*h)[0].Score {
-			heap.Pop(h)
-			heap.Push(h, lbtypes.SearchResult{
-				ID:       lbtypes.VectorID(res.id), // #nosec G115
-				Distance: float32(res.distance),
-				Score:    score,
-			})
+		if h.Len() < k {
+			heap.Push(h, geoRadiusHit{id: c.ID, dist: dist})
+			continue
+		}
+		if dist < h.items[0].dist {
+			h.items[0] = geoRadiusHit{id: c.ID, dist: dist}
+			heap.Fix(h, 0)
 		}
 	}
 
-	searchResults := make([]lbtypes.SearchResult, h.Len())
-	for i := h.Len() - 1; i >= 0; i-- {
-		searchResults[i] = heap.Pop(h).(lbtypes.SearchResult)
-	}
-
-	return searchResults, nil
+	return geoRadiusResults(h), nil
 }
 
 // SearchBox finds all vectors within a rectangular area.
@@ -694,11 +509,6 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	candidates := candidatesSlice
 	if len(candidates) == 0 {
 		return []lbtypes.SearchResult{}, nil
-	}
-
-	type scoredResult struct {
-		id    uint64
-		score float64
 	}
 
 	// Batch compute geo distances

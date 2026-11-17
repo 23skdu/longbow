@@ -478,15 +478,31 @@ Baselines regenerated: `benchmarks/baseline_cpu_768_20261116.json` (50k/100k/200
 
 - 500k: 4/4 configs completed (0 failures, 0 exhausted, 0 zero-QPS).
 - 1M: 3/3 configs completed (0 failures, 0 exhausted, 0 zero-QPS).
-- Memory is the binding constraint at 1M: float32 RSS 13.9 GB (near the 14 GiB effective ceiling), int8/uint8 ~10.5 GB. Auto-spill keeps RSS bounded but dense search latency degrades at 1M (geo/advancedtext/temporalrange become very slow: geo ~8 QPS, advancedtext ~45-120 QPS, temporalrange ~6-14 QPS).
+- Memory is the binding constraint at 1M: float32 RSS 13.9 GB (near the 14 GiB effective ceiling), int8/uint8 ~10.5 GB. Auto-spill keeps RSS bounded but dense search latency degrades at 1M (geo/advancedtext/temporalrange become very slow: geo ~8 QPS before the P1 rewrite, see §0d.4; advancedtext ~45-120 QPS, temporalrange ~6-14 QPS).
 - Dense QPS at 1M dim128: float32 2881.5, int8 3302.1, uint8 3225.6 — within scaling expectations vs 500k (3038.7 / 3536.9 / 3468.6).
 - Index time scales sub-linearly: float32 187s (500k) → 420s (1M); int8 71.5s → 190s; uint8 72s → 183.5s.
-- Filtered/geo/temporal-range modes degrade at 1M due to O(N) scan paths; candidates for pruning (geo spatial index, temporal range) — consistent with §0a recommendations (P0-4, P0-7).
+- Filtered/geo/temporal-range modes degrade at 1M due to O(N) scan paths; candidates for pruning (geo spatial index, temporal range) — consistent with §0a recommendations (P0-4, P0-7). The geo path has since been replaced with a spatial-hash fast path (§0d.4).
 - No functional regressions; all 21 modes return non-zero QPS.
 
 ### 0d.3 Baselines
 
 Baselines regenerated: `benchmarks/baseline_cpu_large_20261116.json` (500k/1M, dim 128, float32/int8/uint8/float64).
+
+### 0d.4 Geo Radius Rewrite (P1)
+
+The geospatial radius path no longer scans every candidate. Radius queries now use a 0.1° spatial hash grid plus a single-pass lower-bound top-k scan (`internal/store/geo_grid.go`), with annulus cell pruning in both the quadtree and Morton fallbacks and an exact Haversine recomputation only for surviving hits.
+
+Measured with `BenchmarkGeoIndex_SearchRadiusScale` (deterministic clustered NYC data, 50 km radius, k=10; in-process index, vectors excluded from the hot path):
+
+| Vectors | Latency | QPS |
+|---|---|---|
+| 100,000 | 147.3 µs | 6,788 |
+| 500,000 | 664.8 µs | 1,504 |
+| 1,000,000 | 1.32 ms | 757 |
+
+This clears the ≥500 QPS P1 target at 1M, up from ~8 QPS on the previous full-stack O(N) geo path. Full-stack Flight figures remain in the 0d.3 baselines and should be re-baselined on the next large-scale run.
+
+Correctness is covered by `TestGeoIndex_SearchRadiusParity`, which compares the grid fast path against an exhaustive reference on clustered, high-latitude, polar, and Euclidean data, and by `TestGeoSearchScalability`, which asserts ≥500 QPS at 100k on the same clustered workload.
 
 ---
 

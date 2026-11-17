@@ -708,11 +708,6 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 	}
 
 	nDocs := len(corpus.docs)
-	type candidateHit struct {
-		docIdx       int
-		score        float64
-		matchedTerms []string
-	}
 	topK := req.K
 	if topK <= 0 {
 		topK = 10

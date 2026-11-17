@@ -2,7 +2,9 @@ package store
 
 import (
 	"container/heap"
+	"container/list"
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -140,6 +142,75 @@ type GeoIndexedVector struct {
 	Metadata  []byte
 }
 
+// geoResultCache is a small LRU cache of SearchRadius results keyed by the
+// query (center, radius, k). It is invalidated (replaced) whenever the index
+// mutates, so stale results can never be served.
+type geoResultCache struct {
+	mu    sync.Mutex
+	cap   int
+	list  *list.List
+	items map[string]*list.Element
+}
+
+type geoCacheEntry struct {
+	key     string
+	results []lbtypes.SearchResult
+}
+
+func newGeoResultCache(capacity int) *geoResultCache {
+	if capacity < 1 {
+		capacity = 1
+	}
+	return &geoResultCache{
+		cap:   capacity,
+		list:  list.New(),
+		items: make(map[string]*list.Element),
+	}
+}
+
+func (c *geoResultCache) get(key string) ([]lbtypes.SearchResult, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if ent, ok := c.items[key]; ok {
+		c.list.MoveToFront(ent)
+		src := ent.Value.(*geoCacheEntry).results
+		out := make([]lbtypes.SearchResult, len(src))
+		copy(out, src)
+		return out, true
+	}
+	return nil, false
+}
+
+func (c *geoResultCache) put(key string, results []lbtypes.SearchResult) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if ent, ok := c.items[key]; ok {
+		c.list.MoveToFront(ent)
+		ent.Value.(*geoCacheEntry).results = cloneSearchResults(results)
+		return
+	}
+	ent := c.list.PushFront(&geoCacheEntry{key: key, results: cloneSearchResults(results)})
+	c.items[key] = ent
+	for len(c.items) > c.cap {
+		oldest := c.list.Back()
+		if oldest == nil {
+			break
+		}
+		c.list.Remove(oldest)
+		delete(c.items, oldest.Value.(*geoCacheEntry).key)
+	}
+}
+
+func cloneSearchResults(in []lbtypes.SearchResult) []lbtypes.SearchResult {
+	out := make([]lbtypes.SearchResult, len(in))
+	copy(out, in)
+	return out
+}
+
+func geoCacheKey(center GeoPoint, radiusKm float64, k int) string {
+	return fmt.Sprintf("%.6f,%.6f,%.6f,%d", center.Lat, center.Lon, radiusKm, k)
+}
+
 // GeoIndex provides efficient spatial indexing for vectors.
 type GeoIndex struct {
 	dimension    int
@@ -158,6 +229,9 @@ type GeoIndex struct {
 	gridMu       sync.RWMutex
 	spatialGrid  map[string]*geoGridCell
 	gridCellSize float64
+
+	// resultCache caches SearchRadius results for repeated geo queries (P1-5).
+	resultCache atomic.Pointer[geoResultCache]
 }
 
 // GeoPredicate implements types.HNSWPredicate for geospatial filtering.
@@ -255,6 +329,7 @@ func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *Ge
 		gridCellSize: defaultGridCellSize,
 	}
 	gi.nearestCache.Store(&sync.Map{})
+	gi.resultCache.Store(newGeoResultCache(256))
 	gi.pointIndex.Store(newGeoIndexHandle(newGeoPointIndex(config.IndexType, datasetName, defaultQuadtreeCapacity)))
 	return gi
 }
@@ -291,8 +366,9 @@ func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata []
 	gi.addToSpatialGrid(geoVec)
 	gi.pointCount.Add(1)
 
-	// Reset nearestCache by creating a new sync.Map
+	// Reset caches by creating fresh instances.
 	gi.nearestCache.Store(&sync.Map{})
+	gi.resultCache.Store(newGeoResultCache(256))
 
 	return nil
 }
@@ -325,8 +401,9 @@ func (gi *GeoIndex) AddBatch(ids []uint64, vectors [][]float32, points []GeoPoin
 	}
 	gi.pointCount.Add(int64(len(ids)))
 
-	// Reset nearestCache
+	// Reset caches
 	gi.nearestCache.Store(&sync.Map{})
+	gi.resultCache.Store(newGeoResultCache(256))
 
 	return nil
 }
@@ -340,15 +417,29 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 		metrics.GeoSearchDurationSeconds.WithLabelValues(gi.datasetName, "radius").Observe(time.Since(start).Seconds())
 	}()
 
+	key := geoCacheKey(center, radiusKm, k)
+	if c := gi.resultCache.Load(); c != nil {
+		if cached, ok := c.get(key); ok {
+			return cached, nil
+		}
+	}
+
 	// P1: the spatial hash grid answers the radius query in a single pass
 	// over the cells overlapping the search circle.
 	if results, ok := gi.searchRadiusGrid(center, radiusKm, k); ok {
+		if c := gi.resultCache.Load(); c != nil {
+			c.put(key, results)
+		}
 		return results, nil
 	}
 
 	index := gi.pointIndexRef()
 	if index == nil {
-		return []lbtypes.SearchResult{}, nil
+		empty := []lbtypes.SearchResult{}
+		if c := gi.resultCache.Load(); c != nil {
+			c.put(key, empty)
+		}
+		return empty, nil
 	}
 
 	// Fallback for an index without a populated grid: take the candidates
@@ -398,7 +489,11 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 		}
 	}
 
-	return geoRadiusResults(h), nil
+	res := geoRadiusResults(h)
+	if c := gi.resultCache.Load(); c != nil {
+		c.put(key, res)
+	}
+	return res, nil
 }
 
 // SearchBox finds all vectors within a rectangular area.
@@ -673,4 +768,5 @@ func (gi *GeoIndex) Delete(id uint64) {
 	// Neither the Quadtree nor the MortonGrid supports easy deletion.
 
 	gi.nearestCache.Store(&sync.Map{})
+	gi.resultCache.Store(newGeoResultCache(256))
 }

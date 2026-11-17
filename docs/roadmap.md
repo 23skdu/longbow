@@ -19,7 +19,6 @@ See `docs/performance.md` for benchmark results and baselines.
 | P5-2 | Complex: zero-copy Float32→complex128 (API change) | HIGH | Open |
 | P7-1 | uint16/uint32: profile slow kernel | MEDIUM | Kernels exist |
 | P7-3 | uint16/uint32: parity benchmark | MEDIUM | Open |
-| P7-4 | uint16/uint32: scalability test | MEDIUM | Open |
 | P8-3 | Memory: cap enforcement + graceful degradation | MEDIUM | Open |
 | P8-4 | Memory: checkMemoryBeforeWrite on all ingest paths | MEDIUM | Open |
 | P8-5 | Memory: 1M complex128 RSS < 20 GB with disk spill | MEDIUM | Open |
@@ -84,7 +83,6 @@ See `docs/performance.md` for benchmark results and baselines.
 
 - [ ] P7-1 Profile uint16/uint32 slow kernel.
 - [ ] P7-3 Parity benchmark.
-- [ ] P7-4 Add `TestUintDispatchScalability`.
 
 ### P8 (Memory) — Remaining
 

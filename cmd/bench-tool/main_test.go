@@ -21,8 +21,8 @@ func TestGenerateRecordFloat32(t *testing.T) {
 	if rec.NumRows() != 10 {
 		t.Errorf("expected 10 rows, got %d", rec.NumRows())
 	}
-	if rec.NumCols() != 6 {
-		t.Errorf("expected 6 columns, got %d", rec.NumCols())
+	if rec.NumCols() != 7 {
+		t.Errorf("expected 7 columns, got %d", rec.NumCols())
 	}
 	// vector column should be FixedSizeList of 128 float32
 	vecField := schema.Field(1)
@@ -204,7 +204,7 @@ func TestGenerateRecordColumns(t *testing.T) {
 	}
 	defer rec.Release()
 
-	expectedCols := []string{"id", "vector", "timestamp", "geo_point", "active", "category"}
+	expectedCols := []string{"id", "vector", "timestamp", "geo_point", "active", "category", "text"}
 	for i, name := range expectedCols {
 		if schema.Field(i).Name != name {
 			t.Errorf("column %d: expected %s, got %s", i, name, schema.Field(i).Name)

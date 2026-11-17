@@ -522,6 +522,56 @@ The 1k window is flat from 100k to 1M, which is the expected O(window) shape; th
 
 Correctness is covered by `TestTemporalRangeParity` (exhaustive active-version reference across distinct, duplicate-id, same-timestamp, shuffled-insertion, empty, boundary, and inverted ranges on both columnar and chunked paths), `TestTemporalSlidingWindowByTimeParity`, `TestTemporalTreeChunkBoundaries`, and `TestTemporalSlidingWindowScansOnlyTheTail` (a 16-id window over 20k entries scans ≤64 nodes, proving the tail is not a corpus scan).
 
+### 0d.6 Text Advanced (P3)
+
+The advanced full-text path (`AdvancedTextSearchManager.Search`) used to be dominated by a
+50,000-document fallback scan: phrase/fuzzy queries without an inverted posting list fell back
+to scanning the corpus, and the dataset generator did not even emit a text column, so the
+benchmark query (`"electronics OR clothing"`) always returned zero hits. Both issues are fixed:
+
+- `internal/store/index/string_contains_index.go` now exports a reusable `TrigramIndex` over
+  integer document IDs. Each corpus shard builds one over its lowered text, and phrase/contains
+  candidates are the trigram intersection (a superset, with `evaluate` confirming). A phrase
+  shorter than three bytes falls back to the shard scan, so recall is exact.
+- Fuzzy and wildcard terms expand over the vocabulary by edit distance instead of scanning the
+  corpus. Exact terms are a single posting lookup; boolean AND/OR/NOT use intersect/union over
+  those posting lists, with binary-search intersection when one side is much smaller.
+- `cachedTextCorpus` is sharded by record batch (`cachedTextShard`). Unchanged shards (including
+  their trigrams, postings and document-frequency maps) are reused on append, tombstone and
+  rebuild, and global `nDocs`/`avgDL`/`df` are folded incrementally. The previous 50,000-document
+  evaluation cap is removed: queries that cannot be narrowed now scan the shard they must.
+- BM25 scoring is batched with `simd.BM25ScoreBatch` per canonical sub-term, with a scalar
+  fallback for small or very large candidate sets. `scoreCachedDocBM25` uses the same canonical
+  sub-term set, so scalar and SIMD agree to the kernels' float32 precision.
+
+The benchmark dataset now emits a `text` column (`"<category> sku<N> red widget"`) and the
+advanced-text query is `sku42 AND electronics`, a selective AND (~0.05% of the corpus) that
+exercises candidate narrowing, trigram phrase lookup, fuzzy vocabulary expansion and batch
+scoring. `TotalHits` is now the true match count instead of the retained top-K.
+
+Measured with `BenchmarkAdvancedTextScale` (in-process sharded corpus, selective
+`sku42 AND electronics`, k=10, warmed corpus, vectors excluded from the hot path):
+
+| Vectors | Latency | QPS |
+|---|---|---|
+| 100,000 | 11.9 µs | 83,745 |
+| 500,000 | 69.6 µs | 14,376 |
+| 1,000,000 | 130.0 µs | 7,691 |
+
+This clears the ≥500 QPS P3 target at 1M by an order of magnitude. `TestAdvancedTextScalability`
+asserts ≥500 QPS at 1M and measured **7,780 QPS**.
+
+Correctness is covered by `TestAdvancedTextCandidateParity` (exhaustive reference over phrases,
+substrings, fuzzy, wildcard, boolean AND/OR/NOT, nested boolean, empty and miss queries),
+`TestAdvancedTextPhraseDoesNotMissSubstrings`, `TestAdvancedTextBM25BatchParity`
+(scalar vs SIMD), `TestAdvancedTextShardReuse` (append, tombstone, vector-id stability),
+`TestAdvancedTextNoCandidateCap` (a match beyond the old 50k cap is still found), and
+`TestTrigramIndex_LookupIsSupersetAndSorted` (trigram candidates are a superset and sorted).
+Full-stack Flight figures remain in the 0d.3 baselines and should be re-baselined on the next
+large-scale run.
+
+---
+
 ---
 
 ## 1. Streaming Chunk Upload Architecture

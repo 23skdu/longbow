@@ -18,11 +18,11 @@ See `docs/performance.md` for benchmark results and baselines.
 | P1-5 | Geo: spatial cell cache (LRU) | CRITICAL | Candidate cap covers hot path |
 | P1-6b | Geo: benchmark + scalability test (≥500 QPS at 1M) | CRITICAL | Implemented |
 | P2-4b | Temporal: benchmark + scalability test (≥1000 QPS at 1M) | CRITICAL | Implemented |
-| P3-1 | Text: trigram inverted index for fuzzy/contains | HIGH | Open |
-| P3-2 | Text: SIMD-vectorized BM25 scoring | HIGH | Open |
+| P3-1 | Text: trigram inverted index for fuzzy/contains | HIGH | Implemented |
+| P3-2 | Text: SIMD-vectorized BM25 scoring | HIGH | Implemented |
 | P3-3 | Text: top-K heap with early termination | HIGH | Implemented |
-| P3-4 | Text: shard corpus cache by partition | HIGH | Open |
-| P3-5b | Text: benchmark + scalability test (≥500 QPS at 1M) | HIGH | Open |
+| P3-4 | Text: shard corpus cache by partition | HIGH | Implemented |
+| P3-5b | Text: benchmark + scalability test (≥500 QPS at 1M) | HIGH | Implemented |
 | P4-1 | Filtered: bitmap intersection for multi-predicate | HIGH | Implemented (filter_mask.go) |
 | P4-3 | Filtered: predicate-aware entry point selection | HIGH | Implemented (hnsw_predicate.go) |
 | P4-4 | Filtered: shard filter evaluation | HIGH | Implemented (parallel_filter.go) |
@@ -110,14 +110,14 @@ See `docs/performance.md` for benchmark results and baselines.
 - [x] P2-4b Benchmark temporal range at 500k/1M; target ≥ 1000 QPS. Measured with `BenchmarkTemporalRangeScale` (in-process sorted index, k=10) at 100k / 500k / 1M: **20,461 / 19,984 / 20,514 QPS** for a 1k window and **1,696 / 1,649 / 1,585 QPS** for a 10k window. The 4096-candidate truncation was removed because results are ranked by norm, so truncating by timestamp silently changed the top-k; `TestTemporalRangeExactTopKBeyondOldCap` pins the exact top-100 over a 5000-id full range.
 - [x] P2-5 Add `TestTemporalRangeScalability` (≥1000 QPS at 1M for a 1k `SearchRange` and `SearchSlidingWindow`, after warming the lazy version-history index) plus the exhaustive parity, chunk-boundary, degenerate-input, and tail-cost tests.
 
-### P3 (Text) — Remaining
+### P3 (Text) — Complete
 
-- [ ] P3-1 Add trigram inverted index for fuzzy/contains (reuse `string_contains_index.go`).
-- [ ] P3-2 SIMD-vectorize BM25 scoring.
-- [ ] P3-3 (Done) Top-K heap with early termination.
-- [ ] P3-4 Shard corpus cache by dataset partition.
-- [ ] P3-5b Benchmark advancedtext at 500k/1M; target ≥ 500 QPS.
-- [ ] P3-6 Add `TestAdvancedTextScalability`.
+- [x] P3-1 Add trigram inverted index for fuzzy/contains (reuse `string_contains_index.go`). `internal/store/index/string_contains_index.go` now exports a reusable `TrigramIndex` (byte trigrams, intersected postings). `cachedTextCorpus` builds one per shard over the lowered text and phrase candidates are intersected trigrams, so phrase/contains queries are exact instead of a full scan.
+- [x] P3-2 SIMD-vectorize BM25 scoring. `scoreTextCandidates` batches candidates with `simd.BM25ScoreBatch` per canonical sub-term, with scalar fallback for small/huge candidate sets. `scoreCachedDocBM25` was canonicalised to the same sub-term set, and scalar/SIMD parity is covered by `TestAdvancedTextBM25BatchParity`.
+- [x] P3-3 (Done) Top-K heap with early termination.
+- [x] P3-4 Shard corpus cache by record batch. `cachedTextCorpus` is now a list of immutable `cachedTextShard` values; unchanged shards (including their trigram index and postings) are reused across appends, tombstone changes and rebuilds, and global `nDocs`/`avgDL`/`df` are merged incrementally.
+- [x] P3-5b Benchmark advancedtext at 500k/1M; target ≥ 500 QPS. Measured with `BenchmarkAdvancedTextScale` (in-process sharded corpus, selective `sku42 AND electronics`, k=10): **83,745 / 14,376 / 7,691 QPS** at 100k / 500k / 1M.
+- [x] P3-6 Add `TestAdvancedTextScalability`. Measured **7,780 QPS** at 1M. Candidate generation, phrase substring recall (`TestAdvancedTextPhraseDoesNotMissSubstrings`), fuzzy vocabulary expansion (`TestAdvancedTextCandidateParity`), the removed 50k evaluation cap (`TestAdvancedTextNoCandidateCap`), shard reuse (`TestAdvancedTextShardReuse`) and scalar/SIMD parity are covered.
 
 ### P4/P10 (Filtered) — Remaining
 

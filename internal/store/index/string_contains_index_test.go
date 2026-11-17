@@ -2,6 +2,7 @@ package index
 
 import (
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -242,5 +243,63 @@ func TestStringContainsIndex_RemoveRecord(t *testing.T) {
 	result = idx.ContainsLookup("test", "world")
 	if len(result) != 1 {
 		t.Errorf("containsLookup('world') should have 1 result after RemoveRecord, got %d", len(result))
+	}
+}
+
+func TestTrigramIndex_LookupIsSupersetAndSorted(t *testing.T) {
+	docs := []string{
+		"the quick brown fox",
+		"quickly quacking ducks",
+		"brownian motion",
+		"a quick brown dog",
+		"",
+		"ab",
+	}
+	idx := NewTrigramIndex()
+	for i, doc := range docs {
+		idx.IndexString(int32(i), doc)
+	}
+
+	for _, needle := range []string{"quick brown", "brown", "uic", "quacking", "the quick", "ab"} {
+		got := idx.Lookup(needle)
+		want := map[int32]bool{}
+		for i, doc := range docs {
+			if strings.Contains(doc, needle) {
+				want[int32(i)] = true
+			}
+		}
+		if len(needle) < 3 {
+			if got != nil {
+				t.Fatalf("Lookup(%q) = %v, want nil for short value", needle, got)
+			}
+			continue
+		}
+		// Every true match must be a candidate, and candidates must be sorted.
+		seen := map[int32]bool{}
+		for i, docID := range got {
+			if i > 0 && got[i-1] >= docID {
+				t.Fatalf("Lookup(%q) not strictly sorted: %v", needle, got)
+			}
+			if seen[docID] {
+				t.Fatalf("Lookup(%q) contains duplicate %d", needle, docID)
+			}
+			seen[docID] = true
+		}
+		for docID := range want {
+			if !seen[docID] {
+				t.Fatalf("Lookup(%q) missed true match %d (got %v)", needle, docID, got)
+			}
+		}
+	}
+}
+
+func TestTrigramIndex_EmptyAndMissing(t *testing.T) {
+	idx := NewTrigramIndex()
+	if got := idx.Lookup("anything"); got != nil {
+		t.Fatalf("empty index Lookup = %v, want nil", got)
+	}
+	idx.IndexString(0, "hello world")
+	if got := idx.Lookup("zzzz"); got != nil {
+		t.Fatalf("missing gram Lookup = %v, want nil", got)
 	}
 }

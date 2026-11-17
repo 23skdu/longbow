@@ -1261,7 +1261,7 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 func executeAdvancedTextAction(ctx context.Context, sc *client.SmartClient, dataset string, k int) ([]searchHit, error) {
 	body, err := json.Marshal(map[string]any{
 		"dataset":       dataset,
-		"query":         "electronics OR clothing",
+		"query":         "sku42 AND electronics",
 		"k":             k,
 		"facet_fields":  []string{"category"},
 		"snippet_chars": 120,
@@ -1774,6 +1774,7 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 			{Name: "geo_point", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float64)},
 			{Name: "active", Type: arrow.FixedWidthTypes.Boolean},
 			{Name: "category", Type: arrow.BinaryTypes.String},
+			{Name: "text", Type: arrow.BinaryTypes.String},
 		},
 		nil,
 	)
@@ -1984,7 +1985,20 @@ func generateRecordBatch(rng *rand.Rand, offset int, count int, dim int, dtype s
 	catArr := strBldr.NewArray()
 	defer catArr.Release()
 
-	return array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr, tsArr, geoArr, activeArr, catArr}, int64(count)), schema, nil
+	// Build text content for AdvancedTextSearch: a category-derived sentence with
+	// a selective SKU token, so the query below exercises the text index.
+	textBldr := array.NewStringBuilder(pool)
+	defer textBldr.Release()
+	textBldr.Reserve(count)
+	catStrs := catArr.(*array.String)
+	for i := 0; i < count; i++ {
+		cat := catStrs.Value(i)
+		textBldr.Append(cat + " sku" + strconv.Itoa((offset+i)/2%1000) + " red widget")
+	}
+	textArr := textBldr.NewArray()
+	defer textArr.Release()
+
+	return array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr, tsArr, geoArr, activeArr, catArr, textArr}, int64(count)), schema, nil
 }
 
 func dropDataset(ctx context.Context, sc *client.SmartClient, dataset string) error {

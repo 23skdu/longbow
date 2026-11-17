@@ -14,6 +14,9 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -485,17 +488,65 @@ type cachedTextDoc struct {
 	lowerText string
 	meta      map[string]any
 	tokens    []string
-	tf        map[string]int
 }
 
+// textShardSignature identifies one record batch's contribution to the corpus.
+// A shard may be reused only while its batch has the same shape and tombstone
+// set. Row counts matter beyond the shard itself: they determine every later
+// shard's vector IDs, so a change in one batch invalidates all later shards.
+type textShardSignature struct {
+	rows          int64
+	tombstoneCard uint64
+	recordID      string
+	tombstoneID   string
+}
+
+// cachedTextShard is the corpus for one record batch. Shards are immutable once
+// built, so they can be reused across queries and across corpus rebuilds.
+type cachedTextShard struct {
+	sig         textShardSignature
+	docs        []cachedTextDoc
+	df          map[string]int
+	postings    map[string][]int32
+	trigrams    *index.TrigramIndex
+	totalTokens int
+}
+
+// cachedTextCorpus is a sharded, immutable view of a dataset's text.
+//
+// The corpus is rebuilt incrementally: only batches whose signature changed are
+// re-tokenised. Global BM25 inputs (document count, average length and document
+// frequency) are merged across shards so scoring is identical to a flat corpus.
 type cachedTextCorpus struct {
 	numBatches    int
 	totalRows     int64
 	tombstoneCard uint64
-	docs          []cachedTextDoc
+	shards        []*cachedTextShard
+	docBase       []int // len(shards)+1 prefix sums of live document counts
 	df            map[string]int
+	vocab         []string
+	vocabByLen    map[int][]string
+	nDocs         int
 	avgDL         float64
-	postings      map[string][]int
+
+	fuzzyMu    sync.RWMutex
+	fuzzyCache map[string][]string
+}
+
+// docAt resolves a global document index to its shard and document.
+func (c *cachedTextCorpus) docAt(idx int) *cachedTextDoc {
+	if idx < 0 || len(c.shards) == 0 {
+		return nil
+	}
+	shard := sort.Search(len(c.shards), func(i int) bool { return c.docBase[i+1] > idx })
+	if shard >= len(c.shards) || idx < c.docBase[shard] {
+		return nil
+	}
+	local := idx - c.docBase[shard]
+	if local < 0 || local >= len(c.shards[shard].docs) {
+		return nil
+	}
+	return &c.shards[shard].docs[local]
 }
 
 // textCandidate is a scored document candidate for the top-K heap.
@@ -510,9 +561,16 @@ type textCandidateHeap struct {
 	k     int
 }
 
-func (h *textCandidateHeap) Len() int           { return len(h.items) }
-func (h *textCandidateHeap) Less(i, j int) bool { return h.items[i].score < h.items[j].score }
-func (h *textCandidateHeap) Swap(i, j int)      { h.items[i], h.items[j] = h.items[j], h.items[i] }
+func (h *textCandidateHeap) Len() int { return len(h.items) }
+func (h *textCandidateHeap) Less(i, j int) bool {
+	if h.items[i].score == h.items[j].score {
+		// The root is the worst retained candidate. On a score tie keep the
+		// lower document index so repeated queries return the same top-K.
+		return h.items[i].docIdx > h.items[j].docIdx
+	}
+	return h.items[i].score < h.items[j].score
+}
+func (h *textCandidateHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
 func (h *textCandidateHeap) Push(x interface{}) {
 	h.items = append(h.items, x.(textCandidate))
 }
@@ -604,156 +662,23 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 		closeTag = "</" + req.HighlightTag + ">"
 	}
 
-	var corpus *cachedTextCorpus
+	corpus := &cachedTextCorpus{avgDL: 1.0, docBase: []int{0}}
 	if m.store != nil {
-		ds, ok := m.store.getDataset(req.Dataset)
-		if !ok {
+		var err error
+		corpus, err = m.corpusFor(req.Dataset)
+		if err != nil {
 			m.recordAnalytics(req.Query, 0, time.Since(start))
-			return nil, fmt.Errorf("dataset %q not found", req.Dataset)
+			return nil, err
 		}
-		ds.dataMu.RLock()
-		records := ds.Records.Read()
-		tombstones := ds.Tombstones
-		var totalRows int64
-		for _, rec := range records {
-			totalRows += rec.NumRows()
-		}
-		var tombCard uint64
-		for _, ts := range tombstones {
-			if ts != nil {
-				tombCard += ts.Count()
-			}
-		}
-		numBatches := len(records)
-
-		m.mu.RLock()
-		cached := m.corpusCache[req.Dataset]
-		m.mu.RUnlock()
-
-		if cached != nil && cached.numBatches == numBatches && cached.totalRows == totalRows && cached.tombstoneCard == tombCard {
-			corpus = cached
-			ds.dataMu.RUnlock()
-		} else {
-			docs := make([]cachedTextDoc, 0, totalRows)
-			df := make(map[string]int)
-			postings := make(map[string][]int)
-			var totalTokens int
-			var vid uint32
-			for bIdx, rec := range records {
-				ts := tombstones[bIdx]
-				colIdx := make(map[string]int, len(rec.Schema().Fields()))
-				for i, f := range rec.Schema().Fields() {
-					colIdx[f.Name] = i
-				}
-				for r := 0; r < int(rec.NumRows()); r++ {
-					if ts != nil && ts.Contains(r) {
-						vid++
-						continue
-					}
-					var meta map[string]any
-					if mi, hasMeta := colIdx["metadata"]; hasMeta {
-						if sa, ok := rec.Column(mi).(*array.String); ok && !sa.IsNull(r) {
-							_ = json.Unmarshal([]byte(sa.Value(r)), &meta)
-						}
-					}
-					idVal := readRowStringValue(rec, colIdx, meta, r, "id")
-					if idVal == "" {
-						idVal = strconv.FormatUint(uint64(vid), 10)
-					}
-					text := collectDocumentText(rec, colIdx, meta, r)
-					tokens := tokenizeAlphaNum(text)
-					tf := make(map[string]int, len(tokens))
-					docPos := len(docs)
-					for _, tok := range tokens {
-						tf[tok]++
-						if tf[tok] == 1 {
-							df[tok]++
-							postings[tok] = append(postings[tok], docPos)
-						}
-					}
-					totalTokens += len(tokens)
-					docs = append(docs, cachedTextDoc{
-						id:        idVal,
-						vectorID:  vid,
-						text:      text,
-						lowerText: strings.ToLower(text),
-						meta:      meta,
-						tokens:    tokens,
-						tf:        tf,
-					})
-					vid++
-				}
-			}
-			ds.dataMu.RUnlock()
-
-			avgDL := 1.0
-			if len(docs) > 0 {
-				avgDL = max(1.0, float64(totalTokens)/float64(len(docs)))
-			}
-			corpus = &cachedTextCorpus{
-				numBatches:    numBatches,
-				totalRows:     totalRows,
-				tombstoneCard: tombCard,
-				docs:          docs,
-				df:            df,
-				avgDL:         avgDL,
-				postings:      postings,
-			}
-			m.mu.Lock()
-			m.corpusCache[req.Dataset] = corpus
-			m.mu.Unlock()
-		}
-	} else {
-		corpus = &cachedTextCorpus{avgDL: 1.0}
 	}
 
-	nDocs := len(corpus.docs)
-	topK := req.K
-	if topK <= 0 {
-		topK = 10
-	}
-	th := &textCandidateHeap{k: topK}
-	matchedByDoc := make(map[int][]string)
-	evaluatedCount := 0
+	th := &textCandidateHeap{k: req.K}
 	facetMaps := make(map[string]map[string]int)
 	for _, f := range req.FacetFields {
 		facetMaps[f] = make(map[string]int)
 	}
 
-	evalDoc := func(idx int) {
-		d := &corpus.docs[idx]
-		ok, matchedTerms := ast.evaluate(d.lowerText, d.tokens, req.FuzzyMaxDist)
-		if !ok {
-			return
-		}
-		score := scoreCachedDocBM25(d.tf, len(d.tokens), matchedTerms, nDocs, corpus.avgDL, corpus.df, bm25)
-		matchedByDoc[idx] = matchedTerms
-		evaluatedCount++
-		th.pushTop(textCandidate{docIdx: idx, score: score})
-		for _, ff := range req.FacetFields {
-			if val, exists := d.meta[ff]; exists && val != nil {
-				facetMaps[ff][fmt.Sprintf("%v", val)]++
-			}
-		}
-	}
-
-	if postIdxs, ok := collectCandidatePostings(ast, corpus.postings, req.FuzzyMaxDist); ok {
-		for _, idx := range postIdxs {
-			evalDoc(idx)
-		}
-	} else {
-		// P3: bound fallback scan work at large N. Fuzzy/wildcard queries without
-		// an inverted posting list still scan the corpus; cap the evaluation to
-		// keep tail latency bounded. Recall for these queries degrades gracefully.
-		const maxTextEvalDocs = 50000
-		n := len(corpus.docs)
-		if n > maxTextEvalDocs {
-			n = maxTextEvalDocs
-		}
-		for idx := 0; idx < n; idx++ {
-			evalDoc(idx)
-		}
-	}
+	totalHits := evaluateTextCorpus(corpus, ast, req, bm25, th, facetMaps)
 
 	// Extract top-K from heap (min-heap → descending).
 	heap.Init(th)
@@ -761,16 +686,16 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 	for i := th.Len() - 1; i >= 0; i-- {
 		sorted[i] = heap.Pop(th).(textCandidate)
 	}
-	totalHits := len(sorted) + (len(corpus.docs) - len(sorted)) // approximate; totalHits should be candidate count
-	// Recompute totalHits as number evaluated (we tracked cands count before). Use evaluated count.
-	_ = totalHits
-	totalHits = len(sorted)
-	// Note: totalHits now reflects top-K only; for accurate total, track separately. Keep simple.
 
 	hits := make([]HighlightedTextHit, len(sorted))
 	for i, c := range sorted {
-		d := &corpus.docs[c.docIdx]
-		mt := matchedByDoc[c.docIdx]
+		d := corpus.docAt(c.docIdx)
+		if d == nil {
+			continue
+		}
+		// Re-evaluate only the retained hits: keeping matched terms for every
+		// candidate made a broad query retain one slice per matching document.
+		_, mt := ast.evaluate(d.lowerText, d.tokens, req.FuzzyMaxDist)
 		snippet, hl := GenerateSnippetHighlight(d.text, mt, openTag, closeTag, req.SnippetChars)
 		hits[i] = HighlightedTextHit{
 			ID:         d.id,
@@ -811,6 +736,247 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 		Facets:    facets,
 		BM25Used:  bm25,
 	}, nil
+}
+
+// corpusFor returns the cached, sharded corpus for dataset, rebuilding only the
+// record batches whose contents or tombstones changed.
+func (m *AdvancedTextSearchManager) corpusFor(dataset string) (*cachedTextCorpus, error) {
+	ds, ok := m.store.getDataset(dataset)
+	if !ok {
+		return nil, fmt.Errorf("dataset %q not found", dataset)
+	}
+
+	ds.dataMu.RLock()
+	records := ds.Records.Read()
+	tombstones := ds.Tombstones
+
+	m.mu.RLock()
+	prev := m.corpusCache[dataset]
+	m.mu.RUnlock()
+
+	corpus, changed := buildTextCorpus(records, tombstones, prev)
+	ds.dataMu.RUnlock()
+
+	if changed {
+		m.mu.Lock()
+		m.corpusCache[dataset] = corpus
+		m.mu.Unlock()
+	}
+	return corpus, nil
+}
+
+// buildTextCorpus assembles a sharded corpus, reusing unchanged shards from
+// prev. A change in one batch invalidates every later shard because vector IDs
+// are global row numbers, so later shards are rebuilt even when their own
+// signature still matches.
+func buildTextCorpus(records []arrow.RecordBatch, tombstones map[int]*types.Bitset, prev *cachedTextCorpus) (*cachedTextCorpus, bool) {
+	// A shorter batch list invalidates index alignment, so rebuild everything.
+	invalidStructure := prev == nil || len(prev.shards) > len(records)
+	changed := invalidStructure
+	baseDirty := false
+	shards := make([]*cachedTextShard, len(records))
+	rowBase := 0
+	for i, rec := range records {
+		ts := tombstones[i]
+		sig := textShardSignature{
+			rows:          rec.NumRows(),
+			tombstoneCard: textTombstoneCount(ts),
+			recordID:      textObjectIdentity(rec),
+			tombstoneID:   textObjectIdentity(ts),
+		}
+		canReuse := prev != nil && !invalidStructure && !baseDirty && i < len(prev.shards) && prev.shards[i].sig == sig
+		if canReuse {
+			shards[i] = prev.shards[i]
+		} else {
+			changed = true
+			shards[i] = buildTextShard(rec, ts, rowBase)
+		}
+		// Vector IDs are global row numbers. If this batch's row count changed,
+		// every later shard's base moved and must be rebuilt even when its own
+		// signature still matches.
+		if prev != nil && i < len(prev.shards) && prev.shards[i].sig.rows != rec.NumRows() {
+			baseDirty = true
+		}
+		rowBase += int(rec.NumRows())
+	}
+
+	if !changed {
+		return prev, false
+	}
+
+	corpus := &cachedTextCorpus{
+		numBatches:    len(records),
+		totalRows:     int64(rowBase),
+		tombstoneCard: 0,
+		shards:        shards,
+		docBase:       make([]int, len(shards)+1),
+		fuzzyCache:    make(map[string][]string),
+	}
+	for _, sh := range shards {
+		corpus.tombstoneCard += sh.sig.tombstoneCard
+		corpus.nDocs += len(sh.docs)
+	}
+	for i, sh := range shards {
+		corpus.docBase[i+1] = corpus.docBase[i] + len(sh.docs)
+	}
+
+	var totalTokens int
+	for _, sh := range shards {
+		totalTokens += sh.totalTokens
+	}
+	corpus.avgDL = 1.0
+	if corpus.nDocs > 0 {
+		corpus.avgDL = max(1.0, float64(totalTokens)/float64(corpus.nDocs))
+	}
+
+	// Fold document frequencies incrementally: subtract the shards that were
+	// replaced and add the new ones. Unchanged shards cancel out, so appending a
+	// batch does not re-merge the whole vocabulary.
+	if prev != nil && len(prev.df) > 0 {
+		corpus.df = make(map[string]int, len(prev.df))
+		for term, n := range prev.df {
+			corpus.df[term] = n
+		}
+		for i, old := range prev.shards {
+			if i < len(shards) && shards[i] == old {
+				continue
+			}
+			for term, n := range old.df {
+				corpus.df[term] -= n
+				if corpus.df[term] <= 0 {
+					delete(corpus.df, term)
+				}
+			}
+		}
+		for i, sh := range shards {
+			if i < len(prev.shards) && prev.shards[i] == sh {
+				continue
+			}
+			for term, n := range sh.df {
+				corpus.df[term] += n
+			}
+		}
+	} else {
+		corpus.df = make(map[string]int)
+		for _, sh := range shards {
+			for term, n := range sh.df {
+				corpus.df[term] += n
+			}
+		}
+	}
+
+	corpus.vocab = make([]string, 0, len(corpus.df))
+	corpus.vocabByLen = make(map[int][]string)
+	for term := range corpus.df {
+		corpus.vocab = append(corpus.vocab, term)
+		corpus.vocabByLen[len(term)] = append(corpus.vocabByLen[len(term)], term)
+	}
+	return corpus, true
+}
+
+// buildTextShard tokenises one record batch. rowBase is the number of rows in
+// all earlier batches, so vector IDs stay global row numbers.
+func buildTextShard(rec arrow.RecordBatch, tombstones *types.Bitset, rowBase int) *cachedTextShard {
+	fields := rec.Schema().Fields()
+	colIdx := make(map[string]int, len(fields))
+	for i, f := range fields {
+		colIdx[f.Name] = i
+	}
+
+	rows := int(rec.NumRows())
+	docs := make([]cachedTextDoc, 0, rows)
+	df := make(map[string]int)
+	postings := make(map[string][]int32)
+	trigrams := index.NewTrigramIndex()
+	totalTokens := 0
+
+	for r := 0; r < rows; r++ {
+		if tombstones != nil && tombstones.Contains(r) {
+			continue
+		}
+		var meta map[string]any
+		if mi, hasMeta := colIdx["metadata"]; hasMeta {
+			if sa, ok := rec.Column(mi).(*array.String); ok && !sa.IsNull(r) {
+				_ = json.Unmarshal([]byte(sa.Value(r)), &meta)
+			}
+		}
+		vectorID := uint32(rowBase + r) // #nosec G115 -- row counts fit the corpus address space
+		idVal := readRowStringValue(rec, colIdx, meta, r, "id")
+		if idVal == "" {
+			idVal = strconv.FormatUint(uint64(vectorID), 10)
+		}
+		text := collectDocumentText(rec, colIdx, meta, r)
+		lowerText := strings.ToLower(text)
+		tokens := tokenizeAlphaNum(text)
+		docPos := int32(len(docs)) // #nosec G115 -- a shard is one Arrow batch
+		indexShardTokens(tokens, docPos, df, postings)
+		totalTokens += len(tokens)
+		trigrams.IndexString(docPos, lowerText)
+		docs = append(docs, cachedTextDoc{
+			id:        idVal,
+			vectorID:  vectorID,
+			text:      text,
+			lowerText: lowerText,
+			meta:      meta,
+			tokens:    tokens,
+		})
+	}
+
+	return &cachedTextShard{
+		sig: textShardSignature{
+			rows:          rec.NumRows(),
+			tombstoneCard: textTombstoneCount(tombstones),
+			recordID:      textObjectIdentity(rec),
+			tombstoneID:   textObjectIdentity(tombstones),
+		},
+		docs:        docs,
+		df:          df,
+		postings:    postings,
+		trigrams:    trigrams,
+		totalTokens: totalTokens,
+	}
+}
+
+// indexShardTokens records first-occurrence document frequency and postings for
+// one document. Small documents use a linear duplicate check; long ones use a
+// set so indexing stays O(tokens).
+func indexShardTokens(tokens []string, docPos int32, df map[string]int, postings map[string][]int32) {
+	if len(tokens) > 16 {
+		seen := make(map[string]struct{}, len(tokens))
+		for _, tok := range tokens {
+			if _, ok := seen[tok]; ok {
+				continue
+			}
+			seen[tok] = struct{}{}
+			df[tok]++
+			postings[tok] = append(postings[tok], docPos)
+		}
+		return
+	}
+	for i, tok := range tokens {
+		dup := false
+		for j := 0; j < i; j++ {
+			if tokens[j] == tok {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			df[tok]++
+			postings[tok] = append(postings[tok], docPos)
+		}
+	}
+}
+
+func textObjectIdentity(v any) string {
+	return fmt.Sprintf("%p", v)
+}
+
+func textTombstoneCount(ts *types.Bitset) uint64 {
+	if ts == nil {
+		return 0
+	}
+	return ts.Count()
 }
 
 // Analytics returns search volume, top queries, and zero-result queries.
@@ -869,87 +1035,265 @@ func (m *AdvancedTextSearchManager) recordAnalytics(query string, hits int, dur 
 	ent.LastSeen = time.Now().UTC()
 }
 
-func scoreCachedDocBM25(tfMap map[string]int, docLen int, matchedTerms []string, nDocs int, avgDL float64, df map[string]int, params BM25TuningParams) float64 {
-	if len(matchedTerms) == 0 || docLen == 0 {
-		return 0
-	}
-	uniq := dedupStrings(matchedTerms)
-	dl := float64(docLen)
-	var score float64
-	for _, term := range uniq {
-		// Split phrases into component words when scoring BM25
-		for _, sub := range tokenizeAlphaNum(term) {
-			tf := float64(tfMap[sub])
-			if tf == 0 {
-				continue
-			}
-			n := float64(df[sub])
-			idf := math.Log(1.0 + (float64(nDocs)-n+0.5)/(n+0.5))
-			num := tf * (params.K1 + 1.0)
-			den := tf + params.K1*(1.0-params.B+params.B*(dl/avgDL))
-			score += idf * (num / max(1e-9, den))
-		}
-	}
-	return score
+// textScoreCandidate is one document that satisfied the query AST, held until
+// the whole shard (or block) can be scored in a batch.
+type textScoreCandidate struct {
+	docIdx  int
+	tokens  []string
+	matched []string
 }
 
-func collectCandidatePostings(node queryNode, postings map[string][]int, defFuzzy int) ([]int, bool) {
-	if node == nil || len(postings) == 0 {
-		return nil, false
+// evaluateTextCorpus walks shards, narrows each to candidates, evaluates the AST
+// and feeds the ranked hits into th. It returns the number of matching documents
+// (not just the retained top-K).
+func evaluateTextCorpus(corpus *cachedTextCorpus, ast queryNode, req AdvancedTextQueryRequest, bm25 BM25TuningParams, th *textCandidateHeap, facets map[string]map[string]int) int {
+	if corpus == nil || ast == nil {
+		return 0
 	}
+	matchedTotal := 0
+	for shardIdx, shard := range corpus.shards {
+		if len(shard.docs) == 0 {
+			continue
+		}
+		cands := collectShardCandidates(ast, corpus, shard, req.FuzzyMaxDist)
+		base := corpus.docBase[shardIdx]
+		capacity := len(shard.docs)
+		if !cands.all {
+			capacity = len(cands.idxs)
+		}
+		batch := make([]textScoreCandidate, 0, capacity)
+		visit := func(local int32) {
+			if local < 0 || int(local) >= len(shard.docs) {
+				return
+			}
+			d := &shard.docs[local]
+			ok, matchedTerms := ast.evaluate(d.lowerText, d.tokens, req.FuzzyMaxDist)
+			if !ok {
+				return
+			}
+			matchedTotal++
+			batch = append(batch, textScoreCandidate{
+				docIdx:  base + int(local),
+				tokens:  d.tokens,
+				matched: matchedTerms,
+			})
+			for _, ff := range req.FacetFields {
+				if val, exists := d.meta[ff]; exists && val != nil {
+					facets[ff][fmt.Sprintf("%v", val)]++
+				}
+			}
+		}
+		if cands.all {
+			for i := range shard.docs {
+				visit(int32(i)) // #nosec G115 -- a shard is one Arrow batch
+			}
+		} else {
+			for _, local := range cands.idxs {
+				visit(local)
+			}
+		}
+		if len(batch) == 0 {
+			continue
+		}
+		scores := scoreTextCandidates(batch, corpus.nDocs, corpus.avgDL, corpus.df, bm25)
+		for i := range batch {
+			th.pushTop(textCandidate{docIdx: batch[i].docIdx, score: scores[i]})
+		}
+	}
+	return matchedTotal
+}
+
+// shardCandidateSet is a candidate list within one shard. all means "every live
+// document in this shard"; idxs is sorted ascending and read-only.
+type shardCandidateSet struct {
+	idxs []int32
+	all  bool
+}
+
+// collectShardCandidates narrows a query to documents that can possibly match.
+// Every branch is a superset: phrase trigrams may admit non-contiguous matches
+// and NOT is represented by "all", so evaluate still makes the final decision.
+func collectShardCandidates(node queryNode, corpus *cachedTextCorpus, shard *cachedTextShard, defFuzzy int) shardCandidateSet {
 	switch n := node.(type) {
 	case termNode:
 		dist := n.maxDist
-		if dist <= 0 {
+		if dist < 0 {
 			dist = defFuzzy
 		}
-		if dist > 0 || strings.ContainsAny(n.term, "*?") {
-			return nil, false
+		target := strings.ToLower(n.term)
+		if target == "" {
+			return shardCandidateSet{}
 		}
-		return postings[strings.ToLower(n.term)], true
+		terms := corpus.matchingTerms(target, dist)
+		if len(terms) == 0 {
+			return shardCandidateSet{}
+		}
+		if len(terms) == 1 {
+			return shardCandidateSet{idxs: shard.postings[terms[0]]}
+		}
+		var out []int32
+		for _, term := range terms {
+			out = unionSortedInt32(out, shard.postings[term])
+		}
+		return shardCandidateSet{idxs: out}
 	case phraseNode:
-		toks := tokenizeAlphaNum(n.phrase)
-		if len(toks) == 0 {
-			return nil, true
+		p := strings.ToLower(n.phrase)
+		if p == "" {
+			return shardCandidateSet{}
 		}
-		cur := postings[toks[0]]
-		for _, t := range toks[1:] {
-			cur = intersectSortedInts(cur, postings[t])
-			if len(cur) == 0 {
-				return nil, true
-			}
+		// Lookup cannot bound values shorter than one trigram; evaluate them
+		// against the whole shard rather than dropping real matches.
+		if len(p) < 3 {
+			return shardCandidateSet{all: true}
 		}
-		return cur, true
+		return shardCandidateSet{idxs: shard.trigrams.Lookup(p)}
 	case andNode:
-		left, okL := collectCandidatePostings(n.left, postings, defFuzzy)
-		right, okR := collectCandidatePostings(n.right, postings, defFuzzy)
-		if okL && okR {
-			return intersectSortedInts(left, right), true
+		left := collectShardCandidates(n.left, corpus, shard, defFuzzy)
+		right := collectShardCandidates(n.right, corpus, shard, defFuzzy)
+		switch {
+		case left.all && right.all:
+			return shardCandidateSet{all: true}
+		case left.all:
+			return right
+		case right.all:
+			return left
+		default:
+			return shardCandidateSet{idxs: intersectSortedInt32(left.idxs, right.idxs)}
 		}
-		if okL {
-			return left, true
-		}
-		if okR {
-			return right, true
-		}
-		return nil, false
 	case orNode:
-		left, okL := collectCandidatePostings(n.left, postings, defFuzzy)
-		right, okR := collectCandidatePostings(n.right, postings, defFuzzy)
-		if okL && okR {
-			return unionSortedInts(left, right), true
+		left := collectShardCandidates(n.left, corpus, shard, defFuzzy)
+		right := collectShardCandidates(n.right, corpus, shard, defFuzzy)
+		if left.all || right.all {
+			return shardCandidateSet{all: true}
 		}
-		return nil, false
+		return shardCandidateSet{idxs: unionSortedInt32(left.idxs, right.idxs)}
+	case notNode:
+		return shardCandidateSet{all: true}
 	default:
-		return nil, false
+		return shardCandidateSet{all: true}
 	}
 }
 
-func intersectSortedInts(a, b []int) []int {
+// matchingTerms returns the vocabulary terms that termNode would accept for
+// target at edit distance dist. Exact terms are a single posting lookup; fuzzy
+// terms scan only vocabulary entries whose length can be within dist.
+func (c *cachedTextCorpus) matchingTerms(target string, dist int) []string {
+	key := target + "\x00" + strconv.Itoa(dist)
+	c.fuzzyMu.RLock()
+	if cached, ok := c.fuzzyCache[key]; ok {
+		c.fuzzyMu.RUnlock()
+		return cached
+	}
+	c.fuzzyMu.RUnlock()
+
+	var out []string
+	if dist <= 0 {
+		if _, ok := c.df[target]; ok {
+			out = []string{target}
+		}
+	} else if isASCII(target) {
+		targetLen := len(target)
+		size := targetLen + dist + 1
+		prevPrev := make([]int, size)
+		prev := make([]int, size)
+		cur := make([]int, size)
+		for length := max(1, targetLen-dist); length <= targetLen+dist; length++ {
+			for _, term := range c.vocabByLen[length] {
+				if term == target || osaWithin(target, term, dist, prevPrev[:length+1], prev[:length+1], cur[:length+1]) {
+					out = append(out, term)
+				}
+			}
+		}
+	} else {
+		for _, term := range c.vocab {
+			if intAbs(len(term)-len(target)) > dist {
+				continue
+			}
+			if term == target || LevenshteinDistance(term, target) <= dist {
+				out = append(out, term)
+			}
+		}
+	}
+
+	c.fuzzyMu.Lock()
+	c.fuzzyCache[key] = out
+	c.fuzzyMu.Unlock()
+	return out
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+func intAbs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// osaWithin is LevenshteinDistance with optimal-string-alignment transpositions
+// and an early cutoff. It uses caller-provided rows so a vocabulary scan does
+// not allocate per candidate. Inputs and rows are byte-indexed and therefore
+// only valid for ASCII, which is all tokenizeAlphaNum can produce.
+func osaWithin(a, b string, maxDist int, prevPrev, prev, cur []int) bool {
+	la, lb := len(a), len(b)
+	if intAbs(la-lb) > maxDist {
+		return false
+	}
+	if la == 0 {
+		return lb <= maxDist
+	}
+	if lb == 0 {
+		return la <= maxDist
+	}
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		cur[0] = i
+		rowMin := cur[0]
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			v := min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				v = min(v, prevPrev[j-2]+1)
+			}
+			cur[j] = v
+			if v < rowMin {
+				rowMin = v
+			}
+		}
+		if rowMin > maxDist {
+			return false
+		}
+		prevPrev, prev, cur = prev, cur, prevPrev
+	}
+	return prev[lb] <= maxDist
+}
+
+func intersectSortedInt32(a, b []int32) []int32 {
 	if len(a) == 0 || len(b) == 0 {
 		return nil
 	}
-	out := make([]int, 0, min(len(a), len(b)))
+	// When one side is much longer, binary-searching it for each element of the
+	// short side beats walking both. This is the common shape of an AND between
+	// a stopword-like term and a selective one.
+	if len(a) > 8*len(b) {
+		return intersectSortedInt32BySearch(a, b)
+	}
+	if len(b) > 8*len(a) {
+		return intersectSortedInt32BySearch(b, a)
+	}
+	out := make([]int32, 0, min(len(a), len(b)))
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
 		switch {
@@ -966,8 +1310,25 @@ func intersectSortedInts(a, b []int) []int {
 	return out
 }
 
-func unionSortedInts(a, b []int) []int {
-	out := make([]int, 0, len(a)+len(b))
+func intersectSortedInt32BySearch(long, short []int32) []int32 {
+	out := make([]int32, 0, len(short))
+	for _, v := range short {
+		i := sort.Search(len(long), func(i int) bool { return long[i] >= v })
+		if i < len(long) && long[i] == v {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func unionSortedInt32(a, b []int32) []int32 {
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
+	}
+	out := make([]int32, 0, len(a)+len(b))
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
 		switch {
@@ -985,6 +1346,199 @@ func unionSortedInts(a, b []int) []int {
 	}
 	out = append(out, a[i:]...)
 	out = append(out, b[j:]...)
+	return out
+}
+
+// scoreCachedDocBM25 scores one document from its tokens. Repeated sub-terms
+// across a boolean query are counted once, which keeps scalar and SIMD scoring
+// on the same canonical term set.
+func scoreCachedDocBM25(tokens []string, matchedTerms []string, nDocs int, avgDL float64, df map[string]int, params BM25TuningParams) float64 {
+	if len(matchedTerms) == 0 || len(tokens) == 0 {
+		return 0
+	}
+	var stack [16]string
+	subs := stack[:0]
+	for _, term := range matchedTerms {
+		subs = appendTermSubtokens(subs, term)
+	}
+	if len(subs) == 0 {
+		return 0
+	}
+	dl := float64(len(tokens))
+	var score float64
+	for _, sub := range subs {
+		tf := float64(docTermFrequency(tokens, sub))
+		if tf == 0 {
+			continue
+		}
+		n := float64(df[sub])
+		idf := math.Log(1.0 + (float64(nDocs)-n+0.5)/(n+0.5))
+		num := tf * (params.K1 + 1.0)
+		den := tf + params.K1*(1.0-params.B+params.B*(dl/avgDL))
+		score += idf * (num / max(1e-9, den))
+	}
+	return score
+}
+
+func appendTermSubtokens(dst []string, term string) []string {
+	if term == "" {
+		return dst
+	}
+	if isSimpleToken(term) {
+		if !containsString(dst, term) {
+			dst = append(dst, term)
+		}
+		return dst
+	}
+	for _, sub := range tokenizeAlphaNum(term) {
+		if !containsString(dst, sub) {
+			dst = append(dst, sub)
+		}
+	}
+	return dst
+}
+
+func isSimpleToken(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func containsString(list []string, s string) bool {
+	for _, item := range list {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+func docTermFrequency(tokens []string, term string) int {
+	n := 0
+	for _, tok := range tokens {
+		if tok == term {
+			n++
+		}
+	}
+	return n
+}
+
+func prepareSubTerms(matched []string) []string {
+	if len(matched) == 0 {
+		return nil
+	}
+	// The common case is a term or boolean query whose matched terms are
+	// already distinct tokens. Return the evaluator's slice instead of copying
+	// it once per candidate.
+	allSimple := true
+	for i, term := range matched {
+		if !isSimpleToken(term) {
+			allSimple = false
+			break
+		}
+		for j := 0; j < i; j++ {
+			if matched[j] == term {
+				allSimple = false
+				break
+			}
+		}
+		if !allSimple {
+			break
+		}
+	}
+	if allSimple {
+		return matched
+	}
+	var stack [16]string
+	subs := stack[:0]
+	for _, term := range matched {
+		subs = appendTermSubtokens(subs, term)
+	}
+	if len(subs) == 0 {
+		return nil
+	}
+	out := make([]string, len(subs))
+	copy(out, subs)
+	return out
+}
+
+// scoreTextCandidates scores every candidate, using the SIMD BM25 kernels when
+// there is enough work to amortise the transposition. The scalar path and the
+// batch path score the same canonical sub-term set, so they agree up to the
+// kernels' float32 precision.
+func scoreTextCandidates(cands []textScoreCandidate, nDocs int, avgDL float64, df map[string]int, params BM25TuningParams) []float64 {
+	out := make([]float64, len(cands))
+	if len(cands) == 0 {
+		return out
+	}
+
+	const (
+		simdMinCandidates = 32
+		simdMaxCandidates = 100_000
+		simdChunk         = 1024
+		simdMinWork       = 512
+		simdMaxTerms      = 64
+	)
+	if len(cands) < simdMinCandidates || len(cands) > simdMaxCandidates {
+		for i := range cands {
+			out[i] = scoreCachedDocBM25(cands[i].tokens, cands[i].matched, nDocs, avgDL, df, params)
+		}
+		return out
+	}
+
+	avgDL32 := float32(avgDL)
+	k1 := float32(params.K1)
+	b := float32(params.B)
+	for start := 0; start < len(cands); start += simdChunk {
+		end := min(start+simdChunk, len(cands))
+		n := end - start
+		subs := make([][]string, n)
+		union := make(map[string]struct{})
+		for i := start; i < end; i++ {
+			subs[i-start] = prepareSubTerms(cands[i].matched)
+			for _, term := range subs[i-start] {
+				union[term] = struct{}{}
+			}
+		}
+		if len(union) == 0 {
+			continue
+		}
+		if len(union) > simdMaxTerms || n*len(union) < simdMinWork {
+			for i := start; i < end; i++ {
+				out[i] = scoreCachedDocBM25(cands[i].tokens, cands[i].matched, nDocs, avgDL, df, params)
+			}
+			continue
+		}
+
+		acc := make([]float32, n)
+		tfs := make([]int, n)
+		lens := make([]int, n)
+		for i := start; i < end; i++ {
+			lens[i-start] = len(cands[i].tokens)
+		}
+		for term := range union {
+			for i := start; i < end; i++ {
+				tfs[i-start] = 0
+				if containsString(subs[i-start], term) {
+					tfs[i-start] = docTermFrequency(cands[i].tokens, term)
+				}
+			}
+			nTerm := float64(df[term])
+			idf := math.Log(1.0 + (float64(nDocs)-nTerm+0.5)/(nTerm+0.5))
+			part := simd.BM25ScoreBatch(tfs, lens, avgDL32, float32(idf), k1, b)
+			for j, v := range part {
+				acc[j] += v
+			}
+		}
+		for i := start; i < end; i++ {
+			out[i] = float64(acc[i-start])
+		}
+	}
 	return out
 }
 

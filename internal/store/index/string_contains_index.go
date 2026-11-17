@@ -239,6 +239,107 @@ func (idx *StringContainsIndex) Close() error {
 	return nil
 }
 
+// TrigramIndex is a reusable trigram inverted index over integer document IDs.
+//
+// It is built once and then queried concurrently: callers Append documents in
+// ascending order while building, then only read. Postings therefore stay
+// sorted ascending, which lets Lookup intersect them without re-sorting.
+//
+// The index stores byte trigrams. That matches strings.Contains semantics for
+// any UTF-8 input, because strings.Contains is itself a byte-substring test.
+type TrigramIndex struct {
+	trigrams map[string][]int32
+}
+
+// NewTrigramIndex creates an empty trigram index.
+func NewTrigramIndex() *TrigramIndex {
+	return &TrigramIndex{trigrams: make(map[string][]int32)}
+}
+
+// IndexString adds a document to the index. Documents must be added in
+// ascending order so postings stay sorted.
+func (idx *TrigramIndex) IndexString(doc int32, value string) {
+	for _, tri := range extractTrigrams(value) {
+		idx.trigrams[tri] = append(idx.trigrams[tri], doc)
+	}
+}
+
+// Lookup returns the sorted, deduplicated documents that contain every trigram
+// of value. The result is a superset of the documents where value occurs as a
+// contiguous substring; callers still confirm the match. For values shorter
+// than three bytes Lookup cannot guarantee a superset and returns nil, so
+// callers must scan instead.
+func (idx *TrigramIndex) Lookup(value string) []int32 {
+	grams := extractTrigrams(value)
+	if len(grams) < 1 {
+		return nil
+	}
+	// extractTrigrams short-circuits values shorter than three bytes to the
+	// whole value, which cannot be intersected with byte-trigram postings.
+	if len(value) < 3 {
+		return nil
+	}
+
+	// Start from the shortest posting list: it bounds every intersection step.
+	sort.Slice(grams, func(i, j int) bool {
+		return len(idx.trigrams[grams[i]]) < len(idx.trigrams[grams[j]])
+	})
+	head, ok := idx.trigrams[grams[0]]
+	if !ok || len(head) == 0 {
+		return nil
+	}
+	result := append([]int32(nil), head...)
+	for _, gram := range grams[1:] {
+		if len(result) == 0 {
+			return nil
+		}
+		other, ok := idx.trigrams[gram]
+		if !ok || len(other) == 0 {
+			return nil
+		}
+		result = intersectSortedInt32(result, other)
+	}
+	return result
+}
+
+func intersectSortedInt32(a, b []int32) []int32 {
+	if len(a) == 0 || len(b) == 0 {
+		return nil
+	}
+	if len(a) > 8*len(b) {
+		return intersectSortedInt32BySearch(a, b)
+	}
+	if len(b) > 8*len(a) {
+		return intersectSortedInt32BySearch(b, a)
+	}
+	out := make([]int32, 0, min(len(a), len(b)))
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] == b[j]:
+			out = append(out, a[i])
+			i++
+			j++
+		case a[i] < b[j]:
+			i++
+		default:
+			j++
+		}
+	}
+	return out
+}
+
+func intersectSortedInt32BySearch(long, short []int32) []int32 {
+	out := make([]int32, 0, len(short))
+	for _, v := range short {
+		i := sort.Search(len(long), func(i int) bool { return long[i] >= v })
+		if i < len(long) && long[i] == v {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // RemoveRecord removes all index entries for a specific record.
 func (idx *StringContainsIndex) RemoveRecord(recordIdx int) {
 	idx.mu.Lock()

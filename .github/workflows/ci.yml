@@ -16,8 +16,16 @@ on:
   workflow_dispatch:
   # push:
   #   branches: [ main ]
+  #   paths-ignore:
+  #     - '**.md'
+  #     - 'docs/**'
+  #     - 'benchmarks/**'
   # pull_request:
   #   branches: [ main ]
+  #   paths-ignore:
+  #     - '**.md'
+  #     - 'docs/**'
+  #     - 'benchmarks/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

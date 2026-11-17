@@ -88,3 +88,86 @@ See `docs/performance.md` for benchmark results and baselines.
 - `benchmarks/baseline_cpu_768_20261116.json` (50k/100k/200k, dim 768)
 - `benchmarks/baseline_cpu_large_20261116.json` (500k/1M, dim 128)
 - `benchmarks/baseline_cpu.json`, `baseline_100k.json`, `baseline_250k.json`, `baseline_25k.json` (legacy)
+
+---
+
+## Remaining Work (Detailed Subtasks)
+
+### P1 (Geo) — Remaining
+
+- [ ] P1-2 Add annulus cell pruning to `Quadtree.QueryRadiusPruned` (skip cells whose bbox is entirely outside radius).
+- [ ] P1-3 Add radius filter to `MortonGrid.QueryRadiusPruned`.
+- [ ] P1-4b Build a finer-grained spatial hash grid for radius queries.
+- [ ] P1-5 (Optional) LRU cell cache for repeated geo queries.
+- [ ] P1-6b Benchmark geo at 500k/1M; target ≥ 500 QPS.
+- [ ] P1-7 Add `TestGeoSearchScalability`.
+
+### P2 (Temporal) — Remaining
+
+- [ ] P2-1 Add sorted timestamp B-tree/skip-list index per dataset.
+- [ ] P2-2 Implement range scan via B-tree leaf traversal.
+- [ ] P2-3 Sliding window as ring buffer over sorted index.
+- [ ] P2-4b Benchmark temporal range at 500k/1M; target ≥ 1000 QPS.
+- [ ] P2-5 Add `TestTemporalRangeScalability`.
+
+### P3 (Text) — Remaining
+
+- [ ] P3-1 Add trigram inverted index for fuzzy/contains (reuse `string_contains_index.go`).
+- [ ] P3-2 SIMD-vectorize BM25 scoring.
+- [ ] P3-3 (Done) Top-K heap with early termination.
+- [ ] P3-4 Shard corpus cache by dataset partition.
+- [ ] P3-5b Benchmark advancedtext at 500k/1M; target ≥ 500 QPS.
+- [ ] P3-6 Add `TestAdvancedTextScalability`.
+
+### P4/P10 (Filtered) — Remaining
+
+- [ ] P4-5 Benchmark filtered at 500k/1M; target P99 < 50ms.
+- [ ] P4-6 Add `TestFilteredSearchScalability`.
+- [ ] P10-3 Predicate-aware entry point selection.
+- [ ] P10-4 Shard filter evaluation across worker pool.
+- [ ] P10-5 P99 < 50ms at 1M.
+- [ ] P10-6 Add `TestFilteredSearchTailLatency`.
+
+### P5 (Complex) — Remaining
+
+- [ ] P5-2b Optional API change for Float32→complex128 (P0-2.5).
+- [ ] P5-3 Verify TurboQuant auto-standardization at ≥500k.
+- [ ] P5-5 RSS < 20 GB at 500k.
+- [ ] P5-6 Add `TestComplexScalability`.
+
+### P6 (TurboQuant) — Remaining
+
+- [ ] P6-5b Benchmark 5× speedup at 200k/500k.
+- [ ] P6-6 Add `TestTurboQuantIndexScalability`.
+
+### P7 (uint dispatch) — Remaining
+
+- [ ] P7-1 Profile uint16/uint32 slow kernel.
+- [ ] P7-2 Dedicated AVX2 kernels for uint16/uint32.
+- [ ] P7-3 Parity benchmark.
+- [ ] P7-4 Add `TestUintDispatchScalability`.
+
+### P8 (Memory) — Remaining
+
+- [ ] P8-3 Memory cap enforcement + graceful degradation.
+- [ ] P8-4 `checkMemoryBeforeWrite` on all ingest paths.
+- [ ] P8-5 1M complex128 RSS < 20 GB with disk spill.
+- [ ] P8-6 Add `TestMemoryScaling`.
+
+### P9 (HNSW quality) — Remaining
+
+- [ ] P9-1 Reachability ≥95% at 500k/1M.
+- [ ] P9-2 Tune `addbatch_inflight` + `BulkChainLinks`.
+- [ ] P9-4 Recall @10 at 1M vs brute force.
+- [ ] P9-5 Add `TestHNSWQualityAtScale`.
+
+### P11 (Concurrency) — Remaining
+
+- [ ] P11-1 Dynamic worker scaling.
+- [ ] P11-2 NUMA-aware allocation.
+- [ ] P11-3 Request batching.
+- [ ] P11-4 8-worker AVX-512 benchmark.
+
+### P0-2.5 (Optional) — Remaining
+
+- [ ] P0-2.5 Zero-copy Float32→complex128 extraction (API change).

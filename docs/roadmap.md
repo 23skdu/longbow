@@ -1,14 +1,32 @@
-# Longbow Roadmap (Remaining Work)
+# Longbow Roadmap (Performance & Scale)
 
-This document tracks the remaining work to scale Longbow past 1,000,000
-vectors per dataset across all 21 search modes and 15 data types. Completed
-items (P0 performance, OIDC federation, DevSecOps, geo/temporal/text
-candidate caps, TurboQuant kernels/LUT, predicate pushdown, disk/tiered
-storage, spatial hash grid, temporal sorted index, text trigram index,
-filtered predicate-aware entry points, parallel filter evaluation,
-complex/TurboQuant scalability tests, geo LRU result cache) have been removed.
+This document tracks the next performance and scalability work for Longbow,
+informed by a 1M-vector complex128 memory profile
+(`go test -memprofile` over `TestComplexRSS1M`: 4.02 GB RSS, 122 GB
+allocations). Completed items from the previous roadmap (P0 performance,
+OIDC federation, DevSecOps, geo/temporal/text candidate caps, TurboQuant
+kernels/LUT, predicate pushdown, disk/tiered storage, spatial hash grid,
+temporal sorted index, text trigram index, filtered predicate-aware entry
+points, parallel filter evaluation, geo LRU result cache, and the 50k-1M
+scalability tests for filtered/complex/TurboQuant/uint16) have been removed.
 
 See `docs/performance.md` for benchmark results and baselines.
+
+---
+
+## Memory-Profile Findings (1M complex128)
+
+| Hot spot | Alloc space | Notes |
+|---|---|---|
+| `FlatAdjacency.UpdateNeighbors` | 66.7 GB (54.6%) | Largest single source; neighbor slice growth/copy |
+| `FlatAdjacency.getNeighborsWithGenInner` | 25.0 GB (20.5%) | Per-traversal neighbor materialization |
+| `EuclideanDistanceComplex128Batch` | 7.2 GB (5.9%) | Per-batch scratch allocation |
+| `ArrowHNSW.resolveHNSWComputer` | 6.4 GB (5.3%) | Computer resolution per batch |
+| `GraphData.Clone` | 4.1 GB (3.4%) | Full graph copy on bulk insert |
+| `ArrowHNSW.linkRemainingNodes` | 3.5 GB (2.9%) | Residual link work |
+| `ArrowHNSW.measureBulkGraphQuality` | 1.7 GB (1.4%) | Quality sampling allocations |
+
+These drive the priorities below.
 
 ---
 
@@ -16,27 +34,67 @@ See `docs/performance.md` for benchmark results and baselines.
 
 | ID | Area | Priority | Status |
 |---|---|---|---|
-| P7-1 | uint16/uint32: profile slow kernel | MEDIUM | Kernels exist |
-| P7-3 | uint16/uint32: parity benchmark | MEDIUM | Open |
-| P8-5 | Memory: 1M complex128 RSS < 20 GB with disk spill | MEDIUM | Open |
-| P8-6 | Memory: scalability test | MEDIUM | Open |
-| P9-1 | HNSW quality: reachability ≥95% at 500k/1M | MEDIUM | Open |
-| P9-2 | HNSW quality: tune addbatch_inflight + BulkChainLinks | MEDIUM | Open |
-| P9-3 | HNSW quality: graph repair agent after bulk insert | MEDIUM | Open |
-| P9-4 | HNSW quality: recall @10 at 1M vs brute force | MEDIUM | Open |
-| P9-5 | HNSW quality: scalability test | MEDIUM | Open |
-| P10-1 | Filtered tail: bitmap intersection | MEDIUM | Open |
-| P11-1 | Concurrency: dynamic worker scaling | LOW | Open |
-| P11-2 | Concurrency: NUMA-aware allocation | LOW | Open |
-| P11-3 | Concurrency: request batching | LOW | Open |
-| P11-4 | Concurrency: 8-worker AVX-512 benchmark | LOW | Open |
-| P0-2.5 | (Optional) Zero-copy Float32→complex128 extraction | LOW | Open |
+| A1 | FlatAdjacency: zero-allocation neighbor updates | CRITICAL | Open |
+| A2 | FlatAdjacency: reuse neighbor buffers in traversal | CRITICAL | Open |
+| A3 | Distance kernels: reuse batch scratch (complex128/float64) | HIGH | Open |
+| A4 | HNSW: avoid sequential fallback in bulk insert | HIGH | Open |
+| A5 | GraphData: copy-on-write Clone (zero-copy bulk insert) | HIGH | Open |
+| A6 | ArrowHNSW: cache resolved distance computer | HIGH | Open |
+| A7 | Memory: 1M complex128 RSS < 20 GB with disk spill (validation) | HIGH | Open |
+| B1 | SIMD: AVX-512/AVX2 kernels for uint16/uint32 parity + bench | MEDIUM | Open |
+| B2 | SIMD: complex128 batch distance kernel (no alloc) | MEDIUM | Open |
+| B3 | SIMD: float16/int8 quantized distance kernels | MEDIUM | Open |
+| B4 | SIMD: parity benchmarks across all dtypes | MEDIUM | Open |
+| C1 | Concurrency: dynamic worker scaling | LOW | Open |
+| C2 | Concurrency: NUMA-aware allocation | LOW | Open |
+| C3 | Concurrency: request batching | LOW | Open |
+| C4 | Validation: 1M-vector QPS/recall across all 21 modes & 15 dtypes | LOW | Open |
+| D1 | Filtered tail: bitmap intersection for multi-predicate | MEDIUM | Open |
+| D2 | HNSW quality: reachability ≥95% at 500k/1M | MEDIUM | Open |
+| D3 | HNSW quality: tune addbatch_inflight + BulkChainLinks | MEDIUM | Open |
+| D4 | HNSW quality: graph repair agent after bulk insert | MEDIUM | Open |
+| D5 | HNSW quality: recall @10 at 1M vs brute force | MEDIUM | Open |
+| E1 | Memory: TestMemoryScaling harness | LOW | Open |
 
 ---
 
-## Remaining Optional Items
+## Detailed Work Items
 
-- [ ] P0-2.5 (Optional) Zero-copy Float32→complex128 extraction (requires API change; currently uses zero-allocation worker-local scratch widening in `extractVectorComplex128Into`).
+### A (Allocation & Memory Efficiency)
+
+- [ ] A1 `FlatAdjacency.UpdateNeighbors`: pool/reuse neighbor slices; eliminate per-update heap growth (66 GB alloc).
+- [ ] A2 `getNeighborsWithGenInner`: return borrowed slices or write into caller-provided buffer.
+- [ ] A3 `EuclideanDistanceComplex128Batch` (and float64/float32 variants): reuse scratch buffers across calls.
+- [ ] A4 Bulk insert: raise descent-hop budget / improve bulk graph quality so sequential fallback is rare.
+- [ ] A5 `GraphData.Clone`: copy-on-write or arena-backed sharing to avoid 4 GB copy.
+- [ ] A6 `resolveHNSWComputer`: cache per (dataset, dtype, dim) instead of per batch.
+- [ ] A7 Validate 1M complex128 RSS < 20 GB with disk spill (in-memory measured 4.02 GB).
+
+### B (SIMD & Kernels)
+
+- [ ] B1 Dedicated AVX2/AVX-512 kernels for uint16/uint32 + parity benchmark.
+- [ ] B2 Complex128 batch distance kernel with no allocations.
+- [ ] B3 Float16/int8 quantized distance kernels (AVX2 + AVX-512).
+- [ ] B4 Parity benchmarks across all dtypes (float32/64, complex64/128, uint8/16/32, int8/16, float16).
+
+### C (Scaling & Concurrency)
+
+- [ ] C1 Dynamic worker scaling based on load.
+- [ ] C2 NUMA-aware allocation for large heaps.
+- [ ] C3 Request batching for small queries.
+- [ ] C4 1M-vector QPS/recall validation across all 21 search modes and 15 dtypes.
+
+### D (HNSW Quality & Filtered Tail)
+
+- [ ] D1 Filtered tail: bitmap intersection for multi-predicate.
+- [ ] D2 Reachability ≥95% at 500k/1M.
+- [ ] D3 Tune `addbatch_inflight` + `BulkChainLinks`.
+- [ ] D4 Graph repair agent after bulk insert.
+- [ ] D5 Recall @10 at 1M vs brute force.
+
+### E (Memory Testing)
+
+- [ ] E1 Add `TestMemoryScaling` harness (cap enforcement + graceful degradation at 1M).
 
 ---
 
@@ -59,44 +117,3 @@ See `docs/performance.md` for benchmark results and baselines.
 - `benchmarks/baseline_cpu_768_20261116.json` (50k/100k/200k, dim 768)
 - `benchmarks/baseline_cpu_large_20261116.json` (500k/1M, dim 128)
 - `benchmarks/baseline_cpu.json`, `baseline_100k.json`, `baseline_250k.json`, `baseline_25k.json` (legacy)
-
----
-
-## Remaining Work (Detailed Subtasks)
-
-### P4/P10 (Filtered) — Remaining
-
-- [ ] P10-1 Filtered tail: bitmap intersection (multi-predicate).
-
-### P6 (TurboQuant) — Remaining
-
-- [ ] P6-5b Benchmark 5× speedup at 200k/500k.
-
-### P7 (uint dispatch) — Remaining
-
-- [ ] P7-1 Profile uint16/uint32 slow kernel.
-- [ ] P7-3 Parity benchmark.
-
-### P8 (Memory) — Remaining
-
-- [ ] P8-5 1M complex128 RSS < 20 GB with disk spill.
-- [ ] P8-6 Add `TestMemoryScaling`.
-
-### P9 (HNSW quality) — Remaining
-
-- [ ] P9-1 Reachability ≥95% at 500k/1M.
-- [ ] P9-2 Tune `addbatch_inflight` + `BulkChainLinks`.
-- [ ] P9-3 Graph repair agent after bulk insert.
-- [ ] P9-4 Recall @10 at 1M vs brute force.
-- [ ] P9-5 Add `TestHNSWQualityAtScale`.
-
-### P11 (Concurrency) — Remaining
-
-- [ ] P11-1 Dynamic worker scaling.
-- [ ] P11-2 NUMA-aware allocation.
-- [ ] P11-3 Request batching.
-- [ ] P11-4 8-worker AVX-512 benchmark.
-
-### P0-2.5 (Optional) — Remaining
-
-- [ ] P0-2.5 Zero-copy Float32→complex128 extraction (API change).

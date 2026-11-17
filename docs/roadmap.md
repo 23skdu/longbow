@@ -52,7 +52,7 @@ See `docs/performance.md` for benchmark results and baselines.
 | P10-1 | Filtered tail: bitmap intersection | MEDIUM | Open |
 | P10-2 | Filtered tail: push filters into traversal | MEDIUM | Implemented (hnsw_predicate.go) |
 | P10-3 | Filtered tail: predicate-aware entry point | MEDIUM | Implemented (entry_points.go) |
-| P10-4 | Filtered tail: shard filter evaluation | MEDIUM | Open |
+| P10-4 | Filtered tail: shard filter evaluation | MEDIUM | Implemented (dataset.go worker pool) |
 | P10-5 | Filtered tail: P99 < 50ms at 1M | MEDIUM | Open |
 | P10-6 | Filtered tail: scalability test | MEDIUM | Implemented (filtered_scale_test.go) |
 | P11-1 | Concurrency: dynamic worker scaling | LOW | Open |

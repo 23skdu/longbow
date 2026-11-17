@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"golang.org/x/sync/errgroup"
 )
 
 // HNSWSettings holds configuration parameters for the HNSW index construction.
@@ -606,62 +608,100 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 	}
 
 	{
-		eval, err := qry.NewFilterEvaluator(records[0], filters)
-		if err != nil {
+		idx := d.Index
+
+		type batchResult struct {
+			batchIdx int
+			matches  []int
+			err      error
+		}
+
+		numWorkers := runtime.NumCPU()
+		if numWorkers > len(records) {
+			numWorkers = len(records)
+		}
+		if numWorkers < 1 {
+			numWorkers = 1
+		}
+
+		g, gctx := errgroup.WithContext(context.Background())
+		g.SetLimit(numWorkers)
+
+		results := make([]batchResult, len(records))
+		for bi := range records {
+			bi := bi
+			g.Go(func() error {
+				select {
+				case <-gctx.Done():
+					return gctx.Err()
+				default:
+				}
+
+				rec := records[bi]
+				eval, err := qry.NewFilterEvaluator(rec, filters)
+				if err != nil {
+					results[bi] = batchResult{batchIdx: bi, err: err}
+					return err
+				}
+
+				// Apply precomputed 16-bit dictionary codes.
+				for i, f := range rec.Schema().Fields() {
+					if f.Type.ID() == arrow.STRING {
+						if codes, dict := d.GetStringCodes(f.Name, bi); codes != nil {
+							eval.SetStringColumnCodes(i, codes, dict)
+						}
+					}
+				}
+
+				matches, err := eval.MatchesAll(int(rec.NumRows()))
+				if err != nil {
+					results[bi] = batchResult{batchIdx: bi, err: err}
+					return err
+				}
+
+				if filterExpr != nil {
+					metaIdx := -1
+					for i, field := range d.Schema.Fields() {
+						if field.Name == "metadata" {
+							metaIdx = i
+							break
+						}
+					}
+					if metaIdx >= 0 {
+						metaCol := rec.Column(metaIdx)
+						binData := array.NewBinaryData(metaCol.Data())
+						validMatches := make([]int, 0, len(matches))
+						for _, rowIdx := range matches {
+							if binData.IsValid(rowIdx) {
+								metaBytes := binData.Value(rowIdx)
+								lazyMeta := types.NewLazyMetadata(metaBytes)
+								if filterExpr.Evaluate(lazyMeta) {
+									validMatches = append(validMatches, rowIdx)
+								}
+							}
+						}
+						binData.Release()
+						matches = validMatches
+					}
+				}
+
+				results[bi] = batchResult{batchIdx: bi, matches: matches}
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
 			bitset.Release()
 			return nil, err
 		}
 
-		idx := d.Index
-		for batchIdx, rec := range records {
-			if err := eval.Reset(rec); err != nil {
-				continue
+		for _, r := range results {
+			if r.err != nil {
+				bitset.Release()
+				return nil, r.err
 			}
-
-			// Apply precomputed 16-bit dictionary codes for categorical string filter SIMD acceleration
-			for i, f := range rec.Schema().Fields() {
-				if f.Type.ID() == arrow.STRING {
-					if codes, dict := d.GetStringCodes(f.Name, batchIdx); codes != nil {
-						eval.SetStringColumnCodes(i, codes, dict)
-					}
-				}
-			}
-
-			matches, err := eval.MatchesAll(int(rec.NumRows()))
-			if err != nil {
-				return nil, err
-			}
-
-			if filterExpr != nil {
-				metaIdx := -1
-				for i, field := range d.Schema.Fields() {
-					if field.Name == "metadata" {
-						metaIdx = i
-						break
-					}
-				}
-
-				var validMatches []int
-				if metaIdx >= 0 {
-					metaCol := rec.Column(metaIdx)
-					binData := array.NewBinaryData(metaCol.Data())
-
-					for _, rowIdx := range matches {
-						if binData.IsValid(rowIdx) {
-							metaBytes := binData.Value(rowIdx)
-							lazyMeta := types.NewLazyMetadata(metaBytes)
-							if filterExpr.Evaluate(lazyMeta) {
-								validMatches = append(validMatches, rowIdx)
-							}
-						}
-					}
-					binData.Release()
-					matches = validMatches
-				}
-			}
-
-			for _, rowIdx := range matches {
-				loc := types.Location{BatchIdx: batchIdx, RowIdx: int(rowIdx)}
+			for _, rowIdx := range r.matches {
+				loc := types.Location{BatchIdx: r.batchIdx, RowIdx: int(rowIdx)}
 				if vid, ok := idx.GetVectorID(loc); ok {
 					bitset.Set(int(vid))
 				}

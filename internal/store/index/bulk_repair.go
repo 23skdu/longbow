@@ -91,7 +91,7 @@ var BulkGraphMaxHopDepth = func() float64 {
 			return f
 		}
 	}
-	return 1.5
+	return 2.0
 }()
 
 // bulkHopFloor is the smallest hop budget the gate will apply, in mean layer-0

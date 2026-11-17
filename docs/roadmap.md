@@ -119,11 +119,11 @@ sincos LUT exists but batched reconstruction and AVX2 kernel are incomplete.
 
 ### P6 Subtasks
 
-- [ ] P6-1 Complete AVX2 reconstruction kernel (`TQPolarReconstructLevelAVX2`).
-- [ ] P6-2 Add batched reconstruction across `tqBatchWidth` candidates
+- [x] P6-1 Complete AVX2 reconstruction kernel (`TQPolarReconstructLevelAVX2`).
+- [x] P6-2 Add batched reconstruction across `tqBatchWidth` candidates
       (`turboquant_batch.go`).
-- [ ] P6-3 Add Sincos LUT for polar transform (avoid runtime trig).
-- [ ] P6-4 Profile and validate numerical parity vs scalar reference.
+- [x] P6-3 Add Sincos LUT for polar transform (avoid runtime trig).
+- [x] P6-4 Profile and validate numerical parity vs scalar reference.
 - [ ] P6-5 Benchmark TurboQuant index time at 200k/500k; target 5× speedup.
 - [ ] P6-6 Add `TestTurboQuantIndexScalability`.
 

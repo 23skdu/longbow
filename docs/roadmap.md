@@ -20,7 +20,7 @@ See `docs/performance.md` for benchmark results and baselines.
 | P2-4b | Temporal: benchmark + scalability test (≥1000 QPS at 1M) | CRITICAL | Open |
 | P3-1 | Text: trigram inverted index for fuzzy/contains | HIGH | Open |
 | P3-2 | Text: SIMD-vectorized BM25 scoring | HIGH | Open |
-| P3-3 | Text: top-K heap with early termination | HIGH | Open |
+| P3-3 | Text: top-K heap with early termination | HIGH | Implemented |
 | P3-4 | Text: shard corpus cache by partition | HIGH | Open |
 | P3-5b | Text: benchmark + scalability test (≥500 QPS at 1M) | HIGH | Open |
 | P4-1 | Filtered: bitmap intersection for multi-predicate | HIGH | Implemented (filter_mask.go) |

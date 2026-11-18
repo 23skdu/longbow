@@ -86,7 +86,9 @@ func (m *GraphLayerEvictionManager) Register(gd *types.GraphData) {
 	// Wire PackedNeighbors FlatAdjacency instances with the same restore callback.
 	for l := range gd.PackedNeighbors {
 		if fa, ok := gd.PackedNeighbors[l].(*FlatAdjacency); ok && fa != nil {
+			fa.mu.Lock()
 			fa.MissCallback = gd.OnNeighborsMiss
+			fa.mu.Unlock()
 		}
 	}
 }
@@ -133,7 +135,9 @@ func (m *GraphLayerEvictionManager) SwapTarget(oldGD, newGD *types.GraphData) {
 				}
 				for l := range newGD.PackedNeighbors {
 					if fa, ok := newGD.PackedNeighbors[l].(*FlatAdjacency); ok && fa != nil {
+						fa.mu.Lock()
 						fa.MissCallback = newGD.OnNeighborsMiss
+						fa.mu.Unlock()
 					}
 				}
 			}

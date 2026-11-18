@@ -130,14 +130,12 @@ func (s inDegreeSnapshot) Get(id uint32) int32 {
 // limit, and returns the copy. Ids at or past limit read as 0, the same
 // conservative answer Get gives for a node the tracker never saw. Callers
 // keep the returned slice and pass it back to reuse the allocation.
-func (t *inDegreeTracker) snapshotInto(limit uint32, buf inDegreeSnapshot) inDegreeSnapshot {
+func (t *inDegreeTracker) snapshotInto(limit uint32, _ inDegreeSnapshot) inDegreeSnapshot {
 	need := int(limit) + 1
-	if cap(buf) < need {
-		buf = make(inDegreeSnapshot, need)
-	} else {
-		buf = buf[:need]
-		clear(buf)
-	}
+	// Always allocate a fresh backing array so a snapshot handed out to one
+	// caller can never be overwritten by a later snapshotInto reusing the
+	// same buffer (which would race with concurrent readers).
+	out := make(inDegreeSnapshot, need)
 	if d := t.dir.Load(); d != nil {
 		for ci, ch := range *d {
 			if ch == nil {
@@ -149,9 +147,9 @@ func (t *inDegreeTracker) snapshotInto(limit uint32, buf inDegreeSnapshot) inDeg
 			}
 			end := min(base+inDegreeChunkSize, need)
 			for i := base; i < end; i++ {
-				buf[i] = ch[i-base].Load()
+				out[i] = ch[i-base].Load()
 			}
 		}
 	}
-	return buf
+	return out
 }

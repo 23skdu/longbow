@@ -222,8 +222,11 @@ func (fa *FlatAdjacency) getNeighborsWithGenInner(id uint32, maxGen uint64) ([]u
 	}
 	offset := atomic.LoadUint64(&(*chunksPtr)[chunkIdx])
 	if offset == math.MaxUint64 {
-		if fa.MissCallback != nil {
-			if err := fa.MissCallback(fa.missLayer); err == nil {
+		fa.mu.Lock()
+		cb := fa.MissCallback
+		fa.mu.Unlock()
+		if cb != nil {
+			if err := cb(fa.missLayer); err == nil {
 				offset = atomic.LoadUint64(&(*chunksPtr)[chunkIdx])
 			}
 		}

@@ -544,7 +544,10 @@ func (h *ArrowHNSW) linkRemainingNodes(
 					ctxApply.Reset()
 					ctxApply.AllowUncommitted = true
 					ctxApply.inDegreeView = inDegreeView
-					defer h.searchPool.PutWithMetrics(ctxApply, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+					defer func() {
+						ctxApply.inDegreeView = nil
+						h.searchPool.PutWithMetrics(ctxApply, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+					}()
 					for ri := start; ri < end; ri++ {
 						if err := ctx.Err(); err != nil {
 							layerMu.Lock()

@@ -31,8 +31,17 @@ func safeProcessBatch(s *VectorStore, job IngestionJob, start time.Time) {
 
 	if err := s.applyBatchToMemory(job.DS, job.Batch, job.TS); err != nil {
 		s.logger.Error().Err(err).Str("dataset", job.DS.Name).Msg("Failed to apply batch from ingestion queue")
-	} else if fs := s.features; fs != nil && fs.matViews != nil {
-		fs.matViews.OnDatasetIngest(context.Background(), job.DS.Name)
+	} else {
+		s.featuresMu.Lock()
+		fs := s.features
+		var mv *MaterializedViewManager
+		if fs != nil && fs.matViews != nil {
+			mv = fs.matViews
+		}
+		s.featuresMu.Unlock()
+		if mv != nil {
+			mv.OnDatasetIngest(context.Background(), job.DS.Name)
+		}
 	}
 
 	// Update metrics (time since enqueued)

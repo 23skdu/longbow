@@ -542,11 +542,17 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	idMap := ds.ExtractIDs(rec)
 
 	// Determine vector column for DiskStore (Zero-Copy Persistence)
-	if ds.DiskStore == nil && s.ShouldSpillToDisk(ds, rec.Schema()) {
+	ds.initMu.Lock()
+	needsDiskInit := ds.DiskStore == nil
+	ds.initMu.Unlock()
+	if needsDiskInit && s.ShouldSpillToDisk(ds, rec.Schema()) {
 		s.initDiskStore(ds, name, rec.Schema())
 	}
+	ds.initMu.Lock()
+	hasDisk := ds.DiskStore != nil
+	ds.initMu.Unlock()
 	diskVecColIdx := -1
-	if ds.DiskStore != nil {
+	if hasDisk {
 		for i, f := range rec.Schema().Fields() {
 			if f.Name == "vector" || f.Name == "embedding" {
 				diskVecColIdx = i
@@ -836,8 +842,15 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	ds.UpdatePrimaryIndexAsync(batchIdx, idMap)
 	idMap.Release()
 	s.updateLWWAndMerkle(ds, rec, ts)
-	if s.features != nil && s.features.matViews != nil {
-		s.features.matViews.OnDatasetIngest(context.Background(), name)
+	s.featuresMu.Lock()
+	fs := s.features
+	var mv *MaterializedViewManager
+	if fs != nil && fs.matViews != nil {
+		mv = fs.matViews
+	}
+	s.featuresMu.Unlock()
+	if mv != nil {
+		mv.OnDatasetIngest(context.Background(), name)
 	}
 
 	// Batch append to DiskStore outside main dataset lock to avoid blocking other workers

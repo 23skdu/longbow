@@ -315,7 +315,11 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		ctx.MaxGeneration = meta.Generation
 	}
 	computer := h.resolveHNSWComputer(data, ctx, vec, true, nil)
-	defer h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(dims))
+	ctx.inDegreeView = nil
+	defer func() {
+		ctx.inDegreeView = nil
+		h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(dims))
+	}()
 	ctx.Reset()
 	ctx.AllowUncommitted = true
 

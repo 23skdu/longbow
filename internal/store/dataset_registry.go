@@ -211,7 +211,7 @@ func (s *VectorStore) ShouldSpillToDisk(ds *Dataset, schema *arrow.Schema) bool 
 
 // initDiskStore initializes the DiskVectorStore for a dataset if conditions are met.
 func (s *VectorStore) initDiskStore(ds *Dataset, name string, schema *arrow.Schema) {
-	if ds == nil || schema == nil || ds.DiskStore != nil {
+	if ds == nil || schema == nil {
 		return
 	}
 	ds.initMu.Lock()

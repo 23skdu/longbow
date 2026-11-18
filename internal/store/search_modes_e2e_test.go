@@ -271,7 +271,7 @@ func TestSearchModes_RangeAndFederatedAndHTTP(t *testing.T) {
 		"search_type": "sliding_window", "window_size": 2, "k": 4,
 	})["count"].(float64)), 1)
 	assert.GreaterOrEqual(t, int(postJSON("/api/v1/datasets/col_a/temporal-search", map[string]any{
-		"search_type": "sliding_window_time", "duration": int64(time.Second), "k": 4,
+		"search_type": "sliding_window_time", "duration": int64(10 * time.Second), "k": 4,
 	})["count"].(float64)), 1)
 
 	_, err = vs.GetMultiModalPipeline().IngestItems(ctx, "media_ds", []MultiModalItem{

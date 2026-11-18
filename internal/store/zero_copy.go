@@ -56,6 +56,7 @@ func ZeroCopyRecordBatch(mem memory.Allocator, rec arrow.RecordBatch, deleted *t
 			return nil, err
 		}
 		cols[i] = result.(*compute.ArrayDatum).MakeArray()
+		result.Release()
 	}
 
 	return array.NewRecordBatch(rec.Schema(), cols, int64(len(indices))), nil

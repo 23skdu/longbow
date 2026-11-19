@@ -32,9 +32,11 @@ type RepairAgent struct {
 	config RepairAgentConfig
 
 	// State
-	running atomic.Bool
-	stopCh  chan struct{}
-	wg      sync.WaitGroup
+	running         atomic.Bool
+	cyclesCompleted atomic.Uint64
+	triggerCh       chan struct{}
+	stopCh          chan struct{}
+	wg              sync.WaitGroup
 }
 
 // NewRepairAgent creates a new HNSW repair agent
@@ -48,10 +50,31 @@ func NewRepairAgent(index *ArrowHNSW, config RepairAgentConfig) *RepairAgent {
 	}
 
 	return &RepairAgent{
-		index:  index,
-		config: config,
-		stopCh: make(chan struct{}),
+		index:     index,
+		config:    config,
+		triggerCh: make(chan struct{}, 1),
+		stopCh:    make(chan struct{}),
 	}
+}
+
+// TriggerRepair requests an immediate asynchronous repair cycle (coalesced if
+// one is already pending). Safe to call when the agent is disabled or stopped.
+func (r *RepairAgent) TriggerRepair() {
+	if r == nil || !r.running.Load() {
+		return
+	}
+	select {
+	case r.triggerCh <- struct{}{}:
+	default:
+	}
+}
+
+// CyclesCompleted returns the number of repair cycles finished since creation.
+func (r *RepairAgent) CyclesCompleted() uint64 {
+	if r == nil {
+		return 0
+	}
+	return r.cyclesCompleted.Load()
 }
 
 // Start begins the repair agent background worker
@@ -89,8 +112,12 @@ func (r *RepairAgent) run() {
 		select {
 		case <-r.stopCh:
 			return
+		case <-r.triggerCh:
+			r.runRepairCycle()
+			r.cyclesCompleted.Add(1)
 		case <-ticker.C:
 			r.runRepairCycle()
+			r.cyclesCompleted.Add(1)
 		}
 	}
 }

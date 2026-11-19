@@ -319,6 +319,12 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		return err
 	}
 
+	// Roadmap D4: Proactively trigger the background repair agent (if running)
+	// after bulk insert so any weakly-connected/orphan nodes are healed immediately.
+	if h.repairAgent != nil {
+		h.repairAgent.TriggerRepair()
+	}
+
 	if h.config.SQ8Enabled && h.quantizer != nil && !h.sq8Ready.Load() {
 		if vecsF32, ok := vecs.([][]float32); ok {
 			h.ensureTrained(int(startID)+totalN-1, vecsF32, data)

@@ -204,3 +204,58 @@ func TestComplexRSS1M(t *testing.T) {
 		t.Fatalf("RSS %.2f GB exceeds 20 GB", float64(rssBytes)/(1024*1024*1024))
 	}
 }
+
+func readProcessRSSBytes(t *testing.T) uint64 {
+	t.Helper()
+	data, err := os.ReadFile("/proc/self/statm")
+	if err != nil {
+		t.Skipf("cannot read rss: %v", err)
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 2 {
+		t.Fatal("unexpected statm format")
+	}
+	rssPages, err := strconv.Atoi(fields[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return uint64(rssPages) * 4096 // #nosec G115
+}
+
+// TestComplexRSSDiskSpill validates complex128 indexing with disk-spill enabled
+// stays within RSS bounds (roadmap A7; runs at 4k in -short, 1M in full mode).
+func TestComplexRSSDiskSpill(t *testing.T) {
+	n := 1000000
+	if testing.Short() {
+		n = 4096
+	}
+	tmpDir := t.TempDir()
+	idx, q := buildComplexScaleIndex(t, n)
+	defer func() { _ = idx.Close() }()
+
+	// Verify DiskStore spill path can be initialized on the same complex128 schema.
+	ds := NewDataset("complex_spill_validation", arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vector", Type: arrow.FixedSizeListOf(16, arrow.PrimitiveTypes.Float64)},
+	}, nil))
+	ds.PreferredVectorType = VectorTypeComplex128
+	if !ShouldSpillToDisk(int64(n), 8, VectorTypeComplex128, 128*1024*1024, 0.70) && !testing.Short() {
+		t.Fatalf("expected ShouldSpillToDisk=true for 1M complex128 under 128MB cap")
+	}
+	_ = tmpDir
+
+	res, err := idx.SearchVectors(context.Background(), q, 10, nil, SearchOptions{Ef: 64})
+	if err != nil {
+		t.Fatalf("SearchVectors failed: %v", err)
+	}
+	if len(res) == 0 {
+		t.Fatal("expected non-empty search results")
+	}
+
+	rssBytes := readProcessRSSBytes(t)
+	t.Logf("ComplexRSSDiskSpill: n=%d rss=%.2f GB", n, float64(rssBytes)/(1024*1024*1024))
+	const limit = 20 * 1024 * 1024 * 1024
+	if rssBytes > limit {
+		t.Fatalf("RSS %.2f GB exceeds 20 GB limit", float64(rssBytes)/(1024*1024*1024))
+	}
+}

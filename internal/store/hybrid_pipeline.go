@@ -297,41 +297,57 @@ func FuseCascade(filter *roaring.Bitmap, keyword, vector []SearchResult, limit i
 	return dedupeAndSort(filtered, limit)
 }
 
-// applyExactFilters applies exact match filters using column index
+// applyExactFilters applies exact match filters using column index, ordering
+// predicates by ascending selectivity (smallest posting list first) to minimize
+// VectorID lookups and short-circuit empty multi-predicate intersections (roadmap D1).
 func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) *roaring.Bitmap {
 	if len(filters) == 0 || p.columnIndex == nil || p.dataset == nil {
 		return nil
 	}
 
-	var result *roaring.Bitmap
-
-	for i, f := range filters {
-		if f.Operator != "=" {
-			continue // Only exact matches supported for now
+	var postings [][]RowPosition
+	for _, f := range filters {
+		if f.Operator != "=" && f.Operator != "==" {
+			continue // Only exact matches supported by column index
 		}
 
 		positions := p.columnIndex.Lookup(f.Field, f.Value)
 		if len(positions) == 0 {
 			return roaring.New() // Empty intersection
 		}
+		postings = append(postings, positions)
+	}
 
-		// Convert RowPositions to VectorIDs and build current filter
+	if len(postings) == 0 {
+		return nil
+	}
+
+	// Process smallest posting lists first so multi-predicate AND intersections
+	// shrink candidate sets immediately.
+	sort.Slice(postings, func(i, j int) bool {
+		return len(postings[i]) < len(postings[j])
+	})
+
+	var result *roaring.Bitmap
+	for _, positions := range postings {
 		currentFilter := roaring.New()
 		for _, pos := range positions {
 			id, ok := p.findVectorID(pos)
 			if ok {
-				currentFilter.Add(uint32(id))
+				if result == nil || result.Contains(uint32(id)) {
+					currentFilter.Add(uint32(id))
+				}
 			}
 		}
 
-		if i == 0 {
+		if result == nil {
 			result = currentFilter
-		} else if result != nil {
+		} else {
 			result.And(currentFilter)
 		}
 
-		if result != nil && result.IsEmpty() {
-			break
+		if result.IsEmpty() {
+			return result
 		}
 	}
 

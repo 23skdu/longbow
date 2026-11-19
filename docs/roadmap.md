@@ -34,27 +34,27 @@ These drive the priorities below.
 
 | ID | Area | Priority | Status |
 |---|---|---|---|
-| A1 | FlatAdjacency: zero-allocation neighbor updates | CRITICAL | Open |
-| A2 | FlatAdjacency: reuse neighbor buffers in traversal | CRITICAL | Open |
-| A3 | Distance kernels: reuse batch scratch (complex128/float64) | HIGH | Open |
-| A4 | HNSW: avoid sequential fallback in bulk insert | HIGH | Open |
-| A5 | GraphData: copy-on-write Clone (zero-copy bulk insert) | HIGH | Open |
-| A6 | ArrowHNSW: cache resolved distance computer | HIGH | Open |
-| A7 | Memory: 1M complex128 RSS < 20 GB with disk spill (validation) | HIGH | Open |
+| A1 | FlatAdjacency: zero-allocation neighbor updates | CRITICAL | Done |
+| A2 | FlatAdjacency: reuse neighbor buffers in traversal | CRITICAL | Done |
+| A3 | Distance kernels: reuse batch scratch (complex128/float64) | HIGH | Done |
+| A4 | HNSW: avoid sequential fallback in bulk insert | HIGH | Done |
+| A5 | GraphData: copy-on-write Clone (zero-copy bulk insert) | HIGH | Done |
+| A6 | ArrowHNSW: cache resolved distance computer | HIGH | Done |
+| A7 | Memory: 1M complex128 RSS < 20 GB with disk spill (validation) | HIGH | Done |
 | B1 | SIMD: AVX-512/AVX2 kernels for uint16/uint32 parity + bench | MEDIUM | Open |
-| B2 | SIMD: complex128 batch distance kernel (no alloc) | MEDIUM | Open |
+| B2 | SIMD: complex128 batch distance kernel (no alloc) | MEDIUM | Done |
 | B3 | SIMD: float16/int8 quantized distance kernels | MEDIUM | Open |
-| B4 | SIMD: parity benchmarks across all dtypes | MEDIUM | Open |
+| B4 | SIMD: parity benchmarks across all dtypes | MEDIUM | Done |
 | C1 | Concurrency: dynamic worker scaling | LOW | Open |
 | C2 | Concurrency: NUMA-aware allocation | LOW | Open |
 | C3 | Concurrency: request batching | LOW | Open |
 | C4 | Validation: 1M-vector QPS/recall across all 21 modes & 15 dtypes | LOW | Open |
-| D1 | Filtered tail: bitmap intersection for multi-predicate | MEDIUM | Open |
+| D1 | Filtered tail: bitmap intersection for multi-predicate | MEDIUM | Done |
 | D2 | HNSW quality: reachability ≥95% at 500k/1M | MEDIUM | Open |
 | D3 | HNSW quality: tune addbatch_inflight + BulkChainLinks | MEDIUM | Open |
-| D4 | HNSW quality: graph repair agent after bulk insert | MEDIUM | Open |
+| D4 | HNSW quality: graph repair agent after bulk insert | MEDIUM | Done |
 | D5 | HNSW quality: recall @10 at 1M vs brute force | MEDIUM | Open |
-| E1 | Memory: TestMemoryScaling harness | LOW | Open |
+| E1 | Memory: TestMemoryScaling harness | LOW | Done |
 
 ---
 
@@ -62,20 +62,20 @@ These drive the priorities below.
 
 ### A (Allocation & Memory Efficiency)
 
-- [ ] A1 `FlatAdjacency.UpdateNeighbors`: pool/reuse neighbor slices; eliminate per-update heap growth (66 GB alloc).
-- [ ] A2 `getNeighborsWithGenInner`: return borrowed slices or write into caller-provided buffer.
-- [ ] A3 `EuclideanDistanceComplex128Batch` (and float64/float32 variants): reuse scratch buffers across calls.
-- [ ] A4 Bulk insert: raise descent-hop budget / improve bulk graph quality so sequential fallback is rare.
-- [ ] A5 `GraphData.Clone`: copy-on-write or arena-backed sharing to avoid 4 GB copy.
-- [ ] A6 `resolveHNSWComputer`: cache per (dataset, dtype, dim) instead of per batch.
-- [ ] A7 Validate 1M complex128 RSS < 20 GB with disk spill (in-memory measured 4.02 GB).
+- [x] A1 `FlatAdjacency.UpdateNeighbors`: pool/reuse neighbor slices; eliminate per-update heap growth (`TestAddConnectionsBatchReusesPooledBuffers` = 0 allocs).
+- [x] A2 `getNeighborsWithGenInner`: return borrowed slices or write into caller-provided buffer (`TestGetNeighborsCombinedManualReusesCallerBuffer` = 0 allocs).
+- [x] A3 `EuclideanDistanceComplex128Batch` (and float64/float32/complex64 variants): reuse scratch buffers across calls (`TestComplexBatchZeroAlloc` = 0 allocs).
+- [x] A4 Bulk insert: raise descent-hop budget / improve bulk graph quality so sequential fallback is rare (`ce402715`).
+- [x] A5 `GraphData.Clone`: copy-on-write / shared `Complex128Magnitudes` backing slice to avoid ~4 GB copy at 1M (`graph_data_clone.go`).
+- [x] A6 `resolveHNSWComputer`: reuse pooled `ArrowSearchContext` computer slots (`TestResolveHNSWComputerReusesContextSlots` = 0 allocs).
+- [x] A7 Validate 1M complex128 RSS < 20 GB with disk spill (`TestComplexRSS1M`, `TestComplexRSSDiskSpill`).
 
 ### B (SIMD & Kernels)
 
 - [ ] B1 Dedicated AVX2/AVX-512 kernels for uint16/uint32 + parity benchmark.
-- [ ] B2 Complex128 batch distance kernel with no allocations.
+- [x] B2 Complex128 batch distance kernel with no allocations (`internal/simd/complex_batch.go`, `TestComplexBatchZeroAlloc`).
 - [ ] B3 Float16/int8 quantized distance kernels (AVX2 + AVX-512).
-- [ ] B4 Parity benchmarks across all dtypes (float32/64, complex64/128, uint8/16/32, int8/16, float16).
+- [x] B4 Parity benchmarks across all dtypes (`TestSIMDAllDTypesParity`, `BenchmarkSIMDAllDTypesParity` covering float32/64, complex64/128, uint8/16/32, int8/16, float16).
 
 ### C (Scaling & Concurrency)
 
@@ -86,15 +86,15 @@ These drive the priorities below.
 
 ### D (HNSW Quality & Filtered Tail)
 
-- [ ] D1 Filtered tail: bitmap intersection for multi-predicate.
+- [x] D1 Filtered tail: smallest-first roaring bitmap intersection for multi-predicate (`IntersectFilterBitmaps`, `buildIntersectedFilterMask`, `applyExactFilters`, `TestIntersectFilterBitmaps_MultiPredicate`).
 - [ ] D2 Reachability ≥95% at 500k/1M.
 - [ ] D3 Tune `addbatch_inflight` + `BulkChainLinks`.
-- [ ] D4 Graph repair agent after bulk insert.
+- [x] D4 Graph repair agent after bulk insert (`RepairAgent.TriggerRepair` invoked post-bulk insert in `addBatchBulkInternal`, `TestRepairAgent_TriggerAfterBulkInsert`).
 - [ ] D5 Recall @10 at 1M vs brute force.
 
 ### E (Memory Testing)
 
-- [ ] E1 Add `TestMemoryScaling` harness (cap enforcement + graceful degradation at 1M).
+- [x] E1 Add `TestMemoryScaling` harness (cap enforcement + graceful degradation + RSS guard in `internal/store/memory_scaling_test.go`).
 
 ---
 

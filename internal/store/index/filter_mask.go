@@ -1,6 +1,7 @@
 package index
 
 import (
+	"slices"
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/store/types"
@@ -143,4 +144,64 @@ func resizeBitVector(buf types.BitVector, words int, keep bool) types.BitVector 
 		bv[i] = 0
 	}
 	return bv
+}
+
+// IntersectFilterBitmaps intersects multiple predicate bitmaps ordered by
+// ascending cardinality (most selective predicate first) with immediate
+// short-circuiting on any empty input or empty intermediate result (roadmap D1).
+// Returns nil if bitmaps is empty; never mutates the input bitmaps or slice.
+func IntersectFilterBitmaps(bitmaps []*roaring.Bitmap) *roaring.Bitmap {
+	if len(bitmaps) == 0 {
+		return nil
+	}
+	if len(bitmaps) == 1 {
+		if bitmaps[0] == nil {
+			return nil
+		}
+		return bitmaps[0].Clone()
+	}
+
+	nonNil := make([]*roaring.Bitmap, 0, len(bitmaps))
+	for _, bm := range bitmaps {
+		if bm == nil {
+			continue
+		}
+		if bm.IsEmpty() {
+			return roaring.New()
+		}
+		nonNil = append(nonNil, bm)
+	}
+	if len(nonNil) == 0 {
+		return nil
+	}
+	if len(nonNil) == 1 {
+		return nonNil[0].Clone()
+	}
+
+	// Intersect smallest cardinality first so later And() calls touch far fewer containers.
+	slices.SortFunc(nonNil, func(a, b *roaring.Bitmap) int {
+		ca, cb := a.GetCardinality(), b.GetCardinality()
+		if ca < cb {
+			return -1
+		}
+		if ca > cb {
+			return 1
+		}
+		return 0
+	})
+
+	result := nonNil[0].Clone()
+	for _, bm := range nonNil[1:] {
+		result.And(bm)
+		if result.IsEmpty() {
+			return result
+		}
+	}
+	return result
+}
+
+// buildIntersectedFilterMask intersects multi-predicate bitmaps smallest-first
+// and converts the result into a single dense/roaring filterMask (roadmap D1).
+func buildIntersectedFilterMask(bitmaps []*roaring.Bitmap, scratch types.BitVector) (*filterMask, types.BitVector) {
+	return buildFilterMask(IntersectFilterBitmaps(bitmaps), scratch)
 }

@@ -84,23 +84,3 @@ func BuildKeepalivePolicy(cfg *Config) keepalive.EnforcementPolicy {
 		PermitWithoutStream: cfg.KeepAlivePermitWithoutStream,
 	}
 }
-
-// DefaultConfig returns a Config with default values
-func DefaultConfig() Config {
-	return Config{
-		KeepAliveTime:                2 * time.Hour,
-		KeepAliveTimeout:             20 * time.Second,
-		KeepAliveMinTime:             5 * time.Minute,
-		KeepAlivePermitWithoutStream: false,
-		ListenAddr:                   "0.0.0.0:3000",
-		MetaAddr:                     "0.0.0.0:3001",
-		MetricsAddr:                  "0.0.0.0:9090",
-		MaxMemory:                    1073741824, // 1GB
-		DataPath:                     "./data",
-		TTL:                          0,
-		SnapshotInterval:             time.Hour,
-		MaxWALSize:                   104857600, // 100MB
-		LogFormat:                    "json",
-		LogLevel:                     "info",
-	}
-}

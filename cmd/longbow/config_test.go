@@ -8,14 +8,44 @@ import (
 // Unit tests for config.go - covers extracted helper functions
 
 func TestValidateConfig_Valid(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	if err := ValidateConfig(&cfg); err != nil {
 		t.Errorf("ValidateConfig() error = %v, want nil", err)
 	}
 }
 
 func TestValidateConfig_EmptyListenAddr(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	cfg.ListenAddr = ""
 	if err := ValidateConfig(&cfg); err != ErrInvalidListenAddr {
 		t.Errorf("ValidateConfig() error = %v, want %v", err, ErrInvalidListenAddr)
@@ -23,7 +53,22 @@ func TestValidateConfig_EmptyListenAddr(t *testing.T) {
 }
 
 func TestValidateConfig_EmptyMetaAddr(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	cfg.MetaAddr = ""
 	if err := ValidateConfig(&cfg); err != ErrInvalidMetaAddr {
 		t.Errorf("ValidateConfig() error = %v, want %v", err, ErrInvalidMetaAddr)
@@ -31,7 +76,22 @@ func TestValidateConfig_EmptyMetaAddr(t *testing.T) {
 }
 
 func TestValidateConfig_EmptyMetricsAddr(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	cfg.MetricsAddr = ""
 	if err := ValidateConfig(&cfg); err != ErrInvalidMetricsAddr {
 		t.Errorf("ValidateConfig() error = %v, want %v", err, ErrInvalidMetricsAddr)
@@ -39,7 +99,22 @@ func TestValidateConfig_EmptyMetricsAddr(t *testing.T) {
 }
 
 func TestValidateConfig_InvalidMaxMemory(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	cfg.MaxMemory = 0
 	if err := ValidateConfig(&cfg); err != ErrInvalidMaxMemory {
 		t.Errorf("ValidateConfig() error = %v, want %v", err, ErrInvalidMaxMemory)
@@ -52,7 +127,22 @@ func TestValidateConfig_InvalidMaxMemory(t *testing.T) {
 }
 
 func TestValidateConfig_EmptyDataPath(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	cfg.DataPath = ""
 	if err := ValidateConfig(&cfg); err != ErrInvalidDataPath {
 		t.Errorf("ValidateConfig() error = %v, want %v", err, ErrInvalidDataPath)
@@ -60,7 +150,22 @@ func TestValidateConfig_EmptyDataPath(t *testing.T) {
 }
 
 func TestValidateConfig_InvalidMaxWALSize(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	cfg.MaxWALSize = 0
 	if err := ValidateConfig(&cfg); err != ErrInvalidMaxWALSize {
 		t.Errorf("ValidateConfig() error = %v, want %v", err, ErrInvalidMaxWALSize)
@@ -68,7 +173,22 @@ func TestValidateConfig_InvalidMaxWALSize(t *testing.T) {
 }
 
 func TestValidateConfig_InvalidLogFormat(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	cfg.LogFormat = "xml"
 	if err := ValidateConfig(&cfg); err != ErrInvalidLogFormat {
 		t.Errorf("ValidateConfig() error = %v, want %v", err, ErrInvalidLogFormat)
@@ -77,7 +197,22 @@ func TestValidateConfig_InvalidLogFormat(t *testing.T) {
 
 func TestValidateConfig_ValidLogFormats(t *testing.T) {
 	for _, format := range []string{"json", "console"} {
-		cfg := DefaultConfig()
+		cfg := Config{
+			KeepAliveTime:                2 * time.Hour,
+			KeepAliveTimeout:             20 * time.Second,
+			KeepAliveMinTime:             5 * time.Minute,
+			KeepAlivePermitWithoutStream: false,
+			ListenAddr:                   "0.0.0.0:3000",
+			MetaAddr:                     "0.0.0.0:3001",
+			MetricsAddr:                  "0.0.0.0:9090",
+			MaxMemory:                    1073741824,
+			DataPath:                     "./data",
+			TTL:                          0,
+			SnapshotInterval:             time.Hour,
+			MaxWALSize:                   104857600,
+			LogFormat:                    "json",
+			LogLevel:                     "info",
+		}
 		cfg.LogFormat = format
 		if err := ValidateConfig(&cfg); err != nil {
 			t.Errorf("ValidateConfig() with LogFormat=%q error = %v, want nil", format, err)
@@ -86,7 +221,22 @@ func TestValidateConfig_ValidLogFormats(t *testing.T) {
 }
 
 func TestValidateConfig_InvalidLogLevel(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	cfg.LogLevel = "trace"
 	if err := ValidateConfig(&cfg); err != ErrInvalidLogLevel {
 		t.Errorf("ValidateConfig() error = %v, want %v", err, ErrInvalidLogLevel)
@@ -95,7 +245,22 @@ func TestValidateConfig_InvalidLogLevel(t *testing.T) {
 
 func TestValidateConfig_ValidLogLevels(t *testing.T) {
 	for _, level := range []string{"debug", "info", "warn", "error"} {
-		cfg := DefaultConfig()
+		cfg := Config{
+			KeepAliveTime:                2 * time.Hour,
+			KeepAliveTimeout:             20 * time.Second,
+			KeepAliveMinTime:             5 * time.Minute,
+			KeepAlivePermitWithoutStream: false,
+			ListenAddr:                   "0.0.0.0:3000",
+			MetaAddr:                     "0.0.0.0:3001",
+			MetricsAddr:                  "0.0.0.0:9090",
+			MaxMemory:                    1073741824,
+			DataPath:                     "./data",
+			TTL:                          0,
+			SnapshotInterval:             time.Hour,
+			MaxWALSize:                   104857600,
+			LogFormat:                    "json",
+			LogLevel:                     "info",
+		}
 		cfg.LogLevel = level
 		if err := ValidateConfig(&cfg); err != nil {
 			t.Errorf("ValidateConfig() with LogLevel=%q error = %v, want nil", level, err)
@@ -104,7 +269,22 @@ func TestValidateConfig_ValidLogLevels(t *testing.T) {
 }
 
 func TestValidateConfig_InvalidKeepAliveTime(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	cfg.KeepAliveTime = 0
 	if err := ValidateConfig(&cfg); err != ErrInvalidKeepAliveTime {
 		t.Errorf("ValidateConfig() error = %v, want %v", err, ErrInvalidKeepAliveTime)
@@ -162,7 +342,22 @@ func TestCalculateEvictionInterval_TinyTTL(t *testing.T) {
 // BuildKeepaliveParams tests
 
 func TestBuildKeepaliveParams(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	params := BuildKeepaliveParams(&cfg)
 
 	if params.Time != cfg.KeepAliveTime {
@@ -191,7 +386,22 @@ func TestBuildKeepaliveParams_CustomValues(t *testing.T) {
 // BuildKeepalivePolicy tests
 
 func TestBuildKeepalivePolicy(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	policy := BuildKeepalivePolicy(&cfg)
 
 	if policy.MinTime != cfg.KeepAliveMinTime {
@@ -203,7 +413,22 @@ func TestBuildKeepalivePolicy(t *testing.T) {
 }
 
 func TestBuildKeepalivePolicy_PermitWithoutStream(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	cfg.KeepAlivePermitWithoutStream = true
 	policy := BuildKeepalivePolicy(&cfg)
 
@@ -215,7 +440,22 @@ func TestBuildKeepalivePolicy_PermitWithoutStream(t *testing.T) {
 // DefaultConfig tests
 
 func TestDefaultConfig_Values(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 
 	if cfg.ListenAddr != "0.0.0.0:3000" {
 		t.Errorf("DefaultConfig().ListenAddr = %q, want %q", cfg.ListenAddr, "0.0.0.0:3000")
@@ -241,7 +481,22 @@ func TestDefaultConfig_Values(t *testing.T) {
 }
 
 func TestDefaultConfig_IsValid(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := Config{
+		KeepAliveTime:                2 * time.Hour,
+		KeepAliveTimeout:             20 * time.Second,
+		KeepAliveMinTime:             5 * time.Minute,
+		KeepAlivePermitWithoutStream: false,
+		ListenAddr:                   "0.0.0.0:3000",
+		MetaAddr:                     "0.0.0.0:3001",
+		MetricsAddr:                  "0.0.0.0:9090",
+		MaxMemory:                    1073741824,
+		DataPath:                     "./data",
+		TTL:                          0,
+		SnapshotInterval:             time.Hour,
+		MaxWALSize:                   104857600,
+		LogFormat:                    "json",
+		LogLevel:                     "info",
+	}
 	if err := ValidateConfig(&cfg); err != nil {
 		t.Errorf("ValidateConfig(DefaultConfig()) = %v, want nil", err)
 	}

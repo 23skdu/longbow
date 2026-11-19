@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
@@ -276,4 +278,148 @@ func partitionSearchResults(h []SearchResult, low, high int) int {
 	}
 	h[i+1], h[high] = h[high], h[i+1]
 	return i + 1
+}
+
+// MicroBatchCoalescer groups concurrent small search queries arriving within a
+// bounded window into micro-batches for amortized dispatch (roadmap C3).
+type MicroBatchCoalescer struct {
+	maxBatch int
+	maxWait  time.Duration
+	batchFn  func(context.Context, []BatchSearchRequest)
+
+	in      chan BatchSearchRequest
+	stopCh  chan struct{}
+	closed  atomic.Bool
+	batches atomic.Uint64
+	wg      sync.WaitGroup
+}
+
+// NewMicroBatchCoalescer creates a coalescer that flushes when maxBatch
+// requests accumulate or maxWait elapses after the first request in a batch.
+func NewMicroBatchCoalescer(maxBatch int, maxWait time.Duration, queueSize int, batchFn func(context.Context, []BatchSearchRequest)) *MicroBatchCoalescer {
+	if maxBatch <= 0 {
+		maxBatch = 16
+	}
+	if maxWait <= 0 {
+		maxWait = 500 * time.Microsecond
+	}
+	if queueSize < maxBatch {
+		queueSize = maxBatch * 4
+	}
+	return &MicroBatchCoalescer{
+		maxBatch: maxBatch,
+		maxWait:  maxWait,
+		batchFn:  batchFn,
+		in:       make(chan BatchSearchRequest, queueSize),
+		stopCh:   make(chan struct{}),
+	}
+}
+
+// Start launches the coalescer background loop.
+func (c *MicroBatchCoalescer) Start(ctx context.Context) {
+	c.wg.Add(1)
+	go c.loop(ctx)
+}
+
+// Stop flushes pending requests and stops the coalescer.
+func (c *MicroBatchCoalescer) Stop() {
+	if c.closed.Swap(true) {
+		return
+	}
+	close(c.stopCh)
+	c.wg.Wait()
+}
+
+// BatchesDispatched returns the number of micro-batches executed.
+func (c *MicroBatchCoalescer) BatchesDispatched() uint64 {
+	return c.batches.Load()
+}
+
+// Submit enqueues a small query and blocks until its result arrives or ctx ends.
+func (c *MicroBatchCoalescer) Submit(ctx context.Context, q []float32, k int, filters []query.Filter, opts SearchOptions) ([]SearchResult, error) {
+	req := BatchSearchRequest{
+		Query:    q,
+		K:        k,
+		Filters:  filters,
+		Options:  opts,
+		ResultCh: make(chan []SearchResult, 1),
+		ErrorCh:  make(chan error, 1),
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-c.stopCh:
+		return nil, context.Canceled
+	case c.in <- req:
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case err := <-req.ErrorCh:
+		return nil, err
+	case res := <-req.ResultCh:
+		return res, nil
+	}
+}
+
+func (c *MicroBatchCoalescer) loop(ctx context.Context) {
+	defer c.wg.Done()
+	batch := make([]BatchSearchRequest, 0, c.maxBatch)
+	var timer *time.Timer
+	var timerCh <-chan time.Time
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		if timer != nil {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timerCh = nil
+		}
+		c.batchFn(ctx, batch)
+		c.batches.Add(1)
+		batch = batch[:0]
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			flush()
+			return
+		case <-c.stopCh:
+			for {
+				select {
+				case req := <-c.in:
+					batch = append(batch, req)
+					if len(batch) >= c.maxBatch {
+						flush()
+					}
+				default:
+					flush()
+					return
+				}
+			}
+		case req := <-c.in:
+			batch = append(batch, req)
+			if len(batch) >= c.maxBatch {
+				flush()
+			} else if len(batch) == 1 {
+				if timer == nil {
+					timer = time.NewTimer(c.maxWait)
+				} else {
+					timer.Reset(c.maxWait)
+				}
+				timerCh = timer.C
+			}
+		case <-timerCh:
+			timerCh = nil
+			flush()
+		}
+	}
 }

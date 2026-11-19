@@ -41,19 +41,19 @@ These drive the priorities below.
 | A5 | GraphData: copy-on-write Clone (zero-copy bulk insert) | HIGH | Done |
 | A6 | ArrowHNSW: cache resolved distance computer | HIGH | Done |
 | A7 | Memory: 1M complex128 RSS < 20 GB with disk spill (validation) | HIGH | Done |
-| B1 | SIMD: AVX-512/AVX2 kernels for uint16/uint32 parity + bench | MEDIUM | Open |
+| B1 | SIMD: AVX-512/AVX2 kernels for uint16/uint32 parity + bench | MEDIUM | Done |
 | B2 | SIMD: complex128 batch distance kernel (no alloc) | MEDIUM | Done |
-| B3 | SIMD: float16/int8 quantized distance kernels | MEDIUM | Open |
+| B3 | SIMD: float16/int8 quantized distance kernels | MEDIUM | Done |
 | B4 | SIMD: parity benchmarks across all dtypes | MEDIUM | Done |
-| C1 | Concurrency: dynamic worker scaling | LOW | Open |
-| C2 | Concurrency: NUMA-aware allocation | LOW | Open |
-| C3 | Concurrency: request batching | LOW | Open |
+| C1 | Concurrency: dynamic worker scaling | LOW | Done |
+| C2 | Concurrency: NUMA-aware allocation | LOW | Done |
+| C3 | Concurrency: request batching | LOW | Done |
 | C4 | Validation: 1M-vector QPS/recall across all 21 modes & 15 dtypes | LOW | Open |
 | D1 | Filtered tail: bitmap intersection for multi-predicate | MEDIUM | Done |
-| D2 | HNSW quality: reachability ≥95% at 500k/1M | MEDIUM | Open |
+| D2 | HNSW quality: reachability ≥95% at 500k/1M | MEDIUM | Done |
 | D3 | HNSW quality: tune addbatch_inflight + BulkChainLinks | MEDIUM | Open |
 | D4 | HNSW quality: graph repair agent after bulk insert | MEDIUM | Done |
-| D5 | HNSW quality: recall @10 at 1M vs brute force | MEDIUM | Open |
+| D5 | HNSW quality: recall @10 at 1M vs brute force | MEDIUM | Done |
 | E1 | Memory: TestMemoryScaling harness | LOW | Done |
 
 ---
@@ -72,25 +72,25 @@ These drive the priorities below.
 
 ### B (SIMD & Kernels)
 
-- [ ] B1 Dedicated AVX2/AVX-512 kernels for uint16/uint32 + parity benchmark.
+- [x] B1 Dedicated AVX2/AVX-512 kernels for uint16/uint32 + parity benchmark (`int16_kernels_amd64.s`, `simd_amd64.go`, `TestUint16Uint32SIMDParity`, `BenchmarkUint16Uint32Kernels`).
 - [x] B2 Complex128 batch distance kernel with no allocations (`internal/simd/complex_batch.go`, `TestComplexBatchZeroAlloc`).
-- [ ] B3 Float16/int8 quantized distance kernels (AVX2 + AVX-512).
+- [x] B3 Float16/int8 quantized distance kernels (AVX2 + AVX-512: `distance_fp16_avx512fp16_amd64.s`, `int8_kernels_avx512_amd64.s`, `TestFloat16Int8QuantizedParity`).
 - [x] B4 Parity benchmarks across all dtypes (`TestSIMDAllDTypesParity`, `BenchmarkSIMDAllDTypesParity` covering float32/64, complex64/128, uint8/16/32, int8/16, float16).
 
 ### C (Scaling & Concurrency)
 
-- [ ] C1 Dynamic worker scaling based on load.
-- [ ] C2 NUMA-aware allocation for large heaps.
-- [ ] C3 Request batching for small queries.
+- [x] C1 Dynamic worker scaling based on load (`internal/autoscale/scaler.go`, `VectorStore.AdjustWorkerCounts`).
+- [x] C2 NUMA-aware allocation for large heaps (`internal/memory/numa_allocator*.go`, `numa_test.go`).
+- [x] C3 Request batching for small queries (`MicroBatchCoalescer` in `internal/store/batch_search.go`, `TestMicroBatchCoalescer`).
 - [ ] C4 1M-vector QPS/recall validation across all 21 search modes and 15 dtypes.
 
 ### D (HNSW Quality & Filtered Tail)
 
 - [x] D1 Filtered tail: smallest-first roaring bitmap intersection for multi-predicate (`IntersectFilterBitmaps`, `buildIntersectedFilterMask`, `applyExactFilters`, `TestIntersectFilterBitmaps_MultiPredicate`).
-- [ ] D2 Reachability ≥95% at 500k/1M.
+- [x] D2 Reachability ≥95% at 500k/1M (`TestHNSWReachabilityAtScale` in `internal/store/index/hnsw_scale_quality_test.go`).
 - [ ] D3 Tune `addbatch_inflight` + `BulkChainLinks`.
 - [x] D4 Graph repair agent after bulk insert (`RepairAgent.TriggerRepair` invoked post-bulk insert in `addBatchBulkInternal`, `TestRepairAgent_TriggerAfterBulkInsert`).
-- [ ] D5 Recall @10 at 1M vs brute force.
+- [x] D5 Recall @10 at 1M vs brute force (`TestHNSWRecallAt10VsBruteForce` in `internal/store/index/hnsw_scale_quality_test.go`).
 
 ### E (Memory Testing)
 

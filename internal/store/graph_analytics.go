@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -362,12 +363,17 @@ func (ga *GraphAnalytics) DetectCommunities(ctx context.Context, maxIter int) (*
 
 	// 2. Iterations
 	changed := true
+	rng := rand.New(rand.NewSource(42)) // #nosec G404 -- deterministic LPA node ordering, not security-sensitive
 	for i := 0; i < maxIter && changed; i++ {
 		changed = false
 
-		// Shuffle nodes? (LPA requires random order for stability/convergence usually)
-		// Skipping shuffle for determinism/simplicity for now,
-		// but typically we should shuffle `nodes` slice.
+		// Shuffle node order each pass: standard LPA does this for
+		// stability/convergence. A seeded RNG keeps the result deterministic
+		// across calls (tests rely on bit-identical repeats) while still
+		// removing the dependence on the (arbitrary) sorted ID order.
+		rng.Shuffle(len(nodes), func(a, b int) {
+			nodes[a], nodes[b] = nodes[b], nodes[a]
+		})
 
 		for _, node := range nodes {
 			neighbors := graph.GetNeighbors(0, node, nil)

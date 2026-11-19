@@ -124,6 +124,31 @@ func TestSpreadingActivation_ScoreDecay(t *testing.T) {
 	}
 }
 
+// TestGraphRAG_RankWithGraph_SpreadsActivation exercises the real
+// RankWithGraph path (not just the test-local helpers above): seeding a
+// single node must propagate rank to its neighbours.
+func TestGraphRAG_RankWithGraph_SpreadsActivation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	gs := NewGraphStore()
+	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "rel", Object: VectorID(2), Weight: 1.0})
+	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "rel", Object: VectorID(3), Weight: 1.0})
+	_ = gs.AddEdge(Edge{Subject: VectorID(2), Predicate: "rel", Object: VectorID(4), Weight: 1.0})
+
+	results := []SearchResult{{ID: 1, Score: 1.0}}
+	out := gs.RankWithGraph("test", nil, results, 0.5, 2)
+	require.Greater(t, len(out), 1, "spreading must reach neighbours")
+	got := map[uint32]float32{}
+	for _, r := range out {
+		got[uint32(r.ID)] = r.Score
+	}
+	require.Contains(t, got, uint32(2), "node 2 must be reached")
+	require.Contains(t, got, uint32(3), "node 3 must be reached")
+	// Spread score is strictly less than the seed score (alpha decay).
+	require.Less(t, got[2], float32(1.0))
+}
+
 // TestGraphRAG_ReRankingResultOrder verifies that higher alpha produces
 // stronger graph influence: at alpha=1.0 the score at depth 2 equals the
 // initial score, whereas at alpha=0.5 it is significantly lower.

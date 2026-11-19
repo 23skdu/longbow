@@ -469,6 +469,11 @@ func (s *VectorStore) handleDetectCommunities(body []byte, stream flight.FlightS
 	switch h := index.(type) {
 	case interface{ GetData() *lbtypes.GraphData }:
 		gd = h.GetData()
+	case interface{ GetShardedIndex() *ShardedHNSW }:
+		sharded := h.GetShardedIndex()
+		if sharded != nil && sharded.NumShards() > 0 {
+			gd = sharded.GetShardIndex(0).(interface{ GetData() *lbtypes.GraphData }).GetData()
+		}
 	}
 
 	if gd == nil {

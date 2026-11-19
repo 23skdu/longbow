@@ -165,9 +165,9 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 		idx.dataset.RUnlockData()
 	}
 
-	// Sort and limit (ascending - lower distance/score is better)
+	// Sort and limit (best-first: higher Score is better)
 	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Score < merged[j].Score
+		return merged[i].Score > merged[j].Score
 	})
 
 	if len(merged) > k {
@@ -242,7 +242,7 @@ func (idx *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec an
 	}
 
 	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Score < merged[j].Score
+		return merged[i].Score > merged[j].Score
 	})
 
 	if len(merged) > k {
@@ -336,7 +336,7 @@ func (idx *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, 
 	}
 
 	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Score < merged[j].Score
+		return merged[i].Score > merged[j].Score
 	})
 
 	return merged, nil

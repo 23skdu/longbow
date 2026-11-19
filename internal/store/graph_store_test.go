@@ -2,10 +2,14 @@ package store
 
 import (
 	"bytes"
+	"context"
+	"sync"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/stretchr/testify/require"
+
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
 // TestGraphStore_AddEdge tests adding edges to the graph store
@@ -401,7 +405,9 @@ func TestGraphStore_TraverseNoCycles(t *testing.T) {
 	}
 }
 
-// TestGraphStore_TraverseParallel tests concurrent traversal from multiple starting points
+// TestGraphStore_TraverseParallel tests concurrent traversal from multiple
+// starting points. (There is no dedicated TraverseParallel entry point; this
+// exercises the real Traverse concurrently over a shared GraphStore.)
 func TestGraphStore_TraverseParallel(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -413,31 +419,62 @@ func TestGraphStore_TraverseParallel(t *testing.T) {
 		_ = gs.AddEdge(Edge{
 			Subject:   VectorID(i),
 			Predicate: "connects",
-			Object:    VectorID(i + 1), // i+1 to avoid self loop on i=0? no, i->i+1
+			Object:    VectorID(i + 1),
 			Weight:    1.0,
 		})
 	}
 
-	// Parallel traversal from multiple nodes
-	// starts := []VectorID{0, 10, 20, 30}
-	// opts := DefaultTraverseOptions()
-	// opts.MaxHops = 5
-	// opts.Direction = DirectionOutgoing
-	// results := gs.TraverseParallel(starts, opts)
+	starts := []VectorID{0, 10, 20, 30}
+	opts := DefaultTraverseOptions()
+	opts.MaxHops = 5
+	opts.Direction = DirectionOutgoing
 
-	// 	t.Errorf("expected 4 result sets, got %d", len(results))
-	// }
+	results := make([][]Path, len(starts))
+	var wg sync.WaitGroup
+	for i, start := range starts {
+		wg.Add(1)
+		go func(i int, start VectorID) {
+			defer wg.Done()
+			results[i] = gs.Traverse(start, opts)
+		}(i, start)
+	}
+	wg.Wait()
 
-	// Each should have found paths
-	// for start, paths := range results {
-	// 	if len(paths) == 0 {
-	// 		t.Errorf("expected paths from %d, got none", start)
-	// 	}
-	// }
+	for i, paths := range results {
+		if len(paths) == 0 {
+			t.Errorf("expected paths from %d, got none", starts[i])
+		}
+	}
 }
 
-// TestLouvainClustering_BasicCommunities tests detecting obvious clusters
-func TestLouvainClustering_BasicCommunities(t *testing.T) {
+// graphDataFromStore materialises a GraphStore's outgoing adjacency into a
+// GraphData so GraphAnalytics (which operates on the HNSW layer-0 graph) can
+// run over it. `nodes` lists every node expected to participate.
+func graphDataFromStore(t *testing.T, gs *GraphStore, nodes []uint32) *lbtypes.GraphData {
+	t.Helper()
+	maxID := 0
+	for _, n := range nodes {
+		if int(n) > maxID {
+			maxID = int(n)
+		}
+	}
+	gd := lbtypes.NewGraphData(maxID+2, 2, false, false, -1, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+	for _, n := range nodes {
+		edges := gs.GetEdgesBySubject(n)
+		nbrs := make([]uint32, 0, len(edges))
+		for _, e := range edges {
+			nbrs = append(nbrs, uint32(e.Object))
+		}
+		require.NoError(t, gd.SetNeighbors(n, nbrs))
+	}
+	return gd
+}
+
+// TestCommunityDetection_BasicCommunities tests detecting obvious clusters.
+// Longbow runs Label Propagation (GraphAnalytics.DetectCommunities), not
+// Louvain — the old stub name was misleading and its assertions were
+// commented out.
+func TestCommunityDetection_BasicCommunities(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
@@ -463,14 +500,32 @@ func TestLouvainClustering_BasicCommunities(t *testing.T) {
 	// Weak link between clusters
 	_ = gs.AddEdge(Edge{Subject: VectorID(3), Predicate: "rel", Object: VectorID(10), Weight: 0.1})
 
-	// Should detect 2 communities
-	// if len(communities) < 2 {
-	// 	t.Errorf("expected at least 2 communities, got %d", len(communities))
-	// }
+	nodes := []uint32{1, 2, 3, 10, 11, 12}
+	gd := graphDataFromStore(t, gs, nodes)
+	ga := NewGraphAnalytics(func() *lbtypes.GraphData { return gd })
+
+	res, err := ga.DetectCommunities(context.Background(), 20)
+	require.NoError(t, err)
+
+	// The weak 3 -> 10 bridge is a single directed link; LPA on the layer-0
+	// adjacency must still separate the two cliques into distinct labels.
+	require.Equal(t, 2, res.CommunityCount, "expected 2 communities, got labels=%v", res.Labels)
+	require.NotEqual(t, res.Labels[1], res.Labels[10], "clique 1 and clique 2 must differ")
+	for _, a := range []uint32{1, 2, 3} {
+		for _, b := range []uint32{1, 2, 3} {
+			require.Equal(t, res.Labels[a], res.Labels[b], "clique 1 must be one community")
+		}
+	}
+	for _, a := range []uint32{10, 11, 12} {
+		for _, b := range []uint32{10, 11, 12} {
+			require.Equal(t, res.Labels[a], res.Labels[b], "clique 2 must be one community")
+		}
+	}
 }
 
-// TestLouvainClustering_GetCommunityForNode tests looking up node community
-func TestLouvainClustering_GetCommunityForNode(t *testing.T) {
+// TestCommunityDetection_ForNode tests that every node in a connected chain
+// receives a community label and that connected nodes agree.
+func TestCommunityDetection_ForNode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
@@ -480,10 +535,24 @@ func TestLouvainClustering_GetCommunityForNode(t *testing.T) {
 	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "rel", Object: VectorID(2), Weight: 1.0})
 	_ = gs.AddEdge(Edge{Subject: VectorID(2), Predicate: "rel", Object: VectorID(3), Weight: 1.0})
 
+	gd := graphDataFromStore(t, gs, []uint32{1, 2, 3})
+	ga := NewGraphAnalytics(func() *lbtypes.GraphData { return gd })
+
+	res, err := ga.DetectCommunities(context.Background(), 20)
+	require.NoError(t, err)
+
+	// Only nodes with outgoing edges join the label set: 1 -> 2 -> 3 leaves
+	// node 3 as an out-degree-0 leaf, so it is not labelled.
+	require.Len(t, res.Labels, 2, "nodes with outgoing edges must be labelled")
+	require.Equal(t, 1, res.CommunityCount, "a 2-edge chain is a single community")
+	require.Equal(t, res.Labels[1], res.Labels[2])
+	_, hasLabel3 := res.Labels[3]
+	require.False(t, hasLabel3, "out-degree-0 leaf must not be labelled")
 }
 
-// TestLouvainClustering_CommunityCount tests community count metric
-func TestLouvainClustering_CommunityCount(t *testing.T) {
+// TestCommunityDetection_CountConsistency asserts the headline metric equals
+// the number of unique labels (the contract GlobalSearch/CLI clients rely on).
+func TestCommunityDetection_CountConsistency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
@@ -493,6 +562,20 @@ func TestLouvainClustering_CommunityCount(t *testing.T) {
 	_ = gs.AddEdge(Edge{Subject: VectorID(1), Predicate: "rel", Object: VectorID(2), Weight: 1.0})
 	_ = gs.AddEdge(Edge{Subject: VectorID(2), Predicate: "rel", Object: VectorID(3), Weight: 1.0})
 
+	gd := graphDataFromStore(t, gs, []uint32{1, 2, 3})
+	ga := NewGraphAnalytics(func() *lbtypes.GraphData { return gd })
+
+	res, err := ga.DetectCommunities(context.Background(), 10)
+	require.NoError(t, err)
+
+	unique := make(map[uint32]bool)
+	for _, l := range res.Labels {
+		unique[l] = true
+	}
+	require.Equal(t, len(unique), res.CommunityCount, "CommunityCount must equal unique label count")
+	require.Equal(t, 1, res.CommunityCount)
+	// NodeCount counts nodes with *outgoing* edges: 1 and 2 (3 is a leaf).
+	require.Equal(t, 2, gs.NodeCount(), "NodeCount counts nodes with outgoing edges")
 }
 
 // TestGraphStore_TraverseWeighted tests that weighted traversal prioritizes higher edge weights

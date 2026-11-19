@@ -142,16 +142,12 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 	// We need to map which nodes point to a node to compute PR.
 	// HNSW stores u -> [v1, v2...]. PageRank needs v -> [u1, u2...]
 
-	// Map valid nodes to dense indices (0..N-1) for array efficiency?
-	// For simplicity, we'll use a map[uint32][]uint32 first, or flat arrays if IDs are compact.
-	// Assuming IDs are roughly compact around 0..Capacity.
-
 	// Let's use a map for reverse adjacency to be safe with sparse IDs,
 	// but arrays for scores if we can determine max ID.
 
-	// 1. Determine Max Node ID and Node Count
+	// 1. Determine source nodes (those with outgoing edges) and out-degrees
 	capacity := graph.Capacity
-	validNodes := make([]bool, capacity)
+	sourceNodes := make([]bool, capacity)
 	outDegrees := make([]int32, capacity)
 
 	var wg sync.WaitGroup
@@ -174,13 +170,38 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 			for i := s; i < e; i++ {
 				neighbors := graph.GetNeighbors(0, uint32(i), nil) // #nosec G115
 				if len(neighbors) > 0 {
-					validNodes[i] = true
+					sourceNodes[i] = true
 					outDegrees[i] = int32(len(neighbors)) // #nosec G115
 				}
 			}
 		}(start, end)
 	}
 	wg.Wait()
+
+	// 2. Build Reverse Adjacency over sources, sized by capacity so that
+	// target-only nodes (referenced but with no outgoing edges of their own)
+	// are recognised as real nodes. Excluding them would silently leak their
+	// PageRank mass out of the system and make scores fail to sum to 1.
+	reverseAdj := make([][]uint32, capacity)
+	for i, src := range sourceNodes {
+		if !src {
+			continue
+		}
+		neighbors := graph.GetNeighbors(0, uint32(i), nil) // #nosec G115
+		for _, nbr := range neighbors {
+			if nbr < uint32(capacity) { // #nosec G115
+				reverseAdj[nbr] = append(reverseAdj[nbr], uint32(i))
+			}
+		}
+	}
+
+	validNodes := make([]bool, capacity)
+	copy(validNodes, sourceNodes)
+	for i := range reverseAdj {
+		if len(reverseAdj[i]) > 0 {
+			validNodes[i] = true
+		}
+	}
 
 	realMaxID := uint32(0)
 	realNodeCount := 0
@@ -193,19 +214,6 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 
 	if realNodeCount == 0 {
 		return &CentralityResult{Scores: map[uint32]float32{}}, nil
-	}
-
-	// 2. Build Reverse Adjacency
-	reverseAdj := make([][]uint32, realMaxID+1)
-	for i, valid := range validNodes {
-		if valid {
-			neighbors := graph.GetNeighbors(0, uint32(i), nil) // #nosec G115
-			for _, nbr := range neighbors {
-				if nbr < uint32(len(reverseAdj)) { // #nosec G115
-					reverseAdj[nbr] = append(reverseAdj[nbr], uint32(i))
-				}
-			}
-		}
 	}
 
 	// 3. Initialize Scores
@@ -374,6 +382,14 @@ func (ga *GraphAnalytics) DetectCommunities(ctx context.Context, maxIter int) (*
 				if ok {
 					labelCounts[l]++
 				}
+			}
+
+			// No labeled neighbors (e.g. every target is an out-degree-less
+			// leaf excluded from the label set): keep the node's own label.
+			// Without this, maxLabel stays 0 and the node would adopt a
+			// phantom community that belongs to no node.
+			if len(labelCounts) == 0 {
+				continue
 			}
 
 			// Find max

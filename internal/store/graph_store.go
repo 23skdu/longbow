@@ -213,8 +213,10 @@ func (gs *GraphStore) PredicateVocabulary() []string {
 	return append([]string(nil), gs.predicates...)
 }
 
-// CommunityCount returns the number of nodes that have outgoing edges.
-func (gs *GraphStore) CommunityCount() int {
+// NodeCount returns the number of nodes that have outgoing edges.
+// (Historically named CommunityCount; it never measured communities — real
+// community detection lives in GraphAnalytics.DetectCommunities.)
+func (gs *GraphStore) NodeCount() int {
 	return gs.forwardEdges.Len()
 }
 
@@ -353,7 +355,7 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 	}()
 
 	// 1. Initial Local Rank & Bounds Checking
-	maxID := gs.CommunityCount() + 1000
+	maxID := gs.NodeCount() + 1000
 	for _, r := range results {
 		if int(r.ID) > maxID {
 			maxID = int(r.ID) + 1
@@ -472,7 +474,7 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 	}()
 
 	// 1. Initial Local Rank & Bounds Checking
-	maxID := gs.CommunityCount() + 1000
+	maxID := gs.NodeCount() + 1000
 	for _, r := range results {
 		if int(r.ID) > maxID {
 			maxID = int(r.ID) + 1

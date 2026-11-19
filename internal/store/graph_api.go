@@ -2,11 +2,13 @@ package store
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
@@ -248,19 +250,19 @@ func (s *VectorStore) handleGetGraphStats(body []byte, stream flight.FlightServi
 
 	ds.dataMu.RLock()
 	var edgeCount int
-	var commCount int
+	var nodeCount int
 	var preds []string
 
 	if ds.Graph != nil {
 		// GraphStore methods usually take internal locks, but we need to verify if calling them is safe directly.
-		// EdgeCount() uses RLock. CommunityCount() uses RLock. PredicateVocabulary() uses RLock.
+		// EdgeCount() uses RLock. NodeCount() uses RLock. PredicateVocabulary() uses RLock.
 		// So it's safe to call them without holding ds.dataMu, assuming ds.Graph pointer doesn't change
 		// (which likely doesn't happen often, or we should hold RLock to snag the pointer).
 		g := ds.Graph
 		ds.dataMu.RUnlock()
 
 		edgeCount = g.EdgeCount()
-		commCount = g.CommunityCount()
+		nodeCount = g.NodeCount()
 		preds = g.PredicateVocabulary()
 	} else {
 		ds.dataMu.RUnlock()
@@ -268,9 +270,9 @@ func (s *VectorStore) handleGetGraphStats(body []byte, stream flight.FlightServi
 	}
 
 	resp := map[string]any{
-		"edge_count":      edgeCount,
-		"community_count": commCount,
-		"predicates":      preds,
+		"edge_count": edgeCount,
+		"node_count": nodeCount,
+		"predicates": preds,
 	}
 
 	respBytes, err := json.Marshal(resp)
@@ -479,10 +481,13 @@ func (s *VectorStore) handleDetectCommunities(body []byte, stream flight.FlightS
 		maxIter = 10
 	}
 
+	start := time.Now()
 	result, err := ga.DetectCommunities(stream.Context(), maxIter)
 	if err != nil {
 		return status.Errorf(codes.Internal, "Community detection failed: %v", err)
 	}
+	metrics.GraphClusteringDurationSeconds.Observe(time.Since(start).Seconds())
+	metrics.GraphCommunitiesTotal.Set(float64(result.CommunityCount))
 
 	respBytes, err := json.Marshal(result)
 	if err != nil {

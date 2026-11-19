@@ -45,6 +45,93 @@ func NewGlobalSearchCoordinator(logger zerolog.Logger, pool *FlightClientPool) *
 	}
 }
 
+// drainHedgeResult performs a non-blocking read of a hedged replica result.
+// The winning replica writes to resultHedge before it cancels the hedge
+// context and before the replica wait group completes, so whenever those
+// cases fire the value (if any) is already buffered and must not be dropped:
+// select chooses pseudo-randomly among simultaneously-ready cases.
+//
+// It returns ok=false for an empty channel and for a closed channel (whose
+// receive would otherwise yield a nil slice that looks like a winner).
+func drainHedgeResult(ch <-chan []SearchResult) ([]SearchResult, bool) {
+	select {
+	case res, ok := <-ch:
+		if !ok {
+			return nil, false
+		}
+		return res, true
+	default:
+		return nil, false
+	}
+}
+
+// hedgeOutcome reports why a hedged replica group finished waiting.
+type hedgeOutcome int
+
+const (
+	// hedgeWinner means a replica produced a result; res must be forwarded.
+	hedgeWinner hedgeOutcome = iota
+	// hedgeAllFailed means every replica in the group failed.
+	hedgeAllFailed
+	// hedgeGroupDrained means the group finished without a buffered winner
+	// (the winner's result was consumed elsewhere or never written).
+	hedgeGroupDrained
+	// hedgeCancelled means the group context ended with no buffered winner.
+	hedgeCancelled
+)
+
+// partialFailure reports whether this outcome counts as a partial failure of
+// the overall search. hedgeGroupDrained does not: the replicas themselves
+// completed, they simply had nothing to contribute.
+func (o hedgeOutcome) partialFailure() bool {
+	return o == hedgeAllFailed || o == hedgeCancelled
+}
+
+// awaitHedgeGroup blocks until the group's first success, the failure of every
+// replica, or cancellation of the group context.
+//
+// The winner posts to resultHedge *before* cancelling ctxHedge and *before*
+// the replica wait group completes. Because select picks pseudo-randomly among
+// cases that are ready in the same evaluation, the later cases must drain
+// resultHedge rather than return empty — otherwise a group intermittently
+// discards the very result it just won, which surfaces as a missing peer
+// contribution in the merged top-k.
+func awaitHedgeGroup(
+	resultHedge <-chan []SearchResult,
+	failSignal <-chan struct{},
+	finishedAll <-chan struct{},
+	ctxHedge context.Context,
+	replicaCount int,
+) ([]SearchResult, hedgeOutcome) {
+	failedCount := 0
+	for {
+		select {
+		case res, ok := <-resultHedge:
+			if !ok {
+				// Closed (should never happen: the group owns this channel).
+				return nil, hedgeGroupDrained
+			}
+			return res, hedgeWinner
+		case <-failSignal:
+			failedCount++
+			if failedCount >= replicaCount {
+				return nil, hedgeAllFailed
+			}
+		case <-finishedAll:
+			// Drain first: the winner may already be buffered.
+			if res, ok := drainHedgeResult(resultHedge); ok {
+				return res, hedgeWinner
+			}
+			return nil, hedgeGroupDrained
+		case <-ctxHedge.Done():
+			if res, ok := drainHedgeResult(resultHedge); ok {
+				return res, hedgeWinner
+			}
+			return nil, hedgeCancelled
+		}
+	}
+}
+
 // GlobalSearch performs scatter-gather search across the cluster
 func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults []SearchResult, req *query.VectorSearchRequest, peers []mesh.Member) ([]SearchResult, error) {
 	start := time.Now()
@@ -219,27 +306,15 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 				close(finishedAll)
 			}()
 
-			// Wait for one success, all failure, or timeout
-			failedCount := 0
-			for {
-				select {
-				case res := <-resultHedge:
-					outCh <- res
-					return
-				case <-failSignal:
-					failedCount++
-					if failedCount == len(replicas) {
-						// All replicas in this group failed, return early
-						metrics.GlobalSearchPartialFailures.Inc()
-						return
-					}
-				case <-finishedAll:
-					// Double check if we missed a result? theoretically shouldn't happen with resultHedge
-					return
-				case <-ctxHedge.Done():
-					metrics.GlobalSearchPartialFailures.Inc()
-					return
-				}
+			// Wait for one success, all failure, or cancellation. The winner
+			// posts before it cancels ctxHedge and before the replica wait
+			// group completes, so the wait helper must drain rather than let
+			// select's random case choice discard a buffered winner.
+			res, outcome := awaitHedgeGroup(resultHedge, failSignal, finishedAll, ctxHedge, len(replicas))
+			if outcome == hedgeWinner {
+				outCh <- res
+			} else if outcome.partialFailure() {
+				metrics.GlobalSearchPartialFailures.Inc()
 			}
 		}(members, ch)
 	}
@@ -445,24 +520,14 @@ func (c *GlobalSearchCoordinator) GlobalGeoSearch(ctx context.Context, localResu
 				close(finishedAll)
 			}()
 
-			failedCount := 0
-			for {
-				select {
-				case res := <-resultHedge:
-					outCh <- res
-					return
-				case <-failSignal:
-					failedCount++
-					if failedCount == len(replicas) {
-						metrics.GlobalSearchPartialFailures.Inc()
-						return
-					}
-				case <-finishedAll:
-					return
-				case <-ctxHedge.Done():
-					metrics.GlobalSearchPartialFailures.Inc()
-					return
-				}
+			// See awaitHedgeGroup: the winner posts before cancelling ctxHedge
+			// and before the replica wait group completes, so a plain select
+			// can randomly pick a ready-but-empty case and drop the result.
+			res, outcome := awaitHedgeGroup(resultHedge, failSignal, finishedAll, ctxHedge, len(replicas))
+			if outcome == hedgeWinner {
+				outCh <- res
+			} else if outcome.partialFailure() {
+				metrics.GlobalSearchPartialFailures.Inc()
 			}
 		}(members, ch)
 	}
@@ -614,24 +679,14 @@ func (c *GlobalSearchCoordinator) GlobalTemporalSearch(ctx context.Context, loca
 				close(finishedAll)
 			}()
 
-			failedCount := 0
-			for {
-				select {
-				case res := <-resultHedge:
-					outCh <- res
-					return
-				case <-failSignal:
-					failedCount++
-					if failedCount == len(replicas) {
-						metrics.GlobalSearchPartialFailures.Inc()
-						return
-					}
-				case <-finishedAll:
-					return
-				case <-ctxHedge.Done():
-					metrics.GlobalSearchPartialFailures.Inc()
-					return
-				}
+			// See awaitHedgeGroup: the winner posts before cancelling ctxHedge
+			// and before the replica wait group completes, so a plain select
+			// can randomly pick a ready-but-empty case and drop the result.
+			res, outcome := awaitHedgeGroup(resultHedge, failSignal, finishedAll, ctxHedge, len(replicas))
+			if outcome == hedgeWinner {
+				outCh <- res
+			} else if outcome.partialFailure() {
+				metrics.GlobalSearchPartialFailures.Inc()
 			}
 		}(members, ch)
 	}

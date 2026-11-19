@@ -80,7 +80,11 @@ func ValidateGeoSearchRequest(req *GeoSearchRequest) error {
 	return nil
 }
 
-// geoResultHeap implements heap.Interface for SearchResult (Max-Heap by Score).
+// geoResultHeap implements heap.Interface for SearchResult as a min-heap by
+// Score: the root is the *worst* result currently kept, so the top-k loop can
+// compare a candidate against (*h)[0] and evict it when better. (The old
+// "Max-Heap" comment was wrong — with container/heap, Less==true puts i at the
+// root, so Score<Score roots the smallest score.)
 type geoResultHeap []lbtypes.SearchResult
 
 func (h geoResultHeap) Len() int           { return len(h) }

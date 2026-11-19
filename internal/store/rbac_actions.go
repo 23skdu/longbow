@@ -192,7 +192,8 @@ func permissionAndDatasetForAction(action *flight.Action) (Permission, string) {
 		"ListStreamConnectors", "GetStreamStats", "GetCloudCluster", "ListCloudClusters", "GetCloudSLAReport",
 		"GraphQLQuery":
 		return PermRead, target
-	case "IngestStreamEvent", "MultiModalIngest", "MultiModalIngestParquet", "RecordProvenance", "ReplicateClusterMutation", "RegisterFederatedCollection":
+	case "IngestStreamEvent", "MultiModalIngest", "MultiModalIngestParquet", "RecordProvenance", "ReplicateClusterMutation", "RegisterFederatedCollection",
+		"add-edge":
 		return PermWrite, target
 	case "delete", "Delete", "drop", "Drop", "ResetDataset", "delete-dataset", "delete-vector":
 		return PermDelete, target

@@ -753,6 +753,17 @@ func (s *VectorStore) DoMetaAction(action *flight.Action, stream flight.FlightSe
 		return s.handleListDatasetsInNamespace(action, stream)
 	case "GetGraphStats":
 		return s.handleGetGraphStats(action.Body, stream)
+	case "add-edge":
+		// Knowledge-graph and analytics actions are accepted on both the data
+		// and meta planes: clients (e.g. the Python SDK) send all graph
+		// operations to the meta server.
+		return s.handleAddEdge(action.Body, stream)
+	case "traverse-graph":
+		return s.handleTraverseGraph(action.Body, stream)
+	case "calculate-pagerank":
+		return s.handleCalculatePageRank(action.Body, stream)
+	case "detect-communities":
+		return s.handleDetectCommunities(action.Body, stream)
 	case "GetCapacityPlan":
 		return s.handleGetCapacityPlan(action, stream)
 	case "GetAutoScaleConfig":

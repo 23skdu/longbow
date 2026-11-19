@@ -305,11 +305,18 @@ for result in client.do_action(action):
 
 | Action | Parameters | Description | CLI Command |
 |--------|------------|-------------|-------------|
-| `add-edge` | `{"dataset": "ds", "source_id": 1, "target_id": 2, "predicate": "related"}` | Add semantic edge (Subject->Predicate->Object) | `ops_test.py add-edge ...` |
-| `traverse-graph` | `{"dataset": "ds", "start_id": 1, "max_depth": 3}` | Traverse graph from start node | `ops_test.py traverse ...` |
-| `calculate-pagerank` | `{"dataset": "ds", "iterations": 20}` | Compute importance scores for nodes | `ops_test.py pagerank ...` |
-| `detect-communities` | `{"dataset": "ds"}` | Group nodes into clusters based on topology | `ops_test.py communities ...` |
-| `GetGraphStats` | - | Get graph statistics (nodes, edges) | `ops_test.py graph-stats ...` |
+| `add-edge` | `{"dataset": "ds", "subject": 1, "predicate": "related", "object": 2, "weight": 1.0}` | Add semantic edge (Subject->Predicate->Object) | `ops_test.py add-edge ...` |
+| `traverse-graph` | `{"dataset": "ds", "start": 1, "max_hops": 3, "incoming": false, "weighted": false}` | Traverse graph from start node | `ops_test.py traverse ...` |
+| `calculate-pagerank` | `{"dataset": "ds", "damping_factor": 0.85, "max_iterations": 20, "tolerance": 1e-4}` | Compute importance scores for nodes | `ops_test.py pagerank ...` |
+| `detect-communities` | `{"dataset": "ds", "max_iterations": 10}` | Group nodes into clusters based on topology | `ops_test.py communities ...` |
+| `GetGraphStats` | `{"dataset": "ds"}` | Get graph statistics (nodes, edges) | `ops_test.py graph-stats ...` |
+
+> **Field names are part of the contract.** These handlers parse their bodies
+> with a hand-rolled scanner, so unknown keys are skipped silently rather than
+> rejected: sending `source_id` instead of `subject` leaves the field at its
+> zero value (edge 0->0), and `max_depth` instead of `max_hops` falls back to
+> the default depth. The Python SDK (`longbowclientsdk`) is the reference for
+> the exact payload.
 
 #### Search Actions
 
@@ -337,17 +344,18 @@ for result in client.do_action(action):
 # Add edge
 action = pf.Action("add-edge", json.dumps({
     "dataset": "ds",
-    "source_id": 1,
-    "target_id": 2,
-    "predicate": "related"
+    "subject": 1,
+    "predicate": "related",
+    "object": 2,
+    "weight": 1.0
 }).encode())
 client.do_action(action)
 
 # Graph traversal
 action = pf.Action("traverse-graph", json.dumps({
     "dataset": "ds",
-    "start_id": 1,
-    "max_depth": 3
+    "start": 1,
+    "max_hops": 3
 }).encode())
 for result in client.do_action(action):
     print(result)

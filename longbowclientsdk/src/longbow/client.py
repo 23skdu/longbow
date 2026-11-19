@@ -1298,7 +1298,7 @@ class LongbowClient:
 
     def cloud_promote_region(
         self, cluster_id: str, target_region: str = "", reason: str = "failover"
-    ) -> Dict[string, Any]:
+    ) -> Dict[str, Any]:
         """Promote a replica region to primary during manual or automated failover."""
         return self._do_action_json(
             "PromoteClusterRegion",

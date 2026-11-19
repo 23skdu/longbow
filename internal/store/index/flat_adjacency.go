@@ -203,16 +203,22 @@ func (fa *FlatAdjacency) GetNeighbors(id uint32) ([]uint32, bool) {
 func (fa *FlatAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint32, bool) {
 	fa.Retain()
 	defer fa.Release()
-	return fa.getNeighborsWithGenInner(id, maxGen)
+	return fa.getNeighborsWithGenInner(id, maxGen, nil)
 }
 
 // GetNeighborsWithGenFast is like GetNeighborsWithGen but skips Retain/Release
 // ref-counting for callers that guarantee the FlatAdjacency remains alive.
 func (fa *FlatAdjacency) GetNeighborsWithGenFast(id uint32, maxGen uint64) ([]uint32, bool) {
-	return fa.getNeighborsWithGenInner(id, maxGen)
+	return fa.getNeighborsWithGenInner(id, maxGen, nil)
 }
 
-func (fa *FlatAdjacency) getNeighborsWithGenInner(id uint32, maxGen uint64) ([]uint32, bool) {
+// GetNeighborsWithGenInto is like GetNeighborsWithGenFast but writes into dst
+// when cap(dst) >= len(neighbors), avoiding per-traversal heap allocations.
+func (fa *FlatAdjacency) GetNeighborsWithGenInto(id uint32, maxGen uint64, dst []uint32) ([]uint32, bool) {
+	return fa.getNeighborsWithGenInner(id, maxGen, dst)
+}
+
+func (fa *FlatAdjacency) getNeighborsWithGenInner(id uint32, maxGen uint64, dst []uint32) ([]uint32, bool) {
 	chunkIdx := int(id) / adjacencyChunkSize
 	cOff := int(id) % adjacencyChunkSize
 
@@ -258,7 +264,12 @@ func (fa *FlatAdjacency) getNeighborsWithGenInner(id uint32, maxGen uint64) ([]u
 			len1 = uint32(fa.maxNeighbors) // #nosec G115
 		}
 
-		res := make([]uint32, len1)
+		var res []uint32
+		if cap(dst) >= int(len1) {
+			res = dst[:len1]
+		} else {
+			res = make([]uint32, len1)
+		}
 		copy(res, nodeData[2:2+len1])
 
 		h2 := atomic.LoadUint64(headerPtr)
@@ -276,7 +287,12 @@ func (fa *FlatAdjacency) getNeighborsWithGenInner(id uint32, maxGen uint64) ([]u
 	if l > uint32(fa.maxNeighbors) { // #nosec G115
 		l = uint32(fa.maxNeighbors) // #nosec G115
 	}
-	res := make([]uint32, l)
+	var res []uint32
+	if cap(dst) >= int(l) {
+		res = dst[:l]
+	} else {
+		res = make([]uint32, l)
+	}
 	copy(res, nodeData[2:2+l])
 	return res, true
 }
@@ -369,7 +385,7 @@ func (fa *FlatAdjacency) UpdateNeighbors(id uint32, applier types.NeighborApplie
 	headerPtr := (*uint64)(unsafe.Pointer(&dest[0])) // #nosec G103
 
 	backoff := 1
-	var oldBuf [256]uint32
+	oldScratch := applier.OldScratch()
 	for {
 		curHeader := atomic.LoadUint64(headerPtr)
 		curGen, curLen := unpackHeader(curHeader)
@@ -391,7 +407,12 @@ func (fa *FlatAdjacency) UpdateNeighbors(id uint32, applier types.NeighborApplie
 
 		var old []uint32
 		if curLen > 0 {
-			old = oldBuf[:curLen]
+			if cap(oldScratch) >= int(curLen) {
+				old = oldScratch[:curLen]
+			} else {
+				oldScratch = make([]uint32, curLen, max(int(curLen), fa.maxNeighbors))
+				old = oldScratch[:curLen]
+			}
 			copy(old, dest[2:2+curLen])
 			if atomic.LoadUint64(headerPtr) != curHeader {
 				continue

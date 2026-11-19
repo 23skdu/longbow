@@ -97,6 +97,13 @@ func (a *batchNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	return next
 }
 
+func (a *batchNeighborApplier) OldScratch() []uint32 {
+	if a.ctx == nil {
+		return nil
+	}
+	return a.ctx.updateOldBuf
+}
+
 // addConnNeighborApplier is the AddConnection body: one edge, pruned in place
 // when the source is already at its limit.
 type addConnNeighborApplier struct {
@@ -144,6 +151,13 @@ func (a *addConnNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	return next
 }
 
+func (a *addConnNeighborApplier) OldScratch() []uint32 {
+	if a.ctx == nil {
+		return nil
+	}
+	return a.ctx.updateOldBuf
+}
+
 // pruneNeighborApplier is the PruneConnections body: shrink an over-full list
 // to maxConn with the diversity heuristic, keeping the winning pair for the
 // in-degree delta.
@@ -171,6 +185,13 @@ func (a *pruneNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	a.lastNew = slices.Clone(next)
 	atomic.AddUint64(&a.data.GlobalVersion, 1)
 	return next
+}
+
+func (a *pruneNeighborApplier) OldScratch() []uint32 {
+	if a.ctx == nil {
+		return nil
+	}
+	return a.ctx.updateOldBuf
 }
 
 // inboundNeighborApplier is the ensureInboundEdge body: give `target` an
@@ -245,4 +266,11 @@ func (a *inboundNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	a.lastOld = slices.Clone(old)
 	a.lastNew = slices.Clone(next)
 	return next
+}
+
+func (a *inboundNeighborApplier) OldScratch() []uint32 {
+	if a.ctx == nil {
+		return nil
+	}
+	return a.ctx.updateOldBuf
 }

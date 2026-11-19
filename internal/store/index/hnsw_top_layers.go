@@ -221,16 +221,11 @@ func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int,
 	}
 
 	if res == nil {
-		// 2. Try GraphData PackedNeighbors (fast path, no ref-counting)
+		// 2. Try GraphData PackedNeighbors (fast path, no ref-counting, reuses buf)
 		if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
-			if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGenFast(id, maxGen); ok {
+			if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGenInto(id, maxGen, buf); ok {
 				if len(neighbors) > 0 {
-					if buf != nil && cap(buf) >= len(neighbors) {
-						res = buf[:len(neighbors)]
-						copy(res, neighbors)
-					} else {
-						res = neighbors
-					}
+					res = neighbors
 				}
 			}
 		}
@@ -288,15 +283,10 @@ func (h *ArrowHNSW) GetNeighborsCombinedManualLocked(data *types.GraphData, laye
 	}
 
 	if res == nil {
-		// 2. Try GraphData PackedNeighbors (fast path, no ref-counting)
+		// 2. Try GraphData PackedNeighbors (fast path, no ref-counting, reuses buf)
 		if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
-			if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGenFast(id, maxGen); ok {
-				if buf != nil && cap(buf) >= len(neighbors) {
-					res = buf[:len(neighbors)]
-					copy(res, neighbors)
-				} else {
-					res = neighbors
-				}
+			if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGenInto(id, maxGen, buf); ok {
+				res = neighbors
 			}
 		}
 	}

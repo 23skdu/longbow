@@ -1724,9 +1724,22 @@ func (h *ArrowHNSW) selectNeighborsComplex64(ctx *ArrowSearchContext, candidates
 		}
 		isDiverse := true
 		if len(selectedVecs) > 0 {
-			dists := make([]float32, len(selectedVecs))
+			var stackDists [64]float32
+			var dists []float32
+			if len(selectedVecs) <= len(stackDists) {
+				dists = stackDists[:len(selectedVecs)]
+			} else if ctx != nil && cap(ctx.scratchDists) >= len(selectedVecs) {
+				dists = ctx.scratchDists[:len(selectedVecs)]
+			} else {
+				dists = make([]float32, len(selectedVecs))
+			}
 			var f32Vecs [][]float32
-			_ = ctx
+			if ctx != nil {
+				if cap(ctx.batchVecsFloat32) < len(selectedVecs) {
+					ctx.batchVecsFloat32 = make([][]float32, len(selectedVecs))
+				}
+				f32Vecs = ctx.batchVecsFloat32[:len(selectedVecs)]
+			}
 			switch h.config.Metric {
 			case core.MetricCosine:
 				_ = simd.CosineDistanceComplex64Batch(v1, selectedVecs, dists, f32Vecs)

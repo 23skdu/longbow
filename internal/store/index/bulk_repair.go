@@ -191,19 +191,27 @@ func (h *ArrowHNSW) greedyHops(ctx *ArrowSearchContext, ep, target uint32) int {
 	if cur == target {
 		return 0
 	}
+	data := h.data.Load()
 	var dist [1]float32
-	h.computeDistances(ctx, h.data.Load(), cur, []uint32{target}, dist[:])
+	h.computeDistances(ctx, data, cur, []uint32{target}, dist[:])
 	best := dist[0]
 
+	var nbBuf [256]uint32
+	var distBuf [256]float32
 	hops := 0
 	for hops < maxGreedyHops {
 		hops++
-		nb, err := h.GetLayerNeighbors(cur, 0)
-		if err != nil || len(nb) == 0 {
+		nb := h.GetNeighborsCombinedManual(data, 0, cur, nbBuf[:0], math.MaxUint64)
+		if len(nb) == 0 {
 			return hops
 		}
-		dists := make([]float32, len(nb))
-		h.computeDistances(ctx, h.data.Load(), target, nb, dists)
+		var dists []float32
+		if len(nb) <= len(distBuf) {
+			dists = distBuf[:len(nb)]
+		} else {
+			dists = make([]float32, len(nb))
+		}
+		h.computeDistances(ctx, data, target, nb, dists)
 
 		next := uint32(0)
 		nextDist := float32(math.MaxFloat32)
@@ -282,32 +290,40 @@ func (h *ArrowHNSW) measureBulkGraphQuality(ctx context.Context, startID uint32,
 		return out
 	}
 
-	seen := make(map[uint32]struct{}, graphNodes)
-	queue := make([]uint32, 0, 1024)
-	seen[ep] = struct{}{}
+	data := h.data.Load()
+	if data == nil {
+		return out
+	}
+
+	searchCtx := h.searchPool.Get()
+	searchCtx.Reset()
+	defer h.searchPool.Put(searchCtx)
+
+	seen := searchCtx.visited
+	seen.Set(int(ep))
+	seenCount := 1
+	queue := make([]uint32, 0, min(graphNodes, 4096))
 	queue = append(queue, ep)
 
+	var nbBuf [256]uint32
 	degreeSum := 0
-	for len(queue) > 0 && len(seen) < out.Nodes {
+	for head := 0; head < len(queue) && seenCount < out.Nodes; head++ {
 		if err := ctx.Err(); err != nil {
 			return out
 		}
-		cur := queue[0]
-		queue = queue[1:]
-		nb, err := h.GetLayerNeighbors(cur, 0)
-		if err != nil {
-			continue
-		}
+		cur := queue[head]
+		nb := h.GetNeighborsCombinedManual(data, 0, cur, nbBuf[:0], math.MaxUint64)
 		degreeSum += len(nb)
 		for _, v := range nb {
-			if _, ok := seen[v]; ok {
+			if seen.IsSet(int(v)) {
 				continue
 			}
-			seen[v] = struct{}{}
+			seen.Set(int(v))
+			seenCount++
 			queue = append(queue, v)
 		}
 	}
-	out.Reachable = len(seen)
+	out.Reachable = seenCount
 	if out.Reachable > out.Nodes {
 		// The walk stops on a bound check, so the last node processed can still
 		// enqueue neighbours past it. Never report more reachable nodes than
@@ -332,7 +348,7 @@ func (h *ArrowHNSW) measureBulkGraphQuality(ctx context.Context, startID uint32,
 		if targetID >= startID+uint32(n) {   // #nosec G115
 			break
 		}
-		if _, ok := seen[targetID]; ok {
+		if seen.IsSet(int(targetID)) {
 			out.Sampled++
 		}
 	}

@@ -307,16 +307,18 @@ func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.G
 
 	// Ensure chunk in Mutable Data (L0-LMax) using private locked version
 	dims := int(h.dims.Load())
-	newData, cloned, err := h.ensureChunkInternalLocked(cID, cOff, dims)
+	pinned, cloned, err := h.ensureChunkInternalLocked(cID, cOff, dims)
 	if err != nil {
 		return data
 	}
 
 	// If ensureChunkInternalLocked didn't clone, we MUST clone now because we are going to modify neighbors.
 	// We MUST NOT modify any GraphData that was ever published (i.e. currently in h.data).
+	newData := pinned
 	if !cloned {
-		newData = newData.Clone()
-		cloned = true
+		newData = pinned.Clone()
+		pinned.ReleaseReader()
+		pinned = nil
 	}
 
 	// Copy neighbors from disk for all layers
@@ -346,6 +348,10 @@ func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.G
 			}
 		}
 		atomic.StoreInt32(&countsChunk[cOff], int32(min(len(diskNeighbors), int(limit)))) // #nosec G115
+	}
+
+	if pinned != nil {
+		pinned.ReleaseReader()
 	}
 
 	// Publish the newly consistent data structure using CAS

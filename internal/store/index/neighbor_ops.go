@@ -817,6 +817,71 @@ func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphD
 		}
 	}
 
+	if ctx != nil && data.Dims > 0 {
+		switch data.Type {
+		case types.VectorTypeFloat32:
+			v1 := ctx.GetVectorF32(data, nodeID, data.Dims, ctx.MaxGeneration)
+			if v1 != nil {
+				for i, nbID := range neighbors {
+					v2 := ctx.GetVectorF32(data, nbID, data.Dims, ctx.MaxGeneration)
+					if v2 != nil {
+						if d, err := h.distFunc(v1, v2); err == nil {
+							dists[i] = d
+							continue
+						}
+					}
+					dists[i] = math.MaxFloat32
+				}
+				return
+			}
+		case types.VectorTypeFloat64:
+			v1 := ctx.GetVectorF64(data, nodeID, data.Dims, ctx.MaxGeneration)
+			if v1 != nil {
+				for i, nbID := range neighbors {
+					v2 := ctx.GetVectorF64(data, nbID, data.Dims, ctx.MaxGeneration)
+					if v2 != nil {
+						if d, err := h.distFuncF64(v1, v2); err == nil {
+							dists[i] = d
+							continue
+						}
+					}
+					dists[i] = math.MaxFloat32
+				}
+				return
+			}
+		case types.VectorTypeComplex128:
+			v1 := ctx.GetVectorC128(data, nodeID, data.Dims, ctx.MaxGeneration)
+			if v1 != nil {
+				for i, nbID := range neighbors {
+					v2 := ctx.GetVectorC128(data, nbID, data.Dims, ctx.MaxGeneration)
+					if v2 != nil {
+						if d, err := h.distFuncC128(v1, v2); err == nil {
+							dists[i] = d
+							continue
+						}
+					}
+					dists[i] = math.MaxFloat32
+				}
+				return
+			}
+		case types.VectorTypeInt8:
+			v1 := ctx.GetVectorInt8(data, nodeID, data.Dims, ctx.MaxGeneration)
+			if v1 != nil {
+				for i, nbID := range neighbors {
+					v2 := ctx.GetVectorInt8(data, nbID, data.Dims, ctx.MaxGeneration)
+					if v2 != nil {
+						if d, err := h.distFuncInt8(v1, v2); err == nil {
+							dists[i] = d
+							continue
+						}
+					}
+					dists[i] = math.MaxFloat32
+				}
+				return
+			}
+		}
+	}
+
 	vQuery, err := data.GetVector(nodeID)
 	if err != nil || vQuery == nil {
 		return

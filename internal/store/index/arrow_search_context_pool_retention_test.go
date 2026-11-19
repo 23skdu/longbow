@@ -29,6 +29,8 @@ func TestSearchContextPoolDoesNotPinGraphData(t *testing.T) {
 	ctx.addConnApplier = addConnNeighborApplier{data: data, source: 1, target: 2}
 	ctx.pruneApplier = pruneNeighborApplier{data: data, id: 3}
 	ctx.inboundApplier = inboundNeighborApplier{data: data, host: 4, target: 5}
+	ctx.compC128[0] = complex128Computer{data: data}
+	ctx.compF32ToF32[1] = float32ToFloat32Computer{data: data}
 
 	pool.Put(ctx)
 
@@ -39,6 +41,8 @@ func TestSearchContextPoolDoesNotPinGraphData(t *testing.T) {
 	require.Nil(t, ctx.addConnApplier.data, "add applier must not keep the graph alive in the pool")
 	require.Nil(t, ctx.pruneApplier.data, "prune applier must not keep the graph alive in the pool")
 	require.Nil(t, ctx.inboundApplier.data, "inbound applier must not keep the graph alive in the pool")
+	require.Nil(t, ctx.compC128[0].data, "pooled complex128Computer must not keep the graph alive in the pool")
+	require.Nil(t, ctx.compF32ToF32[1].data, "pooled float32ToFloat32Computer must not keep the graph alive in the pool")
 
 	// And a context handed out again starts clean even if a caller bypassed Put.
 	again := pool.Get()

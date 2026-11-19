@@ -270,9 +270,6 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		return err
 	}
 
-	// Create a stable, read-only version for other workers to clone from
-	h.publishDataClone(data)
-
 	// 2. Sequential Bootstrap Phase
 	seedCount := BulkInsertThreshold
 	if n < seedCount {
@@ -314,7 +311,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	}
 	h.initMu.Unlock()
 
-	h.publishDataClone(data)
+	h.installData(data)
 
 	// R8: Empirical graph quality guard.
 	// Sample a subset of newly inserted nodes to verify layer 0 reachability from entry point.

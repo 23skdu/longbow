@@ -21,6 +21,10 @@ func (a *appendingApplier) ApplyNeighbors(old []uint32) []uint32 {
 	return res
 }
 
+func (a *appendingApplier) OldScratch() []uint32 {
+	return nil
+}
+
 func TestFlatAdjacency_Basic(t *testing.T) {
 	slab := memory.NewSlabArena(1024 * 1024)
 	defer slab.Free()

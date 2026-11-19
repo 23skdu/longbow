@@ -830,14 +830,16 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				}
 				searchCtx.EnsureTQReconCapacity(pow2)
 				_ = tq.compute.PrecomputeRotatedQuery(q, searchCtx.rotatedQueryTQ)
-				return &tqComputer{
-					data:         data,
-					h:            h,
-					rotatedQuery: searchCtx.rotatedQueryTQ,
-					diskGraph:    searchCtx.diskGraph,
-					maxGen:       searchCtx.MaxGeneration,
-					sctx:         searchCtx,
-				}
+				slot := searchCtx.nextCompSlot()
+				c := &searchCtx.compTQ[slot]
+				c.data = data
+				c.h = h
+				c.rotatedQuery = searchCtx.rotatedQueryTQ
+				c.diskGraph = searchCtx.diskGraph
+				c.maxGen = searchCtx.MaxGeneration
+				c.sctx = searchCtx
+				c.batchOK = false
+				return c
 			}
 			if h.config.PQEnabled && h.oopqEncoder != nil {
 				var table any
@@ -849,6 +851,17 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 					table, err = enc.BuildADCTable(q)
 				}
 				if err == nil && table != nil {
+					if searchCtx != nil {
+						slot := searchCtx.nextCompSlot()
+						c := &searchCtx.compPQ[slot]
+						c.data = data
+						c.q = q
+						c.table = table
+						c.h = h
+						c.diskGraph = searchCtx.GetDiskGraph()
+						c.maxGen = searchCtx.MaxGeneration
+						return c
+					}
 					return &pqComputer{data: data, q: q, table: table, h: h, diskGraph: searchCtx.GetDiskGraph(), maxGen: searchCtx.MaxGeneration}
 				}
 			}
@@ -891,9 +904,21 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			if searchOptions.ForceQuantized && h.config.SQ8Enabled && data.SQ8Enabled && h.quantizer != nil && h.sq8Ready.Load() {
 				minV, maxV := h.quantizer.Params()
 				scale := (maxV - minV) / 255.0
+				if searchCtx != nil {
+					slot := searchCtx.nextCompSlot()
+					c := &searchCtx.compSQ8[slot]
+					*c = float32ToSQ8Computer{data: data, q: q, dims: len(q), h: h, squared: squared, maxGen: maxGen, minV: minV, scale: scale}
+					return c
+				}
 				return &float32ToSQ8Computer{data: data, q: q, dims: len(q), h: h, squared: squared, maxGen: maxGen, minV: minV, scale: scale}
 			}
 
+			if searchCtx != nil {
+				slot := searchCtx.nextCompSlot()
+				c := &searchCtx.compF32ToF32[slot]
+				*c = float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen, sctx: searchCtx}
+				return c
+			}
 			return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen, sctx: searchCtx}
 		}
 		maxGen := uint64(math.MaxUint64)
@@ -911,6 +936,12 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				narrowFloatsToInt8(q, qInt8)
 			}
 			qUint8 := *(*[]uint8)(unsafe.Pointer(&qInt8)) // #nosec G103
+			if searchCtx != nil {
+				slot := searchCtx.nextCompSlot()
+				c := &searchCtx.compInt8[slot]
+				*c = int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: false, sctx: searchCtx}
+				return c
+			}
 			return &int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: false, sctx: searchCtx}
 		}
 		if data.Type == types.VectorTypeUint8 {
@@ -924,6 +955,12 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				narrowFloatsToUint8(q, qUint8)
 			}
 			qInt8 := *(*[]int8)(unsafe.Pointer(&qUint8)) // #nosec G103
+			if searchCtx != nil {
+				slot := searchCtx.nextCompSlot()
+				c := &searchCtx.compInt8[slot]
+				*c = int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: true, sctx: searchCtx}
+				return c
+			}
 			return &int8Computer{data: data, q: qUint8, qInt8: qInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen, isUint8: true, sctx: searchCtx}
 		}
 		if data.Type == types.VectorTypeInt16 {
@@ -934,7 +971,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryInt16 = resizeInt16(searchCtx.queryInt16, len(q))
 			narrowFloatsToInt16(q, searchCtx.queryInt16)
-			return &int16Computer{data: data, q: searchCtx.queryInt16, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compInt16[slot]
+			*c = int16Computer{data: data, q: searchCtx.queryInt16, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		if data.Type == types.VectorTypeUint16 {
 			if searchCtx == nil {
@@ -944,7 +984,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryUint16 = resizeUint16(searchCtx.queryUint16, len(q))
 			narrowFloatsToUint16(q, searchCtx.queryUint16)
-			return &uint16Computer{data: data, q: searchCtx.queryUint16, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compUint16[slot]
+			*c = uint16Computer{data: data, q: searchCtx.queryUint16, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		if data.Type == types.VectorTypeInt32 {
 			if searchCtx == nil {
@@ -954,7 +997,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryInt32 = resizeInt32(searchCtx.queryInt32, len(q))
 			narrowFloatsToInt32(q, searchCtx.queryInt32)
-			return &int32Computer{data: data, q: searchCtx.queryInt32, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compInt32[slot]
+			*c = int32Computer{data: data, q: searchCtx.queryInt32, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		if data.Type == types.VectorTypeUint32 {
 			if searchCtx == nil {
@@ -964,7 +1010,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryUint32 = resizeUint32(searchCtx.queryUint32, len(q))
 			narrowFloatsToUint32(q, searchCtx.queryUint32)
-			return &uint32Computer{data: data, q: searchCtx.queryUint32, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compUint32[slot]
+			*c = uint32Computer{data: data, q: searchCtx.queryUint32, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		if data.Type == types.VectorTypeInt64 {
 			if searchCtx == nil {
@@ -978,7 +1027,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			for _, val := range q {
 				searchCtx.queryInt64 = append(searchCtx.queryInt64, int64(val)) // #nosec G115 -- the corpus is int64
 			}
-			return &int64Computer{data: data, q: searchCtx.queryInt64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compInt64[slot]
+			*c = int64Computer{data: data, q: searchCtx.queryInt64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		if data.Type == types.VectorTypeUint64 {
 			if searchCtx == nil {
@@ -1000,7 +1052,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 					searchCtx.queryUint64 = append(searchCtx.queryUint64, uint64(val)) // #nosec G115 -- non-negative float32
 				}
 			}
-			return &uint64Computer{data: data, q: searchCtx.queryUint64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compUint64[slot]
+			*c = uint64Computer{data: data, q: searchCtx.queryUint64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		if searchCtx != nil {
 			if data.Type == types.VectorTypeComplex64 {
@@ -1013,10 +1068,13 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				for i := 0; i < logDims; i++ {
 					searchCtx.queryC64[i] = complex(q[2*i], q[2*i+1])
 				}
-				return &complex64Computer{
+				slot := searchCtx.nextCompSlot()
+				c := &searchCtx.compC64[slot]
+				*c = complex64Computer{
 					data: data, q: searchCtx.queryC64, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen,
 					sctx: searchCtx,
 				}
+				return c
 			}
 			if data.Type == types.VectorTypeComplex128 {
 				physDims := len(q)
@@ -1032,16 +1090,17 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				for _, v := range searchCtx.queryC128 {
 					sum += real(v)*real(v) + imag(v)*imag(v)
 				}
-				// Reuse pooled searchCtx batch buffers (roadmap.md §4).
-				return &complex128Computer{
+				slot := searchCtx.nextCompSlot()
+				c := &searchCtx.compC128[slot]
+				*c = complex128Computer{
 					data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum),
 					sctx: searchCtx,
 				}
+				return c
 			}
-		}
-		comp := &float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}
-		if searchCtx != nil {
-			// Populate conversion buffers once
+			slot := searchCtx.nextCompSlot()
+			comp := &searchCtx.compF32[slot]
+			*comp = float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen, sctx: searchCtx}
 			if data.Type == types.VectorTypeFloat64 {
 				searchCtx.queryF64 = searchCtx.queryF64[:0]
 				for _, val := range q {
@@ -1056,8 +1115,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				}
 				comp.qF16 = searchCtx.queryF16
 			}
+			return comp
 		}
-		return comp
+		return &float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}
 	case []int8, []uint8:
 		var q8 []uint8
 		var qInt8 []int8
@@ -1106,6 +1166,12 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			return &sharedInt8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen, slices: slices, isUint8: data.Type == types.VectorTypeUint8}
 		}
 
+		if searchCtx != nil {
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compInt8[slot]
+			*c = int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen, isUint8: data.Type == types.VectorTypeUint8, sctx: searchCtx}
+			return c
+		}
 		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen, isUint8: data.Type == types.VectorTypeUint8}
 	case []float64:
 		var dg *DiskGraph
@@ -1133,10 +1199,13 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				for _, v := range searchCtx.queryC128 {
 					sum += real(v)*real(v) + imag(v)*imag(v)
 				}
-				return &complex128Computer{
+				slot := searchCtx.nextCompSlot()
+				c := &searchCtx.compC128[slot]
+				*c = complex128Computer{
 					data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum),
 					sctx: searchCtx,
 				}
+				return c
 			}
 			qC128 := make([]complex128, logDims)
 			for i := 0; i < logDims; i++ {
@@ -1147,6 +1216,12 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				sum += real(v)*real(v) + imag(v)*imag(v)
 			}
 			return &complex128Computer{data: data, q: qC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum)}
+		}
+		if searchCtx != nil {
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compF64[slot]
+			*c = float64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		return &float64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []float16.Num:
@@ -1160,6 +1235,12 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		if searchCtx != nil {
 			maxGen = searchCtx.MaxGeneration
 		}
+		if searchCtx != nil {
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compF16[slot]
+			*c = float16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
+		}
 		return &float16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []complex64:
 		var dg *DiskGraph
@@ -1170,7 +1251,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryC64 = searchCtx.queryC64[:len(q)]
 			copy(searchCtx.queryC64, q)
-			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h, diskGraph: dg, maxGen: searchCtx.MaxGeneration, sctx: searchCtx}
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compC64[slot]
+			*c = complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h, diskGraph: dg, maxGen: searchCtx.MaxGeneration, sctx: searchCtx}
+			return c
 		}
 		dg = h.diskGraph.Load()
 		return &complex64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: math.MaxUint64}
@@ -1187,7 +1271,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			for _, v := range searchCtx.queryC128 {
 				sum += real(v)*real(v) + imag(v)*imag(v)
 			}
-			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: dg, maxGen: searchCtx.MaxGeneration, queryMag: math.Sqrt(sum), sctx: searchCtx}
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compC128[slot]
+			*c = complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: dg, maxGen: searchCtx.MaxGeneration, queryMag: math.Sqrt(sum), sctx: searchCtx}
+			return c
 		}
 		dg = h.diskGraph.Load()
 		var sum float64
@@ -1205,6 +1292,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		maxGen := uint64(math.MaxUint64)
 		if searchCtx != nil {
 			maxGen = searchCtx.MaxGeneration
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compInt16[slot]
+			*c = int16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		return &int16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []uint16:
@@ -1217,6 +1308,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		maxGen := uint64(math.MaxUint64)
 		if searchCtx != nil {
 			maxGen = searchCtx.MaxGeneration
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compUint16[slot]
+			*c = uint16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		return &uint16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []int32:
@@ -1229,6 +1324,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		maxGen := uint64(math.MaxUint64)
 		if searchCtx != nil {
 			maxGen = searchCtx.MaxGeneration
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compInt32[slot]
+			*c = int32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		return &int32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []uint32:
@@ -1241,6 +1340,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		maxGen := uint64(math.MaxUint64)
 		if searchCtx != nil {
 			maxGen = searchCtx.MaxGeneration
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compUint32[slot]
+			*c = uint32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		return &uint32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []int64:
@@ -1253,6 +1356,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		maxGen := uint64(math.MaxUint64)
 		if searchCtx != nil {
 			maxGen = searchCtx.MaxGeneration
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compInt64[slot]
+			*c = int64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		return &int64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []uint64:
@@ -1265,6 +1372,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		maxGen := uint64(math.MaxUint64)
 		if searchCtx != nil {
 			maxGen = searchCtx.MaxGeneration
+			slot := searchCtx.nextCompSlot()
+			c := &searchCtx.compUint64[slot]
+			*c = uint64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
+			return c
 		}
 		return &uint64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	}

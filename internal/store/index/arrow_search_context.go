@@ -152,6 +152,7 @@ type ArrowSearchContext struct {
 	linkDist       []float32         // single-element reverse-link distance list
 	batchSrc       []uint32          // not-yet-present sources of a batch add
 	batchNext      []uint32          // merged neighbour list of a batch add
+	updateOldBuf   []uint32          // pre-allocated buffer for UpdateNeighbors to read old neighbors without heap escape
 	diffOld        []uint32          // pre-update neighbour list for the in-degree diff
 	diffNew        []uint32          // post-update neighbour list for the in-degree diff
 	// diff records the committed old/next pair for the call in flight. It
@@ -170,6 +171,26 @@ type ArrowSearchContext struct {
 	addConnApplier addConnNeighborApplier
 	pruneApplier   pruneNeighborApplier
 	inboundApplier inboundNeighborApplier
+
+	// Pooled DistanceComputer instances reused per search/operation to eliminate
+	// per-resolve heap allocations (roadmap A6).
+	compSlot     int
+	compF32ToF32 [2]float32ToFloat32Computer
+	compF32      [2]float32Computer
+	compF64      [2]float64Computer
+	compF16      [2]float16Computer
+	compC64      [2]complex64Computer
+	compC128     [2]complex128Computer
+	compInt8     [2]int8Computer
+	compInt16    [2]int16Computer
+	compUint16   [2]uint16Computer
+	compInt32    [2]int32Computer
+	compUint32   [2]uint32Computer
+	compInt64    [2]int64Computer
+	compUint64   [2]uint64Computer
+	compTQ       [2]tqComputer
+	compPQ       [2]pqComputer
+	compSQ8      [2]float32ToSQ8Computer
 
 	// inDegreeView overrides where the pruning guard reads inbound-edge counts
 	// from. nil means the index's live tracker. Bulk linkage sets it to a
@@ -338,6 +359,7 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		linkDist:                make([]float32, 0, 1),
 		batchSrc:                make([]uint32, 0, 64),
 		batchNext:               make([]uint32, 0, 64),
+		updateOldBuf:            make([]uint32, 0, 256),
 		diffOld:                 make([]uint32, 0, 64),
 		diffNew:                 make([]uint32, 0, 64),
 		queryBQ:                 make([]uint64, 0, 256),
@@ -396,6 +418,7 @@ func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 	}
 
 	ctx.clearAppliers()
+	ctx.clearComputers()
 
 	// Try to return to pool, if full let GC handle it
 	p.ring.Push(ctx)
@@ -411,6 +434,7 @@ func (p *ArrowSearchContextPool) PutWithMetrics(ctx *ArrowSearchContext, dataTyp
 	}
 
 	ctx.clearAppliers()
+	ctx.clearComputers()
 
 	// Flush accumulated metrics if present
 	if ctx.distComputeCount > 0 {
@@ -437,6 +461,41 @@ func (ctx *ArrowSearchContext) clearAppliers() {
 	ctx.addConnApplier = addConnNeighborApplier{}
 	ctx.pruneApplier = pruneNeighborApplier{}
 	ctx.inboundApplier = inboundNeighborApplier{}
+}
+
+func (ctx *ArrowSearchContext) clearComputers() {
+	ctx.compSlot = 0
+	for i := range 2 {
+		ctx.compF32ToF32[i] = float32ToFloat32Computer{}
+		ctx.compF32[i] = float32Computer{}
+		ctx.compF64[i] = float64Computer{}
+		ctx.compF16[i] = float16Computer{}
+		ctx.compC64[i] = complex64Computer{}
+		ctx.compC128[i] = complex128Computer{}
+		ctx.compInt8[i] = int8Computer{}
+		ctx.compInt16[i] = int16Computer{}
+		ctx.compUint16[i] = uint16Computer{}
+		ctx.compInt32[i] = int32Computer{}
+		ctx.compUint32[i] = uint32Computer{}
+		ctx.compInt64[i] = int64Computer{}
+		ctx.compUint64[i] = uint64Computer{}
+		ctx.compTQ[i].data = nil
+		ctx.compTQ[i].h = nil
+		ctx.compTQ[i].diskGraph = nil
+		ctx.compTQ[i].sctx = nil
+		ctx.compTQ[i].batchOK = false
+		ctx.compPQ[i].data = nil
+		ctx.compPQ[i].h = nil
+		ctx.compPQ[i].diskGraph = nil
+		ctx.compPQ[i].table = nil
+		ctx.compSQ8[i] = float32ToSQ8Computer{}
+	}
+}
+
+func (ctx *ArrowSearchContext) nextCompSlot() int {
+	slot := ctx.compSlot & 1
+	ctx.compSlot++
+	return slot
 }
 
 func (ctx *ArrowSearchContext) Reset() {
@@ -470,6 +529,7 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.linkDist = ctx.linkDist[:0]
 	ctx.batchSrc = ctx.batchSrc[:0]
 	ctx.batchNext = ctx.batchNext[:0]
+	ctx.updateOldBuf = ctx.updateOldBuf[:0]
 	ctx.diffOld = ctx.diffOld[:0]
 	ctx.diffNew = ctx.diffNew[:0]
 	ctx.queryBQ = ctx.queryBQ[:0]

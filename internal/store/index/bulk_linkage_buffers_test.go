@@ -51,13 +51,46 @@ func TestAddConnectionsBatchReusesPooledBuffers(t *testing.T) {
 		}
 	}) / callsPerRun
 
-	// One allocation is the floor: UpdateNeighbors takes a func through an
-	// interface, so the closure environment must be heap allocated. The old
-	// shape sat at four - the closure plus a nil-grown newSources, a freshly
-	// made next, and a slices.Clone for the in-degree diff - and grew
-	// logarithmically with the number of sources.
-	require.LessOrEqualf(t, allocs, 2.0,
-		"AddConnectionsBatch must not allocate per call beyond the closure (saw %.2f allocs per run)", allocs)
+	// Zero allocations: the applier lives on ctx and OldScratch() reuses
+	// ctx.updateOldBuf so UpdateNeighbors no longer escapes a local [256]uint32
+	// array to the heap (roadmap A1).
+	require.Equal(t, 0.0, allocs,
+		"AddConnectionsBatch must be zero-allocation per call (saw %.2f allocs per run)", allocs)
+}
+
+func TestGetNeighborsCombinedManualReusesCallerBuffer(t *testing.T) {
+	h := newLinkageTestIndex(t)
+	data := h.data.Load()
+	ctx := h.searchPool.Get()
+	defer h.searchPool.PutWithMetrics(ctx, "float32", "8")
+
+	const maxConn = 32
+	for i := range maxConn {
+		h.AddConnectionsBatch(ctx, data, 0, []uint32{uint32(10 + i)}, []float32{float32(i)}, 0, maxConn)
+	}
+
+	buf := make([]uint32, 0, 64)
+	allocs := testing.AllocsPerRun(200, func() {
+		nb := h.GetNeighborsCombinedManual(data, 0, 0, buf, ctx.MaxGeneration)
+		if len(nb) != maxConn {
+			t.Fatalf("expected %d neighbors, got %d", maxConn, len(nb))
+		}
+	})
+	require.Equal(t, 0.0, allocs, "GetNeighborsCombinedManual with caller buffer must be zero-allocation (roadmap A2)")
+}
+
+func TestResolveHNSWComputerReusesContextSlots(t *testing.T) {
+	h := newLinkageTestIndex(t)
+	data := h.data.Load()
+	ctx := h.searchPool.Get()
+	defer h.searchPool.PutWithMetrics(ctx, "float32", "8")
+
+	q := make([]float32, 8)
+	allocs := testing.AllocsPerRun(200, func() {
+		comp := h.resolveHNSWComputer(data, ctx, q, false, nil)
+		require.NotNil(t, comp)
+	})
+	require.Equal(t, 0.0, allocs, "resolveHNSWComputer with pooled searchCtx must be zero-allocation (roadmap A6)")
 }
 
 // TestAddConnectionsBatchPreservesSemanticsWithPooledBuffers is the correctness

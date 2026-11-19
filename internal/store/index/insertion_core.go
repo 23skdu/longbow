@@ -308,6 +308,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	}
 
 	ctx := h.searchPool.Get()
+	ctx.Reset()
 	ctx.MaxNodeCount = meta.NodeCount
 	if isPrivate {
 		ctx.MaxGeneration = math.MaxUint64
@@ -320,7 +321,6 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		ctx.inDegreeView = nil
 		h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(dims))
 	}()
-	ctx.Reset()
 	ctx.AllowUncommitted = true
 
 	ep := h.entryPoint.Load()

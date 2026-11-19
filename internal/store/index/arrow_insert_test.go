@@ -138,6 +138,7 @@ func TestAddConnection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		data.ReleaseReader()
 	}
 
 	// Must have search context for pruning
@@ -205,6 +206,7 @@ func TestPruneConnections(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		data.ReleaseReader()
 	}
 
 	// Setup vectors for distance calculation

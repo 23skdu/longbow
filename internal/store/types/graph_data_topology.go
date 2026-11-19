@@ -97,7 +97,11 @@ func (g *GraphData) GetNeighborsWithGen(layer int, id uint32, buf []uint32, maxG
 	if counts == nil && neighbors == nil {
 		// 1. Try Lock-Free PackedNeighbors first
 		if layer < len(g.PackedNeighbors) && g.PackedNeighbors[layer] != nil {
-			if res, ok := g.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
+			if buf != nil {
+				if res, ok := g.PackedNeighbors[layer].GetNeighborsWithGenInto(id, maxGen, buf); ok {
+					return res
+				}
+			} else if res, ok := g.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
 				return res
 			}
 		}
@@ -112,7 +116,11 @@ func (g *GraphData) GetNeighborsWithGen(layer int, id uint32, buf []uint32, maxG
 
 	// Try Lock-Free PackedNeighbors (also applies when counts exist but neighbors are nil)
 	if layer < len(g.PackedNeighbors) && g.PackedNeighbors[layer] != nil {
-		if res, ok := g.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
+		if buf != nil {
+			if res, ok := g.PackedNeighbors[layer].GetNeighborsWithGenInto(id, maxGen, buf); ok {
+				return res
+			}
+		} else if res, ok := g.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
 			return res
 		}
 	}

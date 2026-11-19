@@ -249,12 +249,49 @@ func (c *float32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 	// Resolve the arena slab table and the generation policy once for the whole
 	// batch instead of once per vector.
 	batch := c.data.BeginFloat32ChunkBatch(c.maxGen)
-	if cap(c.batchVecs) < len(ids) {
-		c.batchVecs = make([][]float32, len(ids))
+	if c.sctx != nil {
+		if cap(c.sctx.batchVecsFloat32) < len(ids) {
+			c.sctx.batchVecsFloat32 = make([][]float32, len(ids))
+		}
+		c.batchVecs = c.sctx.batchVecsFloat32[:len(ids)]
+	} else {
+		if cap(c.batchVecs) < len(ids) {
+			c.batchVecs = make([][]float32, len(ids))
+		}
+		c.batchVecs = c.batchVecs[:len(ids)]
 	}
-	c.batchVecs = c.batchVecs[:len(ids)]
 
-	var vecs [][]float32
+	vecs := c.batchVecs[:0]
+	allValid := true
+	for _, id := range ids {
+		v := batch.Vector(types.ChunkID(id), int(id)%types.ChunkSize, c.dims)
+		if v == nil {
+			allValid = false
+			break
+		}
+		vecs = append(vecs, v)
+	}
+
+	if allValid {
+		if len(vecs) > 0 {
+			var err error
+			if c.squared {
+				err = simd.L2SquaredDistanceBatch(c.q, vecs, dst)
+			} else if c.h.config.Metric == lbcore.MetricCosine {
+				err = simd.CosineDistanceBatch(c.q, vecs, dst)
+			} else if c.h.config.Metric == lbcore.MetricDotProduct {
+				err = simd.DotProductBatch(c.q, vecs, dst)
+			} else {
+				err = simd.EuclideanDistanceBatch(c.q, vecs, dst)
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+		return dst, nil
+	}
+
+	vecs = c.batchVecs[:0]
 	var idxs []int
 	for i, id := range ids {
 		v := batch.Vector(types.ChunkID(id), int(id)%types.ChunkSize, c.dims)
@@ -264,10 +301,8 @@ func (c *float32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 				return nil, err
 			}
 			dst[i] = dist
-			c.batchVecs[i] = nil
 			continue
 		}
-		c.batchVecs[i] = v
 		vecs = append(vecs, v)
 		idxs = append(idxs, i)
 	}

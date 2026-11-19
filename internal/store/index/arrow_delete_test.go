@@ -36,6 +36,7 @@ func TestDelete(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		data.ReleaseReader()
 	}
 
 	// Insert 10 vectors

@@ -43,9 +43,12 @@ func TestInsertProperties(t *testing.T) {
 			ensureChunk := func(id uint32) {
 				cID := types.ChunkID(id)
 				cOff := types.ChunkOffset(id)
-				_, err := index.ensureChunk(int(cID), int(cOff), 2)
+				d, err := index.ensureChunk(int(cID), int(cOff), 2)
 				if err != nil {
 					t.Fatalf("ensureChunk failed for ID %d: %v", id, err)
+				}
+				if d != nil {
+					d.ReleaseReader()
 				}
 				// Fake vector data isn't strictly needed for connectivity if we skip distance checks?
 				// But AddConnection might read it for pruning.
@@ -145,6 +148,9 @@ func TestInsertProperties(t *testing.T) {
 
 				// Ensure chunk is allocated
 				data, _ = index.ensureChunk(int(cID), int(cOff), int(index.dims.Load()))
+				if data != nil {
+					data.ReleaseReader()
+				}
 
 				// Check vector (optional)
 				// storedVec := (*data.Vectors[cID])[int(cOff)*index.dims : (int(cOff)+1)*index.dims]

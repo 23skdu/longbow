@@ -178,6 +178,10 @@ type graphFallback interface {
 // own inputs alone.
 type NeighborApplier interface {
 	ApplyNeighbors(old []uint32) []uint32
+	// OldScratch returns an optional pre-allocated slice that UpdateNeighbors
+	// can use to snapshot the node's current neighbors without escaping a local
+	// array to the heap.
+	OldScratch() []uint32
 }
 
 type PackedNeighbors interface {
@@ -225,6 +229,9 @@ type PackedNeighbors interface {
 	// GetNeighborsWithGenFast is like GetNeighborsWithGen but skips ref-counting.
 	// Caller must guarantee the PackedNeighbors remains alive during the call.
 	GetNeighborsWithGenFast(id uint32, maxGen uint64) ([]uint32, bool)
+	// GetNeighborsWithGenInto is like GetNeighborsWithGenFast but writes into dst
+	// if cap(dst) >= len(neighbors), avoiding per-traversal heap allocations.
+	GetNeighborsWithGenInto(id uint32, maxGen uint64, dst []uint32) ([]uint32, bool)
 }
 
 // GetNodeCount returns the current capacity of the graph (number of addressable nodes).
@@ -774,33 +781,48 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	}
 
 	// Set finalizer to ensure automatic Release when snapshot is orphaned
-	runtime.SetFinalizer(gd, func(g *GraphData) { g.Release() })
+	runtime.SetFinalizer(gd, func(g *GraphData) { g.releaseFromFinalizer() })
 
 	return gd
 }
 
 func (g *GraphData) Release() {
+	runtime.SetFinalizer(g, nil)
+	g.release(true)
+}
+
+// releaseFromFinalizer frees resources when invoked by Go's GC finalizer.
+// Because finalizers only run on unreachable objects, no live goroutine can
+// hold a reference to g to decrement cloneCount or readerCount; spin-waiting
+// here would permanently livelock Go's single finalizer goroutine.
+func (g *GraphData) releaseFromFinalizer() {
+	g.release(false)
+}
+
+func (g *GraphData) release(waitForActive bool) {
 	if !atomic.CompareAndSwapUint32(&g.released, 0, 1) {
 		return
 	}
 
-	// Wait for all concurrent Clone() operations to finish.
-	// Clone() increments cloneCount while reading this GraphData's fields
-	// and takes a Retain() on shared arenas. We must not free until done.
-	for atomic.LoadInt32(&g.cloneCount) > 0 {
-		runtime.Gosched()
-	}
+	if waitForActive {
+		// Wait for all concurrent Clone() operations to finish.
+		// Clone() increments cloneCount while reading this GraphData's fields
+		// and takes a Retain() on shared arenas. We must not free until done.
+		for atomic.LoadInt32(&g.cloneCount) > 0 {
+			runtime.Gosched()
+		}
 
-	// Wait for all concurrent read paths to finish. AcquireReader/ReleaseReader
-	// bracket read access to the typed-arena fields (Int8Arena, Float32Arena,
-	// etc.). This guarantees that the Slabs pointed at by the typed-arenas
-	// are not released (SlabArena.refs reaches 0) while any reader is
-	// still calling AllocSlice / Get on them. The h.data CAS in
-	// compareAndSwapData synchronizes ordering, so a reader that did
-	// h.data.Load() before our CAS must call AcquireReader before
-	// reaching this point.
-	for atomic.LoadInt32(&g.readerCount) > 0 {
-		runtime.Gosched()
+		// Wait for all concurrent read paths to finish. AcquireReader/ReleaseReader
+		// bracket read access to the typed-arena fields (Int8Arena, Float32Arena,
+		// etc.). This guarantees that the Slabs pointed at by the typed-arenas
+		// are not released (SlabArena.refs reaches 0) while any reader is
+		// still calling AllocSlice / Get on them. The h.data CAS in
+		// compareAndSwapData synchronizes ordering, so a reader that did
+		// h.data.Load() before our CAS must call AcquireReader before
+		// reaching this point.
+		for atomic.LoadInt32(&g.readerCount) > 0 {
+			runtime.Gosched()
+		}
 	}
 
 	if debugRelease {

@@ -89,12 +89,12 @@ func (h *ArrowHNSW) bootstrapSequential(
 			h.updateMetadataIfHigher(bootstrapEp, bootstrapMaxL)
 		}
 	}
-	h.publishDataClone(data)
 	if err := ctx.Err(); err != nil {
 		return nil, 0, 0, err
 	}
 
 	if n <= seedCount {
+		h.installData(data)
 		// Update metadata registry with new node count and entry point BEFORE returning
 		h.updateMetadata(func(meta *HNSWMetadata) {
 			if int32(bootstrapMaxL) > meta.MaxLevel || meta.EntryPoint == math.MaxUint32 {
@@ -142,19 +142,16 @@ func (h *ArrowHNSW) linkRemainingNodes(
 	}
 	h.commitMu.Unlock()
 
-	// Refresh data snapshot after bootstrap loop as InsertWithVector updated the global state.
+	// Merge any concurrent chunk allocations from the global state into our working copy without re-cloning.
 	freshPublished := h.data.Load()
-	if freshPublished != nil {
+	if freshPublished != nil && freshPublished != data {
 		freshPublished.AcquireReader()
-		freshClone := freshPublished.Clone()
-		freshPublished.ReleaseReader()
 		if data != nil {
-			freshClone.MergeFrom(data)
-			data.Release()
+			data.MergeFrom(freshPublished)
+		} else {
+			data = freshPublished.Clone()
 		}
-		data = freshClone
-	} else {
-		data = nil
+		freshPublished.ReleaseReader()
 	}
 
 	// Shift to remaining nodes for parallel linkage

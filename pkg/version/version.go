@@ -7,7 +7,7 @@ import (
 
 var (
 	// Version is the current version of Longbow
-	Version = "0.2.5"
+	Version = "0.2.6"
 	// Commit is the git commit hash
 	Commit = "none"
 	// BuildDate is the date when the binary was built

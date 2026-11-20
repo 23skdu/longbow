@@ -202,4 +202,3 @@ gcloud iam service-accounts add-iam-policy-binding \
 2. **Acquire & Exchange Cloud Tokens** using the Go SDK (`client.AcquireAWSWebIdentityToken()` / `client.AcquireGoogleIDToken(...)` + `sc.ExchangeOIDCToken(...)`) or Python SDK (`LongbowClient.acquire_aws_web_identity_token()` / `acquire_google_id_token(...)` + `exchange_oidc_token(...)`).
 3. **Verify Audit Attribution** in `GET /api/v1/rbac/audit` (`oidc:<provider>:<sub>`) and monitor `grafana/dashboards/oidc-federation.json`.
 4. **Revoke Legacy API Keys** via `longbow-cli revoke-api-key` or `POST /api/v1/rbac/keys` rotation once workloads exclusively authenticate via OIDC.
-

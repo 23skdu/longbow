@@ -82,5 +82,3 @@ All 21 search modalities from the test plan are exercised.
 `scripts/agent_soak.py` — drives N concurrent agents against a running
 Longbow server using the Python SDK. Each agent runs its own read/write loop
 with the workload mix above. Metrics are sampled and persisted every minute.
-EOF
-echo written

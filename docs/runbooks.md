@@ -205,4 +205,3 @@ When an alert fires in Longbow:
 - **Mitigation**:
   - Restore network/egress path to the OIDC IdP or update the issuer `jwks_url` via `POST /api/v1/oidc/providers` or `longbow-cli oidc-add-provider`.
   - Cached JWKS keys continue validating existing key IDs until `RefreshInterval` expires or an unseen `kid` is encountered.
-

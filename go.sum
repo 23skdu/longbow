@@ -54,8 +54,6 @@ cloud.google.com/go/storage v1.5.0/go.mod h1:tpKbwo567HUNpVclU5sGELwQWBDZ8gh0Zeo
 cloud.google.com/go/storage v1.6.0/go.mod h1:N7U0C8pVQ/+NIKOBQyamJIeKQKkZ+mxpohlUTyfDhBk=
 cloud.google.com/go/storage v1.8.0/go.mod h1:Wv1Oy7z6Yz3DshWRJFhqM/UCfaWIRTdp0RXyy7KQOVs=
 cloud.google.com/go/storage v1.10.0/go.mod h1:FLPqc6j+Ki4BU591ie1oL6qBQGu2Bl/tZ9ullr3+Kg0=
-cloud.google.com/go/storage v1.70.0 h1:LQNHn0rRF94jVFfF3e416IzdQqIufa5GfF6HilQxb80=
-cloud.google.com/go/storage v1.70.0/go.mod h1:W84cNa070TZIegvTW67CBY+f5rxux8EJMb7YyiHdrls=
 cloud.google.com/go/storage v1.71.0 h1:vv4wBFygNlKtSmDMcCIz/ATVv9iIJMkZGjk17uzXMv4=
 cloud.google.com/go/storage v1.71.0/go.mod h1:axUlps/Uy9usUkUNd14db8SbV7s+dNV+BU/xkvPmzrU=
 cloud.google.com/go/trace v1.16.0 h1:GmQovzFc5F0CNfl0VLgL64aoTtu7xsM0YajW2GlG9+E=
@@ -631,9 +629,8 @@ go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 h1:julhjPeUH/q/7hinbSd
 go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0/go.mod h1:Ao2mz688LH/tFf0yMAenidq6k2YNSx6SIY2q6jDACck=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.47.0 h1:UFpxOpYPmMNUtOWhdb+nC1WELIgVf8z9higURrbzYU4=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.47.0/go.mod h1:YBGjxe3lt0jtXoEXxGrGhv/jM7oUBUDVK7zhAvNyEjc=
-go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.45.0 h1:dm9iyzn6tioYZtwqaiBSU0TSI8Yu/8dTIbfG0+B49DY=
-go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.45.0/go.mod h1:xAvxYjYK28qvt+yu4BYZ/zMmAjwMXINXD6JiMyeB8iI=
 go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.47.0 h1:ww5DYBpMKcqLdxjWrhGUIh6O+ZfvZUaMk4niVyNQPEQ=
+go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.47.0/go.mod h1:Av5t+Ezx5S/Ks2dsEfWhny+GK+wrZ1K7NZ6aHSWnX3U=
 go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.47.0 h1:N3YQCxjxQ/bMjyc3heladfRm9t9RTksGQH8z4w6yU/0=
 go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.47.0/go.mod h1:Mp8HOFqcaUyypCuGv9IhDdTHnJ56lSudSHMd+pVSCEA=
 go.opentelemetry.io/otel/log v1.47.0 h1:cOTS1CcLbSQeZKanGJ+0JpF/+t4PELi3O3bbl2lqCcI=

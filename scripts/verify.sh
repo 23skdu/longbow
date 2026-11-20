@@ -24,7 +24,7 @@ else
 fi
 
 # 1. Code Formatting & Linting Gate
-echo "--> Gate 1/6: Running Formatting & Static Analysis Checks..."
+echo "--> Gate 1/7: Running Formatting & Static Analysis Checks..."
 if [ -n "$STAGED_GO_FILES" ]; then
     UNFORMATTED=$(gofmt -l $STAGED_GO_FILES || true)
     if [ -n "$UNFORMATTED" ]; then
@@ -40,7 +40,7 @@ fi
 echo "    ✓ Gate 1 passed: Formatting, go vet, and fast linters clean."
 
 # 2. Go Security Check Gate
-echo "--> Gate 2/6: Running Go Security Checks (gosec AST analysis & secret scan)..."
+echo "--> Gate 2/7: Running Go Security Checks (gosec AST analysis & secret scan)..."
 if command -v gosec >/dev/null 2>&1; then
     gosec -quiet -exclude=G115 $PKGS
 fi
@@ -50,7 +50,7 @@ fi
 echo "    ✓ Gate 2 passed: Security AST checks clean."
 
 # 3. 100% Package Test & Fuzz Presence Gate
-echo "--> Gate 3/6: Checking 100% Package Test & Fuzz Presence Gate..."
+echo "--> Gate 3/7: Checking 100% Package Test & Fuzz Presence Gate..."
 UNTESTED=$(go test -list '.*' ./... 2>&1 | grep '\[no test files\]' || true)
 if [ -n "$UNTESTED" ]; then
     echo "::error::Found packages without test files:"
@@ -62,7 +62,7 @@ fi
 echo "    ✓ Gate 3 passed: All packages have test files and fuzz targets (100% presence)."
 
 # 4. Unit & Fuzz Test Gate (Bounded Short Mode)
-echo "--> Gate 4/6: Running Unit & Fuzz Tests on Target Packages..."
+echo "--> Gate 4/7: Running Unit & Fuzz Tests on Target Packages..."
 FAST_UNIT_PKGS=$(echo "$PKGS" | tr ' ' '\n' | grep -vE '^\./internal/store(/index)?$' | tr '\n' ' ' || true)
 if [ -n "$FAST_UNIT_PKGS" ]; then
     go test -short -cover $FAST_UNIT_PKGS
@@ -71,16 +71,21 @@ go test -short -run='^Fuzz' $PKGS ./internal/pq/ ./internal/tensor/
 echo "    ✓ Gate 4 passed: Unit and Fuzz test suites passed."
 
 # 5. Numerical Precision & Accuracy Gate
-echo "--> Gate 5/6: Running Accuracy Gate (15 Vector DTypes + Batch & Dispatch Tiers)..."
+echo "--> Gate 5/7: Running Accuracy Gate (15 Vector DTypes + Batch & Dispatch Tiers)..."
 go test -v ./internal/simd/ -run='^TestSIMDAccuracy'
 echo "    ✓ Gate 5 passed: All numerical precision tolerances and backends validated."
 
 # 6. Ground-Truth Oracle Parity Gate
-echo "--> Gate 6/6: Running Oracle Gate (Ground-Truth Parity vs Reference Oracles)..."
+echo "--> Gate 6/7: Running Oracle Gate (Ground-Truth Parity vs Reference Oracles)..."
 go test -v ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/ -run='Parity'
 echo "    ✓ Gate 6 passed: All implementations match ground-truth reference oracles."
 
+# 7. Release Version Consistency Gate
+echo "--> Gate 7/7: Checking release version consistency (binary/ADBC vs Helm chart)..."
+./scripts/check_version_consistency.sh
+echo "    ✓ Gate 7 passed: All release artifacts report the same version."
+
 echo "=========================================================="
-echo " ✓ All 6 verification, security, accuracy & oracle gates passed!"
+echo " ✓ All 7 verification, security, accuracy, oracle & version gates passed!"
 echo "=========================================================="
 

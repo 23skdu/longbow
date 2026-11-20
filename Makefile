@@ -28,8 +28,8 @@ IMAGE_TAG     ?= latest
 	perf perf-check cpu-profile profile-check mem mem-check mem-bench mem-escape mem-profile mem-asan mem-valgrind \
 	fuzz test-fuzz fuzz-coverage \
 	test test-short test-all test-wasm test-features race test-coverage coverage-gate coverage-html test-docker \
-	test-adbc test-adbc-python test-adbc-so \
-	cross-compile check-simd test-bench-harness helm-lint markdown-lint bench-ci bench-ab \
+	test-adbc test-adbc-python test-adbc-so test-version \
+	cross-compile check-simd test-bench-harness check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
 	accuracy-gate oracle-gate observability-inventory observability-check observability-rules \
 	docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-gpu docker-build-all \
 	makehooks install-commit-hook install-hooks verify pre-commit
@@ -97,6 +97,9 @@ help:
 	@echo "  fuzz-coverage        Verify 100% package fuzz-target presence"
 	@echo "  test-docker          Run Dockerfile unit tests (Go and Python)"
 	@echo "  test-bench-harness   Run benchmark harness test suite (122 Python tests)"
+	@echo "  test-version         Run release version consistency unit tests"
+	@echo "  check-version        Verify binary and Helm chart versions agree"
+	@echo "  bump-version V=x.y.z Bump every release artifact to one version"
 	@echo "  test-adbc            Run ADBC driver Go test suite"
 	@echo "  test-adbc-python     Run ADBC Python driver verification script"
 	@echo "  test-adbc-so         Run ADBC C-shared library Python tests"
@@ -126,7 +129,7 @@ help:
 # Combined Local CI Pipeline
 # ==============================================================================
 
-ci: fmt-check lint vet build build-adbc cross-compile check-simd test-coverage fuzz-coverage test-docker test-bench-harness accuracy-gate oracle-gate observability-check observability-rules sec-gosec helm-lint
+ci: fmt-check lint vet build build-adbc cross-compile check-simd test-coverage fuzz-coverage test-docker test-bench-harness test-version check-version accuracy-gate oracle-gate observability-check observability-rules sec-gosec helm-lint
 	@echo "=========================================================="
 	@echo " ✓ Complete local CI verification pipeline passed 100%!"
 	@echo "=========================================================="
@@ -420,6 +423,10 @@ test-bench-harness:
 	$(PYTHON) scripts/tests/test_ab_stats.py
 	$(PYTHON) scripts/tests/test_search_modes.py
 
+test-version:
+	@echo "Running release version consistency tests..."
+	$(PYTHON) scripts/tests/test_version_consistency.py
+
 test-adbc:
 	$(GO) test -v -cover ./internal/adbc/...
 
@@ -527,7 +534,20 @@ docker-build-emlgo-gpu:
 docker-build-all: docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-gpu
 	@echo "All Docker container images built successfully."
 
-release: ci build-release build-adbc
+release: ci check-version build-release build-adbc
 	@echo "=========================================================="
 	@echo " ✓ Release build and verification completed successfully!"
 	@echo "=========================================================="
+
+# ==============================================================================
+# Release Version Management
+# ==============================================================================
+
+check-version:
+	@echo "Checking release version consistency across binary and Helm chart..."
+	@./scripts/check_version_consistency.sh
+
+bump-version:
+	@if [ -z "$(V)" ]; then echo "Usage: make bump-version V=x.y.z"; exit 1; fi
+	@./scripts/bump_version.sh $(V)
+	@echo "Remember to update release notes and tag v$(V) before publishing."

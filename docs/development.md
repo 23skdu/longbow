@@ -66,6 +66,34 @@ Longbow is designed as a high-performance vector engine with modular subsystems:
 - `grafana/` - Monitoring dashboards and observability configurations.
 - `helm/` - Kubernetes deployment charts.
 
+#### Cutting a Release
+
+The server/binary version is defined in exactly two places and **must always
+agree**: `pkg/version/version.go` (`Version`) and `helm/longbow/Chart.yaml`
+(`version` + `appVersion`). The Python (`longbowclientsdk`) and edge-js
+(`sdk/edge-js`) SDKs are independently versioned and are not part of the server
+release version.
+
+Never edit those files by hand. Use the bump helper, which updates all three
+fields atomically and then verifies them:
+
+```bash
+make bump-version V=0.2.7
+# or: ./scripts/bump_version.sh 0.2.7
+```
+
+Before every release, verify consistency explicitly:
+
+```bash
+make check-version        # or ./scripts/check_version_consistency.sh
+make test-version         # unit tests for the guard and bump helper
+make release              # ci + check-version + release builds
+```
+
+This check is also enforced by `scripts/verify.sh` (pre-commit Gate 7) and CI,
+so a commit or release with drifting versions cannot land. After bumping, tag
+the commit (`git tag -a v0.2.7 -m "v0.2.7"`) and publish release notes.
+
 #### Quality Thresholds
 
 Longbow targets **>95% statement coverage** for all core performance packages (`internal/store`, `internal/simd`, `internal/onnx`).

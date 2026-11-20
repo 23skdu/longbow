@@ -59,6 +59,9 @@ jobs:
         with:
           version: v2.15.0
 
+      - name: Check release version consistency
+        run: ./scripts/check_version_consistency.sh
+
       - name: Build all packages
         run: go build -v ./...
 
@@ -96,6 +99,9 @@ jobs:
           python3 scripts/tests/test_benchmark_temporal.py
           python3 scripts/tests/test_benchmark_attribution.py
           python3 scripts/tests/test_ab_stats.py
+
+      - name: Test Release Version Consistency Helpers
+        run: python3 scripts/tests/test_version_consistency.py
 
   security:
     name: Security Analysis (govulncheck & trivy)

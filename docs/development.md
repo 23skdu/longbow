@@ -448,6 +448,6 @@ Development builds expose metrics on port `:9091/metrics`. Key metrics to watch:
 
 ## Getting Help
 
-- **Documentation**: See [docs/](file:///docs/) for deep dives into specific subsystems.
+- **Documentation**: See [docs/](https://github.com/23skdu/longbow/tree/main/docs) for deep dives into specific subsystems.
 - **Issues**: Search the [GitHub Issues](https://github.com/23skdu/longbow/issues) for known bugs or feature requests.
-- **Architecture**: For Agent Memory specific patterns, see [docs/agentmemory.md](file:///docs/agentmemory.md).
+- **Architecture**: For Agent Memory specific patterns, see [docs/agentmemory.md](https://github.com/23skdu/longbow/blob/main/docs/agentmemory.md).

@@ -85,7 +85,7 @@ res, err := tensor.Einsum("ij,jk->ik", matrixA, matrixB)
 
 ## 4. Relativistic & Differential Geometry Calculus
 
-The tensor engine includes dedicated primitives for theoretical physics, general relativity, and differential geometry in [`internal/tensor/calculus.go`](file:///home/rsd/REPOS/longbow/internal/tensor/calculus.go):
+The tensor engine includes dedicated primitives for theoretical physics, general relativity, and differential geometry in [`internal/tensor/calculus.go`](https://github.com/23skdu/longbow/blob/main/internal/tensor/calculus.go):
 
 ### 4.1 Levi-Civita Permutation Symbol ($\epsilon_{i_1 \dots i_n}$)
 

@@ -235,7 +235,9 @@ func seedFromEnv(def int64) int64 {
 // regressed on the natural-order one more than on the shuffled one.
 func TestBulkInsert_UnorderedCorpusStaysReachable(t *testing.T) {
 	n, dims, batch := 20_000, 128, 10_000
-	if testing.Short() {
+	if raceEnabled {
+		n, batch = 1_000, 500
+	} else if testing.Short() {
 		n, batch = 2_000, 1_000
 	}
 
@@ -274,7 +276,9 @@ func TestBulkInsert_UnorderedCorpusStaysReachable(t *testing.T) {
 // worst case for graph search, so the absolute number is low by construction.
 func TestBulkInsert_UnorderedCorpusRecallFloored(t *testing.T) {
 	n, dims, k, probes, batch := 20_000, 128, 10, 20, 10_000
-	if testing.Short() {
+	if raceEnabled {
+		n, batch = 1_000, 500
+	} else if testing.Short() {
 		n, batch = 2_000, 1_000
 	}
 

@@ -27,8 +27,8 @@ Longbow maintains two primary validation environments:
 | **CUDA Toolkit** | CUDA 12.4 (`nvcc` V12.4.131) |
 | **Host Operating System** | Linux (Ubuntu / Debian x86_64 kernel 6.8) |
 | **Go Runtime** | Go 1.27.4 with CGO enabled |
-| **Benchmark Script** | [scripts/unified_benchmark.py](file:///home/rsd/REPOS/longbow/scripts/unified_benchmark.py) |
-| **Benchmark Harness** | [cmd/bench-tool](file:///home/rsd/REPOS/longbow/cmd/bench-tool) (`bin/bench-tool`) |
+| **Benchmark Script** | [scripts/unified_benchmark.py](https://github.com/23skdu/longbow/blob/main/scripts/unified_benchmark.py) |
+| **Benchmark Harness** | [cmd/bench-tool](https://github.com/23skdu/longbow/tree/main/cmd/bench-tool) (`bin/bench-tool`) |
 
 ### 2.2 Dedicated Remote Testbed (AVX-512 Cloud Server)
 

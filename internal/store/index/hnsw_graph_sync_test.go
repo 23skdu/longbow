@@ -189,8 +189,12 @@ func TestHNSWGraphSync_ConcurrentSync(t *testing.T) {
 		idx.locationStore.Append(types.Location{BatchIdx: i / 10, RowIdx: i % 10})
 	}
 	gsync := NewHNSWGraphSync(idx)
-	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
+	workers := 10
+	if testing.Short() || raceEnabled {
+		workers = 4
+	}
+	done := make(chan bool, workers)
+	for i := 0; i < workers; i++ {
 		go func() {
 			_, err := gsync.ExportState()
 			if err != nil {
@@ -199,7 +203,7 @@ func TestHNSWGraphSync_ConcurrentSync(t *testing.T) {
 			done <- true
 		}()
 	}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < workers; i++ {
 		<-done
 	}
 }

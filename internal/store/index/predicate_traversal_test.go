@@ -306,12 +306,13 @@ func TestPredicateTraversal_ReachesMatchBehindRejectedNodes(t *testing.T) {
 // traversal passing is below 1e-15.
 func TestPredicateTraversal_SelectivePredicateReturnsFullResults(t *testing.T) {
 	const (
-		n       = 2000
-		dims    = 32
-		k       = 10
-		builds  = 6
-		queries = 8
+		dims = 32
+		k    = 10
 	)
+	n, builds, queries := 2000, 6, 8
+	if testing.Short() || raceEnabled {
+		n, builds, queries = 1000, 2, 3
+	}
 
 	for b := 0; b < builds; b++ {
 		seed := int64(1000 + b)

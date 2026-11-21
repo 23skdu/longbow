@@ -2,6 +2,11 @@
 
 package metal
 
+/*
+#include "metal_bridge.h"
+*/
+import "C"
+
 import (
 	"fmt"
 	"unsafe"

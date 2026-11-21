@@ -47,6 +47,9 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 
 	mem := memory.NewGoAllocator()
 	numRows := 500
+	if testing.Short() || raceEnabled {
+		numRows = 200
+	}
 	dims := 128
 	rec := makeTestRecordBatch(mem, dims, numRows)
 	defer rec.Release()

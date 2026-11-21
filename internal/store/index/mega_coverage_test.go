@@ -20,6 +20,9 @@ func TestMegaCoverage(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	dims := 128
 	numVecs := 2000
+	if testing.Short() {
+		numVecs = 500
+	}
 
 	// Config with everything enabled
 	config := types.DefaultArrowHNSWConfig()

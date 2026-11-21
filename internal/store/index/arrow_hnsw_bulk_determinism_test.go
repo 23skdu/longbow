@@ -126,7 +126,11 @@ func answerDigest(tb testing.TB, idx *ArrowHNSW, queries [][]float32, k int) (st
 // TestBulkBuildIsRepeatable builds the same 4k corpus twice and requires the
 // two indexes to be indistinguishable: same graph, same answers.
 func TestBulkBuildIsRepeatable(t *testing.T) {
-	const dims, n, batch = 128, 4000, 1000
+	const dims = 128
+	n, batch, queryCount := 4000, 1000, 500
+	if testing.Short() || raceEnabled {
+		n, batch, queryCount = 1200, 300, 100
+	}
 
 	corp := uniformCorpus(t, 20261016, n, dims)
 	rec := float32RecordBatch(t, corp)
@@ -144,7 +148,7 @@ func TestBulkBuildIsRepeatable(t *testing.T) {
 				m1.EntryPoint, m1.MaxLevel, m1.NodeCount, m2.EntryPoint, m2.MaxLevel, m2.NodeCount)
 		}
 		shown := 0
-		for id := uint32(0); id < n && shown < 5; id++ {
+		for id := uint32(0); id < uint32(n) && shown < 5; id++ { // #nosec G115
 			for layer := 0; layer <= 3; layer++ {
 				a, aerr := first.GetLayerNeighbors(id, layer)
 				b, berr := second.GetLayerNeighbors(id, layer)
@@ -176,9 +180,9 @@ func TestBulkBuildIsRepeatable(t *testing.T) {
 	}
 	t.Logf("BULK_GRAPH_DIGEST %s", g1)
 
-	// 500 fixed queries: the shape the harness verification uses.
+	// Fixed queries: the shape the harness verification uses.
 	qRng := rand.New(rand.NewSource(4242)) // #nosec G404 -- fixed query set
-	queries := make([][]float32, 500)
+	queries := make([][]float32, queryCount)
 	for i := range queries {
 		q := make([]float32, dims)
 		for j := range q {

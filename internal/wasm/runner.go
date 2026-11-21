@@ -2,6 +2,7 @@ package wasm
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -153,11 +154,7 @@ func (r *Runner) Inference(ctx context.Context, input []float32) ([]float32, err
 
 	inputBytes := make([]byte, inputSize)
 	for i, f := range input {
-		bits := math.Float32bits(f)
-		inputBytes[i*4] = byte(bits)
-		inputBytes[i*4+1] = byte(bits >> 8)
-		inputBytes[i*4+2] = byte(bits >> 16)
-		inputBytes[i*4+3] = byte(bits >> 24)
+		binary.LittleEndian.PutUint32(inputBytes[i*4:], math.Float32bits(f))
 	}
 	if !mem.Write(inputPtr, inputBytes) {
 		status = "error"

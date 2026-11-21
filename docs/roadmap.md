@@ -98,8 +98,8 @@ Target budgets for all hand-maintained code:
 |---|---|---|---|
 | M1 | Same-package splits of P0/P1 Go god files (zero API breakage) | HIGH | Completed |
 | M2 | Python SDK (`client.py`) & benchmark orchestrator (`unified_benchmark.py`) modularization | HIGH | Completed |
-| M3 | Hot-path HNSW & query function decomposition (`arrow_hnsw_insert.go`, `navigation_search.go`, `query/`) | MEDIUM | Planned |
-| M4 | SIMD generator/assembly & GPU kernel splits (`internal/simd`, `internal/gpu/{cuda,metal}`) | MEDIUM | Planned |
+| M3 | Hot-path HNSW & query function decomposition (`arrow_hnsw_insert.go`, `navigation_search.go`, `query/`) | MEDIUM | Completed |
+| M4 | SIMD generator/assembly & GPU kernel splits (`internal/simd`, `internal/gpu/{cuda,metal}`) | MEDIUM | Completed |
 | M5 | God-package domain extraction (`internal/store` & `internal/store/index` subpackages) | LOW | Planned |
 | M6 | Automated module-size guardrails & CI budget enforcement | LOW | Planned |
 
@@ -146,19 +146,21 @@ Split oversized Go files **within their existing packages** first so no import p
 
 #### M3 — Hot-Path HNSW & Query Function Decomposition
 
-Preserve zero-allocation hot paths and inlining budgets (verify with `go test -bench` + `make accuracy-gate` + `make oracle-gate` after every split):
+Preserve zero-allocation hot paths and inlining budgets (verified via `go test -bench -benchmem`, `make accuracy-gate`, `make oracle-gate`, and `make search-gate`):
 
-- [ ] **`internal/store/index/arrow_hnsw_insert.go` (1,913 LOC, 13 funcs)** -> split into `arrow_hnsw_insert_single.go`, `arrow_hnsw_insert_batch.go`, `arrow_hnsw_link_nodes.go`, and `arrow_hnsw_bulk_repair.go`.
-- [ ] **`internal/store/index/navigation_search.go` (1,383 LOC, 7 funcs)** -> split into `navigation_search_entry.go` (validation/dispatch), `navigation_search_beam.go` (beam traversal & predicate/bitmap paths), `navigation_search_range.go` (`SearchVectorsInRange`), and `navigation_distance_setup.go`.
-- [ ] **`internal/store/index/adaptive_index.go` (1,160 LOC)** & **`arrow_search_context.go` (1,057 LOC)** -> split config/routing from execution and per-dtype scratch buffers from pool lifecycle.
-- [ ] **`internal/query/zero_alloc_utils.go` (1,486 LOC)** & **`fast_path_filter.go` (1,068 LOC)** -> split JSON token scanners from typed Arrow column filter evaluators (`filter_fast_numeric.go`, `filter_fast_string.go`).
+- [x] **`internal/store/index/arrow_hnsw_insert.go` (1,913 LOC, 13 funcs)** -> removed and split into 4 focused files (`190–738 LOC`):
+  - `arrow_hnsw_insert_single.go` (190 LOC), `arrow_hnsw_insert_batch.go` (738 LOC), `arrow_hnsw_link_nodes.go` (607 LOC), `arrow_hnsw_link_typed.go` (409 LOC).
+- [x] **`internal/store/index/navigation_search.go` (1,383 LOC, 7 funcs)** -> removed and split into 4 focused files (`137–595 LOC`):
+  - `navigation_search_entry.go` (137 LOC), `navigation_search_beam.go` (500 LOC), `navigation_search_range.go` (183 LOC), `navigation_distance_setup.go` (595 LOC).
+- [x] **`internal/store/index/adaptive_index.go` (1,160 -> 559 LOC)** & **`arrow_search_context.go` (1,057 -> 327 LOC)** -> extracted `brute_force_index.go` (374 LOC), `brute_force_search.go` (262 LOC), `arrow_search_context_pool.go` (400 LOC), and `arrow_search_context_buffers.go` (344 LOC).
+- [x] **`internal/query/zero_alloc_utils.go` (1,486 -> 296 LOC)** & **`fast_path_filter.go` (1,068 -> 263 LOC)** -> extracted `zero_alloc_requests_basic.go` (474 LOC), `zero_alloc_requests_extended.go` (339 LOC), `zero_alloc_window_filter.go` (396 LOC), `filter_fast_numeric.go` (461 LOC), `filter_fast_numeric_ordered.go` (245 LOC), and `filter_fast_string.go` (123 LOC).
 
 #### M4 — SIMD & GPU Kernel Splitting
 
-- [ ] **`internal/simd/gen/all_kernels_gen.go` (2,453 LOC)** -> modularize generator by dtype family (`gen_float.go`, `gen_int.go`, `gen_complex.go`, `gen_quant.go`) and emit 4–5 generated assembly files (`kernels_float_amd64.s`, `kernels_int_amd64.s`, `kernels_complex_amd64.s`, `kernels_quant_amd64.s`) instead of one 17,122-LOC `all_kernels_avo_amd64.s`.
-- [ ] **`internal/simd/simd_arm64.s` (3,443 LOC)** -> split by dtype family (`simd_float_arm64.s`, `simd_int_arm64.s`, `simd_complex_arm64.s`, `simd_quant_arm64.s`).
-- [ ] **`internal/gpu/cuda/kernels.cu` (2,072 LOC)** -> split into per-metric/dtype `.cu` translation units (`kernels_l2.cu`, `kernels_cosine.cu`, `kernels_quant.cu`, `kernels_common.cuh`).
-- [ ] **`internal/gpu/metal/metal_gpu.go` (1,401 LOC)** & **`metal_gpu_optimized.go` (1,491 LOC)** -> consolidate shared Obj-C/CGO bridge helpers and split shader sources into `.metal` / per-op files.
+- [x] **`internal/simd/gen/all_kernels_gen.go` (2,453 -> 90 LOC)** -> modularized generator into `internal/simd/gen/families/` (`f16.go` 310 LOC, `float32.go` 481 LOC, `float64_avx2.go` 370 LOC, `float64_avx512.go` 287 LOC, `helpers.go` 193 LOC, `reductions.go` 348 LOC, `vertical.go` 419 LOC) and updated `internal/simd/generate.go` to emit 5 family assembly files (`kernels_float32_amd64.s`, `kernels_float64_amd64.s`, `kernels_vertical_amd64.s`, `kernels_reductions_amd64.s`, `kernels_f16_amd64.s`); removed monolithic `all_kernels_avo_amd64.s` (`./scripts/check_simd_generation.sh` byte-for-byte no-op OK).
+- [x] **`internal/simd/simd_arm64.s` (3,443 LOC)** -> extracted shared macros into `simd_arm64_macros.h` (58 LOC) and split by dtype/domain into `simd_float_arm64.s` (653 LOC), `simd_float_fixed_arm64.s` (620 LOC), `simd_f16_f64_arm64.s` (406 LOC), `simd_int_arm64.s` (580 LOC), `simd_quant_arm64.s` (507 LOC), and `simd_math_arm64.s` (645 LOC).
+- [x] **`internal/gpu/cuda/kernels.cu` (2,072 -> 6 LOC aggregator)** -> split into `kernels_common.cuh` (51 LOC), `kernels_l2.cu` (527 LOC), `kernels_l2_batched.cu` (433 LOC), `kernels_cosine_complex.cu` (410 LOC), and `kernels_quant_graph.cu` (666 LOC) preserving single-command `nvcc` container compilation (`make` / `Dockerfile.nvidia`).
+- [x] **`internal/gpu/metal/` (`metal_gpu.go` 1,401 -> 466 LOC, `metal_gpu_optimized.go` 1,491 -> 492 LOC, `metal_gpu_hybrid.go` 938 -> 315 LOC)** -> extracted shared CGo header `metal_bridge.h` (154 LOC) and Objective-C bridge units (`metal_bridge_index.m` 333 LOC, `metal_bridge_graph.m` 332 LOC, `metal_bridge_opt_ops.m` 277 LOC, `metal_bridge_opt_search.m` 523 LOC, `metal_bridge_hybrid.m` 343 LOC), plus Go splits (`metal_gpu_pq.go` 194 LOC, `metal_gpu_optimized_pq.go` 150 LOC, `metal_gpu_hybrid_dtypes.go` 288 LOC).
 
 #### M5 — God-Package Domain Extraction (`internal/store` & `internal/store/index`)
 
@@ -186,5 +188,5 @@ Once M1/M3 have established clean file boundaries, progressively extract self-co
 ### Refactoring Verification & Exit Criteria
 
 - Every PR/phase is **strictly behavior-preserving**: no wire-format, Flight action, REST endpoint, CLI flag, or Python SDK signature changes.
-- Required gates per phase: `make fmt-check`, `make vet`, `make lint`, `make sec-gosec`, `make test-short`, `make accuracy-gate`, `make oracle-gate`, and `PYTHONPATH=longbowclientsdk/src python3 -m unittest` (for M2).
+- Required gates per phase: `make fmt-check`, `make vet`, `make lint`, `make sec-gosec`, `make test-short`, `make accuracy-gate`, `make oracle-gate`, `make search-gate`, and `PYTHONPATH=longbowclientsdk/src python3 -m unittest` (for M2).
 - M3/M4 hot-path splits additionally verify zero allocation regressions (`-benchmem`) and ≤ 3% dense QPS variance against `benchmarks/baseline_cpu_20261116.json`.

@@ -226,7 +226,9 @@ func TestTurboQuantIndexIsEngaged(t *testing.T) {
 // 3.0, against 99.6% and 15.9 for the same corpus with a configured dimension.
 func TestTurboQuantGraphIsConnectedWithoutConfiguredDimension(t *testing.T) {
 	n, dims, batch := 20_000, 128, 10_000
-	if testing.Short() || raceEnabled {
+	if raceEnabled {
+		n, batch = 1_000, 500
+	} else if testing.Short() {
 		n, batch = 2_000, 1_000
 	}
 	c := newTQCorpus(t, n, dims)
@@ -259,7 +261,9 @@ func TestTurboQuantGraphIsConnectedWithoutConfiguredDimension(t *testing.T) {
 
 func TestTurboQuantGraphIsConnected(t *testing.T) {
 	n, dims, batch := 20_000, 128, 10_000
-	if testing.Short() || raceEnabled {
+	if raceEnabled {
+		n, batch = 1_000, 500
+	} else if testing.Short() {
 		n, batch = 2_000, 1_000
 	}
 	for _, bits := range []int{4, 8} {
@@ -303,7 +307,9 @@ func TestTurboQuantGraphIsConnected(t *testing.T) {
 // the float32 graph finds.
 func TestTurboQuantRecallNotBelowFloat32(t *testing.T) {
 	n, dims, k := 20_000, 128, 10
-	if testing.Short() || raceEnabled {
+	if raceEnabled {
+		n = 1_000
+	} else if testing.Short() {
 		n = 2_000
 	}
 

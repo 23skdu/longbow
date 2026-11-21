@@ -79,6 +79,9 @@ jobs:
       - name: Run Unit Tests with Coverage (short mode)
         run: go test -v -short -coverprofile=coverage.txt ./...
 
+      - name: Run Search Modes Accuracy & Performance Regression Gate
+        run: make search-gate
+
       - name: Verify 100% Package Test Coverage Gate
         run: |
           UNTESTED=$(go test -list '.*' ./... 2>&1 | grep '\[no test files\]' || true)

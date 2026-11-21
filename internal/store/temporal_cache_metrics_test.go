@@ -100,12 +100,13 @@ func TestStatsReportsResidentEntries(t *testing.T) {
 // An unlabelled cache must not vanish from the scrape; it reports under a
 // reserved label rather than being silently dropped.
 func TestUnlabelledCacheReportsUnderUnknown(t *testing.T) {
+	before := testutil.ToFloat64(metrics.TemporalCacheHitsTotal.WithLabelValues("unknown"))
 	c := NewTemporalResultCache(10)
 	c.Set("a", testResults(), time.Hour)
 	c.Get("a")
 
-	if n := testutil.ToFloat64(metrics.TemporalCacheHitsTotal.WithLabelValues("unknown")); n != 1 {
-		t.Errorf("hits{dataset=\"unknown\"} = %v, want 1", n)
+	if got := testutil.ToFloat64(metrics.TemporalCacheHitsTotal.WithLabelValues("unknown")) - before; got != 1 {
+		t.Errorf("hits{dataset=\"unknown\"} delta = %v, want 1", got)
 	}
 }
 

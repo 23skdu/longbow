@@ -18,6 +18,9 @@ func TestArrowHNSW_AddBatch_Parallel_Dense_Packed(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	dims := 128
 	numVectors := 1000
+	if testing.Short() || raceEnabled {
+		numVectors = 300
+	}
 
 	arrowConfig := types.DefaultArrowHNSWConfig()
 	arrowConfig.Dims = dims

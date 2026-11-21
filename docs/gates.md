@@ -4,7 +4,7 @@
 
 Longbow enforces a strict, defense-in-depth quality and verification architecture. Because Longbow operates as an ultra-high-throughput vector database and analytical query engine leveraging hardware-accelerated SIMD kernels (AVX2, AVX-512, ARM Neon, Metal, and CUDA), traditional unit testing alone is insufficient. Code changes can introduce subtle floating-point precision drifts, algorithmic divergence between CPU and GPU kernels, memory leaks in unmanaged memory allocations, or unbounded resource consumption.
 
-To guarantee zero regressions in correctness, performance, security, and stability, all contributions are subject to twelve formal **Code Gates**. These gates are codified in local developer tooling ([`Makefile`](file:///home/rsd/REPOS/longbow/Makefile)), automated Git pre-commit hooks ([`scripts/pre-commit.sh`](file:///home/rsd/REPOS/longbow/scripts/pre-commit.sh)), and the consolidated CI pipeline ([`.github/workflows/ci.yml`](file:///home/rsd/REPOS/longbow/.github/workflows/ci.yml)).
+To guarantee zero regressions in correctness, performance, security, and stability, all contributions are subject to thirteen formal **Code Gates**. These gates are codified in local developer tooling ([`Makefile`](https://github.com/23skdu/longbow/blob/main/Makefile)), automated Git pre-commit hooks ([`scripts/verify.sh`](https://github.com/23skdu/longbow/blob/main/scripts/verify.sh), invoked by [`scripts/pre-commit.sh`](https://github.com/23skdu/longbow/blob/main/scripts/pre-commit.sh)), and the consolidated CI pipeline ([`.github/workflows/ci.yml`](https://github.com/23skdu/longbow/blob/main/.github/workflows/ci.yml)).
 
 ---
 
@@ -14,16 +14,16 @@ The verification system is organized across three tiers:
 
 ```text
 +-------------------------------------------------------------------------------+
-| Layer 1: Developer Workstation Pre-Commit Hook (scripts/pre-commit.sh)         |
-| - Fast, bounded-memory validation (<1GB RSS, executes in ~8-10 seconds)       |
-| - Package presence, unit tests on staged packages, accuracy gate, oracle gate  |
+| Layer 1: Developer Workstation Pre-Commit Hook (scripts/verify.sh)             |
+| - Fast, bounded-memory validation (<1GB RSS, executes in ~8-12 seconds)       |
+| - Format/vet/lint, gosec/gitleaks, pkg presence, accuracy, oracle, search-gate|
 +-------------------------------------------------------------------------------+
                                       |
                                       v
 +-------------------------------------------------------------------------------+
 | Layer 2: Comprehensive Local Verification Pipeline (make ci)                  |
-| - Complete local verification of all 12 quality, security, and build gates    |
-| - Linters, cross-compilers, SIMD check, benchmarks, observability, container  |
+| - Complete local verification of all 13 quality, security, and build gates    |
+| - Linters, cross-compilers, SIMD check, search-gate, observability, container |
 +-------------------------------------------------------------------------------+
                                       |
                                       v
@@ -41,7 +41,7 @@ The verification system is organized across three tiers:
 ### Gate 1: 100% Package Test Presence Gate
 
 - **Identifier**: `test-coverage-presence`
-- **Enforcement Tool**: [`scripts/pre-commit.sh`](file:///home/rsd/REPOS/longbow/scripts/pre-commit.sh), `make test-coverage`, CI `validate` job
+- **Enforcement Tool**: [`scripts/pre-commit.sh`](https://github.com/23skdu/longbow/blob/main/scripts/pre-commit.sh), `make test-coverage`, CI `validate` job
 - **Command**:
 
 ```bash
@@ -71,7 +71,7 @@ go test -v -short -coverprofile=coverage.txt ./...
 ### Gate 3: Fuzz Testing Gate
 
 - **Identifier**: `test-fuzz`, `fuzz-coverage`
-- **Enforcement Tool**: `make test-fuzz`, `make fuzz-coverage`, [`scripts/check_fuzz_coverage.sh`](file:///home/rsd/REPOS/longbow/scripts/check_fuzz_coverage.sh), [`scripts/pre-commit.sh`](file:///home/rsd/REPOS/longbow/scripts/pre-commit.sh)
+- **Enforcement Tool**: `make test-fuzz`, `make fuzz-coverage`, [`scripts/check_fuzz_coverage.sh`](https://github.com/23skdu/longbow/blob/main/scripts/check_fuzz_coverage.sh), [`scripts/pre-commit.sh`](https://github.com/23skdu/longbow/blob/main/scripts/pre-commit.sh)
 - **Commands**:
 
 ```bash
@@ -80,7 +80,7 @@ go test -short -run='^Fuzz' ./...
 ```
 
 - **Description**: Two complementary checks:
-  1. **100% Package Fuzz Presence**: [`scripts/check_fuzz_coverage.sh`](file:///home/rsd/REPOS/longbow/scripts/check_fuzz_coverage.sh) enumerates every package in the module and fails if any package lacks a `func Fuzz*(f *testing.F)` target in its `*_test.go` files, so fuzz coverage cannot silently regress as packages are added.
+  1. **100% Package Fuzz Presence**: [`scripts/check_fuzz_coverage.sh`](https://github.com/23skdu/longbow/blob/main/scripts/check_fuzz_coverage.sh) enumerates every package in the module and fails if any package lacks a `func Fuzz*(f *testing.F)` target in its `*_test.go` files, so fuzz coverage cannot silently regress as packages are added.
   2. **Deterministic Fuzz Execution**: Executes deterministic fuzzing passes on input-parsing engines, dimensional validators, filter expressions, vector normalization functions, and geo/temporal range query parsers. This ensures that arbitrary or malformed user queries cannot cause memory faults, panics, or unbounded allocations.
 
 ---
@@ -88,7 +88,7 @@ go test -short -run='^Fuzz' ./...
 ### Gate 4: Numerical Precision & Accuracy Gate
 
 - **Identifier**: `accuracy-gate`
-- **Enforcement Tool**: `make accuracy-gate`, [`scripts/pre-commit.sh`](file:///home/rsd/REPOS/longbow/scripts/pre-commit.sh)
+- **Enforcement Tool**: `make accuracy-gate`, [`scripts/pre-commit.sh`](https://github.com/23skdu/longbow/blob/main/scripts/pre-commit.sh)
 - **Command**:
 
 ```bash
@@ -118,7 +118,7 @@ go test -v ./internal/simd/ -run='^TestSIMDAccuracy'
 ### Gate 5: Ground-Truth Mathematical Parity Gate (Oracle Gate)
 
 - **Identifier**: `oracle-gate`
-- **Enforcement Tool**: `make oracle-gate`, [`scripts/pre-commit.sh`](file:///home/rsd/REPOS/longbow/scripts/pre-commit.sh)
+- **Enforcement Tool**: `make oracle-gate`, [`scripts/pre-commit.sh`](https://github.com/23skdu/longbow/blob/main/scripts/pre-commit.sh)
 - **Command**:
 
 ```bash
@@ -168,19 +168,23 @@ markdownlint -c .markdownlint.json "docs/**/*.md"
 
 ### Gate 8: Security, Vulnerability & Dependency Audit Gates
 
-- **Identifier**: `security`, `sec-gosec`, `sec-vulncheck`, `sec-audit`
-- **Enforcement Tool**: `make security`, CI `security` job
+- **Identifier**: `security`, `sec-gosec`, `sec-vulncheck`, `sec-oidc`, `sec-secrets`, `sec-audit`
+- **Enforcement Tool**: `make security`, [`scripts/verify.sh`](https://github.com/23skdu/longbow/blob/main/scripts/verify.sh), CI `security` & `oidc-federation-security` jobs
 - **Commands**:
 
 ```bash
 govulncheck ./...
 gosec -exclude=G115 -quiet ./...
+./scripts/check_oidc_federation_security.sh
+gitleaks detect --source . --no-git --exit-code 1
 trivy fs --severity HIGH,CRITICAL .
 ```
 
 - **Description**:
   - `govulncheck`: Scans all direct and transitive Go dependencies against the official Go Vulnerability Database (National Vulnerability Database + Go Security Team bulletins).
-  - `gosec`: Inspects the Go AST for security vulnerabilities, including unhandled errors, memory disclosure, unsafe pointer arithmetic, and insecure randomness.
+  - `gosec`: Inspects the Go AST for security vulnerabilities, including unhandled errors, slice bounds overflows, memory disclosure, unsafe pointer arithmetic, and insecure randomness.
+  - `sec-oidc`: Runs [`scripts/check_oidc_federation_security.sh`](https://github.com/23skdu/longbow/blob/main/scripts/check_oidc_federation_security.sh) to check for hardcoded cloud credentials and run targeted OIDC/RBAC/TLS security tests.
+  - `gitleaks`: Scans staged commits and workspace files for leaked credentials or API tokens.
   - `trivy`: Scans the filesystem and container build definitions for known CVEs, secrets, and misconfigurations.
 
 ---
@@ -258,8 +262,26 @@ python3 scripts/unified_benchmark.py --ci --runs 3 --compare-baseline benchmarks
 ```
 
 - **Description**:
-  - Validates that the benchmarking harness scripts themselves are statistically sound (114 automated Python unit tests covering Mann-Whitney U tests, bootstrap confidence intervals, and P99 latency calculations).
+  - Validates that the benchmarking harness scripts themselves are statistically sound (automated Python unit tests covering Mann-Whitney U tests, bootstrap confidence intervals, P99 latency calculations, and cross-layer search mode coverage).
   - In CI mode, executes a 3-run benchmark pass comparing vector ingestion and query latency against `benchmarks/baseline_cpu.json`. Any performance degradation exceeding the 10% threshold halts the gate.
+
+---
+
+### Gate 13: Search Modes Accuracy & Performance Regression Gate
+
+- **Identifier**: `search-gate`
+- **Enforcement Tool**: `make search-gate`, [`scripts/verify.sh`](https://github.com/23skdu/longbow/blob/main/scripts/verify.sh), CI `validate` job
+- **Commands**:
+
+```bash
+go test -v -count=1 ./internal/store -run='^TestSearchModesGate$'
+go test -run='^$$' -bench='^BenchmarkSearchModesGate$' -benchtime=25ms -benchmem ./internal/store
+```
+
+- **Description**:
+  - Fast, deterministic functional accuracy and latency/allocation regression gate covering all **21 search types** on a shared multi-modal Arrow corpus (`TestSearchModesGate` in `internal/store/search_modes_gate_test.go`).
+  - Validates exact top-k matching, filter/geo/temporal exclusion boundaries, facet counts, and Flight `DoGet` Arrow record decoding across: `Dense`, `Hybrid`, `Filtered`, `FilteredBool`, `FilteredString`, `Sparse`, `ByID`, `Range`, `AdvancedText`, `GraphRAG`, `GlobalGraphRAG`, `Recommend`, `Geo`, `GeoBox`, `GeoHybrid`, `Temporal`, `TemporalRange`, `TemporalWindow`, `MultiModal`, `Federated`, and `LearnedIndex`.
+  - Enforces per-query mean latency bounds (< 75ms CI budget per mode after warmup; typical runtime ~4–55µs per query and ~0.5s total) plus `-benchmem` allocation/throughput tracking (`BenchmarkSearchModesGate`).
 
 ---
 
@@ -272,13 +294,14 @@ python3 scripts/unified_benchmark.py --ci --runs 3 --compare-baseline benchmarks
 | **3** | 100% Fuzz Presence & Fuzz Testing | **Yes** (short) | **Yes** | **Yes** | `make fuzz-coverage`, `make test-fuzz` |
 | **4** | Accuracy Gate (15 DTypes) | **Yes** | **Yes** | **Yes** | `make accuracy-gate` |
 | **5** | Oracle Ground-Truth Parity | **Yes** | **Yes** | **Yes** | `make oracle-gate` |
-| **6** | Static Analysis & Linters | No | **Yes** | **Yes** | `make lint`, `make vet` |
-| **7** | Code & Markdown Formatting | No | **Yes** | **Yes** | `make fmt-check`, `make markdown-lint` |
-| **8** | Security & CVE Vulnerabilities | No | **Yes** | **Yes** | `make security` |
+| **6** | Static Analysis & Linters | **Yes** (vet/lint) | **Yes** | **Yes** | `make lint`, `make vet` |
+| **7** | Code & Markdown Formatting | **Yes** (gofmt) | **Yes** | **Yes** | `make fmt-check`, `make markdown-lint` |
+| **8** | Security & CVE Vulnerabilities | **Yes** (gosec/gitleaks) | **Yes** | **Yes** | `make security` |
 | **9** | Cross-Compilation & SIMD Check | No | **Yes** | **Yes** | `make cross-compile`, `make check-simd` |
 | **10** | Observability & Promtool Rules | No | **Yes** | **Yes** | `make observability-check` |
 | **11** | Container & Helm Validation | No | **Yes** | **Yes** | `make test-docker`, `make helm-lint` |
 | **12** | Benchmark Regression Gate | No | Optional | **Yes** | `make bench-ci`, `make test-bench-harness` |
+| **13** | Search Modes Accuracy & Perf Gate | **Yes** | **Yes** | **Yes** | `make search-gate` |
 
 ---
 
@@ -316,6 +339,16 @@ go test -v ./internal/store/index/ -run='TestTurboQuantPolarReconstructCodesPari
 ```
 
 Inspect the dimension and codebook index where divergence occurred. Verify loop bounds, unrolling remainder loops, and NaN/Inf handling.
+
+### Issue: Search Modes Gate Failed Accuracy or Latency Checks
+
+- **Cause**: A search backend change broke ranking/filtering/exclusion accuracy in one of the 21 supported search modes (`Dense`, `Hybrid`, `Filtered*`, `Sparse`, `ByID`, `Range`, `AdvancedText`, `GraphRAG*`, `Recommend`, `Geo*`, `Temporal*`, `MultiModal`, `Federated`, `LearnedIndex`), or caused mean query latency on the 64-doc fixture to exceed the regression budget.
+- **Remediation**: Reproduce the failing subtest or benchmark directly:
+
+```bash
+go test -v -count=1 ./internal/store -run='TestSearchModesGate/<Mode>'
+make search-gate
+```
 
 ### Issue: Observability Gate Failed on `registered_metrics.tsv`
 

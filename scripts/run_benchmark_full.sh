@@ -5,7 +5,8 @@
 # Resumable: a config whose perf_matrix_*_<label>_*.json already exists is skipped.
 set -uo pipefail
 
-cd /home/rsd/REPOS/longbow
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
 
 DTYPES="int8,uint8,int16,uint16,int32,uint32,int64,uint64,float16,float32,float64,complex64,complex128,turboquant4,turboquant8"
 DIMS="128"

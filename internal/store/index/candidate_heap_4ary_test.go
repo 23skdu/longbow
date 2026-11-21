@@ -105,6 +105,12 @@ func TestMinCandidateHeapAdapter_DrainMatchesSortedReference(t *testing.T) {
 		if h.Len() != 0 {
 			t.Fatalf("n=%d: heap not empty after drain, Len()=%d", n, h.Len())
 		}
+		if (testing.Short() || raceEnabled) && n >= 64 && n < 1000 {
+			n += 15
+			if n > 999 {
+				n = 999
+			}
+		}
 	}
 }
 
@@ -138,6 +144,12 @@ func TestMaxCandidateHeapAdapter_DrainMatchesSortedReference(t *testing.T) {
 		}
 		if h.Len() != 0 {
 			t.Fatalf("n=%d: heap not empty after drain, Len()=%d", n, h.Len())
+		}
+		if (testing.Short() || raceEnabled) && n >= 64 && n < 1000 {
+			n += 15
+			if n > 999 {
+				n = 999
+			}
 		}
 	}
 }

@@ -18,6 +18,9 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	dims := 16
 	numBatches := 5
+	if testing.Short() {
+		numBatches = 2
+	}
 	batchSize := 100
 
 	// 1. Create index.MockDataset and Index

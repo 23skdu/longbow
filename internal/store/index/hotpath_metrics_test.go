@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -131,10 +132,12 @@ func buildHotpathIndex(tb testing.TB, name string, n, dims, pct int) (*ArrowHNSW
 func TestHotpathMetrics_SearchExportsShardedCounters(t *testing.T) {
 	const (
 		name   = "hotpath_export_ds"
-		n      = 2000
-		dims   = 64
 		search = 4
 	)
+	n, dims := 2000, 64
+	if testing.Short() || raceEnabled {
+		n, dims = 600, 16
+	}
 
 	idx, q, filter := buildHotpathIndex(t, name, n, dims, 50)
 	filter, opts := hotpathSearch(idx, filter)
@@ -182,11 +185,12 @@ func TestHotpathMetrics_SearchExportsShardedCounters(t *testing.T) {
 func TestHotpathMetrics_ConcurrentSearchesAreExactlyCounted(t *testing.T) {
 	const (
 		name    = "hotpath_exact_ds"
-		n       = 2000
-		dims    = 64
 		workers = 8
-		rounds  = 10
 	)
+	n, dims, rounds := 2000, 64, 10
+	if testing.Short() || raceEnabled {
+		n, dims, rounds = 600, 16, 4
+	}
 
 	idx, q, filter := buildHotpathIndex(t, name, n, dims, 50)
 	filter, opts := hotpathSearch(idx, filter)
@@ -208,6 +212,7 @@ func TestHotpathMetrics_ConcurrentSearchesAreExactlyCounted(t *testing.T) {
 				return
 			default:
 				metrics.FlushHotpathCounters()
+				runtime.Gosched()
 			}
 		}
 	}()

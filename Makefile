@@ -30,7 +30,7 @@ IMAGE_TAG     ?= latest
 	test test-short test-all test-wasm test-features race test-coverage coverage-gate coverage-html test-docker \
 	test-adbc test-adbc-python test-adbc-so test-version \
 	cross-compile check-simd test-bench-harness check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
-	accuracy-gate oracle-gate observability-inventory observability-check observability-rules \
+	accuracy-gate oracle-gate search-gate observability-inventory observability-check observability-rules \
 	docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-gpu docker-build-all \
 	makehooks install-commit-hook install-hooks verify pre-commit
 
@@ -107,6 +107,7 @@ help:
 	@echo "  test-features        Run roadmap Items 1-15 feature & fuzz test suite"
 	@echo "  accuracy-gate        Verify numerical precision tolerances across 15 vector dtypes"
 	@echo "  oracle-gate          Verify ground-truth mathematical parity vs reference oracles"
+	@echo "  search-gate          Verify accuracy and latency regression across all 21 search modes"
 	@echo "  observability-check  Verify metric declarations and alert rule bindings"
 	@echo "  helm-lint            Lint and dry-run template the Helm chart"
 	@echo "  bench-ci             Run fast Unified Benchmark in CI mode"
@@ -129,7 +130,7 @@ help:
 # Combined Local CI Pipeline
 # ==============================================================================
 
-ci: fmt-check lint vet build build-adbc cross-compile check-simd test-coverage fuzz-coverage test-docker test-bench-harness test-version check-version accuracy-gate oracle-gate observability-check observability-rules sec-gosec helm-lint
+ci: fmt-check lint vet build build-adbc cross-compile check-simd test-coverage fuzz-coverage test-docker test-bench-harness test-version check-version accuracy-gate oracle-gate search-gate observability-check observability-rules sec-gosec helm-lint
 	@echo "=========================================================="
 	@echo " ✓ Complete local CI verification pipeline passed 100%!"
 	@echo "=========================================================="
@@ -452,6 +453,11 @@ accuracy-gate:
 oracle-gate:
 	@echo "Running Oracle Gate (ground-truth parity vs reference oracles)..."
 	$(GO) test -v ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/ -run='Parity'
+
+search-gate:
+	@echo "Running Search Modes Gate (accuracy & performance regression across all 21 search types)..."
+	$(GO) test -v -count=1 ./internal/store -run='^TestSearchModesGate$$'
+	$(GO) test -run='^$$' -bench='^BenchmarkSearchModesGate$$' -benchtime=25ms -benchmem ./internal/store
 
 # Observability conformance (docs/roadmap.md Items 18-20, 24)
 observability-inventory:

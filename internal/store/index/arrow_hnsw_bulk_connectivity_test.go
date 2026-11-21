@@ -112,7 +112,10 @@ func unreachableIDs(reach map[uint32]bool, n int) []int {
 // TestAddBatch_Bulk_Typed fail intermittently: on collinear data roughly 200 of
 // 1100 nodes lost their only path to the entry point on every single run.
 func TestBulkInsert_CollinearGraphStaysConnected(t *testing.T) {
-	const n = 512
+	n := 512
+	if testing.Short() {
+		n = 260
+	}
 
 	for _, tc := range []struct {
 		desc string
@@ -145,7 +148,7 @@ func TestBulkInsert_CollinearGraphStaysConnected(t *testing.T) {
 				"%d/%d nodes unreachable from entry point %d", n-len(reach), n, idx.GetEntryPoint())
 
 			// An exhaustive search can only return nodes the traversal reaches.
-			vec, err := idx.GetVector(n / 2)
+			vec, err := idx.GetVector(uint32(n / 2)) // #nosec G115
 			require.NoError(t, err)
 			opts := types.DefaultSearchOptions()
 			opts.Ef = n
@@ -155,7 +158,7 @@ func TestBulkInsert_CollinearGraphStaysConnected(t *testing.T) {
 
 			found := false
 			for _, c := range res {
-				if uint32(c.ID) == n/2 {
+				if uint32(c.ID) == uint32(n/2) { // #nosec G115
 					found = true
 					break
 				}
@@ -169,7 +172,10 @@ func TestBulkInsert_CollinearGraphStaysConnected(t *testing.T) {
 // for the one-at-a-time insert path, which shares the degree budget with the
 // bulk path.
 func TestSequentialInsert_CollinearGraphStaysConnected(t *testing.T) {
-	const n = 512
+	n := 512
+	if testing.Short() {
+		n = 192
+	}
 
 	for _, tc := range []struct {
 		desc string

@@ -161,7 +161,11 @@ func TestMemoryLeak_GoroutineCount(t *testing.T) {
 		{Name: "id", Type: arrow.PrimitiveTypes.Uint32},
 	}, nil)
 
-	for i := 0; i < 50; i++ {
+	iterations := 50
+	if testing.Short() {
+		iterations = 10
+	}
+	for i := 0; i < iterations; i++ {
 		name := fmt.Sprintf("ds_%d", i)
 		s.PrewarmDataset(name, schema)
 		_ = s.DropDataset(ctx, name)

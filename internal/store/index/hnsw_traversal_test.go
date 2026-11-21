@@ -172,7 +172,11 @@ func TestArrowHNSW_VisitedListGrowth(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
 	dim := 16
-	vectors := make([][]float32, 1000)
+	numVecs := 1000
+	if testing.Short() {
+		numVecs = 300
+	}
+	vectors := make([][]float32, numVecs)
 	for i := range vectors {
 		vectors[i] = make([]float32, dim)
 		for j := range dim {
@@ -195,7 +199,7 @@ func TestArrowHNSW_VisitedListGrowth(t *testing.T) {
 
 	idx := index.NewArrowHNSW(ds, &config, nil)
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < numVecs; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}

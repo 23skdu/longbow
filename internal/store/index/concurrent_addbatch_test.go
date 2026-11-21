@@ -84,7 +84,9 @@ func TestArrowHNSW_ConcurrentAddBatch_Int8_2Batches(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	dims := 128
 	batchSize := 5_000
-	if testing.Short() {
+	if raceEnabled {
+		batchSize = 400
+	} else if testing.Short() {
 		batchSize = 1_000
 	}
 
@@ -154,7 +156,9 @@ func TestArrowHNSW_ConcurrentAddBatch_Float16_Search(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	dims := 128
 	batchSize := 2_500
-	if testing.Short() {
+	if raceEnabled {
+		batchSize = 300
+	} else if testing.Short() {
 		batchSize = 600
 	}
 	numBatches := 5

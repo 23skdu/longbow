@@ -20,6 +20,9 @@ func FuzzRepairAgentGraphSize(f *testing.F) {
 		if nodeCount < 0 || nodeCount > 10000 {
 			t.Skip("Invalid node count")
 		}
+		if (testing.Short() || raceEnabled) && nodeCount > 200 {
+			t.Skip("Skipping large seed under short/race")
+		}
 
 		config := RepairAgentConfig{
 			Enabled:            true,
@@ -155,9 +158,13 @@ func FuzzRepairAgentMParameter(f *testing.F) {
 		idx := NewArrowHNSW(nil, &hnswConfig, nil)
 
 		// Insert nodes
-		for i := 0; i < 100; i++ {
+		n := 100
+		if testing.Short() || raceEnabled {
+			n = 40
+		}
+		for i := 0; i < n; i++ {
 			vec := []float32{float32(i) / 100.0, float32(i%10) / 10.0}
-			_ = idx.InsertWithVector(uint32(i), vec, 0)
+			_ = idx.InsertWithVector(uint32(i), vec, 0) // #nosec G115
 		}
 
 		// Delete some

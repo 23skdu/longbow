@@ -76,6 +76,9 @@ func TestHNSWReachabilityAtScale(t *testing.T) {
 	if testing.Short() {
 		n = 4_000
 	}
+	if raceEnabled && n > 1_500 {
+		n = 1_500
+	}
 	idx, _ := buildScaleQualityIndex(t, n, 32)
 	defer func() { _ = idx.Close() }()
 
@@ -111,6 +114,10 @@ func TestHNSWRecallAt10VsBruteForce(t *testing.T) {
 	if testing.Short() {
 		n = 4_000
 		numQueries = 20
+	}
+	if raceEnabled && n > 1_500 {
+		n = 1_500
+		numQueries = 12
 	}
 	const (
 		dims = 32

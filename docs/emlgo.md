@@ -139,7 +139,7 @@ Use `tensor.SetMathImpl(tensor.MathEML)` to switch the active tensor execution e
 
 #### B. Float64 Support & Vectorized Batch Dispatch
 
-In [`internal/tensor/ops.go`](file:///home/rsd/REPOS/longbow/internal/tensor/ops.go):
+In [`internal/tensor/ops.go`](https://github.com/23skdu/longbow/blob/main/internal/tensor/ops.go):
 
 - Enabled complete element-wise `Float64` unary and binary tensor operations (`Add`, `Sub`, `Mul`, `Div`, `Pow`, `Sin`, `Cos`, `Exp`, `Log`, `Sqrt`, `Sinh`, `Cosh`, `Tanh`, `Asin`, `Acos`, `Atan`).
 - Integrated `elementwiseBinaryBroadcastFloat64` for arbitrary tensor broadcasting.
@@ -151,7 +151,7 @@ Longbow previously evaluated `Sinh`, `Cosh`, and `Tanh` using a 12-iteration pur
 
 #### D. FMA Contractions in Tensor Calculus
 
-In [`internal/tensor/calculus.go`](file:///home/rsd/REPOS/longbow/internal/tensor/calculus.go), multi-index contractions for differential geometry and curvature evaluation were refactored to use `mathutil.FMA`:
+In [`internal/tensor/calculus.go`](https://github.com/23skdu/longbow/blob/main/internal/tensor/calculus.go), multi-index contractions for differential geometry and curvature evaluation were refactored to use `mathutil.FMA`:
 
 - **Christoffel Symbols ($\Gamma^\lambda_{\mu\nu}$)**:
   $$\Gamma^\lambda_{\mu\nu} = \frac{1}{2} g^{\lambda\sigma} \left( \partial_\mu g_{\nu\sigma} + \partial_\nu g_{\mu\sigma} - \partial_\sigma g_{\mu\nu} \right)$$
@@ -166,7 +166,7 @@ Using `mathutil.FMA` executes each `sum += a * b` in a single CPU cycle with a s
 
 ### 3. SIMD Distance Baselines (`internal/simd`)
 
-In [`internal/simd/simd_baseline.go`](file:///home/rsd/REPOS/longbow/internal/simd/simd_baseline.go):
+In [`internal/simd/simd_baseline.go`](https://github.com/23skdu/longbow/blob/main/internal/simd/simd_baseline.go):
 
 - Upgraded `EuclideanDistanceFloat64` and `CosineDistanceFloat64` unrolled reference implementations to use `mathutil.Sqrt`.
 - Ensures zero heap allocations and exact bit-level parity with hardware instructions.
@@ -175,7 +175,7 @@ In [`internal/simd/simd_baseline.go`](file:///home/rsd/REPOS/longbow/internal/si
 
 ## A/B Benchmarking & Parity Results
 
-A dedicated A/B testing suite was implemented in [`internal/tensor/emlgo_ab_test.go`](file:///home/rsd/REPOS/longbow/internal/tensor/emlgo_ab_test.go) and [`internal/simd/emlgo_ab_test.go`](file:///home/rsd/REPOS/longbow/internal/simd/emlgo_ab_test.go).
+A dedicated A/B testing suite was implemented in [`internal/tensor/emlgo_ab_test.go`](https://github.com/23skdu/longbow/blob/main/internal/tensor/emlgo_ab_test.go) and [`internal/simd/emlgo_ab_test.go`](https://github.com/23skdu/longbow/blob/main/internal/simd/emlgo_ab_test.go).
 
 ### Benchmark Environment
 

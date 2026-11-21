@@ -411,10 +411,13 @@ func withFilterMask(force bool, fn func()) {
 // with the roaring probe. Result sets must be identical.
 func TestFilteredSearchParity_EndToEnd(t *testing.T) {
 	const (
-		n     = 2_000
 		dims  = 32
 		query = 10
 	)
+	n, queries := 2_000, 5
+	if testing.Short() || raceEnabled {
+		n, queries = 1_100, 2
+	}
 	idx, rec := buildParityIndex(t, n, dims, 7)
 	defer rec.Release()
 
@@ -430,7 +433,7 @@ func TestFilteredSearchParity_EndToEnd(t *testing.T) {
 		{name: "first_10", ids: seqIDs(0, 10)},
 		{name: "last_10", ids: seqIDs(n-10, n)},
 		{name: "word_boundaries", ids: []uint32{0, 63, 64, 65, 127, 128, 191, 192}},
-		{name: "singles", ids: []uint32{0, 1, 999, 1000, n - 1}},
+		{name: "singles", ids: []uint32{0, 1, 999, 1000, uint32(n - 1)}}, // #nosec G115
 	}
 
 	r := rand.New(rand.NewSource(42)) // #nosec G404
@@ -444,7 +447,7 @@ func TestFilteredSearchParity_EndToEnd(t *testing.T) {
 			mask, _ := buildFilterMask(bm, nil)
 			require.NotNil(t, mask)
 
-			for qi := 0; qi < 5; qi++ {
+			for qi := 0; qi < queries; qi++ {
 				q := make([]float32, dims)
 				for j := range q {
 					q[j] = float32(r.NormFloat64())
@@ -480,10 +483,13 @@ func TestFilteredSearchParity_EndToEnd(t *testing.T) {
 // alongside the bitmap filter, and asserts the two probe implementations agree.
 func TestFilteredSearchParity_StructuredPredicates(t *testing.T) {
 	const (
-		n     = 1_500
 		dims  = 16
 		query = 10
 	)
+	n, queries := 1_500, 5
+	if testing.Short() || raceEnabled {
+		n, queries = 800, 2
+	}
 	idx, rec := buildParityIndex(t, n, dims, 11)
 	defer rec.Release()
 
@@ -549,7 +555,7 @@ func TestFilteredSearchParity_StructuredPredicates(t *testing.T) {
 
 			opts := types.SearchOptions{Predicate: st.predic}
 			r := rand.New(rand.NewSource(5)) // #nosec G404
-			for qi := 0; qi < 5; qi++ {
+			for qi := 0; qi < queries; qi++ {
 				q := make([]float32, dims)
 				for j := range q {
 					q[j] = float32(r.NormFloat64())
@@ -619,7 +625,11 @@ func TestFilteredSearchParity_InRange(t *testing.T) {
 			wrapper.filter = roaringFrom(s.ids)
 
 			r := rand.New(rand.NewSource(6)) // #nosec G404
-			for qi := 0; qi < 3; qi++ {
+			queries := 3
+			if testing.Short() || raceEnabled {
+				queries = 2
+			}
+			for qi := 0; qi < queries; qi++ {
 				q := make([]float32, dims)
 				for j := range q {
 					q[j] = float32(r.NormFloat64())
@@ -650,11 +660,13 @@ func TestFilteredSearchParity_InRange(t *testing.T) {
 // state, no leaked filterBits, no torn mask.
 func TestFilterMaskConcurrentUse(t *testing.T) {
 	const (
-		n       = 1_200
 		dims    = 16
 		workers = 8
-		rounds  = 25
 	)
+	n, rounds := 1_200, 25
+	if testing.Short() || raceEnabled {
+		n, rounds = 600, 8
+	}
 	idx, rec := buildParityIndex(t, n, dims, 17)
 	defer rec.Release()
 
@@ -662,11 +674,11 @@ func TestFilterMaskConcurrentUse(t *testing.T) {
 	// compete for scratch buffers of different lengths.
 	filters := make([]*roaring.Bitmap, 0, 4)
 	all := roaring.New()
-	all.AddRange(0, n)
+	all.AddRange(0, uint64(n)) // #nosec G115
 	filters = append(filters, all)
 	filters = append(filters, roaringFrom(stratifiedIDs(n, 10, 31)))
 	filters = append(filters, roaringFrom(stratifiedIDs(n, 90, 32)))
-	filters = append(filters, roaringFrom([]uint32{0, 1, 2, 3, n - 1}))
+	filters = append(filters, roaringFrom([]uint32{0, 1, 2, 3, uint32(n - 1)})) // #nosec G115
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, workers)

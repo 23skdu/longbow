@@ -96,7 +96,7 @@ Target budgets for all hand-maintained code:
 
 | Phase | Area | Priority | Status |
 |---|---|---|---|
-| M1 | Same-package splits of P0/P1 Go god files (zero API breakage) | HIGH | Planned |
+| M1 | Same-package splits of P0/P1 Go god files (zero API breakage) | HIGH | Completed |
 | M2 | Python SDK (`client.py`) & benchmark orchestrator (`unified_benchmark.py`) modularization | HIGH | Planned |
 | M3 | Hot-path HNSW & query function decomposition (`arrow_hnsw_insert.go`, `navigation_search.go`, `query/`) | MEDIUM | Planned |
 | M4 | SIMD generator/assembly & GPU kernel splits (`internal/simd`, `internal/gpu/{cuda,metal}`) | MEDIUM | Planned |
@@ -105,20 +105,27 @@ Target budgets for all hand-maintained code:
 
 #### M1 — Same-Package Splits of P0/P1 Go God Files (Zero API Breakage)
 
-Split oversized Go files **within their existing packages** first so no import paths or exported signatures change and every move is verifiable via `go vet` + existing tests:
+Split oversized Go files **within their existing packages** first so no import paths or exported signatures change and every move is verifiable via `go vet` + existing tests (all resulting M1 production files ≤ 680 LOC, well under the 800-LOC hard ceiling):
 
-- [ ] **`internal/store/rest_graphql.go` (3,449 LOC)** -> split by HTTP/GraphQL concern:
-  - `rest_server.go` (server bootstrap, auth/CORS/rate-limit middleware, JSON helpers, route registration)
-  - `rest_search_handlers.go` (dense, hybrid, filtered, text, geo, temporal, multimodal, range, recommend, federated, explain)
-  - `rest_dataset_handlers.go` (namespaces, datasets, vectors CRUD, schema registry, materialized views)
-  - `rest_admin_handlers.go` (RBAC keys/RLS/audit, OIDC providers/exchange, backups, usage/billing, cloud, sharding, streams)
-  - `rest_openapi.go` (OpenAPI 3.0 spec generation)
-  - `graphql_engine.go` (GraphQL query/mutation parser & resolvers)
-- [ ] **`cmd/bench-tool/main.go` (2,074 LOC)** -> split into `cmd/bench-tool/{main.go,corpus.go,ingest.go,search_tickets.go,search_runner.go,report.go}`.
-- [ ] **`cmd/longbow/main.go` (1,182 LOC)** -> split into `cmd/longbow/{main.go,config_flags.go,auth_wire.go,servers.go,shutdown.go}`.
-- [ ] **`internal/store/text_search_advanced.go` (1,636 LOC)** -> split into `text_query_ast.go` (lexer/parser), `text_corpus_cache.go` (postings/trigram index), `text_scoring.go` (BM25/phrase/fuzzy/snippets/facets).
-- [ ] **`internal/store/store_ingest.go` (1,082 LOC)** -> decompose `DoPut` into cohesive helpers (`ingest_admission.go`, `ingest_hooks.go` for disk/temporal/geo/text hooks, `store_ingest.go` for stream orchestration).
-- [ ] **`internal/store/dataset.go` (1,409 LOC)**, **`hnsw_autoshard.go` (1,253 LOC)**, **`temporal_search.go` (1,219 LOC)**, **`streaming_connectors.go` (1,106 LOC)**, **`internal/metrics/metrics.go` (1,295 LOC)** -> split each into 2–3 focused files (≤ 500 LOC each).
+- [x] **`internal/store/rest_graphql.go` (3,449 LOC)** -> removed and split into 9 focused files (93–680 LOC):
+  - `rest_server.go` (93 LOC: auth/permission wrappers, JSON helpers, health handler)
+  - `rest_openapi.go` (107 LOC: OpenAPI 3.0 spec generation & handler)
+  - `rest_dataset_ops.go` (220 LOC: stream upsert, vector CRUD helpers, dataset info inspection)
+  - `rest_dataset_handlers.go` (420 LOC: namespaces, datasets, vectors CRUD, data/schema/BM25/provenance sub-actions)
+  - `rest_search_handlers.go` (443 LOC: search/hybrid/text/geo/temporal/multimodal/range/recommend/federated/aggregations/facets/explain)
+  - `rest_admin_handlers.go` (413 LOC: usage, RBAC keys/RLS/audit, OIDC providers/exchange, backups, streams HTTP handlers)
+  - `rest_cloud_sharding_handlers.go` (492 LOC: rerank, query rewrite, elastic sharding, materialized views, analytics, cloud control-plane)
+  - `graphql_parser.go` (680 LOC: GraphQL lexer, AST, parser, variable/arg/projection helpers, schema introspection)
+  - `graphql_engine.go` (674 LOC: GraphQL query/mutation executor, HTTP & Flight action handlers)
+- [x] **`cmd/bench-tool/main.go` (2,074 LOC)** -> split into `cmd/bench-tool/{main.go,corpus.go,ingest.go,search_tickets.go,search_runner.go,report.go}` (224–491 LOC each).
+- [x] **`cmd/longbow/main.go` (1,182 LOC)** -> split into `cmd/longbow/{main.go,config.go,auth_wire.go,runtime_wire.go,servers.go,shutdown.go}` (112–426 LOC each).
+- [x] **`internal/store/text_search_advanced.go` (1,636 LOC)** -> split into `text_query_ast.go` (479 LOC), `text_corpus_cache.go` (353 LOC), `text_scoring.go` (563 LOC), and `text_search_advanced.go` (272 LOC: manager/analytics/Flight actions).
+- [x] **`internal/store/store_ingest.go` (1,082 LOC)** -> split into `ingest_admission.go` (427 LOC), `ingest_hooks.go` (339 LOC: pressure quantization, DiskStore, secondary temporal/geo/text hooks, norm helper), and `store_ingest.go` (380 LOC).
+- [x] **`internal/store/dataset.go` (1,409 LOC)** -> split into `dataset.go` (584 LOC), `dataset_indexing.go` (480 LOC), and `dataset_filtering.go` (366 LOC).
+- [x] **`internal/store/hnsw_autoshard.go` (1,253 LOC)** -> split into `hnsw_autoshard.go` (476 LOC), `hnsw_autoshard_migrate.go` (451 LOC), and `hnsw_autoshard_search.go` (347 LOC).
+- [x] **`internal/store/temporal_search.go` (1,219 LOC)** -> split into `temporal_index.go` (432 LOC), `temporal_ops.go` (297 LOC), and `temporal_search.go` (505 LOC).
+- [x] **`internal/store/streaming_connectors.go` (1,106 LOC)** -> split into `streaming_schema_registry.go` (328 LOC), `streaming_connectors.go` (502 LOC), and `streaming_drivers.go` (298 LOC).
+- [x] **`internal/metrics/metrics.go` (1,295 LOC)** -> split into `metrics.go` (495 LOC), `metrics_engine_ops.go` (484 LOC), and `metrics_backends_quant.go` (330 LOC).
 
 #### M2 — Python Monolith Modularization
 

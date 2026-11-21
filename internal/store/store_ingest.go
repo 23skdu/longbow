@@ -3,380 +3,19 @@ package store
 import (
 	"context"
 	"errors"
-	"fmt"
-	"math"
 	"os"
 	"runtime"
-	"runtime/pprof"
 	"strconv"
 	"strings"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
-	"github.com/23skdu/longbow/internal/tracing"
 )
-
-func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
-	_, span := tracing.CreateSpan(stream.Context(), "DoPut")
-	if span != nil {
-		defer span.End()
-	}
-
-	r, err := flight.NewRecordReader(stream, ipc.WithAllocator(s.pooledMem))
-	if err != nil {
-		s.logger.Error().Err(err).Msg("DoPut failed to create reader")
-		return err
-	}
-	defer r.Release()
-
-	var name string
-
-	// Check descriptor immediately (sent with Schema)
-	fd := r.LatestFlightDescriptor()
-	if fd != nil && len(fd.Path) > 0 {
-		name = fd.Path[0]
-		// Pre-warm dataset with schema to avoid lazy init overhead in first batch
-		s.PrewarmDataset(name, r.Schema())
-	} else {
-		return fmt.Errorf("missing flight descriptor path")
-	}
-
-	if _, err := s.AuthorizeDatasetAccess(stream.Context(), PermIngest, name); err != nil {
-		return err
-	}
-
-	s.logger.Info().Str("dataset", name).Msg("DoPut started (Batched)")
-
-	// 0. Admission Control (Backpressure)
-	if s.admission != nil {
-		if err := s.admission.Admit(stream.Context(), "ingest"); err != nil {
-			return err
-		}
-	}
-
-	s.logger.Info().Str("schema", r.Schema().String()).Msg("DoPut Schema")
-	// Use RCU helper for create
-	ds, created := s.getOrCreateDataset(name, func() *Dataset {
-		ds := NewDataset(name, r.Schema())
-		ds.Logger = s.logger
-		ds.Topo = s.numaTopology
-		s.initDiskStore(ds, name, r.Schema())
-		return ds
-	})
-
-	if ds == nil {
-		return status.Errorf(codes.Internal, "failed to retrieve or create dataset %s", name)
-	}
-
-	ds.ActiveIngestStreams.Add(1)
-	defer ds.ActiveIngestStreams.Add(-1)
-
-	// Namespace quota check (will be done per-flush in the loop below)
-	nsName, _ := ParseNamespacedPath(name)
-	ns := s.GetNamespace(nsName)
-
-	// Schema Evolution & Validation
-	// Validate compatibility and evolve if additive changes are present
-	if err := ds.SchemaManager.Evolve(r.Schema()); err != nil {
-		s.logger.Error().Err(err).Str("dataset", name).Msg("Schema evolution/validation failed")
-		return status.Errorf(codes.InvalidArgument, "schema mismatch: %v", err)
-	}
-
-	// Update dataset's schema reference to ensure it uses the latest version
-	// We need to lock to update the pointer safely
-	ds.dataMu.Lock()
-	ds.Schema = ds.SchemaManager.GetCurrentSchema()
-	ds.dataMu.Unlock()
-
-	if created {
-		mem := ds.IndexMemoryBytes.Load()
-		if mem > 100*1024*1024 {
-			s.logger.Warn().
-				Str("dataset", name).
-				Int64("mem", mem).
-				Msg("Huge initial memory for dataset")
-		}
-		s.currentMemory.Add(mem)
-	}
-
-	// Initialize GPU if enabled
-	ds.dataMu.RLock()
-	idx := ds.Index
-	ds.dataMu.RUnlock()
-	if idx != nil {
-		s.initGPUIfEnabled(idx)
-	}
-
-	// Batching configuration
-	const maxBatchRows = 10000             // Aggressive batching for small vectors
-	const maxBatchBytes = 32 * 1024 * 1024 // 32MB cap
-	batch := make([]arrow.RecordBatch, 0, 100)
-
-	// Helper to flush batch
-	flush := func() error {
-		if len(batch) == 0 {
-			return nil
-		}
-		defer func() {
-			for _, b := range batch {
-				b.Release()
-			}
-			batch = batch[:0]
-		}()
-
-		// Namespace and tenant usage quota check on flush
-		totalRows := int64(0)
-		totalBytes := int64(0)
-		for _, b := range batch {
-			totalRows += b.NumRows()
-			totalBytes += estimateBatchSize(b)
-		}
-		if ns != nil {
-			if err := ns.CheckQuota(totalRows, 0, totalBytes); err != nil {
-				return status.Errorf(codes.ResourceExhausted, "namespace quota exceeded: %v", err)
-			}
-		}
-		if err := s.enforceTenantIngestQuota(stream.Context(), name, totalRows, totalBytes); err != nil {
-			return err
-		}
-
-		startFlush := time.Now()
-		metrics.DoPutBatchSizeBytes.Observe(float64(totalBytes))
-		metrics.DoPutBatchSizeVectors.Observe(float64(totalRows))
-
-		// Optimization: Concatenate small batches into one large batch
-		// to reduce WAL overhead and lock contention.
-		var combined arrow.RecordBatch
-		if len(batch) == 1 {
-			combined = batch[0]
-			combined.Retain()
-		} else {
-			var err error
-			combined, err = s.concatenateBatches(batch)
-			if err != nil {
-				s.logger.Error().Err(err).Msg("Failed to concatenate batches")
-				// Fallback to processing individually
-				if err := s.flushPutBatch(stream.Context(), ds, batch); err != nil {
-					return err
-				}
-				return nil
-			}
-		}
-
-		// Flush single combined batch with Circuit Breaker.
-		// pprof labels allow "go tool pprof" to filter by dataset/op so profiles
-		// show per-dataset ingestion cost rather than a flat flushPutBatch stack.
-		cb := s.Breakers.GetOrCreate(ds.Name)
-		var flushErr error
-		pprof.Do(stream.Context(), pprof.Labels("dataset", ds.Name, "op", "flush"), func(ctx context.Context) {
-			_, flushErr = cb.Execute(func() (any, error) {
-				return nil, s.flushPutBatch(ctx, ds, []arrow.RecordBatch{combined})
-			})
-		})
-		combined.Release()
-		if flushErr != nil {
-			return flushErr
-		}
-
-		metrics.DoPutBatchLatencySeconds.Observe(time.Since(startFlush).Seconds())
-		return nil
-	}
-
-	for r.Next() {
-		rec := r.RecordBatch()
-
-		// If the record itself is larger than maxBatchRows, slice it into manageable chunks.
-		// This prevents O(N^2) bottlenecks in the indexing worker's AddBatchBulk phase.
-		if rec.NumRows() > maxBatchRows {
-			for i := int64(0); i < rec.NumRows(); i += maxBatchRows {
-				end := i + maxBatchRows
-				if end > rec.NumRows() {
-					end = rec.NumRows()
-				}
-				subRec := rec.NewSlice(i, end)
-
-				// Process sub-record
-				subRecSize := estimateBatchSize(subRec)
-				if len(batch) == 0 && subRecSize >= maxBatchBytes {
-					metrics.DoPutBatchSizeBytes.Observe(float64(subRecSize))
-					err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{subRec})
-					subRec.Release()
-					if err != nil {
-						return err
-					}
-					continue
-				}
-
-				batch = append(batch, subRec)
-
-				// Check accumulator size
-				totalBatchRows := int64(0)
-				for _, b := range batch {
-					totalBatchRows += b.NumRows()
-				}
-
-				if totalBatchRows >= maxBatchRows {
-					if err := flush(); err != nil {
-						return err
-					}
-				}
-			}
-			continue
-		}
-
-		// Adaptive Batching (Byte-Aware Option 1):
-		// If the record is large enough (>= 10MB) and we don't have pending small records,
-		// write it directly to avoid concatenation/slice overhead.
-		recSize := estimateBatchSize(rec)
-		if len(batch) == 0 && recSize >= maxBatchBytes {
-			rec.Retain()
-			metrics.DoPutBatchSizeBytes.Observe(float64(recSize))
-			if err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{rec}); err != nil {
-				rec.Release()
-				return err
-			}
-			rec.Release()
-			continue
-		}
-
-		rec.Retain()
-		batch = append(batch, rec)
-
-		// Check accumulator size
-		totalBatchRows := int64(0)
-		for _, b := range batch {
-			totalBatchRows += b.NumRows()
-		}
-
-		if totalBatchRows >= maxBatchRows {
-			if err := flush(); err != nil {
-				return err
-			}
-		}
-	}
-
-	if r.Err() != nil {
-		s.logger.Error().Err(r.Err()).Msg("DoPut stream error")
-		// Cleanup pending
-		for _, b := range batch {
-			b.Release()
-		}
-		return r.Err()
-	}
-
-	// Flush remaining
-	if len(batch) > 0 {
-		if err := flush(); err != nil {
-			return err
-		}
-	}
-
-	s.logger.Info().Str("name", name).Msg("DoPut completed (Batched)")
-	s.PublishIndexBoundaries()
-	return nil
-}
-
-// flushPutBatch handles writing a batch of records to WAL and memory
-func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []arrow.RecordBatch) error {
-	reg := s.GetSchemaRegistry()
-	for _, rec := range batch {
-		if err := reg.ValidateBatch(ctx, ds.Name, rec); err != nil {
-			return status.Errorf(codes.InvalidArgument, "%v", err)
-		}
-	}
-	s.broadcastCDC(ds.Name, batch)
-
-	if len(batch) == 0 {
-		return nil
-	}
-	name := ds.Name
-	s.logger.Info().Str("dataset", name).Int("batch_size", len(batch)).Msg("Flushing put batch")
-
-	// 1. Enqueue to Persistence Queue (Async WAL) & Ingestion Queue (Async Indexing)
-	// We do this in parallel or sequentially.
-	// Since both are async queues now, the latency is just channel send.
-
-	ts := time.Now().UnixNano()
-
-	// Record to auto-scaler (Part 1.1)
-	if s.scaler != nil {
-		totalRows := 0
-		for _, rec := range batch {
-			totalRows += int(rec.NumRows())
-		}
-		s.scaler.RecordIngest(totalRows)
-	}
-
-	// Soft Backpressure: Apply linear delay if system is starting to get stressed
-	if delay := s.IngestionBackpressureDelay(); delay > 0 {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-		}
-	}
-
-	// Hard Backpressure: Block if system is at capacity
-	if s.CheckIngestionBackpressure() {
-		// Log warning occasionally (every 5 seconds?) or use rate limiter
-		s.logger.Warn().Msg("Applying ingestion backpressure (HARD block)")
-		// Loop with sleep until pressure relieves or context done
-		ticker := time.NewTicker(200 * time.Millisecond) // Check every 200ms
-		defer ticker.Stop()
-
-		// Wait loop
-		for s.CheckIngestionBackpressure() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-ticker.C:
-			}
-		}
-	}
-
-	for _, rec := range batch {
-		rec.Retain() // Retain for Persistence Worker
-		rec.Retain() // Retain for Ingestion Worker (applyBatchToMemory triggers release)
-
-		// Note: We retain twice because two different workers will Release() it.
-
-		// Update lag metric
-		metrics.IngestionLagCount.Add(float64(rec.NumRows()))
-
-		// 1. Send to Persistence (Backpressure if full to ensure durability logic isn't overrun)
-		// If queue is full, we block. This throttles client if disk is slow.
-		select {
-		case s.persistenceQueue <- persistenceJob{datasetName: name, batch: rec, ts: ts}:
-		case <-ctx.Done():
-			rec.Release() // Release both retains on cancellation
-			rec.Release()
-			return ctx.Err()
-		}
-
-		// 2. Send to Ingestion
-		// Increment pending ingestion count
-		ds.PendingIngestion.Add(1)
-
-		if !s.ingestionQueue.PushBlocking(IngestionJob{DS: ds, Batch: rec, TS: ts}, 5*time.Second) {
-			// If PushBlocking fails (timeout or stop), we must adjust PendingIngestion
-			ds.PendingIngestion.Add(-1)
-			return errors.New("failed to enqueue ingestion job (timeout or queue closed)")
-		}
-	}
-
-	return nil
-}
 
 // StoreRecordBatch ingests a record batch into the specified dataset.
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
@@ -418,62 +57,6 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	return nil
 }
 
-// concatenateBatches merges multiple record batches into one
-func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.RecordBatch, error) {
-	if len(batches) == 0 {
-		return nil, fmt.Errorf("no batches to concatenate")
-	}
-	schema := batches[0].Schema()
-	numCols := int(schema.NumFields())
-	columns := make([]arrow.Array, numCols)
-	success := false
-	defer func() {
-		if !success {
-			// Clean up if we fail mid-way
-			for _, col := range columns {
-				if col != nil {
-					col.Release()
-				}
-			}
-		}
-	}()
-
-	for i := 0; i < numCols; i++ {
-		// Collect arrays for this column from all batches
-		colArrays := make([]arrow.Array, len(batches))
-		for j, batch := range batches {
-			colArrays[j] = batch.Column(i)
-		}
-
-		// Use Arrow's array.Concatenate with pooled allocator for transient ingestion buffers
-		alloc := s.pooledMem
-		if alloc == nil {
-			alloc = s.mem
-		}
-		if alloc == nil {
-			alloc = memory.DefaultAllocator
-		}
-		concatenated, err := array.Concatenate(colArrays, alloc)
-		if err != nil {
-			return nil, fmt.Errorf("failed to concatenate column %d: %w", i, err)
-		}
-		columns[i] = concatenated
-	}
-
-	// Calculate total rows
-	totalRows := int64(0)
-	for _, b := range batches {
-		totalRows += b.NumRows()
-	}
-
-	success = true
-	batch := array.NewRecordBatch(schema, columns, totalRows)
-	for _, col := range columns {
-		col.Release()
-	}
-	return batch, nil
-}
-
 // applyBatchToMemory applies a batch to the in-memory dataset and dispatches indexing
 func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts int64) error {
 	name := ds.Name
@@ -499,36 +82,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	// Auto-quantization under memory pressure (>60% capacity).
 	// Threshold intentionally lowered from 70% to 60% to give the compression path
 	// a wider window before the heap is exhausted — preventing ResourceExhausted at ~425K vectors.
-	maxMem := s.maxMemory.Load()
-	if maxMem > 0 && s.currentMemory.Load() > int64(float64(maxMem)*0.60) {
-		pvt := ds.GetPreferredVectorType()
-		if pvt == types.VectorTypeFloat32 || pvt == types.VectorTypeUnknown {
-			s.logger.Warn().Str("dataset", ds.Name).Msg("Memory pressure >60%. Dynamically promoting dataset to TurboQuant8.")
-			ds.SetPreferredVectorType(types.VectorTypeTQ)
-
-			if h, ok := ds.Index.(*ArrowHNSW); ok {
-				h.EnableTurboQuant(8)
-			} else if asi, ok := ds.Index.(*AutoShardingIndex); ok {
-				asi.mu.Lock()
-				if h, ok := asi.current.(*ArrowHNSW); ok {
-					h.EnableTurboQuant(8)
-				} else if sh, ok := asi.current.(*ShardedHNSW); ok {
-					for _, shardIdx := range sh.Shards() {
-						if ah, ok := shardIdx.(*ArrowHNSW); ok {
-							ah.EnableTurboQuant(8)
-						}
-					}
-				}
-				asi.mu.Unlock()
-			} else if sh, ok := ds.Index.(*ShardedHNSW); ok {
-				for _, shardIdx := range sh.Shards() {
-					if ah, ok := shardIdx.(*ArrowHNSW); ok {
-						ah.EnableTurboQuant(8)
-					}
-				}
-			}
-		}
-	}
+	s.applyMemoryPressureQuantization(ds)
 
 	metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
 
@@ -543,24 +97,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	idMap := ds.ExtractIDs(rec)
 
 	// Determine vector column for DiskStore (Zero-Copy Persistence)
-	ds.initMu.Lock()
-	needsDiskInit := ds.DiskStore == nil
-	ds.initMu.Unlock()
-	if needsDiskInit && s.ShouldSpillToDisk(ds, rec.Schema()) {
-		s.initDiskStore(ds, name, rec.Schema())
-	}
-	ds.initMu.Lock()
-	hasDisk := ds.DiskStore != nil
-	ds.initMu.Unlock()
-	diskVecColIdx := -1
-	if hasDisk {
-		for i, f := range rec.Schema().Fields() {
-			if f.Name == "vector" || f.Name == "embedding" {
-				diskVecColIdx = i
-				break
-			}
-		}
-	}
+	diskVecColIdx := s.ensureBatchDiskStore(ds, name, rec.Schema())
 
 	dsLockStart := time.Now()
 
@@ -579,6 +116,49 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	ds.dataMu.Lock()
 	dataMuLocked = true
 
+	s.lazyInitDatasetIndexLocked(ds, name, rec)
+
+	currCPU := lmem.GetCurrentCPU()
+	currNode := -1
+	if s.numaTopology != nil {
+		currNode = s.numaTopology.GetNodeForCPU(currCPU)
+	}
+
+	// Global row offset of this batch, read from the running counter rather
+	// than summed over every historical batch. The old O(N) loop sat inside
+	// the dataset write lock, so ingestion latency grew super-linearly with
+	// dataset size.
+	baseRowID := ds.TotalIngestedRows.Load()
+
+	// Amortised O(1) append: Records and BatchNodes grow geometrically and the
+	// row counter is advanced in place, replacing three O(N) passes (two
+	// reallocations plus the row sum) under the same lock.
+	batchIdx := ds.appendRecordLocked(rec, currNode)
+	rec.Retain()
+
+	// Index categorical string columns into 16-bit dictionary codes for vectorized SIMD filter evaluation
+	ds.indexCategoricalColumns(rec, batchIdx)
+
+	// Mark dataset as ready after first successful ingestion
+	if !ds.IsReady.Load() {
+		ds.IsReady.Store(true)
+		s.logger.Info().Str("dataset", name).Msg("Dataset metadata registration complete (Ready for queries)")
+	}
+
+	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
+
+	ds.dataMu.Unlock()
+	dataMuLocked = false
+	traceLog("dataMu critical section")
+
+	s.dispatchSecondaryIngestHooks(ds, rec, batchIdx, idMap, baseRowID, ts, diskVecColIdx, traceLog)
+	s.enqueueBatchIndexJob(ds, name, rec, batchIdx, currNode)
+
+	return nil
+}
+
+// lazyInitDatasetIndexLocked creates or recreates the primary vector index while ds.dataMu is held.
+func (s *VectorStore) lazyInitDatasetIndexLocked(ds *Dataset, name string, rec arrow.RecordBatch) {
 	// Lazy Index Initialization
 	// Also check if existing index has wrong DataType (e.g. Pre-warmed with Float32 but data is Float64)
 	var needsReindex bool
@@ -797,286 +377,4 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		}
 		ds.initMu.Unlock()
 	}
-
-	currCPU := lmem.GetCurrentCPU()
-	currNode := -1
-	if s.numaTopology != nil {
-		currNode = s.numaTopology.GetNodeForCPU(currCPU)
-	}
-
-	// Global row offset of this batch, read from the running counter rather
-	// than summed over every historical batch. The old O(N) loop sat inside
-	// the dataset write lock, so ingestion latency grew super-linearly with
-	// dataset size.
-	baseRowID := ds.TotalIngestedRows.Load()
-
-	// Amortised O(1) append: Records and BatchNodes grow geometrically and the
-	// row counter is advanced in place, replacing three O(N) passes (two
-	// reallocations plus the row sum) under the same lock.
-	batchIdx := ds.appendRecordLocked(rec, currNode)
-	rec.Retain()
-
-	// Index categorical string columns into 16-bit dictionary codes for vectorized SIMD filter evaluation
-	ds.indexCategoricalColumns(rec, batchIdx)
-
-	// Mark dataset as ready after first successful ingestion
-	if !ds.IsReady.Load() {
-		ds.IsReady.Store(true)
-		s.logger.Info().Str("dataset", name).Msg("Dataset metadata registration complete (Ready for queries)")
-	}
-
-	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
-
-	ds.dataMu.Unlock()
-	dataMuLocked = false
-	traceLog("dataMu critical section")
-
-	// Hybrid text indexing runs on the background text indexer. Tokenising
-	// every text cell and rewriting the BM25 dictionaries is orders of
-	// magnitude more expensive than publishing the record, and it used to run
-	// inline here, stalling every other ingestion worker on the dataset lock.
-	s.enqueueTextIndexing(ds, rec, uint32(baseRowID)) // #nosec G115 -- batches cannot exceed 4B rows
-
-	// Update Primary Index and LWW/Merkle outside the main lock to prevent search-blocking
-	// contention while processing O(N) metadata updates.
-	// metadataMu inside these methods ensures consistency.
-	ds.UpdatePrimaryIndexAsync(batchIdx, idMap)
-	idMap.Release()
-	s.updateLWWAndMerkle(ds, rec, ts)
-	s.featuresMu.Lock()
-	fs := s.features
-	var mv *MaterializedViewManager
-	if fs != nil && fs.matViews != nil {
-		mv = fs.matViews
-	}
-	s.featuresMu.Unlock()
-	if mv != nil {
-		mv.OnDatasetIngest(context.Background(), name)
-	}
-
-	// Batch append to DiskStore outside main dataset lock to avoid blocking other workers
-	if diskVecColIdx != -1 {
-		if _, err := ds.DiskStore.BatchAppendArrow(rec, diskVecColIdx); err != nil {
-			s.logger.Error().Err(err).Msg("Failed to batch append to DiskStore (Zero-Copy)")
-		} else {
-			elemSize := 4
-			if ds.GetPreferredVectorType() == types.VectorTypeFloat64 {
-				elemSize = 8
-			}
-			metrics.DiskStoreWriteBytesTotal.WithLabelValues(name).Add(float64(rec.NumRows() * int64(ds.DiskStore.dim) * int64(elemSize)))
-		}
-	}
-
-	// Temporal Index Hook
-	if s.temporalConfig.Enabled && ds.TemporalIndex != nil {
-		idColIdx := -1
-		vecColIdx := -1
-		tsColIdx := -1
-		for i, f := range rec.Schema().Fields() {
-			switch f.Name {
-			case "id":
-				idColIdx = i
-			case "vector", "embedding":
-				vecColIdx = i
-			case "timestamp":
-				tsColIdx = i
-			}
-		}
-
-		if vecColIdx != -1 {
-			numRows := int(rec.NumRows())
-			ids := make([]uint64, 0, numRows)
-			norms := make([]float32, 0, numRows)
-			timestamps := make([]int64, 0, numRows)
-
-			var idCol arrow.Array
-			if idColIdx != -1 {
-				idCol = rec.Column(idColIdx)
-			}
-			vecCol := rec.Column(vecColIdx)
-
-			var tsArr arrow.Array
-			if tsColIdx != -1 {
-				tsArr = rec.Column(tsColIdx)
-			}
-
-			var listLen int
-			if fs, ok := vecCol.DataType().(*arrow.FixedSizeListType); ok {
-				listLen = int(fs.Len())
-			}
-
-			// Compute L2 norms directly from the Arrow buffer without allocating
-			// duplicate per-row []float32 copies on the Go heap (vectors are already
-			// stored off-heap in ds.Index).
-			for i := 0; i < numRows; i++ {
-				if !vecCol.IsValid(i) || (idCol != nil && !idCol.IsValid(i)) {
-					continue
-				}
-				rowTs := ts
-				if tsArr != nil && tsArr.IsValid(i) {
-					switch arr := tsArr.(type) {
-					case *array.Int64:
-						rowTs = arr.Value(i)
-					case *array.Timestamp:
-						rowTs = int64(arr.Value(i))
-					}
-				}
-				norm, ok := computeVectorNormAt(vecCol, listLen, i)
-				if !ok {
-					continue
-				}
-				ids = append(ids, uint64(baseRowID)+uint64(i))
-				norms = append(norms, norm)
-				timestamps = append(timestamps, rowTs)
-			}
-
-			// Batch Add (norm-only to avoid multi-GB duplicate Go-heap vector copies at 1M scale)
-			if len(ids) > 0 {
-				_ = ds.TemporalIndex.AddBatchNorms(ids, norms, timestamps, listLen)
-			}
-		}
-	}
-	traceLog("temporal index")
-
-	// Geospatial Index Hook
-	geoPointIdx := -1
-	for i, f := range rec.Schema().Fields() {
-		if f.Name == "geo_point" {
-			geoPointIdx = i
-			break
-		}
-	}
-
-	if geoPointIdx != -1 {
-		ds.dataMu.Lock()
-		dataMuLocked = true
-		if ds.GeoIndex == nil {
-			// Initialize with default config if missing
-			geoCfg := &GeoSearchConfig{
-				DistanceType: GeoDistanceHaversine,
-				EarthRadius:  6371.0,
-			}
-			// Use dimension from vector column if possible, otherwise default to 128
-			dim := 128
-			if vecCol := findVectorColumn(rec); vecCol != nil {
-				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
-					dim = int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				}
-			}
-			ds.GeoIndex = NewGeoIndex(ds.Name, dim, geoCfg)
-			ds.GeoIndex.ds = ds
-			s.logger.Info().Str("dataset", ds.Name).Int("dim", dim).Msg("Lazily initialized GeoIndex")
-		}
-		ds.dataMu.Unlock()
-		dataMuLocked = false
-
-		idColIdx := -1
-		vecColIdx := -1
-		for i, f := range rec.Schema().Fields() {
-			switch f.Name {
-			case "id":
-				idColIdx = i
-			case "vector", "embedding":
-				vecColIdx = i
-			}
-		}
-
-		if vecColIdx != -1 {
-			numRows := int(rec.NumRows())
-			validIds := make([]uint64, 0, numRows)
-			validPoints := make([]types.GeoPoint, 0, numRows)
-
-			var idCol arrow.Array
-			if idColIdx != -1 {
-				idCol = rec.Column(idColIdx)
-			}
-			vecCol := rec.Column(vecColIdx)
-
-			if geoArr, ok := rec.Column(geoPointIdx).(*array.FixedSizeList); ok {
-				if geoValArr, ok := geoArr.ListValues().(*array.Float64); ok {
-					geoValues := geoValArr.Float64Values()
-					for i := 0; i < numRows; i++ {
-						if (idCol != nil && !idCol.IsValid(i)) || !vecCol.IsValid(i) || !geoArr.IsValid(i) {
-							continue
-						}
-						if i*2+1 >= len(geoValues) {
-							continue
-						}
-						validIds = append(validIds, uint64(baseRowID)+uint64(i))
-						validPoints = append(validPoints, types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]})
-					}
-					// Pass nil vectors to avoid duplicating 1M []float32 copies on the Go heap;
-					// vectors are already stored off-heap in ds.Index.
-					_ = ds.GeoIndex.AddBatch(validIds, nil, validPoints, nil)
-				}
-			}
-		}
-	}
-
-	// Dispatch batch-level indexing job asynchronously to avoid blocking DoPut
-	rec.Retain() // IndexJob holds ref
-	job := IndexJob{
-		DatasetName: name,
-		Record:      rec,
-		BatchIdx:    batchIdx,
-		CreatedAt:   time.Now(),
-		NodeID:      currNode,
-	}
-
-	ds.PendingIndexJobs.Add(rec.NumRows())
-	if !s.EnqueueIndexJob(job) {
-		metrics.IndexJobsOverflowTotal.Inc()
-		s.pendingOverflowJobs.Add(1)
-		go func() {
-			defer s.pendingOverflowJobs.Add(-1)
-			if !s.BlockEnqueueIndexJob(job, 5*time.Second) {
-				ds.PendingIndexJobs.Add(-rec.NumRows())
-				rec.Release()
-				s.logger.Warn().Str("dataset", name).Msg("Index job dropped after blocking timeout")
-			}
-		}()
-	}
-
-	return nil
-}
-
-func computeVectorNormAt(vecCol arrow.Array, listLen, row int) (float32, bool) {
-	var vStart, vEnd int
-	var values arrow.Array
-	switch col := vecCol.(type) {
-	case *array.FixedSizeList:
-		vStart = row * listLen
-		vEnd = (row + 1) * listLen
-		values = col.ListValues()
-	case *array.List:
-		offsets := col.Offsets()
-		vStart = int(offsets[row])
-		vEnd = int(offsets[row+1])
-		values = col.ListValues()
-	}
-	if values == nil || vStart < 0 || vEnd <= vStart {
-		return 0, false
-	}
-	switch valArr := values.(type) {
-	case *array.Float32:
-		if vEnd <= valArr.Len() {
-			src := valArr.Float32Values()[vStart:vEnd]
-			var sum float64
-			for _, v := range src {
-				fv := float64(v)
-				sum += fv * fv
-			}
-			return float32(math.Sqrt(sum)), true
-		}
-	case *array.Float64:
-		if vEnd <= valArr.Len() {
-			f64Values := valArr.Float64Values()[vStart:vEnd]
-			var sum float64
-			for _, v := range f64Values {
-				sum += v * v
-			}
-			return float32(math.Sqrt(sum)), true
-		}
-	}
-	return 0, false
 }

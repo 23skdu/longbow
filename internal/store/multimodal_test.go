@@ -122,8 +122,7 @@ func BenchmarkMultiModalPipeline(b *testing.B) {
 	emb, _ := NewJointMultiModalEmbedder(MultiModalConfig{Dimension: 128})
 	img := makeTestPNG(color.RGBA{R: 200, G: 100, B: 50, A: 255})
 	ctx := context.Background()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := emb.EmbedImage(ctx, img, "image/png", "sunset mountain horizon")
 		if err != nil {
 			b.Fatal(err)

@@ -169,10 +169,9 @@ func BenchmarkDiskVectorStore_GetVectorInto(b *testing.B) {
 	}
 
 	buf := make([]float32, dim)
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		idx := i % numVectors
 		_ = dvs.GetVectorInto(idx, buf)
 	}
@@ -203,10 +202,9 @@ func BenchmarkDiskVectorStore_ScanRows(b *testing.B) {
 		indices[i] = i
 	}
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = dvs.ScanRows(indices, func(idx int, row []float32) bool {
 			return true
 		})
@@ -244,10 +242,9 @@ func BenchmarkDiskVectorStore_GetBatchInto(b *testing.B) {
 		dst[i] = flat[i*dim : (i+1)*dim]
 	}
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = dvs.GetBatchInto(indices, dst)
 	}
 }

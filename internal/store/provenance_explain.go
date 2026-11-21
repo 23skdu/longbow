@@ -112,7 +112,7 @@ func (pm *ProvenanceManager) Record(prov VectorProvenance) error {
 		prov.IngestedAt = time.Now().UTC()
 	}
 	if prov.ContentHash == "" && prov.SourceURI != "" {
-		h := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d:%s", prov.SourceURI, prov.Model, prov.ChunkIndex, prov.ModelVersion)))
+		h := sha256.Sum256(fmt.Appendf(nil, "%s:%s:%d:%s", prov.SourceURI, prov.Model, prov.ChunkIndex, prov.ModelVersion))
 		prov.ContentHash = hex.EncodeToString(h[:16])
 	}
 	pm.mu.Lock()

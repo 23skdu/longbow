@@ -67,8 +67,7 @@ func BenchmarkElasticShardSplitAndRoute(b *testing.B) {
 	ctrl := NewElasticShardingController(nil)
 	ctrl.RegisterNode(ClusterNodeHealth{NodeID: "n1", Healthy: true, LastHeartbeat: time.Now(), LoadScore: 0.2})
 	ctrl.EnsureDatasetShards("bench_ds", "n1", nil)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		ctrl.RouteKey("bench_ds", fmt.Sprintf("item-%d", i))
 	}
 }

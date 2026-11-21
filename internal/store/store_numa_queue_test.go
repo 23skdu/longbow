@@ -16,6 +16,7 @@ import (
 )
 
 func createNumaTestBatch(t *testing.T) arrow.RecordBatch {
+	t.Helper()
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},

@@ -211,8 +211,7 @@ func BenchmarkMaterializedViewAggregation(b *testing.B) {
 		GroupBy:      []string{"category"},
 		Aggregations: []AggSpec{{Alias: "sum_p", Field: "price", Op: AggSum}},
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rows, _ := AggregateBatches([]arrow.RecordBatch{rec}, nil, spec)
 		if len(rows) != 2 {
 			b.Fatal("unexpected groups")

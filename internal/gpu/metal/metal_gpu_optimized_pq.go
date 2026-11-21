@@ -127,6 +127,11 @@ func (idx *MetalIndexOptimized) Sync() error {
 }
 
 func (idx *MetalIndexOptimized) Clear() error {
+	idx.batchMu.Lock()
+	idx.batchIDs = idx.batchIDs[:0]
+	idx.batchVectors = idx.batchVectors[:0]
+	idx.batchMu.Unlock()
+
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
@@ -134,8 +139,12 @@ func (idx *MetalIndexOptimized) Clear() error {
 		return fmt.Errorf("index is closed")
 	}
 
-	// Reset vector count in handle
-	idx.handle.vectorCount = 0
+	// Reset vector counts and ID list
+	idx.vectorCount = 0
+	idx.idList = idx.idList[:0]
+	if idx.handle != nil {
+		idx.handle.vectorCount = 0
+	}
 
 	// Reset graph metadata
 	idx.graphOffsets = nil

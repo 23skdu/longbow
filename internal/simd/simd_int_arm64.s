@@ -29,11 +29,11 @@ ei16_loop:
     VSUB_4S(6, 4, 4)                  // diff_l = a_l - b_l
     VSUB_4S(7, 5, 5)                  // diff_u = a_u - b_u
 
-    VMUL_4S(4, 4, 4)                  // sq_l = diff_l * diff_l
+    VMUL_4S(4, 4, 4)                  // sq_l = diff_l * diff_l (exact uint32, up to 65535^2)
     VMUL_4S(5, 5, 5)                  // sq_u = diff_u * diff_u
 
-    VSADDLP_2D(4, 8)                  // acc partial lower → 2D
-    VSADDLP_2D(5, 9)                  // acc partial upper → 2D
+    VUADDLP_2D(4, 8)                  // unsigned pairwise add long → 2D (avoids signed int32 overflow)
+    VUADDLP_2D(5, 9)                  // unsigned pairwise add long → 2D
 
     VADD_2D(8, 0, 0)                  // accumulate
     VADD_2D(9, 1, 1)
@@ -53,7 +53,7 @@ ei16_tail:
     VSSHLL_4S(3, 6)
     VSUB_4S(6, 4, 4)
     VMUL_4S(4, 4, 4)
-    VSADDLP_2D(4, 8)
+    VUADDLP_2D(4, 8)
     VADD_2D(8, 0, 0)
 
     SUB     $4, R1
@@ -363,8 +363,8 @@ euc_u8_tail_loop:
     CBNZ    R1, euc_u8_tail_loop
 
 euc_u8_reduce:
-    // Reduce V4.4S → 2D (pairwise add)
-    VSADDLP_2D(4, 10)                // V10.2D = {V4[0]+V4[1], V4[2]+V4[3]}
+    // Reduce V4.4S → 2D (unsigned pairwise add)
+    VUADDLP_2D(4, 10)                // V10.2D = {V4[0]+V4[1], V4[2]+V4[3]}
 
     // Add scalar tail from R3 if present
     CBZ     R3, euc_u8_reduce_vadd

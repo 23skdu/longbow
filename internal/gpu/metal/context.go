@@ -47,6 +47,32 @@ MetalContextHandle* init_metal_context(const void* libData, int libLen) {
     }
 }
 
+MetalContextHandle* init_metal_context_source(const char* source, int sourceLen) {
+    @autoreleasepool {
+        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+        if (!device) return NULL;
+
+        id<MTLCommandQueue> queue = [device newCommandQueue];
+        if (!queue) return NULL;
+
+        NSError* error = nil;
+        NSString* src = [[NSString alloc] initWithBytes:source length:(NSUInteger)sourceLen encoding:NSUTF8StringEncoding];
+        if (!src) return NULL;
+
+        id<MTLLibrary> library = [device newLibraryWithSource:src options:nil error:&error];
+        if (!library) {
+            NSLog(@"Failed to compile Metal source library: %@", error);
+            return NULL;
+        }
+
+        MetalContextHandle* handle = (MetalContextHandle*)malloc(sizeof(MetalContextHandle));
+        handle->device = (__bridge_retained void*)device;
+        handle->commandQueue = (__bridge_retained void*)queue;
+        handle->library = (__bridge_retained void*)library;
+        return handle;
+    }
+}
+
 void* get_metal_function(MetalContextHandle* handle, const char* name) {
     @autoreleasepool {
         id<MTLLibrary> library = (__bridge id<MTLLibrary>)handle->library;
@@ -121,6 +147,47 @@ func ResetGlobalContext(libData []byte) error {
 	handle := C.init_metal_context(ptr, C.int(len(libData)))
 	if handle == nil {
 		return fmt.Errorf("failed to reset Metal context")
+	}
+	globalContext = &MetalContext{
+		handle: handle,
+		cache:  NewShaderCache(),
+	}
+	return nil
+}
+
+// InitGlobalContextFromSource compiles embedded Metal shader source into the global context.
+func InitGlobalContextFromSource(source []byte) error {
+	contextMu.Lock()
+	defer contextMu.Unlock()
+	if globalContext != nil {
+		return nil
+	}
+	if len(source) == 0 {
+		return fmt.Errorf("empty Metal shader source")
+	}
+	ptr := (*C.char)(unsafe.Pointer(&source[0]))
+	handle := C.init_metal_context_source(ptr, C.int(len(source)))
+	if handle == nil {
+		return fmt.Errorf("failed to compile Metal shader source")
+	}
+	globalContext = &MetalContext{
+		handle: handle,
+		cache:  NewShaderCache(),
+	}
+	return nil
+}
+
+// ResetGlobalContextFromSource explicitly recompiles embedded Metal shader source.
+func ResetGlobalContextFromSource(source []byte) error {
+	contextMu.Lock()
+	defer contextMu.Unlock()
+	if len(source) == 0 {
+		return fmt.Errorf("empty Metal shader source")
+	}
+	ptr := (*C.char)(unsafe.Pointer(&source[0]))
+	handle := C.init_metal_context_source(ptr, C.int(len(source)))
+	if handle == nil {
+		return fmt.Errorf("failed to recompile Metal shader source")
 	}
 	globalContext = &MetalContext{
 		handle: handle,

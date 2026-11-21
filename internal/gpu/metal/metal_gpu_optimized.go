@@ -53,12 +53,7 @@ type MetalIndexOptimized struct {
 
 // NewMetalIndexOptimized creates an optimized Metal-based GPU index with compute shaders
 func NewMetalIndexOptimized(cfg types.GPUConfig) (types.Index, error) {
-	libData, err := metalFS.ReadFile("kernels.metallib")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read embedded metal library: %w", err)
-	}
-
-	if err := InitGlobalContext(libData); err != nil {
+	if err := initMetalContextFromEmbedded(); err != nil {
 		return nil, err
 	}
 
@@ -81,13 +76,19 @@ func NewMetalIndexOptimized(cfg types.GPUConfig) (types.Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	cosine, err := ctx.GetPipelineState("compute_cosine_similarity")
+	cosine, err := ctx.GetPipelineState("compute_cosine_similarity_paged")
 	if err != nil {
-		return nil, err
+		cosine, err = ctx.GetPipelineState("compute_cosine_similarity")
+		if err != nil {
+			return nil, err
+		}
 	}
-	dot, err := ctx.GetPipelineState("compute_dot_product")
+	dot, err := ctx.GetPipelineState("compute_dot_product_paged")
 	if err != nil {
-		return nil, err
+		dot, err = ctx.GetPipelineState("compute_dot_product")
+		if err != nil {
+			return nil, err
+		}
 	}
 	topK, err := ctx.GetPipelineState("find_top_k_heap")
 	if err != nil {
@@ -191,11 +192,12 @@ func (idx *MetalIndexOptimized) startSyncTicker(cfg types.GPUConfig) {
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
-	idx.syncTicker = time.NewTicker(interval)
+	ticker := time.NewTicker(interval)
+	idx.syncTicker = ticker
 	go func() {
 		for {
 			select {
-			case <-idx.syncTicker.C:
+			case <-ticker.C:
 				_ = idx.Flush()
 			case <-idx.stopSync:
 				return
@@ -210,6 +212,13 @@ func (idx *MetalIndexOptimized) Flush() error {
 
 	if len(idx.batchIDs) == 0 {
 		return nil
+	}
+
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
 	}
 
 	start := time.Now()
@@ -296,10 +305,11 @@ func (idx *MetalIndexOptimized) Flush() error {
 }
 
 func (idx *MetalIndexOptimized) Add(ids []int64, vectors []float32) error {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
+	idx.mu.RLock()
+	closed := idx.closed
+	idx.mu.RUnlock()
 
-	if idx.closed {
+	if closed {
 		return fmt.Errorf("index is closed")
 	}
 
@@ -327,16 +337,27 @@ func (idx *MetalIndexOptimized) Add(ids []int64, vectors []float32) error {
 
 // Len returns the number of vectors in the index
 func (idx *MetalIndexOptimized) Len() int {
+	idx.batchMu.Lock()
+	pending := len(idx.batchIDs)
+	idx.batchMu.Unlock()
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	if idx.handle == nil {
-		return 0
+	n := idx.vectorCount
+	if idx.handle != nil {
+		if cCount := int(C.metal_get_count_optimized(idx.handle)); cCount > n {
+			n = cCount
+		}
 	}
-	return int(C.metal_get_count_optimized(idx.handle))
+	return n + pending
 }
 
 // Search queries the optimized Metal GPU index using compute shaders
 func (idx *MetalIndexOptimized) Search(vector []float32, k int) ([]int64, []float32, error) {
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -346,10 +367,6 @@ func (idx *MetalIndexOptimized) Search(vector []float32, k int) ([]int64, []floa
 
 	if len(vector) != idx.dim {
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
-	}
-
-	if err := idx.Flush(); err != nil {
-		return nil, nil, err
 	}
 
 	if idx.pager == nil {
@@ -480,6 +497,12 @@ func (idx *MetalIndexOptimized) Close() error {
 
 	if idx.closed {
 		return nil
+	}
+
+	if idx.syncTicker != nil {
+		idx.syncTicker.Stop()
+		close(idx.stopSync)
+		idx.syncTicker = nil
 	}
 
 	if idx.handle != nil {

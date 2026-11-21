@@ -53,6 +53,7 @@ func UnpackTQ8NEON(src []byte, dst []float32, scale, bias float32) {
 }
 
 //go:noescape
+//nolint:unused // assembly kernel retained while PackTQ2NEON uses midpoint-grid fallback
 func packTQ2NEONKernel(src, dst unsafe.Pointer, n int)
 
 //go:noescape

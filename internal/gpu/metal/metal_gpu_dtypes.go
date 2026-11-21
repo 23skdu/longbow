@@ -19,6 +19,9 @@ import (
 )
 
 func (idx *MetalIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	if idx.closed {
@@ -32,6 +35,9 @@ func (idx *MetalIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, err
 }
 
 func (idx *MetalIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	if idx.closed {
@@ -45,6 +51,9 @@ func (idx *MetalIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, e
 }
 
 func (idx *MetalIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	if idx.closed {
@@ -58,6 +67,9 @@ func (idx *MetalIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, e
 }
 
 func (idx *MetalIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	if idx.closed {
@@ -73,6 +85,9 @@ func (idx *MetalIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32,
 }
 
 func (idx *MetalIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -90,6 +105,9 @@ func (idx *MetalIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32
 }
 
 func (idx *MetalIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -97,17 +115,19 @@ func (idx *MetalIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float
 		return nil, nil, fmt.Errorf("index is closed")
 	}
 
-	// Convert uint16 pairs (complex64 stored as fp16 pairs) to float32
-	// complex64 has 2 elements for every float32 dims
-	f32Vec := make([]float32, len(vector)*2)
+	// complex64 is stored as interleaved float16 (uint16) real/imag pairs
+	f32Vec := make([]float32, len(vector))
 	for i, v := range vector {
-		f32Vec[i*2] = float16.FromBits(v).Float32()
+		f32Vec[i] = float16.FromBits(v).Float32()
 	}
 
 	return idx.searchFloat32(f32Vec, k)
 }
 
 func (idx *MetalIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -116,8 +136,6 @@ func (idx *MetalIndex) SearchComplex128(vector []float32, k int) ([]int64, []flo
 	}
 
 	// complex128 is stored as interleaved float32 (real, imag pairs)
-	// If input is 128 floats, that's 64 complex numbers
-	// Just use as-is since Metal expects float32
 	return idx.searchFloat32(vector, k)
 }
 

@@ -26,6 +26,7 @@
 #define VSUB_4S(m, n, d)  WORD $(0x6EA08400 | ((m) << 16) | ((n) << 5) | (d))
 #define VMUL_4S(m, n, d)  WORD $(0x4EA09C00 | ((m) << 16) | ((n) << 5) | (d))
 #define VSADDLP_2D(n, d)  WORD $(0x4EA02800 | ((n) << 5) | (d))
+#define VUADDLP_2D(n, d)  WORD $(0x6EA02800 | ((n) << 5) | (d))
 #define VSSHLL_8H(n, d)   WORD $(0x0F08A400 | ((n) << 5) | (d))
 #define VSSHLL2_8H(n, d)  WORD $(0x4F08A400 | ((n) << 5) | (d))
 #define VSUB_8H(m, n, d)  WORD $(0x6E608400 | ((m) << 16) | ((n) << 5) | (d))

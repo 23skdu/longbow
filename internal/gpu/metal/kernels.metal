@@ -153,8 +153,8 @@ kernel void compute_l2_distances_int8(
     uint vectorWidth = dim / 4;
     uint remainder = dim % 4;
     for (uint i = 0; i < vectorWidth; i++) {
-        int4 q4 = *(device const int4*)(query + i * 4);
-        int4 v4 = *(device const int4*)(vectors + offset + i * 4);
+        char4 q4 = *(device const char4*)(query + i * 4);
+        char4 v4 = *(device const char4*)(vectors + offset + i * 4);
         float4 diff = float4(q4) - float4(v4);
         sum += dot(diff, diff);
     }
@@ -180,8 +180,8 @@ kernel void compute_dot_product_int8(
     uint vectorWidth = dim / 4;
     uint remainder = dim % 4;
     for (uint i = 0; i < vectorWidth; i++) {
-        int4 q4 = *(device const int4*)(query + i * 4);
-        int4 v4 = *(device const int4*)(vectors + offset + i * 4);
+        char4 q4 = *(device const char4*)(query + i * 4);
+        char4 v4 = *(device const char4*)(vectors + offset + i * 4);
         sum += dot(float4(q4), float4(v4));
     }
     for (uint i = 0; i < remainder; i++) {
@@ -205,8 +205,8 @@ kernel void compute_l2_distances_uint8(
     uint vectorWidth = dim / 4;
     uint remainder = dim % 4;
     for (uint i = 0; i < vectorWidth; i++) {
-        uint4 q4 = *(device const uint4*)(query + i * 4);
-        uint4 v4 = *(device const uint4*)(vectors + offset + i * 4);
+        uchar4 q4 = *(device const uchar4*)(query + i * 4);
+        uchar4 v4 = *(device const uchar4*)(vectors + offset + i * 4);
         float4 diff = float4(q4) - float4(v4);
         sum += dot(diff, diff);
     }
@@ -232,8 +232,8 @@ kernel void compute_dot_product_uint8(
     uint vectorWidth = dim / 4;
     uint remainder = dim % 4;
     for (uint i = 0; i < vectorWidth; i++) {
-        uint4 q4 = *(device const uint4*)(query + i * 4);
-        uint4 v4 = *(device const uint4*)(vectors + offset + i * 4);
+        uchar4 q4 = *(device const uchar4*)(query + i * 4);
+        uchar4 v4 = *(device const uchar4*)(vectors + offset + i * 4);
         sum += dot(float4(q4), float4(v4));
     }
     for (uint i = 0; i < remainder; i++) {
@@ -657,7 +657,7 @@ kernel void compute_tq_distances(
     uint angleCount = pow2 - 1;
     uint angleBytes = (angleCount * bitsPerAngle + 7) / 8;
     uint bitBytes = (pow2 + 7) / 8;
-    uint stride = (4 + angleBytes + bitBytes + 3) & ~3;
+    uint stride = (4 + angleBytes + bitBytes + 31) & ~31;
     
     device const uchar* data = tqData + (gid * stride);
     float radius = *(device const float*)data;
@@ -1123,7 +1123,7 @@ kernel void hnsw_greedy_search_tq(
     uint angleCount = pow2 - 1;
     uint angleBytes = (angleCount * bitsPerAngle + 7) / 8;
     uint bitBytes = (pow2 + 7) / 8;
-    uint stride = (4 + angleBytes + bitBytes + 3) & ~3;
+    uint stride = (4 + angleBytes + bitBytes + 31) & ~31;
     float invMaxVal = 1.0f / ((1 << bitsPerAngle) - 1);
 
     while (improved) {
@@ -1262,4 +1262,94 @@ kernel void compute_l2_distances_paged(
     }
     
     distances[gid] = sqrt(sum);
+}
+
+kernel void compute_cosine_similarity_paged(
+    device const float* query [[buffer(0)]],
+    device const PageArgBuffer* pageArgs [[buffer(1)]],
+    device float* distances [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    device const uint* pageStarts [[buffer(5)]],
+    constant uint& numPages [[buffer(6)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+
+    uint pageIdx = 0;
+    for (uint i = 0; i < numPages; i++) {
+        if (gid >= pageStarts[i] && gid < pageStarts[i+1]) {
+            pageIdx = i;
+            break;
+        }
+    }
+
+    uint localOffset = (gid - pageStarts[pageIdx]) * dim;
+    device const float* page_data = pageArgs->pages[pageIdx];
+
+    float dotProd = 0.0f;
+    float queryMag = 0.0f;
+    float vecMag = 0.0f;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+
+    for (uint i = 0; i < vectorWidth; i++) {
+        float4 q = *(device const float4*)(query + i * 4);
+        float4 v = *(device const float4*)(page_data + localOffset + i * 4);
+        dotProd += dot(q, v);
+        queryMag += dot(q, q);
+        vecMag += dot(v, v);
+    }
+
+    for (uint i = 0; i < remainder; i++) {
+        float q = query[vectorWidth * 4 + i];
+        float v = page_data[localOffset + vectorWidth * 4 + i];
+        dotProd += q * v;
+        queryMag += q * q;
+        vecMag += v * v;
+    }
+
+    float denom = sqrt(queryMag) * sqrt(vecMag);
+    float sim = (denom > 1e-10f) ? (dotProd / denom) : 0.0f;
+    distances[gid] = 1.0f - sim;
+}
+
+kernel void compute_dot_product_paged(
+    device const float* query [[buffer(0)]],
+    device const PageArgBuffer* pageArgs [[buffer(1)]],
+    device float* distances [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    device const uint* pageStarts [[buffer(5)]],
+    constant uint& numPages [[buffer(6)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+
+    uint pageIdx = 0;
+    for (uint i = 0; i < numPages; i++) {
+        if (gid >= pageStarts[i] && gid < pageStarts[i+1]) {
+            pageIdx = i;
+            break;
+        }
+    }
+
+    uint localOffset = (gid - pageStarts[pageIdx]) * dim;
+    device const float* page_data = pageArgs->pages[pageIdx];
+
+    float sum = 0.0f;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+
+    for (uint i = 0; i < vectorWidth; i++) {
+        float4 q = *(device const float4*)(query + i * 4);
+        float4 v = *(device const float4*)(page_data + localOffset + i * 4);
+        sum += dot(q, v);
+    }
+
+    for (uint i = 0; i < remainder; i++) {
+        sum += query[vectorWidth * 4 + i] * page_data[localOffset + vectorWidth * 4 + i];
+    }
+
+    distances[gid] = -sum;
 }

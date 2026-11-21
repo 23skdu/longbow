@@ -192,8 +192,8 @@ int metal_graph_expand(MetalIndexHandle* handle, uint32_t* seeds, int numSeeds, 
             [encoder setBuffer:nextFrontierSize offset:0 atIndex:7];
             [encoder setBuffer:visited offset:0 atIndex:8];
 
-            [encoder setBytes:&currentFrontierSize length:sizeof(int) atIndex:0];
-            [encoder setBytes:&alpha length:sizeof(float) atIndex:1];
+            [encoder setBytes:&currentFrontierSize length:sizeof(uint32_t) atIndex:9];
+            [encoder setBytes:&alpha length:sizeof(float) atIndex:10];
 
             MTLSize gridSize = MTLSizeMake(currentFrontierSize, 1, 1);
             NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
@@ -251,7 +251,7 @@ int metal_quantize_sq8(MetalIndexHandle* handle, float* vectors, float* mins, fl
         [encoder setBuffer:minBuf offset:0 atIndex:1];
         [encoder setBuffer:maxBuf offset:0 atIndex:2];
         [encoder setBuffer:resBuf offset:0 atIndex:3];
-        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:0];
+        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:4];
 
         MTLSize gridSize = MTLSizeMake(totalElements, 1, 1);
         NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
@@ -298,7 +298,11 @@ int metal_prune_neighbors(MetalIndexHandle* handle, uint32_t* candidateIds, floa
 
         id<MTLBuffer> allVecBuf;
         if (allVectors != NULL) {
-            allVecBuf = [device newBufferWithBytes:allVectors length:(size_t)handle->vectorCount * dim * sizeof(float) options:MTLResourceStorageModeShared];
+            uint32_t maxID = 0;
+            for (int i = 0; i < numCandidates; i++) {
+                if (candidateIds[i] > maxID) maxID = candidateIds[i];
+            }
+            allVecBuf = [device newBufferWithBytes:allVectors length:(size_t)(maxID + 1) * dim * sizeof(float) options:MTLResourceStorageModeShared];
         } else {
             allVecBuf = (__bridge id<MTLBuffer>)handle->vectorBuffer;
         }

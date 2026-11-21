@@ -167,13 +167,16 @@ int metal_update_graph_optimized(MetalIndexOptimized* handle, uint32_t* offsets,
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
 
         if (handle->graphOffsetsBuffer) {
-            handle->graphOffsetsBuffer = nil;
+            CFRelease(handle->graphOffsetsBuffer);
+            handle->graphOffsetsBuffer = NULL;
         }
         if (handle->graphNeighborsBuffer) {
-            handle->graphNeighborsBuffer = nil;
+            CFRelease(handle->graphNeighborsBuffer);
+            handle->graphNeighborsBuffer = NULL;
         }
         if (handle->graphWeightsBuffer) {
-            handle->graphWeightsBuffer = nil;
+            CFRelease(handle->graphWeightsBuffer);
+            handle->graphWeightsBuffer = NULL;
         }
 
         if (numOffsets > 0) {
@@ -268,6 +271,9 @@ void metal_cleanup_optimized(MetalIndexOptimized* handle) {
             if (handle->idBuffer) CFRelease(handle->idBuffer);
             if (handle->vectorBuffer) CFRelease(handle->vectorBuffer);
             if (handle->pqBuffer) CFRelease(handle->pqBuffer);
+            if (handle->graphOffsetsBuffer) CFRelease(handle->graphOffsetsBuffer);
+            if (handle->graphNeighborsBuffer) CFRelease(handle->graphNeighborsBuffer);
+            if (handle->graphWeightsBuffer) CFRelease(handle->graphWeightsBuffer);
             if (handle->trigBuffer) CFRelease(handle->trigBuffer);
             if (handle->queryBuffers[0]) CFRelease(handle->queryBuffers[0]);
             if (handle->queryBuffers[1]) CFRelease(handle->queryBuffers[1]);

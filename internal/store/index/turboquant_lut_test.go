@@ -51,7 +51,7 @@ func tqDecodeSincosRef(enc *TurboQuantEncoder, data []byte) []float32 {
 	stack := make([]float32, enc.pow2)
 	polarReconstructSincosRef(enc.pow2, radius, angles, recon, stack)
 
-	correction := radius / float32(math.Sqrt(float64(enc.pow2))) * 0.1
+	correction := float32(radius / float32(math.Sqrt(float64(enc.pow2))) * 0.1) // explicit float32() prevents ARM64 FMA fusion with recon[i] += correction
 	qjlBits := data[qjlOffset:]
 	for i := 0; i < enc.pow2; i++ {
 		if (qjlBits[i/8] & (byte(1) << (i % 8))) != 0 {
@@ -83,7 +83,7 @@ func tqDecodePooledSincosRef(enc *TurboQuantEncoder, data []byte) ([]float32, er
 	stack := workspace[enc.pow2*2 : enc.pow2*3]
 	polarReconstructSincosRef(enc.pow2, radius, angles, recon, stack)
 
-	correction := radius / float32(math.Sqrt(float64(enc.pow2))) * 0.1
+	correction := float32(radius / float32(math.Sqrt(float64(enc.pow2))) * 0.1) // explicit float32() prevents ARM64 FMA fusion with recon[i] += correction
 	qjlBits := data[qjlOffset:]
 	for i := 0; i < enc.pow2; i++ {
 		if (qjlBits[i/8] & (byte(1) << (i % 8))) != 0 {

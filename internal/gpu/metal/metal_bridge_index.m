@@ -20,13 +20,18 @@ static inline void select_topk_cpu(
 ) {
     int resultCount = k < n ? k : n;
     for (int i = 0; i < resultCount; i++) {
-        int minIdx = i;
-        float minDist = distances[i];
-        for (int j = i + 1; j < n; j++) {
+        int minIdx = -1;
+        float minDist = INFINITY;
+        for (int j = 0; j < n; j++) {
             if (distances[j] < minDist) {
                 minDist = distances[j];
                 minIdx = j;
             }
+        }
+        if (minIdx < 0) {
+            resultIDs[i] = -1;
+            resultDistances[i] = INFINITY;
+            continue;
         }
         resultIDs[i] = ids[minIdx];
         resultDistances[i] = minDist;
@@ -142,8 +147,8 @@ int metal_compute_distances_gpu(MetalIndexHandle* handle, float* query, float* d
         [encoder setBuffer:queryBuf offset:0 atIndex:0];
         [encoder setBuffer:vecBuf offset:0 atIndex:1];
         [encoder setBuffer:distBuf offset:0 atIndex:2];
-        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:0];
-        [encoder setBytes:&count length:sizeof(uint32_t) atIndex:1];
+        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:3];
+        [encoder setBytes:&count length:sizeof(uint32_t) atIndex:4];
 
         MTLSize gridSize = MTLSizeMake(count, 1, 1);
         NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;

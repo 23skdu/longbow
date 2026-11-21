@@ -95,10 +95,10 @@ func (idx *MetalHybridIndex) SearchComplex64(vector []uint16, k int) ([]int64, [
 		return nil, nil, fmt.Errorf("index is closed")
 	}
 
-	// Convert uint16 pairs (complex64 stored as fp16 pairs) to float32
-	f32Vec := make([]float32, len(vector)*2)
+	// complex64 is stored as interleaved float16 (uint16) real/imag pairs
+	f32Vec := make([]float32, len(vector))
 	for i, v := range vector {
-		f32Vec[i*2] = float16.New(float32(math.Float32frombits(uint32(v)))).Float32()
+		f32Vec[i] = float16.FromBits(v).Float32()
 	}
 
 	return idx.searchFloat32(f32Vec, k)

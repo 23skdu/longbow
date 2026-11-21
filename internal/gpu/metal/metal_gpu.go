@@ -25,16 +25,39 @@ import (
 	"github.com/23skdu/longbow/internal/pq"
 )
 
-//go:embed kernels.metallib
+//go:embed kernels.metal kernels.metallib
 var metalFS embed.FS
 
-func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
+func initMetalContextFromEmbedded() error {
+	srcData, err := metalFS.ReadFile("kernels.metal")
+	if err == nil && len(srcData) > 0 {
+		if srcErr := InitGlobalContextFromSource(srcData); srcErr == nil {
+			return nil
+		}
+	}
 	libData, err := metalFS.ReadFile("kernels.metallib")
 	if err != nil {
 		return fmt.Errorf("failed to read embedded metal library: %w", err)
 	}
+	return InitGlobalContext(libData)
+}
 
-	if err := InitGlobalContext(libData); err != nil {
+func resetMetalContextFromEmbedded() error {
+	srcData, err := metalFS.ReadFile("kernels.metal")
+	if err == nil && len(srcData) > 0 {
+		if srcErr := ResetGlobalContextFromSource(srcData); srcErr == nil {
+			return nil
+		}
+	}
+	libData, err := metalFS.ReadFile("kernels.metallib")
+	if err != nil {
+		return fmt.Errorf("failed to read metal library for healing: %w", err)
+	}
+	return ResetGlobalContext(libData)
+}
+
+func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
+	if err := initMetalContextFromEmbedded(); err != nil {
 		return err
 	}
 
@@ -96,12 +119,7 @@ func (m *MetalIndex) Heal() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	libData, err := metalFS.ReadFile("kernels.metallib")
-	if err != nil {
-		return fmt.Errorf("failed to read metal library for healing: %w", err)
-	}
-
-	if err := ResetGlobalContext(libData); err != nil {
+	if err := resetMetalContextFromEmbedded(); err != nil {
 		return fmt.Errorf("failed to reset global context for healing: %w", err)
 	}
 
@@ -322,11 +340,6 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
 	}
 
-	// Flush any pending batches before search
-	if err := idx.Flush(); err != nil {
-		return nil, nil, err
-	}
-
 	resultIDs := make([]int64, k)
 	resultDistances := make([]float32, k)
 
@@ -345,8 +358,11 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 	)
 
 	if ret != 0 {
-		// Watchdog: attempt self-healing recovery and retry
-		if healErr := idx.Heal(); healErr == nil {
+		// Release read lock before Heal() acquires write lock to avoid deadlock
+		idx.mu.RUnlock()
+		healErr := idx.Heal()
+		idx.mu.RLock()
+		if healErr == nil && !idx.closed {
 			ret = C.metal_search(
 				idx.handle,
 				(*C.float)(unsafe.Pointer(&vector[0])),
@@ -452,12 +468,13 @@ func (idx *MetalIndex) startSyncTicker(cfg gputypes.GPUConfig) {
 		return
 	}
 
-	idx.syncTicker = time.NewTicker(cfg.SyncInterval)
+	ticker := time.NewTicker(cfg.SyncInterval)
+	idx.syncTicker = ticker
 	go func() {
 		for {
 			select {
-			case <-idx.syncTicker.C:
-				idx.Flush()
+			case <-ticker.C:
+				_ = idx.Flush()
 			case <-idx.stopSync:
 				return
 			}

@@ -19,32 +19,63 @@ fi
 
 # Grandfathered legacy files > 800 LOC with their recorded LOC baselines.
 # Entries must only shrink or be removed as files are modularized.
-declare -A ALLOWLIST=(
-    ["internal/simd/simd_baseline.go"]=1330
-    ["internal/simd/turboquant_amd64.s"]=1325
-    ["internal/simd/simd_amd64.go"]=1127
-    ["internal/metrics/storage_metrics.go"]=1076
-    ["cmd/tensor-verify/main.go"]=1050
-    ["internal/simd/int16_kernels_amd64.s"]=1035
-    ["internal/store/types/graph_data.go"]=1008
-    ["internal/store/store.go"]=967
-    ["internal/store/index/neighbor_ops.go"]=964
-    ["internal/store/cloud_control_plane.go"]=957
-    ["internal/tensor/ops.go"]=940
-    ["internal/store/index/ivf_flat.go"]=939
-    ["internal/store/types/serialization.go"]=928
-    ["longbowclientsdk/validate_sdk_coverage.py"]=908
-    ["internal/store/store_actions.go"]=905
-    ["internal/store/graph_store.go"]=895
-    ["internal/simd/simd_blocked.go"]=891
-    ["internal/store/types/graph_data_chunks.go"]=881
-    ["internal/store/index/diskann.go"]=873
-    ["internal/mesh/gossip.go"]=869
-    ["internal/store/index/sharded_hnsw.go"]=867
-    ["internal/store/index/ivf_pq_index.go"]=857
-    ["internal/store/reranker_advanced.go"]=827
-    ["internal/store/multimodal.go"]=812
+# Implemented as a case lookup for macOS bash 3.2 compatibility (no declare -A).
+ALLOWLIST_KEYS=(
+    "internal/simd/simd_baseline.go"
+    "internal/simd/turboquant_amd64.s"
+    "internal/simd/simd_amd64.go"
+    "internal/metrics/storage_metrics.go"
+    "cmd/tensor-verify/main.go"
+    "internal/simd/int16_kernels_amd64.s"
+    "internal/store/types/graph_data.go"
+    "internal/store/store.go"
+    "internal/store/index/neighbor_ops.go"
+    "internal/store/cloud_control_plane.go"
+    "internal/tensor/ops.go"
+    "internal/store/index/ivf_flat.go"
+    "internal/store/types/serialization.go"
+    "longbowclientsdk/validate_sdk_coverage.py"
+    "internal/store/store_actions.go"
+    "internal/store/graph_store.go"
+    "internal/simd/simd_blocked.go"
+    "internal/store/types/graph_data_chunks.go"
+    "internal/store/index/diskann.go"
+    "internal/mesh/gossip.go"
+    "internal/store/index/sharded_hnsw.go"
+    "internal/store/index/ivf_pq_index.go"
+    "internal/store/reranker_advanced.go"
+    "internal/store/multimodal.go"
 )
+
+allowlist_base() {
+    case "$1" in
+        "internal/simd/simd_baseline.go") echo 1330 ;;
+        "internal/simd/turboquant_amd64.s") echo 1325 ;;
+        "internal/simd/simd_amd64.go") echo 1127 ;;
+        "internal/metrics/storage_metrics.go") echo 1076 ;;
+        "cmd/tensor-verify/main.go") echo 1050 ;;
+        "internal/simd/int16_kernels_amd64.s") echo 1035 ;;
+        "internal/store/types/graph_data.go") echo 1008 ;;
+        "internal/store/store.go") echo 967 ;;
+        "internal/store/index/neighbor_ops.go") echo 964 ;;
+        "internal/store/cloud_control_plane.go") echo 957 ;;
+        "internal/tensor/ops.go") echo 940 ;;
+        "internal/store/index/ivf_flat.go") echo 939 ;;
+        "internal/store/types/serialization.go") echo 928 ;;
+        "longbowclientsdk/validate_sdk_coverage.py") echo 908 ;;
+        "internal/store/store_actions.go") echo 905 ;;
+        "internal/store/graph_store.go") echo 895 ;;
+        "internal/simd/simd_blocked.go") echo 891 ;;
+        "internal/store/types/graph_data_chunks.go") echo 881 ;;
+        "internal/store/index/diskann.go") echo 873 ;;
+        "internal/mesh/gossip.go") echo 869 ;;
+        "internal/store/index/sharded_hnsw.go") echo 867 ;;
+        "internal/store/index/ivf_pq_index.go") echo 857 ;;
+        "internal/store/reranker_advanced.go") echo 827 ;;
+        "internal/store/multimodal.go") echo 812 ;;
+        *) echo 0 ;;
+    esac
+}
 
 is_hand_maintained_source() {
     local p="$1"
@@ -68,7 +99,7 @@ if [ "$MODE" = "staged" ]; then
             echo "::error::New file $path is ${lines} LOC (exceeds ${HARD_LIMIT} LOC hard ceiling)."
             FAIL=1
         elif [ "$lines" -gt "$SOFT_LIMIT" ]; then
-            base="${ALLOWLIST[$path]:-0}"
+            base="$(allowlist_base "$path")"
             if [ "$base" -eq 0 ] || [ "$lines" -gt "$base" ]; then
                 echo "::warning::Hand-maintained file $path is ${lines} LOC (> ${SOFT_LIMIT} LOC target)."
                 WARNS=$((WARNS + 1))
@@ -100,7 +131,7 @@ while IFS= read -r path; do
     is_hand_maintained_source "$path" || continue
     lines=$(wc -l < "$path")
     if [ "$lines" -gt "$SOFT_LIMIT" ]; then
-        base="${ALLOWLIST[$path]:-0}"
+        base="$(allowlist_base "$path")"
         if [ "$base" -eq 0 ]; then
             if [ "$lines" -gt "$HARD_LIMIT" ]; then
                 echo "FAIL: Un-allowlisted file $path is ${lines} LOC (> ${HARD_LIMIT} LOC hard ceiling)."
@@ -120,7 +151,7 @@ while IFS= read -r path; do
 done < <(git ls-files)
 
 STALE=0
-for path in "${!ALLOWLIST[@]}"; do
+for path in "${ALLOWLIST_KEYS[@]}"; do
     if [ ! -f "$path" ]; then
         echo "WARN: Allowlist entry $path no longer exists (remove from ALLOWLIST)."
         STALE=$((STALE + 1))

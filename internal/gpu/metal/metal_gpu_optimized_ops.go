@@ -75,7 +75,7 @@ func packedSize(dims int, bitsPerAngle int) int {
 	angleBytes := (angleCount*bitsPerAngle + 7) / 8
 	bitBytes := (pow2 + 7) / 8
 	size := 4 + angleBytes + bitBytes
-	return (size + 3) &^ 3 // Pad to 4 bytes for GPU alignment
+	return (size + 31) &^ 31 // Pad to 32 bytes for GPU warp alignment (matches TurboQuant PackedSize)
 }
 
 func (idx *MetalIndexOptimized) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {

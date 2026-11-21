@@ -18,10 +18,12 @@ except ImportError:
 try:
     import pyarrow as pa
     import pyarrow.flight as flight
-    import longbow
+    from longbow import LongbowClient
     HAS_LONGBOW_SDK = True
 except ImportError:
     HAS_LONGBOW_SDK = False
+
+from ._mode_runner import fetch_metric
 
 class ClusterScenarioMixin:
         def execute_cluster(self):
@@ -353,49 +355,6 @@ class ClusterScenarioMixin:
 
             """Fetch a single metric value from the Prometheus /metrics endpoint."""
 
-            try:
-
-                import urllib.request
-
-                url = f"http://{metrics_addr}/metrics"
-
-                with urllib.request.urlopen(url, timeout=5) as resp:
-
-                    body = resp.read().decode()
-
-            except Exception:
-
-                return 0.0
-
-
-            for line in body.splitlines():
-
-                if line.startswith("#") or not line.strip():
-
-                    continue
-
-                if metric_name not in line:
-
-                    continue
-
-                if labels:
-
-                    if not all(f'{k}="{v}"' in line for k, v in labels.items()):
-
-                        continue
-
-                parts = line.rsplit(" ", 1)
-
-                if len(parts) == 2:
-
-                    try:
-
-                        return float(parts[1])
-
-                    except ValueError:
-
-                        pass
-
-            return 0.0
+            return fetch_metric(metrics_addr, metric_name, labels=labels)
 
 

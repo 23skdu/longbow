@@ -18,7 +18,7 @@ except ImportError:
 try:
     import pyarrow as pa
     import pyarrow.flight as flight
-    import longbow
+    from longbow import LongbowClient
     HAS_LONGBOW_SDK = True
 except ImportError:
     HAS_LONGBOW_SDK = False
@@ -96,13 +96,11 @@ class GeoScenarioMixin:
 
                         label = f"geo_{dtype}_{dim}_{count}"
 
-                        env_overrides = {
+                        env_overrides = {"GEO_ENABLED": "true"}
 
-                            "GEO_ENABLED": "true",
+                        if getattr(self.args, "memory", None):
 
-                            "LONGBOW_MAX_MEMORY": str(self.args.memory),
-
-                        }
+                            env_overrides["LONGBOW_MAX_MEMORY"] = str(self.args.memory)
 
                         if not self.start_server(label, env_overrides=env_overrides):
 
@@ -110,6 +108,8 @@ class GeoScenarioMixin:
 
                             continue
 
+
+                        client = None
 
                         try:
 
@@ -212,15 +212,15 @@ class GeoScenarioMixin:
 
                                         if geo_type.startswith("radius"):
 
-                                            res = client.search(
+                                            res = client.geo_search(
 
                                                 f"geo_{dtype}_{dim}",
 
-                                                vector=query_vec,
+                                                center=center,
 
-                                                geo_center=center,
+                                                radius_km=params["radius_km"],
 
-                                                geo_radius_km=params["radius_km"],
+                                                search_type="radius",
 
                                                 k=params["k"],
 
@@ -228,13 +228,13 @@ class GeoScenarioMixin:
 
                                         else:
 
-                                            res = client.search(
+                                            res = client.geo_search(
 
                                                 f"geo_{dtype}_{dim}",
 
-                                                vector=query_vec,
+                                                box=params["geo_box"],
 
-                                                geo_box=params["geo_box"],
+                                                search_type="box",
 
                                                 k=params["k"],
 
@@ -296,15 +296,17 @@ class GeoScenarioMixin:
 
                                 try:
 
-                                    res = client.search(
+                                    res = client.geo_search(
 
                                         f"geo_{dtype}_{dim}",
 
-                                        vector=query_vec,
+                                        center=center,
 
-                                        geo_center=center,
+                                        radius_km=50.0,
 
-                                        geo_radius_km=50.0,
+                                        search_type="hybrid",
+
+                                        query_vector=query_vec,
 
                                         k=10,
 
@@ -346,6 +348,16 @@ class GeoScenarioMixin:
                             print(f"  Error: {e}")
 
                         finally:
+
+                            if client is not None:
+
+                                try:
+
+                                    client.close()
+
+                                except Exception:
+
+                                    pass
 
                             self.stop_server()
 

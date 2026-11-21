@@ -33,6 +33,18 @@ def to_arrow_table(
     if isinstance(data, pa.Table):
         return data
 
+    # 1. Handle 2D numpy ndarray
+    if isinstance(data, np.ndarray):
+        if data.ndim != 2:
+            raise ValueError(f"Expected 2D ndarray of shape (N, dim), got shape {data.shape}")
+        df = pd.DataFrame(
+            {
+                "id": [str(i) for i in range(data.shape[0])],
+                "vector": [row for row in data],
+            }
+        )
+        return to_arrow_table(df, dim or data.shape[1])
+
     # 2. Handle List of Dicts
     if isinstance(data, list):
         if not data:
@@ -182,15 +194,35 @@ def to_arrow_table(
         for col in data.columns:
             if col in reserved:
                 continue
-            
+
+            col_data = data[col]
+            if col == "geo_point":
+                flat_coords: List[float] = []
+                geo_ok = True
+                for item in col_data:
+                    if isinstance(item, dict) and "lat" in item and "lon" in item:
+                        flat_coords.extend((float(item["lat"]), float(item["lon"])))
+                    elif isinstance(item, (list, tuple, np.ndarray)) and len(item) == 2:
+                        flat_coords.extend((float(item[0]), float(item[1])))
+                    else:
+                        geo_ok = False
+                        break
+                if geo_ok and len(flat_coords) == 2 * len(data):
+                    arrays.append(
+                        pa.FixedSizeListArray.from_arrays(
+                            pa.array(flat_coords, type=pa.float64()), 2
+                        )
+                    )
+                    names.append(col)
+                    continue
+
             # Simple type mapping: Convert to string mostly, or let Arrow infer
             # For this demo/SDK, we rely on pyarrow inference but careful with object types
-            col_data = data[col]
             if pd.api.types.is_object_dtype(col_data) and not isinstance(col_data.iloc[0], (str, bytes)):
                  # JSON serialize dictionaries/lists if found in object column
                  import json
                  col_data = col_data.apply(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else str(x))
-                 
+
             arrays.append(pa.array(col_data))
             names.append(col)
              

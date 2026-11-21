@@ -18,7 +18,7 @@ except ImportError:
 try:
     import pyarrow as pa
     import pyarrow.flight as flight
-    import longbow
+    from longbow import LongbowClient
     HAS_LONGBOW_SDK = True
 except ImportError:
     HAS_LONGBOW_SDK = False
@@ -90,6 +90,10 @@ class TemporalScenarioMixin:
                             continue
 
 
+                        client = None
+
+                        pprof_proc = None
+
                         try:
 
                             print(f"  Generating {count} vectors with timestamps...")
@@ -109,6 +113,8 @@ class TemporalScenarioMixin:
                                 meta_uri=f"grpc://127.0.0.1:{int(self.server_addr.split(':')[-1]) + 1}",
 
                             )
+
+                            client.connect()
 
 
                             batch_size = 5000
@@ -335,6 +341,16 @@ class TemporalScenarioMixin:
 
 
                         finally:
+
+                            if client is not None:
+
+                                try:
+
+                                    client.close()
+
+                                except Exception:
+
+                                    pass
 
                             if pprof_proc:
 

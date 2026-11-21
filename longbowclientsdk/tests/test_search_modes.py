@@ -22,12 +22,47 @@ def _ensure_optional_test_deps() -> bool:
         return True
     except ImportError:
         np_mod = types.ModuleType("numpy")
-        np_mod.ndarray = list  # type: ignore[attr-defined]
-        np_mod.float32 = float  # type: ignore[attr-defined]
-        np_mod.float64 = float  # type: ignore[attr-defined]
+
+        class _FakeNDArray:
+            def __init__(self, rows):
+                self._rows = [list(r) for r in rows]
+                self.ndim = 2 if rows and isinstance(rows[0], (list, tuple)) else 1
+                self.shape = (
+                    (len(self._rows), len(self._rows[0]))
+                    if self.ndim == 2
+                    else (len(self._rows),)
+                )
+                self.dtype = np_mod.float32
+
+            def __iter__(self):
+                return iter(self._rows)
+
+            def __len__(self):
+                return len(self._rows)
+
+            def flatten(self):
+                return [x for row in self._rows for x in row]
+
+        np_mod.ndarray = _FakeNDArray  # type: ignore[attr-defined]
+        np_mod.dtype = lambda x: x  # type: ignore[attr-defined]
+        np_mod.float16 = "float16"  # type: ignore[attr-defined]
+        np_mod.float32 = "float32"  # type: ignore[attr-defined]
+        np_mod.float64 = "float64"  # type: ignore[attr-defined]
         np_mod.complex64 = complex  # type: ignore[attr-defined]
+        np_mod.complex128 = complex  # type: ignore[attr-defined]
+        np_mod.object_ = object  # type: ignore[attr-defined]
+        np_mod.int8 = "int8"  # type: ignore[attr-defined]
+        np_mod.int16 = "int16"  # type: ignore[attr-defined]
+        np_mod.int32 = "int32"  # type: ignore[attr-defined]
+        np_mod.int64 = "int64"  # type: ignore[attr-defined]
+        np_mod.uint8 = "uint8"  # type: ignore[attr-defined]
+        np_mod.uint16 = "uint16"  # type: ignore[attr-defined]
+        np_mod.uint32 = "uint32"  # type: ignore[attr-defined]
+        np_mod.uint64 = "uint64"  # type: ignore[attr-defined]
         np_mod.complexfloating = ()  # type: ignore[attr-defined]
         np_mod.issubdtype = lambda *a: False  # type: ignore[attr-defined]
+        np_mod.ones = lambda shape, dtype=None: _FakeNDArray([[1.0] * shape[1] for _ in range(shape[0])])  # type: ignore[attr-defined]
+        np_mod.stack = lambda vals: _FakeNDArray(list(vals))  # type: ignore[attr-defined]
         sys.modules.setdefault("numpy", np_mod)
         pa_mod = types.ModuleType("pyarrow")
         flight_mod = types.ModuleType("pyarrow.flight")
@@ -41,9 +76,42 @@ def _ensure_optional_test_deps() -> bool:
                 self.type = typ
                 self.body = body
 
+        class _FixedSizeListType:
+            def __init__(self, list_size: int):
+                self.list_size = list_size
+
+        class _FixedSizeListArray:
+            def __init__(self, values, list_size: int):
+                self.values = list(values)
+                self.type = _FixedSizeListType(list_size)
+
+            @classmethod
+            def from_arrays(cls, arr, list_size: int):
+                return cls(arr, list_size)
+
+        class _Field:
+            def __init__(self, name: str, typ: Any):
+                self.name = name
+                self.type = typ
+
+        class _Schema:
+            def __init__(self, fields, metadata=None):
+                self._fields = {f.name: f for f in fields}
+                self.metadata = metadata or {}
+
+            def field(self, name: str):
+                return self._fields[name]
+
         class _Table:
-            def __init__(self, rows: List[Dict[str, Any]]):
+            def __init__(self, rows: List[Dict[str, Any]], columns=None, names=None, metadata=None):
                 self._rows = rows
+                self._columns = columns or []
+                self._names = names or []
+                self.num_rows = len(columns[0]) if columns else len(rows)
+                self.schema = _Schema(
+                    [_Field(n, getattr(c, "type", None)) for n, c in zip(self._names, self._columns)],
+                    metadata=metadata,
+                )
 
             def to_pandas(self):
                 return self._rows
@@ -51,25 +119,106 @@ def _ensure_optional_test_deps() -> bool:
             def to_pylist(self):
                 return list(self._rows)
 
+            def replace_schema_metadata(self, meta):
+                return _Table(self._rows, self._columns, self._names, metadata=meta)
+
             @classmethod
             def from_pandas(cls, df):
-                return cls(list(df))
+                return cls(list(getattr(df, "_rows", df)))
+
+            @classmethod
+            def from_arrays(cls, arrays, names):
+                return cls([], columns=list(arrays), names=list(names))
 
         pa_mod.Table = _Table  # type: ignore[attr-defined]
+        pa_mod.FixedSizeListArray = _FixedSizeListArray  # type: ignore[attr-defined]
+        pa_mod.types = types.SimpleNamespace(  # type: ignore[attr-defined]
+            is_fixed_size_list=lambda t: isinstance(t, _FixedSizeListType)
+        )
+        pa_mod.array = lambda vals, type=None: list(vals)  # type: ignore[attr-defined]
         pa_mod.Schema = object  # type: ignore[attr-defined]
         pa_mod.schema = lambda *a, **kw: None  # type: ignore[attr-defined]
         pa_mod.field = lambda *a, **kw: None  # type: ignore[attr-defined]
         pa_mod.list_ = lambda *a, **kw: None  # type: ignore[attr-defined]
-        pa_mod.float32 = lambda: None  # type: ignore[attr-defined]
-        pa_mod.int64 = lambda: None  # type: ignore[attr-defined]
-        pa_mod.string = lambda: None  # type: ignore[attr-defined]
+        pa_mod.float16 = lambda: "float16"  # type: ignore[attr-defined]
+        pa_mod.float32 = lambda: "float32"  # type: ignore[attr-defined]
+        pa_mod.float64 = lambda: "float64"  # type: ignore[attr-defined]
+        pa_mod.int8 = lambda: "int8"  # type: ignore[attr-defined]
+        pa_mod.int16 = lambda: "int16"  # type: ignore[attr-defined]
+        pa_mod.int32 = lambda: "int32"  # type: ignore[attr-defined]
+        pa_mod.int64 = lambda: "int64"  # type: ignore[attr-defined]
+        pa_mod.uint8 = lambda: "uint8"  # type: ignore[attr-defined]
+        pa_mod.uint16 = lambda: "uint16"  # type: ignore[attr-defined]
+        pa_mod.uint32 = lambda: "uint32"  # type: ignore[attr-defined]
+        pa_mod.uint64 = lambda: "uint64"  # type: ignore[attr-defined]
+        pa_mod.string = lambda: "string"  # type: ignore[attr-defined]
+        pa_mod.timestamp = lambda *a: "timestamp"  # type: ignore[attr-defined]
         flight_mod.Ticket = _Ticket  # type: ignore[attr-defined]
         flight_mod.Action = _Action  # type: ignore[attr-defined]
         flight_mod.FlightCallOptions = lambda **kw: kw  # type: ignore[attr-defined]
         pa_mod.flight = flight_mod  # type: ignore[attr-defined]
 
         pd_mod = types.ModuleType("pandas")
-        pd_mod.DataFrame = lambda rows: rows  # type: ignore[attr-defined]
+
+        class _FakeValues(list):
+            def __init__(self, vals):
+                super().__init__(vals)
+                self.dtype = object
+
+        class _FakeSeries:
+            def __init__(self, vals):
+                self._vals = list(vals)
+                self.values = _FakeValues(self._vals)
+                self.iloc = self._vals
+
+            def __iter__(self):
+                return iter(self._vals)
+
+            def __len__(self):
+                return len(self._vals)
+
+            def apply(self, fn):
+                return _FakeSeries([fn(x) for x in self._vals])
+
+        class _FakeDataFrame:
+            def __init__(self, data):
+                self._rows = list(data) if isinstance(data, list) else []
+                if isinstance(data, list):
+                    cols = {}
+                    keys = list(data[0].keys()) if data else []
+                    for k in keys:
+                        cols[k] = [row.get(k) for row in data]
+                    self._cols = {k: _FakeSeries(v) for k, v in cols.items()}
+                elif isinstance(data, dict):
+                    self._cols = {k: _FakeSeries(v) for k, v in data.items()}
+                else:
+                    self._cols = {}
+                self.columns = list(self._cols.keys())
+                self.index = list(range(len(next(iter(self._cols.values()), []))))
+
+            def __contains__(self, k):
+                return k in self._cols
+
+            def __getitem__(self, k):
+                return self._cols[k]
+
+            def __setitem__(self, k, val):
+                n = len(self.index)
+                vals = list(val) if isinstance(val, (list, tuple)) else [val] * n
+                self._cols[k] = _FakeSeries(vals)
+                self.columns = list(self._cols.keys())
+
+            def __len__(self):
+                return len(self.index) if self.columns else len(self._rows)
+
+        pd_mod.DataFrame = _FakeDataFrame  # type: ignore[attr-defined]
+        pd_mod.Timestamp = types.SimpleNamespace(now=lambda: 0)  # type: ignore[attr-defined]
+        pd_mod.api = types.SimpleNamespace(  # type: ignore[attr-defined]
+            types=types.SimpleNamespace(
+                is_integer_dtype=lambda dt: dt in (int, "int64", "int32"),
+                is_object_dtype=lambda s: False,
+            )
+        )
 
         pydantic_mod = types.ModuleType("pydantic")
 
@@ -396,6 +545,26 @@ class TestLongbowClientSearchModes(unittest.TestCase):
         )
         self.assertIn("<svg", html)
         self.assertIn("longbow-hop-trace", html)
+
+    def test_top_level_import_and_ingest_helpers(self):
+        from longbow import LongbowClient as TopLevelClient
+
+        self.assertIs(TopLevelClient, LongbowClient)
+
+        import numpy as np
+        from longbow.ingest import to_arrow_table
+
+        arr = np.ones((3, 4), dtype=np.float32)
+        tbl = to_arrow_table(arr)
+        self.assertEqual(tbl.num_rows, 3)
+
+        geo_tbl = to_arrow_table(
+            [
+                {"id": "0", "vector": [1.0, 0.0], "geo_point": {"lat": 40.7, "lon": -74.0}},
+                {"id": "1", "vector": [0.0, 1.0], "geo_point": [34.0, -118.2]},
+            ]
+        )
+        self.assertTrue(pa.types.is_fixed_size_list(geo_tbl.schema.field("geo_point").type))
 
 
 if __name__ == "__main__":

@@ -49,9 +49,34 @@ def summarize_latencies(latencies_ms, total_elapsed_s):
     }
 
 
+def fetch_metric(metrics_addr: str, metric_name: str, labels: dict | None = None) -> float:
+    """Fetch a single metric value from the Prometheus /metrics endpoint."""
+    try:
+        import urllib.request
+
+        url = f"http://{metrics_addr}/metrics"
+        with urllib.request.urlopen(url, timeout=5) as resp:  # nosec B310
+            body = resp.read().decode()
+    except Exception:
+        return 0.0
+
+    for line in body.splitlines():
+        if line.startswith("#") or not line.strip() or metric_name not in line:
+            continue
+        if labels and not all(f'{k}="{v}"' in line for k, v in labels.items()):
+            continue
+        parts = line.rsplit(" ", 1)
+        if len(parts) == 2:
+            try:
+                return float(parts[1])
+            except ValueError:
+                pass
+    return 0.0
+
+
 def run_bench_tool_mode_fallback(orchestrator, label, search_mode, dim, count):
     """Fallback runner invoking bin/bench-tool for a single search mode."""
-    bench_tool = orchestrator.get_bench_tool_path()
+    bench_tool = orchestrator.get_bench_tool()
     if not os.path.exists(bench_tool):
         print(f"  bench-tool not found at {bench_tool}; skipping {search_mode} fallback.")
         return None
@@ -84,7 +109,7 @@ def run_scenario_matrix(orchestrator, scenario_name, title, bench_mode, query_ru
     for count in counts:
         for dim in dims:
             label = f"{scenario_name}_float32_{dim}_{count}"
-            if not orchestrator.start_server(label):
+            if not orchestrator.start_server(label, count=count):
                 print(f"  Failed to start server for {label}!")
                 continue
             try:

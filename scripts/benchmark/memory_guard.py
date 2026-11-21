@@ -250,33 +250,60 @@ class MemoryGuardMixin:
                 print("=" * 80)
 
                 label = f"soak_{dtype}_{dim}"
-                env_overrides = {"LONGBOW_MAX_MEMORY": str(self.args.memory)}
+                env_overrides = (
+                    {"LONGBOW_MAX_MEMORY": str(self.args.memory)}
+                    if getattr(self.args, "memory", None)
+                    else None
+                )
                 if not self.start_server(label, env_overrides=env_overrides):
                     print(f"  Failed to start server for {dtype} dim={dim}")
                     continue
 
                 np_dtype = dtype_map.get(dtype, np.float32)
-                vec_size = dim
-                if "complex" in dtype:
-                    vec_size = dim * 2
+                host_port = self.server_addr.split(":")[-1]
+                client = LongbowClient(
+                    uri=f"grpc://{self.server_addr}",
+                    meta_uri=f"grpc://127.0.0.1:{int(host_port) + 1}",
+                )
 
                 # Insert vectors in batches
                 batch_size = min(10000, count)
                 inserted = 0
                 try:
+                    client.connect()
                     while inserted < count:
                         to_insert = min(batch_size, count - inserted)
-                        vectors = np.random.randn(to_insert, vec_size).astype(np_dtype)
+                        if "complex" in dtype:
+                            vectors = (
+                                np.random.randn(to_insert, dim)
+                                + 1j * np.random.randn(to_insert, dim)
+                            ).astype(np_dtype)
+                        else:
+                            vectors = np.random.randn(to_insert, dim).astype(np_dtype)
                         ids = list(range(inserted, inserted + to_insert))
-                        self.client.insert_vectors(ids, vectors.tolist())
+                        client.insert(
+                            label,
+                            [
+                                {"id": str(vid), "vector": vec}
+                                for vid, vec in zip(ids, vectors.tolist())
+                            ],
+                        )
                         inserted += to_insert
                         print(f"  Inserted {inserted}/{count} vectors", end="\r")
 
                     print(f"\n  All {count} vectors inserted. Monitoring memory for {duration}s...")
                 except Exception as e:
                     print(f"  Error during insertion: {e}")
+                    try:
+                        client.close()
+                    except Exception:
+                        pass
                     self.stop_server()
                     continue
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
                 # Monitor memory over time
                 memory_samples = []

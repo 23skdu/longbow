@@ -18,7 +18,7 @@ except ImportError:
 try:
     import pyarrow as pa
     import pyarrow.flight as flight
-    import longbow
+    from longbow import LongbowClient
     HAS_LONGBOW_SDK = True
 except ImportError:
     HAS_LONGBOW_SDK = False
@@ -131,7 +131,11 @@ class ChurnScenarioMixin:
 
                     label = f"churn_{dtype}_{dim}"
 
-                    env_overrides = {"LONGBOW_MAX_MEMORY": str(self.args.memory)}
+                    env_overrides = (
+                        {"LONGBOW_MAX_MEMORY": str(self.args.memory)}
+                        if getattr(self.args, "memory", None)
+                        else None
+                    )
 
                     if not self.start_server(label, env_overrides=env_overrides):
 
@@ -139,6 +143,8 @@ class ChurnScenarioMixin:
 
                         continue
 
+
+                    client = None
 
                     try:
 
@@ -242,7 +248,7 @@ class ChurnScenarioMixin:
 
                                         try:
 
-                                            client.delete(dataset, str(did))
+                                            client.delete(dataset, [str(did)])
 
                                             deleted += 1
 
@@ -339,7 +345,7 @@ class ChurnScenarioMixin:
 
                             try:
 
-                                client.delete_dataset(dataset)
+                                client.drop_dataset(dataset)
 
                             except Exception:
 
@@ -351,6 +357,16 @@ class ChurnScenarioMixin:
                         print(f"  Error: {e}")
 
                     finally:
+
+                        if client is not None:
+
+                            try:
+
+                                client.close()
+
+                            except Exception:
+
+                                pass
 
                         self.stop_server()
 

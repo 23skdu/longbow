@@ -11,8 +11,11 @@ import sys
 from datetime import datetime
 
 _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+_SDK_SRC = os.path.join(os.path.dirname(_SCRIPTS_DIR), "longbowclientsdk", "src")
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
+if os.path.isdir(_SDK_SRC) and _SDK_SRC not in sys.path:
+    sys.path.append(_SDK_SRC)
 
 from benchmark import (
     CheckpointMixin,

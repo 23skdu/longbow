@@ -18,10 +18,12 @@ except ImportError:
 try:
     import pyarrow as pa
     import pyarrow.flight as flight
-    import longbow
+    from longbow import LongbowClient
     HAS_LONGBOW_SDK = True
 except ImportError:
     HAS_LONGBOW_SDK = False
+
+from ._mode_runner import fetch_metric
 
 class LearnedIndexScenarioMixin:
         def execute_learned_index(self):
@@ -252,7 +254,7 @@ class LearnedIndexScenarioMixin:
 
                 print("\n[Stage 3] Reading Prometheus metrics")
 
-                knn_total = self._fetch_metric(
+                knn_total = fetch_metric(
 
                     metrics_addr,
 
@@ -262,7 +264,7 @@ class LearnedIndexScenarioMixin:
 
                 )
 
-                default_total = self._fetch_metric(
+                default_total = fetch_metric(
 
                     metrics_addr,
 
@@ -272,7 +274,7 @@ class LearnedIndexScenarioMixin:
 
                 )
 
-                samples_total = self._fetch_metric(
+                samples_total = fetch_metric(
 
                     metrics_addr,
 
@@ -280,7 +282,7 @@ class LearnedIndexScenarioMixin:
 
                 )
 
-                correct_total = self._fetch_metric(
+                correct_total = fetch_metric(
 
                     metrics_addr,
 

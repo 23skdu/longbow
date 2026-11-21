@@ -221,6 +221,77 @@ class TestPythonSDKAndDocsParity(unittest.TestCase):
         self.assertIn("--search-modes all", vectorsearch)
         self.assertIn("-search-modes", dev_doc)
 
+    def test_benchmark_scenarios_and_sdk_imports_are_valid(self):
+        """All scenario modules import cleanly and avoid stale SDK/runner method names."""
+        import ast
+        from unittest.mock import MagicMock, patch
+
+        # unified_benchmark must expose local longbowclientsdk/src fallback on sys.path.
+        _load_module("unified_benchmark_test_mod", "scripts/unified_benchmark.py")
+        sdk_src = os.path.join(_ROOT, "longbowclientsdk", "src")
+        self.assertIn(sdk_src, sys.path)
+
+        # Every file in scripts/benchmark/ must define LongbowClient before referencing it
+        # and avoid stale runner/client method names.
+        for name in sorted(os.listdir(os.path.join(_SCRIPTS, "benchmark", "scenarios"))):
+            if not name.endswith(".py"):
+                continue
+            rel = f"scripts/benchmark/scenarios/{name}"
+            src = _read(rel)
+            compile(src, rel, "exec")
+            if "LongbowClient" in src:
+                self.assertIn(
+                    "from longbow import LongbowClient",
+                    src,
+                    f"{rel} references LongbowClient without importing it",
+                )
+            self.assertNotIn("delete_dataset(", src, f"{rel} still uses non-existent delete_dataset")
+            self.assertNotIn("get_bench_tool_path(", src, f"{rel} still uses non-existent get_bench_tool_path")
+            self.assertNotIn("insert_vectors(", src, f"{rel} still uses non-existent insert_vectors")
+
+        mg_src = _read("scripts/benchmark/memory_guard.py")
+        compile(mg_src, "scripts/benchmark/memory_guard.py", "exec")
+        self.assertNotIn("insert_vectors(", mg_src)
+        self.assertNotIn("self.client.", mg_src)
+
+        geo_src = _read("scripts/benchmark/scenarios/geo.py")
+        self.assertIn("client.geo_search(", geo_src)
+        self.assertNotIn("geo_center=", geo_src)
+        self.assertNotIn("geo_box=", geo_src)
+
+        # Verify _mode_runner fallback invokes orchestrator.get_bench_tool() cleanly.
+        from benchmark.scenarios import _mode_runner
+
+        orch = MagicMock()
+        orch.get_bench_tool.return_value = "/tmp/nonexistent-bench-tool"
+        with patch.object(_mode_runner, "run_command"):
+            res = _mode_runner.run_bench_tool_mode_fallback(orch, "lbl", "federated", 128, 100)
+        self.assertIsNone(res)
+        orch.get_bench_tool.assert_called_once_with()
+
+        # Verify ScenarioMixin binds all execute_* entrypoints cleanly.
+        from benchmark.scenarios import ScenarioMixin
+
+        tree = ast.parse(_read("scripts/benchmark/scenarios/__init__.py"))
+        self.assertIsNotNone(tree)
+        for attr in (
+            "execute_churn",
+            "execute_cluster",
+            "execute_deletion",
+            "execute_exchange",
+            "execute_federated",
+            "execute_geo",
+            "execute_graphrag",
+            "execute_learned_index",
+            "execute_multimodal",
+            "execute_onnx",
+            "execute_range",
+            "execute_recommend",
+            "execute_temporal",
+            "execute_text",
+        ):
+            self.assertTrue(hasattr(ScenarioMixin, attr), f"ScenarioMixin missing {attr}")
+
 
 if __name__ == "__main__":
     unittest.main()

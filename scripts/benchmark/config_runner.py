@@ -126,30 +126,40 @@ class ConfigRunnerMixin:
         print(f"  SDK testing {dtype} dim={dim}...", end="", flush=True)
         
         try:
+            client.connect()
             # Create namespace via SDK
-            ns = client.create_namespace(label, dims=dim, data_type=dtype)
-            
+            client.create_namespace(label, dims=dim, data_type=dtype)
+
             # Generate test vectors
             import numpy as np
+
             vectors = np.random.rand(count, dim).astype(np.float32)
-            
+
             # Normalize
             norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-            vectors = vectors / norms
-            
+            vectors = vectors / np.maximum(norms, 1e-12)
+
             # Insert via SDK
-            client.insert(label, vectors)
-            
+            client.insert(
+                label,
+                [{"id": str(i), "vector": vec.tolist()} for i, vec in enumerate(vectors)],
+            )
+
             # Search via SDK
+            query = vectors[0].tolist()
             for _ in range(min(100, self.args.queries)):
-                query = vectors[0]
-                results = client.search(label, query, k=10)
-            
+                client.search(label, query, k=10)
+
             print(f" SDK done")
             return True
         except Exception as e:
             print(f" SDK error: {e}")
             return False
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
 
         # Surgical cleanup using port discovery for the specific port
         if ":" in self.server_addr:

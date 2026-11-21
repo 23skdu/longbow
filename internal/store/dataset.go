@@ -376,10 +376,10 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		BM25ArenaIndex:  NewBM25ArenaIndex(memory.NewSlabArena(4*1024*1024), 10000),
 	}
 	ds.LastIngestionCompletion.Store(time.Now().Unix())
-	ds.TemporalIndex.ds = ds
+	ds.TemporalIndex.SetVectorIndexProvider(func() VectorIndex { return ds.Index })
 	// Name the temporal cache's metrics after this dataset, so cache behaviour is
 	// attributable rather than a single unlabeled global (roadmap R11a).
-	ds.TemporalIndex.cache.SetDatasetLabel(name)
+	ds.TemporalIndex.SetDatasetLabel(name)
 
 	// Initialize Schema Manager
 	ds.SchemaManager = NewSchemaEvolutionManager(schema, name)

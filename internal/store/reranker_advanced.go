@@ -143,7 +143,7 @@ func NewLLMReranker(cfg LLMRerankConfig) (*LLMReranker, error) {
 		}
 	}
 	parsed, err := url.Parse(cfg.Endpoint)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, fmt.Errorf("invalid LLM reranker endpoint: %q", cfg.Endpoint)
 	}
 	if cfg.Model == "" {
@@ -217,7 +217,7 @@ func (l *LLMReranker) Rerank(ctx context.Context, query string, results []Search
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.cfg.Endpoint, bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.cfg.Endpoint, bytes.NewReader(reqBody)) // #nosec G107 G704 -- URL scheme/host validated in NewLLMReranker
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +226,7 @@ func (l *LLMReranker) Rerank(ctx context.Context, query string, results []Search
 		req.Header.Set("Authorization", "Bearer "+l.cfg.APIKey)
 	}
 
-	resp, err := l.httpClient.Do(req) // #nosec G107 -- URL validated in NewLLMReranker
+	resp, err := l.httpClient.Do(req) // #nosec G107 G704 -- URL validated in NewLLMReranker
 	if err != nil {
 		return nil, err
 	}

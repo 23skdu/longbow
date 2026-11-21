@@ -150,12 +150,12 @@ func (m *MaterializedViewManager) CreateView(ctx context.Context, spec Materiali
 	}
 	if spec.RefreshPolicy == RefreshScheduled {
 		interval := time.Duration(max(50, spec.RefreshIntervalMs)) * time.Millisecond
-		go m.runScheduledLoop(spec.Name, interval, ent.stopCh)
+		go m.runScheduledLoop(context.WithoutCancel(ctx), spec.Name, interval, ent.stopCh)
 	}
 	return snap, nil
 }
 
-func (m *MaterializedViewManager) runScheduledLoop(name string, interval time.Duration, stopCh chan struct{}) {
+func (m *MaterializedViewManager) runScheduledLoop(ctx context.Context, name string, interval time.Duration, stopCh chan struct{}) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -163,7 +163,7 @@ func (m *MaterializedViewManager) runScheduledLoop(name string, interval time.Du
 		case <-stopCh:
 			return
 		case <-ticker.C:
-			_, _ = m.RefreshView(context.Background(), name)
+			_, _ = m.RefreshView(ctx, name)
 		}
 	}
 }

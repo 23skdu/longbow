@@ -13,7 +13,6 @@ import (
 	"os"
 
 	"github.com/23skdu/longbow/internal/core"
-	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
@@ -22,20 +21,7 @@ import (
 )
 
 // IVFHNSWConfig holds configuration for the IVF-HNSW composite index.
-type IVFHNSWConfig struct {
-	Nlist  int // Number of clusters
-	M      int // Number of PQ subvectors (quantization)
-	K      int // PQ centroids per subspace (default 256)
-	Nprobe int // Clusters to search
-
-	// HNSW coarse quantizer settings
-	HNSWM              int
-	HNSWEfConstruction int
-	HNSWEfSearch       int
-
-	GPUEnabled bool
-	GPUConfig  *gputypes.GPUConfig
-}
+type IVFHNSWConfig = types.IVFHNSWConfig
 
 // IVFHNSWCompositeIndex implements a high-density billion-scale composite index.
 // It uses HNSW for fast coarse quantization (assignment to clusters) and

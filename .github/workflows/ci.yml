@@ -71,6 +71,9 @@ jobs:
       - name: Verify generated SIMD is reproducible
         run: ./scripts/check_simd_generation.sh
 
+      - name: Enforce module size guardrails
+        run: make module-size-check
+
       - name: Verify ARM64 cross-compilation
         run: |
           GOARCH=arm64 go build ./...

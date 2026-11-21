@@ -154,7 +154,7 @@ func (vs *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int32) {
 			if ds.TemporalIndex != nil {
 				cfg := gpu.GPUConfig{
 					DeviceID:  deviceID,
-					Dimension: ds.TemporalIndex.dimension,
+					Dimension: ds.TemporalIndex.Dimension(),
 					Enabled:   true,
 					Backend:   backend,
 				}
@@ -245,7 +245,7 @@ func (vs *VectorStore) SetTemporalIndex(cfg TemporalConfig) {
 	vs.IterateDatasets(func(name string, ds *Dataset) {
 		if ds.TemporalIndex == nil && cfg.Enabled {
 			ds.TemporalIndex = NewTemporalIndex(0)
-			ds.TemporalIndex.ds = ds
+			ds.TemporalIndex.SetVectorIndexProvider(func() VectorIndex { return ds.Index })
 		}
 	})
 }

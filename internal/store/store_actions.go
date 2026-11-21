@@ -808,7 +808,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 					EarthRadius:  6371.0,
 				}
 				ds.GeoIndex = NewGeoIndex(ds.Name, req.Dimension, geoCfg)
-				ds.GeoIndex.ds = ds
+				ds.GeoIndex.SetVectorIndexProvider(func() VectorIndex { return ds.Index })
 				if gIdx, err := s.getGPUIndex(req.Dimension); err == nil {
 					ds.GeoIndex.SetGPUIndex(gIdx)
 				}

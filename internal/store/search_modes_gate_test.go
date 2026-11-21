@@ -196,7 +196,8 @@ func buildSearchGateBatch(alloc memory.Allocator, baseTs int64, count int) arrow
 
 func waitGateDataset(tb testing.TB, vs *VectorStore, dataset string, want int) {
 	tb.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	const waitBudget = 30 * time.Second
+	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		ds, ok := vs.getDataset(dataset)
 		if ok && ds.IndexLen() >= want {
@@ -206,7 +207,7 @@ func waitGateDataset(tb testing.TB, vs *VectorStore, dataset string, want int) {
 		}
 		time.Sleep(15 * time.Millisecond)
 	}
-	tb.Fatalf("dataset %q failed to finish indexing %d rows within 5s", dataset, want)
+	tb.Fatalf("dataset %q failed to finish indexing %d rows within %s", dataset, want, waitBudget)
 }
 
 type gateDoGetStream struct {

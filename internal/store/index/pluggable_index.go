@@ -1,7 +1,6 @@
 package index
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -15,17 +14,17 @@ import (
 // =============================================================================
 
 // IndexType represents the type of vector index algorithm
-type IndexType string
+type IndexType = types.IndexType
 
 const (
 	// IndexTypeHNSW is Hierarchical Navigable Small World graph
-	IndexTypeHNSW IndexType = "hnsw"
+	IndexTypeHNSW = types.IndexTypeHNSW
 	// IndexTypeIVFFlat is Inverted File with Flat quantization
-	IndexTypeIVFFlat IndexType = "ivf_flat"
+	IndexTypeIVFFlat = types.IndexTypeIVFFlat
 	// IndexTypeDiskANN is Microsoft DiskANN algorithm
-	IndexTypeDiskANN IndexType = "diskann"
+	IndexTypeDiskANN = types.IndexTypeDiskANN
 	// IndexTypeIVFHNSW is Billion-scale IVF-HNSW composite index
-	IndexTypeIVFHNSW IndexType = "ivf_hnsw"
+	IndexTypeIVFHNSW = types.IndexTypeIVFHNSW
 )
 
 // =============================================================================
@@ -33,97 +32,27 @@ const (
 // =============================================================================
 
 // IndexSearchResult represents a single search result from any index type
-type IndexSearchResult struct {
-	ID       uint64
-	Distance float32
-}
+type IndexSearchResult = types.IndexSearchResult
 
 // =============================================================================
 // Pluggable Vector Index Interface
 // =============================================================================
 
 // PluggableVectorIndex is the abstract interface for all vector index implementations
-type PluggableVectorIndex interface {
-	// Type returns the index type identifier
-	Type() IndexType
-
-	// Dimension returns the vector dimension
-	Dimension() int
-
-	// Size returns the number of vectors in the index
-	Size() int
-
-	// NeedsBuild returns true if index requires explicit Build() call
-	NeedsBuild() bool
-
-	// Add adds a single vector to the index
-	Add(id uint64, vector []float32) error
-
-	// AddBatchRaw adds multiple vectors to the index
-	AddBatchRaw(ids []uint64, vectors [][]float32) error
-
-	// Search finds k nearest neighbors for the query vector
-	Search(query []float32, k int) ([]IndexSearchResult, error)
-
-	// SearchBatch performs batch search for multiple queries
-	SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error)
-
-	// GetNeighbors returns the k nearest neighbors for a given vector ID
-	GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error)
-
-	// Build builds the index (for algorithms requiring training)
-	Build() error
-
-	// Save persists the index to disk
-	Save(path string) error
-
-	// Load loads the index from disk
-	Load(path string) error
-
-	// ExportState returns the index state as a byte slice
-	ExportState() ([]byte, error)
-
-	// ImportState restores the index state from a byte slice
-	ImportState(data []byte) error
-
-	// Close releases resources
-	Close() error
-
-	// Legacy interface compatibility
-	AddByLocation(batchIdx, rowIdx int) error
-	GetVectorID(loc Location) (uint64, bool)
-	SearchVectors(query []float32, k int, options types.SearchOptions) []types.SearchResult
-	Len() int
-}
+type PluggableVectorIndex = types.PluggableVectorIndex
 
 // =============================================================================
 // Index Configuration
 // =============================================================================
 
 // IndexConfig holds configuration for creating an index
-type IndexConfig struct {
-	Type      IndexType
-	Dimension int
-
-	// Type-specific configurations
-	HNSWConfig    *ArrowHNSWConfig
-	IVFFlatConfig *IVFFlatConfig
-	DiskANNConfig *DiskANNConfig
-	IVFHNSWConfig *IVFHNSWConfig
-}
+type IndexConfig = types.IndexConfig
 
 // IVFFlatConfig holds IVF-Flat-specific configuration
-type IVFFlatConfig struct {
-	NClusters int
-	NProbe    int
-}
+type IVFFlatConfig = types.IVFFlatConfig
 
 // DiskANNConfig holds DiskANN-specific configuration
-type DiskANNConfig struct {
-	MaxDegree    int
-	BeamWidth    int
-	BuildThreads int
-}
+type DiskANNConfig = types.DiskANNConfig
 
 // =============================================================================
 // Index Factory

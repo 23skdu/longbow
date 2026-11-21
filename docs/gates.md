@@ -285,6 +285,23 @@ go test -run='^$$' -bench='^BenchmarkSearchModesGate$' -benchtime=25ms -benchmem
 
 ---
 
+### Gate 14: Module Size & File-Budget Guardrail
+
+- **Identifier**: `module-size-check`
+- **Enforcement Tool**: `make module-size-check`, [`scripts/check_module_sizes.sh`](https://github.com/23skdu/longbow/blob/main/scripts/check_module_sizes.sh), [`scripts/verify.sh`](https://github.com/23skdu/longbow/blob/main/scripts/verify.sh), CI `validate` job
+- **Commands**:
+
+```bash
+./scripts/check_module_sizes.sh
+./scripts/check_module_sizes.sh --staged
+```
+
+- **Description**:
+  - Audits hand-maintained source files (`.go`, `.py`, `.cu`, `.cuh`, `.m`, `.h`, and hand-written `.s` assembly, excluding `*_test.go` and generated `kernels_*_amd64.s`) against the repository size budget (`<= 800 LOC` soft target, `<= 1,200 LOC` hard ceiling on newly created or un-allowlisted files).
+  - Tracks a shrinkable legacy allow-list with baseline line counts so existing files cannot grow past their recorded baseline and stale entries (`<= 800 LOC`) are flagged for removal as modularization progresses.
+
+---
+
 ## 4. Gate Execution Matrix
 
 | Gate | Name | Pre-Commit Hook | Local `make ci` | CI Pipeline (`ci.yml`) | Target Makefile Rule |
@@ -302,6 +319,7 @@ go test -run='^$$' -bench='^BenchmarkSearchModesGate$' -benchtime=25ms -benchmem
 | **11** | Container & Helm Validation | No | **Yes** | **Yes** | `make test-docker`, `make helm-lint` |
 | **12** | Benchmark Regression Gate | No | Optional | **Yes** | `make bench-ci`, `make test-bench-harness` |
 | **13** | Search Modes Accuracy & Perf Gate | **Yes** | **Yes** | **Yes** | `make search-gate` |
+| **14** | Module Size Guardrail | **Yes** (staged) | **Yes** | **Yes** | `make module-size-check` |
 
 ---
 

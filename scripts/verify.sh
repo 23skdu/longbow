@@ -47,6 +47,7 @@ if command -v golangci-lint >/dev/null 2>&1; then
     golangci-lint run $PKGS
 fi
 echo "    ✓ Gate 1 passed: Formatting, go vet, and fast linters clean."
+./scripts/check_module_sizes.sh --staged || exit 1
 
 # 2. Go Security Check Gate
 echo "--> Gate 2/8: Running Go Security Checks (gosec AST analysis & secret scan)..."

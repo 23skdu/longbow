@@ -29,7 +29,7 @@ IMAGE_TAG     ?= latest
 	fuzz test-fuzz fuzz-coverage \
 	test test-short test-all test-wasm test-features race test-coverage coverage-gate coverage-html test-docker \
 	test-adbc test-adbc-python test-adbc-so test-version \
-	cross-compile check-simd test-bench-harness check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
+	cross-compile check-simd module-size-check test-bench-harness check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
 	accuracy-gate oracle-gate search-gate observability-inventory observability-check observability-rules \
 	docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-gpu docker-build-all \
 	makehooks install-commit-hook install-hooks verify pre-commit
@@ -112,6 +112,7 @@ help:
 	@echo "  helm-lint            Lint and dry-run template the Helm chart"
 	@echo "  bench-ci             Run fast Unified Benchmark in CI mode"
 	@echo "  check-simd           Verify generated SIMD kernels are byte-for-byte reproducible"
+	@echo "  module-size-check    Check module LOC targets and enforce new-file 1,200 LOC ceiling"
 	@echo "  verify               Run scripts/verify.sh Git pre-commit verification hook"
 	@echo "  pre-commit           Alias for verify"
 	@echo "  makehooks            Install scripts/verify.sh into .git/hooks/pre-commit"
@@ -130,7 +131,7 @@ help:
 # Combined Local CI Pipeline
 # ==============================================================================
 
-ci: fmt-check lint vet build build-adbc cross-compile check-simd test-coverage fuzz-coverage test-docker test-bench-harness test-version check-version accuracy-gate oracle-gate search-gate observability-check observability-rules sec-gosec helm-lint
+ci: fmt-check lint vet build build-adbc cross-compile check-simd module-size-check test-coverage fuzz-coverage test-docker test-bench-harness test-version check-version accuracy-gate oracle-gate search-gate observability-check observability-rules sec-gosec helm-lint
 	@echo "=========================================================="
 	@echo " ✓ Complete local CI verification pipeline passed 100%!"
 	@echo "=========================================================="
@@ -458,6 +459,10 @@ search-gate:
 	@echo "Running Search Modes Gate (accuracy & performance regression across all 21 search types)..."
 	$(GO) test -v -count=1 ./internal/store -run='^TestSearchModesGate$$'
 	$(GO) test -run='^$$' -bench='^BenchmarkSearchModesGate$$' -benchtime=25ms -benchmem ./internal/store
+
+module-size-check:
+	@echo "Checking module size budgets (warn >800 LOC, fail >1,200 LOC new files)..."
+	@./scripts/check_module_sizes.sh
 
 # Observability conformance (docs/roadmap.md Items 18-20, 24)
 observability-inventory:

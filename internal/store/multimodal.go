@@ -195,7 +195,7 @@ func (e *JointMultiModalEmbedder) EmbedAudio(ctx context.Context, raw []byte, mi
 
 func (e *JointMultiModalEmbedder) callInferenceEndpoint(ctx context.Context, modality MediaModality, raw []byte, mimeType, text string) ([]float32, error) {
 	parsed, err := url.Parse(e.cfg.InferenceEndpoint)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, fmt.Errorf("invalid inference endpoint: %q", e.cfg.InferenceEndpoint)
 	}
 	model := e.cfg.ImageModel
@@ -212,12 +212,12 @@ func (e *JointMultiModalEmbedder) callInferenceEndpoint(ctx context.Context, mod
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.cfg.InferenceEndpoint, bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.String(), bytes.NewReader(reqBody)) // #nosec G107 G704 -- endpoint scheme/host validated above
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := e.httpClient.Do(req) // #nosec G107 -- endpoint scheme validated above
+	resp, err := e.httpClient.Do(req) // #nosec G107 G704 -- endpoint scheme validated above
 	if err != nil {
 		return nil, err
 	}

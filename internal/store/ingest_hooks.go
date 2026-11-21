@@ -221,7 +221,7 @@ func (s *VectorStore) updateGeoIndexForBatch(ds *Dataset, rec arrow.RecordBatch,
 				}
 			}
 			ds.GeoIndex = NewGeoIndex(ds.Name, dim, geoCfg)
-			ds.GeoIndex.ds = ds
+			ds.GeoIndex.SetVectorIndexProvider(func() VectorIndex { return ds.Index })
 			s.logger.Info().Str("dataset", ds.Name).Int("dim", dim).Msg("Lazily initialized GeoIndex")
 		}
 		ds.dataMu.Unlock()

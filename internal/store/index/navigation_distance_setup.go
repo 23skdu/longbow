@@ -74,7 +74,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 						c.maxGen = searchCtx.MaxGeneration
 						return c
 					}
-					return &pqComputer{data: data, q: q, table: table, h: h, diskGraph: searchCtx.GetDiskGraph(), maxGen: searchCtx.MaxGeneration}
+					return &pqComputer{data: data, q: q, table: table, h: h, diskGraph: h.diskGraph.Load(), maxGen: math.MaxUint64}
 				}
 			}
 		}

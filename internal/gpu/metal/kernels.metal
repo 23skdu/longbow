@@ -664,7 +664,6 @@ kernel void compute_tq_distances(
     device const uchar* packedAngles = data + 4;
     device const uchar* qjlBits = data + 4 + angleBytes;
     
-    float invMaxVal = 1.0f / ((1 << bitsPerAngle) - 1);
     float correctionFactor = radius / sqrt((float)pow2) * 0.1f;
     
     // Use a small local array for folding. Max dimension supported in one pass is 256.
@@ -1124,7 +1123,6 @@ kernel void hnsw_greedy_search_tq(
     uint angleBytes = (angleCount * bitsPerAngle + 7) / 8;
     uint bitBytes = (pow2 + 7) / 8;
     uint stride = (4 + angleBytes + bitBytes + 31) & ~31;
-    float invMaxVal = 1.0f / ((1 << bitsPerAngle) - 1);
 
     while (improved) {
         if (tid == 0) {

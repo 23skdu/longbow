@@ -8,6 +8,8 @@ import platform
 import subprocess
 from datetime import datetime
 
+from ..process import run_command
+
 try:
     import numpy as np
     import pandas as pd

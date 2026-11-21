@@ -5,6 +5,18 @@ import re
 import time
 from datetime import datetime
 
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+try:
+    from longbow import LongbowClient  # noqa: F401
+
+    HAS_LONGBOW_SDK = True
+except ImportError:
+    HAS_LONGBOW_SDK = False
+
 from .process import DTYPE_BYTES, ResourceExhaustedException
 
 

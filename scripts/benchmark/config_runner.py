@@ -1,7 +1,9 @@
 """Single-configuration benchmark execution, pprof capture, and NUMA discovery."""
 
+from datetime import datetime
 import json
 import os
+import platform
 import re
 import signal
 import subprocess

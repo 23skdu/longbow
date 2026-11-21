@@ -2,7 +2,10 @@
 
 import json
 import os
+import platform
 from datetime import datetime
+
+from .memory_guard import format_size_gb, resolve_memory_limit_bytes
 
 
 def write_cli_markdown_report(output_file: str, report_path: str, mode: str) -> None:

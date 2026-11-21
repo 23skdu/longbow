@@ -8,7 +8,11 @@ import subprocess
 import sys
 import time
 
-from .memory_guard import format_size_gb, resolve_memory_limit_bytes
+from .memory_guard import (
+    format_size_gb,
+    host_available_memory_bytes,
+    resolve_memory_limit_bytes,
+)
 from .process import _kill_port, run_command
 
 try:

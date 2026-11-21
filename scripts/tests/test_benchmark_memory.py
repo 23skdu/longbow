@@ -127,6 +127,17 @@ class TestHostMemoryProbes(unittest.TestCase):
         self.assertEqual(ub.format_size_gb(None), "unset")
 
 
+def _harness_files():
+    scripts_dir = os.path.dirname(_HERE)
+    paths = [_SCRIPT]
+    bench_dir = os.path.join(scripts_dir, "benchmark")
+    for root, _, files in sorted(os.walk(bench_dir)):
+        for name in sorted(files):
+            if name.endswith(".py"):
+                paths.append(os.path.join(root, name))
+    return paths
+
+
 class TestNoGlobalPkill(unittest.TestCase):
     """H1 must not come back: reaping by process name is what destroyed data."""
 
@@ -135,25 +146,26 @@ class TestNoGlobalPkill(unittest.TestCase):
         commented-out line remains; neither reaps anything."""
         import ast
 
-        with open(_SCRIPT) as f:
-            tree = ast.parse(f.read(), filename=_SCRIPT)
-
         offenders = []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            name = None
-            if isinstance(func, ast.Attribute):
-                name = func.attr
-            elif isinstance(func, ast.Name):
-                name = func.id
-            if name not in ("run", "Popen", "call", "check_call", "check_output", "system"):
-                continue
-            for arg in list(node.args) + [kw.value for kw in node.keywords]:
-                text = arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else None
-                if text and "pkill" in text:
-                    offenders.append((node.lineno, name, text.strip()))
+        for path in _harness_files():
+            with open(path) as f:
+                tree = ast.parse(f.read(), filename=path)
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                name = None
+                if isinstance(func, ast.Attribute):
+                    name = func.attr
+                elif isinstance(func, ast.Name):
+                    name = func.id
+                if name not in ("run", "Popen", "call", "check_call", "check_output", "system"):
+                    continue
+                for arg in list(node.args) + [kw.value for kw in node.keywords]:
+                    text = arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else None
+                    if text and "pkill" in text:
+                        offenders.append((path, node.lineno, name, text.strip()))
         self.assertEqual(
             offenders, [], f"process-name reaping reintroduced at: {offenders}"
         )
@@ -163,12 +175,19 @@ class TestNoGlobalPkill(unittest.TestCase):
         self.assertTrue(hasattr(ub.BenchmarkRunner, "_own_ports"))
 
 
+def _read_harness_sources():
+    chunks = []
+    for path in _harness_files():
+        with open(path, "r", encoding="utf-8") as f:
+            chunks.append(f.read())
+    return "\n".join(chunks)
+
+
 class TestCheckpointAlwaysWrites(unittest.TestCase):
     """H9: an all-ResourceExhausted run must still leave an artefact."""
 
     def test_save_checkpoint_has_no_results_guard(self):
-        with open(_SCRIPT) as f:
-            body = f.read()
+        body = _read_harness_sources()
         start = body.index("def _save_checkpoint")
         end = body.index("def _load_checkpoint")
         snippet = body[start:end]
@@ -176,8 +195,8 @@ class TestCheckpointAlwaysWrites(unittest.TestCase):
         self.assertNotIn("and self.results and", snippet)
 
     def test_stable_resume_path_is_defined(self):
-        with open(_SCRIPT) as f:
-            self.assertIn("stable_output_file", f.read())
+        body = _read_harness_sources()
+        self.assertIn("stable_output_file", body)
 
 
 if __name__ == "__main__":

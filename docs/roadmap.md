@@ -97,7 +97,7 @@ Target budgets for all hand-maintained code:
 | Phase | Area | Priority | Status |
 |---|---|---|---|
 | M1 | Same-package splits of P0/P1 Go god files (zero API breakage) | HIGH | Completed |
-| M2 | Python SDK (`client.py`) & benchmark orchestrator (`unified_benchmark.py`) modularization | HIGH | Planned |
+| M2 | Python SDK (`client.py`) & benchmark orchestrator (`unified_benchmark.py`) modularization | HIGH | Completed |
 | M3 | Hot-path HNSW & query function decomposition (`arrow_hnsw_insert.go`, `navigation_search.go`, `query/`) | MEDIUM | Planned |
 | M4 | SIMD generator/assembly & GPU kernel splits (`internal/simd`, `internal/gpu/{cuda,metal}`) | MEDIUM | Planned |
 | M5 | God-package domain extraction (`internal/store` & `internal/store/index` subpackages) | LOW | Planned |
@@ -129,18 +129,20 @@ Split oversized Go files **within their existing packages** first so no import p
 
 #### M2 — Python Monolith Modularization
 
-- [ ] **`longbowclientsdk/src/longbow/client.py` (2,278 LOC, 125 methods)** -> decompose `LongbowClient` into transport + domain mixins under `longbowclientsdk/src/longbow/_mixins/` (preserving 100% backwards-compatible `from longbow import LongbowClient` public API):
-  - `_transport.py` (Flight/REST call options, headers, `_do_action_json`, `_do_get_df`, `_upload_batch`, `_rest_request`, error mapping)
-  - `_search.py` (dense, hybrid, filtered, sparse, range, geo, temporal, text, multimodal, federated, explain, rerank)
-  - `_graph.py` (edges, traverse, pagerank, communities, recommend)
-  - `_security.py` (RBAC API keys, RLS, audit log, OIDC providers, token exchange, AWS/Google helpers)
-  - `_admin.py` (namespaces, backups, streaming CDC, cloud clusters, sharding, schema registry, materialized views, usage/billing)
-- [ ] **`scripts/unified_benchmark.py` (3,237 LOC)** -> extract reusable modules into `scripts/benchmark/`:
-  - `server_lifecycle.py` (binary resolution, port cleanup, readiness polling, process teardown)
-  - `memory_guard.py` (RAM detection, ceiling calculation, RSS sampler, OOM early-abort)
-  - `checkpoint.py` (checkpoint save/load, `--resume` reconciliation, baseline save/compare)
-  - `reporting.py` (summary tables, markdown/JSON report formatting)
-  - Keep `scripts/unified_benchmark.py` as a thin CLI entrypoint (~250 LOC).
+- [x] **`longbowclientsdk/src/longbow/client.py` (2,278 -> 66 LOC, 125 methods preserved)** -> decomposed `LongbowClient` into transport + domain mixins under `longbowclientsdk/src/longbow/_mixins/` (17–467 LOC each, preserving 100% backwards-compatible `from longbow import LongbowClient` public API):
+  - `_transport.py` (432 LOC: Flight/REST call options, headers, `_do_action_json`, `_do_get_df`, `_upload_batch`, `_rest_request`, insert/download/delete, error mapping)
+  - `_search.py` (467 LOC: dense, hybrid, filtered, sparse, range, geo, temporal, text, multimodal, federated, explain, rerank)
+  - `_rest_search.py` (362 LOC: GraphQL, REST search suite, rerank evaluation, media parquet ingest, provenance debugging)
+  - `_graph.py` (173 LOC: edges, traverse, pagerank, communities, GraphRAG, recommend)
+  - `_security.py` (260 LOC: RBAC API keys, RLS, audit log, OIDC providers, token exchange, AWS/Google helpers)
+  - `_admin.py` (463 LOC: namespaces, datasets, backups, streaming CDC, cloud clusters, sharding, schema registry, materialized views, usage/billing)
+- [x] **`scripts/unified_benchmark.py` (3,237 -> 115 LOC)** -> thin CLI entrypoint and compatibility facade delegating modular mixins/utilities under `scripts/benchmark/` (20–567 LOC each):
+  - `server_lifecycle.py` (567 LOC: binary resolution, port-scoped cleanup, readiness polling, process teardown)
+  - `memory_guard.py` (334 LOC: RAM detection, ceiling calculation, RSS sampler/soak, OOM early-abort)
+  - `checkpoint.py` (177 LOC: checkpoint save/load, `--resume` reconciliation, baseline save/compare)
+  - `reporting.py` (458 LOC: summary tables, markdown/JSON report formatting)
+  - `config_runner.py` (486 LOC), `matrix_runner.py` (421 LOC), `cli.py` (392 LOC), plus synchronized `process.py` (183 LOC) & `telemetry.py` (233 LOC)
+  - Updated `scripts/tests/` source checks to inspect the modularized Go/Python layouts (`make test-bench-harness`: 122/122 tests OK).
 
 #### M3 — Hot-Path HNSW & Query Function Decomposition
 

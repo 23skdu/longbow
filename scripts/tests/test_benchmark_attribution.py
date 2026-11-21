@@ -47,26 +47,45 @@ def _read_file(path):
         return f.read()
 
 
+def _read_harness_sources():
+    parts = [_read_file(_SCRIPT)]
+    bench_dir = os.path.join(_ROOT, "scripts", "benchmark")
+    for root, _, files in sorted(os.walk(bench_dir)):
+        for name in sorted(files):
+            if name.endswith(".py"):
+                parts.append(_read_file(os.path.join(root, name)))
+    return "\n".join(parts)
+
+
+def _read_bench_tool_sources():
+    bench_dir = os.path.join(_ROOT, "cmd", "bench-tool")
+    parts = []
+    for name in sorted(os.listdir(bench_dir)):
+        if name.endswith(".go") and not name.endswith("_test.go"):
+            parts.append(_read_file(os.path.join(bench_dir, name)))
+    return "\n".join(parts)
+
+
 class TestTurboQuantIdentity(unittest.TestCase):
     """R15 / H5."""
 
     def test_dtype_is_not_reassigned(self):
         # The exact defect: `dtype = "turboquant"` inside the bit-pack branch.
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertNotIn('if dtype == "turboquant4":\n            dtype = "turboquant"', src)
 
     def test_wire_and_requested_dtype_are_separate_variables(self):
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertIn("requested_dtype = dtype", src)
         self.assertIn("wire_dtype = dtype", src)
         self.assertIn('wire_dtype = "turboquant"', src)
 
     def test_client_receives_wire_dtype_not_the_label(self):
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertIn("-dtype {wire_dtype}", src)
 
     def test_result_row_records_requested_dtype_and_bits(self):
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertIn('"requested_dtype": requested_dtype', src)
         self.assertIn('"tq_bits": tq_bits', src)
 
@@ -98,21 +117,21 @@ class TestSeedPlumbing(unittest.TestCase):
     """R16 at the harness boundary."""
 
     def test_harness_exposes_a_seed_flag(self):
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertIn('"--seed"', src)
 
     def test_seed_is_passed_to_the_client_when_set(self):
         # Item 31: the client is seeded per config, derived from the run seed
         # and the config label, so a run resumed at config 40 generates the
         # same corpus for config 40 that the uninterrupted run did.
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertIn("def derive_config_seed(", src)
         self.assertIn("derive_config_seed(base_seed, label)", src)
         self.assertIn('seed_arg = f" -seed {config_seed}"', src)
         self.assertIn("{seed_arg}", src)
 
     def test_seed_is_recorded_on_the_result_row(self):
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertIn('"seed": self.args.seed', src)
 
     def test_seed_flag_defaults_to_the_shared_env_seed(self):
@@ -120,7 +139,7 @@ class TestSeedPlumbing(unittest.TestCase):
         # LONGBOW_BENCH_SEED, which the harness also exports into the server's
         # environment, so the client and the graph are seeded by one value
         # rather than by two that can drift apart.
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         block = src[src.index('"--seed"'):src.index('"--memory-default-fraction"')]
         self.assertIn("default=env_seed()", block)
         self.assertIn("def env_seed(", src)
@@ -128,22 +147,22 @@ class TestSeedPlumbing(unittest.TestCase):
 
     def test_server_is_given_the_seed_too(self):
         # The server seeds its graph levels from the same variable.
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertIn('"LONGBOW_BENCH_SEED"', src)
         self.assertIn("config_seed", src)
 
     def test_client_source_has_no_clock_seeded_corpus(self):
-        src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
+        src = _read_bench_tool_sources()
         # Item 31: chunk N's generator is seeded from the job index, not from
         # the worker that happened to pick the job up. Seeding per worker while
         # workers pulled from a shared queue made the corpus a function of the
         # scheduler: same seed, different vectors.
-        self.assertIn("*seed + int64(job.index)*10007", src)
+        self.assertIn("seed + int64(job.index)*10007", src)
         self.assertNotIn("workerSeed := time.Now().UnixNano()", src)
         self.assertNotIn("*seed + int64(w)*10007", src)
 
     def test_client_corpus_timestamps_are_not_from_the_clock(self):
-        src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
+        src = _read_bench_tool_sources()
         # The wall-clock column was the one column no seed could reproduce.
         self.assertNotIn("time.Now().UnixNano())", src)
         self.assertIn("TemporalAsOfNanos", src)
@@ -152,19 +171,19 @@ class TestSeedPlumbing(unittest.TestCase):
         # The two digests are what let a failure be attributed: corpus
         # identical + search different is the server's graph, and any
         # difference in corpus is the generator's.
-        src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
+        src = _read_bench_tool_sources()
         self.assertIn("func hashRecord(", src)
         self.assertIn("func digestSearchResults(", src)
 
     def test_client_source_has_no_global_rand_for_queries(self):
-        src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
+        src = _read_bench_tool_sources()
         # Go seeds the global math/rand per process, so a query drawn from it is
         # different on every run.
         self.assertNotIn("s.vector[i] = rand.Float32()", src)
         self.assertIn("qRng := rand.New(rand.NewSource(RunSeed", src)
 
     def test_client_defaults_to_a_fixed_seed(self):
-        src = _read_file(os.path.join(_ROOT, "cmd", "bench-tool", "main.go"))
+        src = _read_bench_tool_sources()
         self.assertIn("const defaultSeed int64 = 42", src)
 
 
@@ -192,19 +211,19 @@ class TestFailureReasons(unittest.TestCase):
         self.assertEqual(self._reason(137), "SIGKILL")
 
     def test_source_records_failure_reasons(self):
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertIn("last_failure_reason", src)
         self.assertIn("self.failure_reasons[config_key] = reason", src)
         self.assertIn('"failure_reasons"', src)
 
     def test_timeout_is_distinguished_from_a_crash(self):
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertIn('reason = "client timed out"', src)
 
     def test_empty_output_with_zero_exit_is_its_own_reason(self):
         # bench-tool can exit non-zero on success, so exit 0 with no metrics must
         # not be reported as a crash.
-        src = _read_file(_SCRIPT)
+        src = _read_harness_sources()
         self.assertIn("client exited 0 but wrote no parsable metrics", src)
 
 

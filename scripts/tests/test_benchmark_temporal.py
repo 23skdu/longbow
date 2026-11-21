@@ -43,15 +43,36 @@ ub = _load()
 
 
 def _source():
-    """The Go benchmark client."""
-    with open(_BENCH_TOOL) as f:
-        return f.read()
+    """The Go benchmark client across all non-test files in cmd/bench-tool."""
+    bench_dir = os.path.dirname(_BENCH_TOOL)
+    ordered = ["main.go", "corpus.go", "ingest.go", "search_tickets.go", "search_runner.go", "report.go"]
+    parts = []
+    seen = set()
+    for name in ordered:
+        p = os.path.join(bench_dir, name)
+        if os.path.exists(p):
+            with open(p) as f:
+                parts.append(f.read())
+            seen.add(name)
+    for name in sorted(os.listdir(bench_dir)):
+        if name.endswith(".go") and not name.endswith("_test.go") and name not in seen:
+            with open(os.path.join(bench_dir, name)) as f:
+                parts.append(f.read())
+    return "\n".join(parts)
 
 
 def _harness_source():
-    """The Python harness."""
-    with open(_SCRIPT) as f:
-        return f.read()
+    """The Python harness across unified_benchmark.py and scripts/benchmark/."""
+    parts = []
+    with open(_SCRIPT, "r", encoding="utf-8") as f:
+        parts.append(f.read())
+    bench_dir = os.path.join(_ROOT, "scripts", "benchmark")
+    for root, _, files in sorted(os.walk(bench_dir)):
+        for name in sorted(files):
+            if name.endswith(".py"):
+                with open(os.path.join(root, name), "r", encoding="utf-8") as f:
+                    parts.append(f.read())
+    return "\n".join(parts)
 
 
 def _strip_go_comments(text):
@@ -74,7 +95,7 @@ class TestTemporalDeterminism(unittest.TestCase):
         # corpus generation, which is H7 and belongs to R16 - the corpus is a
         # separate repeatability problem and is deliberately not fixed here.
         tickets = src[src.index("func (s *ReusableSearchState) BuildSpecialTicket"):
-                      src.index("func executeSearch(")]
+                      src.index("func runSearchSuite(")]
         self.assertNotIn("time.Now()", tickets)
         ticket = src[src.index('case "Temporal":'):src.index('case "ByID":')]
         self.assertIn('fmt.Sprintf("%d", TemporalAsOfNanos)', ticket)
@@ -110,12 +131,12 @@ class TestPerModeBudget(unittest.TestCase):
         src = _strip_go_comments(_source())
         # One shared context for all modes is the defect.
         self.assertNotIn("searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)", src)
-        self.assertIn("searchCtx, searchCancel := context.WithTimeout(context.Background(), *searchTimeout)", src)
+        self.assertIn("searchCtx, searchCancel := context.WithTimeout(context.Background(), searchTimeout)", src)
 
     def test_context_is_created_inside_the_mode_loop(self):
         src = _strip_go_comments(_source())
         loop_start = src.index("for modeIdx, mode := range modes {")
-        budget = src.index("context.WithTimeout(context.Background(), *searchTimeout)")
+        budget = src.index("context.WithTimeout(context.Background(), searchTimeout)")
         self.assertGreater(budget, loop_start)
 
     def test_deadline_is_read_before_cancelling(self):

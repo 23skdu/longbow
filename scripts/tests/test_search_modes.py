@@ -19,6 +19,17 @@ def _read(relpath):
         return f.read()
 
 
+def _read_tree(rel_dir, ext, exclude_suffix="_test.go"):
+    base = os.path.join(_ROOT, rel_dir)
+    chunks = []
+    for root, _, files in sorted(os.walk(base)):
+        for name in sorted(files):
+            if name.endswith(ext) and not (exclude_suffix and name.endswith(exclude_suffix)):
+                with open(os.path.join(root, name), "r", encoding="utf-8") as f:
+                    chunks.append(f.read())
+    return "\n".join(chunks)
+
+
 def _load_module(name, relpath):
     spec = importlib.util.spec_from_file_location(name, os.path.join(_ROOT, relpath))
     if spec is None or spec.loader is None:
@@ -31,9 +42,9 @@ def _load_module(name, relpath):
 
 class TestBenchToolsSearchModes(unittest.TestCase):
     def test_bench_tool_all_search_modes_complete(self):
-        src = _read("cmd/bench-tool/main.go")
+        src = _read_tree("cmd/bench-tool", ".go")
         m = re.search(r"var allSearchModes = \[\]string\{(.*?)\}", src, re.S)
-        self.assertIsNotNone(m, "allSearchModes slice not found in cmd/bench-tool/main.go")
+        self.assertIsNotNone(m, "allSearchModes slice not found in cmd/bench-tool/")
         modes = set(re.findall(r'"([^"]+)"', m.group(1)))
         expected = {
             "Dense",
@@ -94,7 +105,7 @@ class TestBenchToolsSearchModes(unittest.TestCase):
 
 class TestUnifiedBenchmarkHarnessModes(unittest.TestCase):
     def test_enables_hybrid_text_columns_for_bm25_modes(self):
-        src = _read("scripts/unified_benchmark.py")
+        src = _read("scripts/unified_benchmark.py") + "\n" + _read_tree("scripts/benchmark", ".py", None)
         self.assertIn('env["LONGBOW_HYBRID_SEARCH_ENABLED"] = "true"', src)
         self.assertIn('env["LONGBOW_HYBRID_TEXT_COLUMNS"]', src)
 
@@ -123,7 +134,7 @@ class TestUnifiedBenchmarkHarnessModes(unittest.TestCase):
         self.assertGreater(summary["p99_ms"], 0.0)
 
     def test_unified_benchmark_dispatches_and_documents_new_scenarios(self):
-        src = _read("scripts/unified_benchmark.py")
+        src = _read("scripts/unified_benchmark.py") + "\n" + _read_tree("scripts/benchmark", ".py", None)
         for scenario in ("range", "federated", "text", "multimodal"):
             self.assertIn(f'if mode == "{scenario}":', src)
             self.assertIn(f"self.execute_{scenario}()", src)
@@ -132,7 +143,7 @@ class TestUnifiedBenchmarkHarnessModes(unittest.TestCase):
 
 class TestPythonSDKAndDocsParity(unittest.TestCase):
     def test_python_sdk_defines_all_search_methods(self):
-        src = _read("longbowclientsdk/src/longbow/client.py")
+        src = _read_tree("longbowclientsdk/src/longbow", ".py", None)
         expected_methods = [
             "search",
             "search_by_id",

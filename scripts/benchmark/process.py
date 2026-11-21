@@ -1,17 +1,37 @@
-import os
-import sys
-import re
+"""Subprocess helpers, dtype byte sizes, and bench-tool JSON parsing."""
+
 import json
-import time
-import math
-import shutil
-import signal
-import socket
-import hashlib
+import os
 import platform
+import re
+import shlex
+import signal
 import subprocess
-from datetime import datetime
-from typing import Dict, Any, List, Optional
+import time
+
+# All supported data types
+ALL_DTYPES = "float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant,turboquant4,turboquant8"
+
+# Bytes per element for each dtype
+DTYPE_BYTES = {
+    "int8": 1,
+    "uint8": 1,
+    "int16": 2,
+    "uint16": 2,
+    "int32": 4,
+    "uint32": 4,
+    "float32": 4,
+    "float16": 2,
+    "complex64": 4,
+    "int64": 8,
+    "uint64": 8,
+    "float64": 8,
+    "complex128": 8,
+    "turboquant": 1,
+    "turboquant4": 1,
+    "turboquant8": 1,
+}
+
 
 class ResourceExhaustedException(Exception):
     pass
@@ -136,6 +156,13 @@ def parse_bench_json(json_file):
                     })
                     continue
 
+                # Item 31: every Search_ row carries the digest of the whole
+                # run's search output, so the perf matrix records whether two
+                # runs actually returned the same answers next to the numbers
+                # being compared. Same digest on every row; keep the first.
+                if entry.get("search_results_digest") and "search_results_digest" not in metrics:
+                    metrics["search_results_digest"] = entry["search_results_digest"]
+
                 metrics[f"{prefix}_qps"] = entry.get("throughput", 0)
                 metrics[f"{prefix}_mean_ms"] = entry.get("mean_latency_ms", 0)
                 metrics[f"{prefix}_p50_ms"] = entry.get("p50_latency_ms", 0)
@@ -153,32 +180,4 @@ def parse_bench_json(json_file):
         metrics["_truncated_modes"] = truncated_modes
 
     return metrics
-
-
-# Memory ceiling resolution (roadmap R14, H2/H3/H4, R14a).
-#
-# Three things were wrong with the ceiling before this. --memory was documented as
-# "10GB" but typed as int bytes, so it could only be passed as 10737418240.
-# LONGBOW_MAX_MEMORY is documented everywhere else as a size string, and
-# int("18GB") raised ValueError, so --estimate-memory crashed whenever the
-# variable was set. And start_server ignored both, reading a hardcoded 18 GiB, so
-# the documented knob did nothing at all: on a 22 GiB host the default sat above
-# the safe ceiling and the client was OOM-killed mid-indexing with no diagnostic.
-#
-# One parser, one resolution order, used everywhere.
-
-_SIZE_UNITS = {
-    "": 1,
-    "B": 1,
-    "K": 1024, "KB": 1024, "KIB": 1024,
-    "M": 1024 ** 2, "MB": 1024 ** 2, "MIB": 1024 ** 2,
-    "G": 1024 ** 3, "GB": 1024 ** 3, "GIB": 1024 ** 3,
-    "T": 1024 ** 4, "TB": 1024 ** 4, "TIB": 1024 ** 4,
-}
-
-# Fraction of physical RAM used when neither --memory nor LONGBOW_MAX_MEMORY is
-# given. The previous 18 GiB literal was an absolute constant that happened to be
-# too high on a 22 GiB host and absurdly too low on a 512 GiB one.
-DEFAULT_MEMORY_FRACTION = 0.60
-
 

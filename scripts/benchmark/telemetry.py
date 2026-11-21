@@ -1,116 +1,9 @@
-import os
-import sys
-import re
-import json
-import time
-import math
-import shutil
-import signal
-import socket
+"""Benchmark provenance collection and concurrency self-validation."""
+
 import hashlib
+import os
 import platform
 import subprocess
-from datetime import datetime
-from typing import Dict, Any, List, Optional
-
-def parse_size_bytes(value, default=None):
-    """Parse a byte count or a size string into bytes.
-
-    Accepts "10737418240", "10GB", "10GiB", " 10 gb ", "512M". Returns `default`
-    when value is None, empty or unparseable, so a typo in an environment variable
-    degrades to the default rather than aborting a multi-hour benchmark run.
-    """
-    if value is None:
-        return default
-    if isinstance(value, (int, float)):
-        return int(value)
-
-    text = str(value).strip()
-    if not text:
-        return default
-
-    # Split the numeric prefix from the unit suffix.
-    i = 0
-    while i < len(text) and (text[i].isdigit() or text[i] in ".+-"):
-        i += 1
-    number, unit = text[:i].strip(), text[i:].strip().upper()
-
-    if not number:
-        return default
-    try:
-        magnitude = float(number)
-    except ValueError:
-        return default
-
-    multiplier = _SIZE_UNITS.get(unit)
-    if multiplier is None:
-        return default
-    return int(magnitude * multiplier)
-
-
-def format_size_gb(num_bytes) -> str:
-    """Render a byte count as a human-readable GiB figure for logs."""
-    if num_bytes is None:
-        return "unset"
-    return f"{num_bytes / (1024 ** 3):.1f} GB"
-
-
-def host_total_memory_bytes():
-    """Physical RAM, or None if it cannot be determined."""
-    try:
-        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    except (ValueError, OSError, AttributeError):
-        pass
-    try:
-        with open("/proc/meminfo") as f:
-            for line in f:
-                if line.startswith("MemTotal:"):
-                    return int(line.split()[1]) * 1024
-    except OSError:
-        pass
-    return None
-
-
-def host_available_memory_bytes():
-    """Memory available right now, or None.
-
-    A ceiling above what is actually free is what produced the silent SIGKILLs, so
-    the tier is checked against free memory as well as the configured ceiling.
-    """
-    try:
-        with open("/proc/meminfo") as f:
-            for line in f:
-                if line.startswith("MemAvailable:"):
-                    return int(line.split()[1]) * 1024
-    except OSError:
-        pass
-    return None
-
-
-def resolve_memory_limit_bytes(args):
-    """Resolve the server memory ceiling in bytes.
-
-    Precedence: --memory, then LONGBOW_MAX_MEMORY, then a fraction of host RAM.
-    --memory is authoritative (R14) so that an explicit flag is never silently
-    overridden by an inherited environment variable.
-    """
-    explicit = getattr(args, "memory", None)
-    if explicit is not None and str(explicit).strip() != "":
-        parsed = parse_size_bytes(explicit, default=None)
-        if parsed is not None:
-            return parsed
-
-    from_env = parse_size_bytes(os.environ.get("LONGBOW_MAX_MEMORY"), default=None)
-    if from_env is not None:
-        return from_env
-
-    total = host_total_memory_bytes()
-    if total is None:
-        # Nothing to go on; keep the previous default rather than inventing one.
-        return 18 * 1024 ** 3
-    fraction = getattr(args, "memory_default_fraction", None) or DEFAULT_MEMORY_FRACTION
-    return int(total * fraction)
-
 
 # Provenance and self-validation (roadmap R2/R3).
 #
@@ -140,6 +33,35 @@ PROVENANCE_ENV_VARS = (
     "LONGBOW_GPU_ENABLED",
     "GOMAXPROCS",
 )
+
+
+def env_seed():
+    """Read LONGBOW_BENCH_SEED, or None when it is unset or not an integer.
+
+    One seed for the whole benchmark: the harness passes it to the client as
+    the per-config corpus/query seed and to the server as the graph level seed.
+    (roadmap Item 31)
+    """
+    v = os.environ.get("LONGBOW_BENCH_SEED")
+    if not v:
+        return None
+    try:
+        return int(v)
+    except ValueError:
+        print(f"Warning: LONGBOW_BENCH_SEED={v!r} is not an integer, ignoring")
+        return None
+
+
+def derive_config_seed(base_seed, label):
+    """Derive the per-config seed from the run seed and the config label.
+
+    A pure function of the two, so a config's corpus depends on what the config
+    is rather than on where it sat in the matrix or which configs ran before it.
+    That is what makes a harness restart mid-run reproduce the same corpus
+    instead of shifting every later config's data. (roadmap Item 31)
+    """
+    digest = hashlib.sha256(f"{base_seed}:{label}".encode()).digest()
+    return int.from_bytes(digest[:8], "big") % (2**62 - 1)
 
 
 def git_revision(repo_dir=None):
@@ -177,7 +99,7 @@ def collect_provenance(args):
     Anything recorded here can change the numbers without any code change, so it
     is what makes a later revision-to-revision A/B meaningful (roadmap R1).
     """
-    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     rev, dirty = git_revision(repo)
 
     affinity = getattr(args, "cpu_affinity", None) or os.environ.get("LONGBOW_CPU_AFFINITY")
@@ -196,6 +118,7 @@ def collect_provenance(args):
         "search_modes_resolved": getattr(args, "resolved_search_modes", None),
         "runs": getattr(args, "runs", None),
         "seed": getattr(args, "seed", None),
+        "seed_env": os.environ.get("LONGBOW_BENCH_SEED"),
         "shuffle_modes": getattr(args, "shuffle_modes", False),
         "duration": getattr(args, "duration", None),
         "numa_bind": getattr(args, "numa_bind", None),

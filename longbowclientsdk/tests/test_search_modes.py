@@ -257,7 +257,7 @@ class TestLongbowClientSearchModes(unittest.TestCase):
         client = LongbowClient()
         actions = []
 
-        def fake_do_action(action_type, payload, default=None):
+        def fake_do_action(action_type, payload, default=None, **kwargs):
             actions.append((action_type, payload))
             if action_type == "ListAPIKeys":
                 return {"keys": [{"key_id": "k1"}]}

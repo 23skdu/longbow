@@ -101,23 +101,48 @@ longbow-cli explain-search -dataset docs -vector 0.1,0.2,0.3,0.4 -text "vector s
 
 ---
 
-## 5. Security, RBAC, Row-Level Security & Audit Log
+## 5. Security, RBAC, Row-Level Security, OIDC Federation & Audit Log
+
+See [RBAC, Dataset Access Control & OIDC Federation](rbac.md) for the full role/permission matrix, dataset isolation rules, and JWT claim mapping. All commands accept `-api-key` (or `LONGBOW_API_KEY` env var); `oidc-exchange` accepts `-token` (or `LONGBOW_OIDC_TOKEN`).
+
+### RBAC, RLS & Audit Commands
 
 | Command | Flags | Description |
 | :--- | :--- | :--- |
-| `create-api-key` | `-name <n> [-role reader\|writer\|tenant-admin\|admin] [-tenant default] [-datasets d1,d2] [-ttl 0]` | Issue a new HMAC/SHA-256 API key (`CreateAPIKey`) |
-| `rotate-api-key` | `-key <raw-key> [-grace 3600]` | Rotate an API key with an overlap grace period (`RotateAPIKey`) |
-| `revoke-api-key` | `-key <raw-key-or-id>` | Immediately revoke an API key (`RevokeAPIKey`) |
-| `list-api-keys` | `-uri <uri>` | List redacted API key metadata (`ListAPIKeys`) |
+| `create-api-key` | `-name <n> [-role reader\|ingest-only\|writer\|tenant-admin\|admin] [-tenant <ns>] [-datasets d1,d2] [-row-filters '<json>'] [-ttl 0] [-api-key <k>]` | Issue a new SHA-256 API key (`CreateAPIKey`; roles also accept `read-only` / `read-write`) |
+| `rotate-api-key` | `-key <raw-key> [-grace 3600] [-api-key <k>]` | Rotate an API key with an overlap grace period (`RotateAPIKey`) |
+| `revoke-api-key` | `-key <raw-key-or-id> [-api-key <k>]` | Immediately revoke an API key (`RevokeAPIKey`) |
+| `list-api-keys` | `[-uri <uri>] [-api-key <k>]` | List redacted API key metadata (`ListAPIKeys`) |
 | `set-rls-policy` | `-tenant <t> -dataset <ds> -field <col> [-op eq\|neq\|in\|contains] -values <v1,v2>` | Configure a Row-Level Security metadata filter (`SetRLSPolicy`) |
 | `audit-log` | `[-tenant <t>] [-limit 50]` | Fetch structured security and data-access audit log events (`GetAuditLog`) |
 
+### OIDC Federation Commands (AWS IRSA, Google IAM & Generic OIDC)
+
+| Command | Flags | Description |
+| :--- | :--- | :--- |
+| `oidc-list-providers` | `[-uri <uri>] [-api-key <k>]` | List configured OIDC federation providers (`ListOIDCProviders`, requires `admin`) |
+| `oidc-add-provider` | `-provider generic\|aws\|google -issuer <url> [-jwks <url>] [-audience longbow] [-tenant-claim tenant_id] [-role-claim groups] [-row-filter-claim row_filters] [-admin-claim role] [-admin-value admin] [-trust-arn <arn>] [-api-key <k>]` | Register or update an OIDC federation provider (`AddOIDCProvider`, requires `admin`) |
+| `oidc-remove-provider` | `-issuer <url> [-uri <uri>] [-api-key <k>]` | Remove a configured OIDC federation provider (`RemoveOIDCProvider`, requires `admin`) |
+| `oidc-exchange` | `-token <jwt> [-ttl 900] [-uri <uri>]` | Exchange a federated OIDC JWT for a short-lived Longbow session API key (max TTL 3600s, `ExchangeOIDCToken`) |
+
 ```bash
-# Issue a tenant-scoped writer key and attach an RLS policy
-longbow-cli create-api-key -name ingest-bot -role writer -tenant acme -datasets acme_docs -ttl 86400
-longbow-cli set-rls-policy -tenant acme -dataset acme_docs -field department -op in -values engineering,research
+# Issue a tenant-scoped ingest-only or writer key with RLS row filters
+longbow-cli create-api-key -name ingest-bot -role ingest-only -tenant acme -datasets acme/docs -ttl 86400
+longbow-cli create-api-key -name eng-writer -role writer -tenant acme -datasets acme/docs -row-filters '{"department":"eng"}'
+longbow-cli set-rls-policy -tenant acme -dataset acme/docs -field department -op in -values engineering,research
 longbow-cli audit-log -tenant acme -limit 25
+
+# Register Google IAM or AWS IRSA OIDC federation provider (admin key required)
+longbow-cli oidc-add-provider -provider google -audience longbow -tenant-claim tenant_id -role-claim groups
+longbow-cli oidc-add-provider -provider aws -issuer https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE -audience sts.amazonaws.com -trust-arn arn:aws:iam::123456789012:role/longbow-reader
+longbow-cli oidc-list-providers
+
+# Exchange a federated OIDC JWT for a short-lived session API key
+longbow-cli oidc-exchange -token "$LONGBOW_OIDC_TOKEN" -ttl 900
 ```
+
+> [!NOTE]
+> **Authentication & Authorization Errors**: `longbow-cli` surfaces gRPC `Unauthenticated` (invalid/expired/missing key or JWT) and `PermissionDenied` (role, namespace, or dataset restriction) errors with actionable remediation hints instead of raw transport traces.
 
 ---
 

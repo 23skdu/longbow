@@ -109,9 +109,9 @@ Contributing, architecture overview, benchmarking, and test infrastructure.
 
 Complete metrics reference for monitoring system health.
 
-### 15. [Security & Compliance](security-compliance.md)
+### 15. [Security & Compliance](security-compliance.md) & [RBAC / OIDC Federation](rbac.md)
 
-RBAC, API key lifecycle, row-level security, TLS/mTLS hot rotation, AES-256-GCM at-rest encryption, KMS/Vault, and SOC2/GDPR mappings.
+RBAC roles (`admin`, `tenant-admin`, `writer`, `ingest-only`, `reader`), dataset read/ingest/write isolation, AWS/Google/generic OIDC federation, API key lifecycle, row-level security, TLS/mTLS hot rotation, AES-256-GCM at-rest encryption, KMS/Vault, and SOC2/GDPR mappings.
 
 ### 16. [Serverless, Edge SDKs & WASM Client](edge-wasm.md)
 

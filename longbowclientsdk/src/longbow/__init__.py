@@ -3,8 +3,10 @@ from .exceptions import (
     LongbowError,
     LongbowConnectionError,
     LongbowAuthenticationError,
+    LongbowAuthorizationError,
+    LongbowPermissionDeniedError,
     LongbowQueryError,
-    LongbowNotFoundError
+    LongbowNotFoundError,
 )
 from .models import Vector, SearchResult, IndexStats
 
@@ -16,6 +18,8 @@ __all__ = [
     "LongbowError",
     "LongbowConnectionError",
     "LongbowAuthenticationError",
+    "LongbowAuthorizationError",
+    "LongbowPermissionDeniedError",
     "LongbowQueryError",
     "LongbowNotFoundError",
     "Vector",

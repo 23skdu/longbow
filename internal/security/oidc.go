@@ -493,14 +493,18 @@ func (c *OIDCClaims) ToTenantContext() *TenantContext {
 	if len(tc.Roles) == 0 {
 		tc.Roles = append(tc.Roles, "reader")
 	}
-	// default permissions based on roles (coarse)
+	// default permissions based on roles (aligned with store.rolePermissions)
 	for _, r := range tc.Roles {
 		switch r {
 		case "admin":
-			tc.Permissions = append(tc.Permissions, "read", "write", "delete", "ingest", "admin")
+			tc.Permissions = append(tc.Permissions, "read", "write", "delete", "ingest", "admin", "backup", "manage-keys", "manage-tenant")
 			tc.IsAdmin = true
+		case "tenant-admin":
+			tc.Permissions = append(tc.Permissions, "read", "write", "delete", "ingest", "backup", "manage-keys", "manage-tenant")
 		case "writer", "read-write":
 			tc.Permissions = append(tc.Permissions, "read", "write", "delete", "ingest")
+		case "ingest-only":
+			tc.Permissions = append(tc.Permissions, "read", "ingest")
 		case "reader", "read-only":
 			tc.Permissions = append(tc.Permissions, "read")
 		}

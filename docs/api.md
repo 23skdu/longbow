@@ -622,14 +622,38 @@ finally:
     client.close()
 ```
 
-#### Authentication
+#### Authentication, RBAC & OIDC Federation
+
+See [docs/rbac.md](rbac.md) for the complete RBAC role/permission matrix (`admin`, `tenant-admin`, `writer`, `ingest-only`, `reader`), dataset isolation, row-level security (RLS), and OIDC federation architecture.
 
 ```python
+from longbow import (
+    LongbowClient,
+    LongbowAuthenticationError,
+    LongbowAuthorizationError,
+)
+
+# API key or OIDC JWT with optional default namespace header
 client = LongbowClient(
     uri="grpc://secure-server:3000",
-    api_key="your-api-key-here",
+    api_key="your-api-key-here",  # or oidc_token="<provider-jwt>"
+    namespace="team-a",
 )
-# Bearer token is automatically added to all gRPC calls
+
+# Exchange a short-lived OIDC JWT for a scoped Longbow session API key
+session = client.exchange_oidc_token(oidc_token="<provider-jwt>", ttl_seconds=3600)
+
+# AWS IRSA / Google Cloud IAM OIDC convenience wrappers
+client.authenticate_with_aws_oidc(ttl_seconds=900)
+client.authenticate_with_google_oidc(audience="longbow", ttl_seconds=900)
+
+# Typed auth error handling
+try:
+    client.search("team-a/docs", [0.1, 0.2, 0.3], k=5)
+except LongbowAuthorizationError as e:
+    print(f"403 Permission denied on {e.operation}: {e} (hint: {e.hint})")
+except LongbowAuthenticationError as e:
+    print(f"401 Authentication failed on {e.operation}: {e} (hint: {e.hint})")
 ```
 
 #### Features
@@ -644,7 +668,7 @@ client = LongbowClient(
 - **Hybrid Search**: Vector + BM25 keyword + metadata filtering in a single query
 - **Multi-Modal, Reranking & Provenance**: `ingest_media`, `multimodal_search`, `rerank`, `rewrite_query`, `explain_search`, `get_provenance`, and `format_search_explanation`
 - **REST/GraphQL & Managed Cloud**: `rest_search`, `graphql`, `cloud_create_cluster`, `cloud_list_clusters`, `cloud_scale_cluster`, `cloud_add_replica_region`, `cloud_promote_region`, and `cloud_get_sla`
-- **RBAC & Backup Controls**: `create_api_key`, `rotate_api_key`, `revoke_api_key`, `set_rls_policy`, `trigger_backup`, and `restore_backup`
+- **RBAC, OIDC & Backup Controls**: `create_api_key`, `rotate_api_key`, `revoke_api_key`, `list_api_keys`, `set_rls_policy`, `get_audit_log`, `list_oidc_providers`, `add_oidc_provider`, `add_aws_oidc_provider`, `add_google_oidc_provider`, `remove_oidc_provider`, `exchange_oidc_token`, `authenticate_with_aws_oidc`, `authenticate_with_google_oidc`, `trigger_backup`, and `restore_backup`
 - **PEP 561 Typed**: `py.typed` marker for IDE autocomplete and type checking
 
 #### Extended Flight Actions (`DoAction`) & HTTP Endpoints
@@ -653,7 +677,7 @@ client = LongbowClient(
 | :--- | :--- | :--- |
 | **Managed Cloud & Multi-Region** | `CreateCloudCluster`, `GetCloudCluster`, `ListCloudClusters`, `ScaleCloudCluster`, `AddReplicaRegion`, `ReplicateClusterMutation`, `PromoteClusterRegion`, `GetCloudSLAReport`, `DeleteCloudCluster` | `GET/POST /api/v1/cloud/clusters`, `POST /api/v1/cloud/clusters/{id}/{scale,regions,replicate,promote}`, `GET /api/v1/cloud/clusters/{id}/sla`, `longbow-cli cloud-*` |
 | **REST v1 & GraphQL** | `GraphQLQuery` (`rangeSearch`, `federatedSearch`, `textSearch`, `geoSearch`, `temporalSearch`, `multimodalSearch`, `recommend`, `explainSearch`, `provenance`, `searchAnalytics`, `materializedViews`, `schemaRegistry`, `clusterTopology`, `streamConnectors`, `backups`, `rewriteQuery`) | `GET /api/v1/health`, `GET /api/v1/openapi.json`, `POST/GET /api/v1/graphql`, `GET/POST/DELETE /api/v1/namespaces`, `/api/v1/datasets/{name}/{vectors,search,search/by-id,hybrid,text-search,geo-search,temporal-search,multimodal-search,multimodal-ingest,range-search,recommend,aggregations,bm25,facets,explain,provenance,schema,schema/migrate}`, `POST /api/v1/search/federated`, `GET /api/v1/search/analytics`, `GET/POST /api/v1/federated/collections` |
-| **RBAC, RLS & Audit** | `CreateAPIKey`, `RotateAPIKey`, `RevokeAPIKey`, `ListAPIKeys`, `SetRLSPolicy`, `GetAuditLog` | `GET/POST/DELETE /api/v1/rbac/keys`, `POST /api/v1/rbac/rls`, `GET /api/v1/rbac/audit`, `longbow-cli create-api-key`, `rotate-api-key`, `revoke-api-key`, `list-api-keys`, `set-rls-policy`, `audit-log` |
+| **RBAC, RLS, OIDC & Audit** | `CreateAPIKey`, `RotateAPIKey`, `RevokeAPIKey`, `ListAPIKeys`, `SetRLSPolicy`, `GetAuditLog`, `ListOIDCProviders`, `AddOIDCProvider`, `RemoveOIDCProvider`, `ExchangeOIDCToken` | `GET/POST/DELETE /api/v1/rbac/keys`, `POST /api/v1/rbac/rls`, `GET /api/v1/rbac/audit`, `GET/POST/DELETE /api/v1/auth/oidc/providers`, `POST /api/v1/auth/oidc/exchange`, `longbow-cli create-api-key`, `rotate-api-key`, `revoke-api-key`, `list-api-keys`, `set-rls-policy`, `audit-log`, `oidc-list-providers`, `oidc-add-provider`, `oidc-remove-provider`, `oidc-exchange` |
 | **Backup & PITR** | `TriggerBackup`, `RestoreBackup`, `VerifyBackup`, `ListBackups` | `GET/POST /api/v1/backups`, `POST /api/v1/backups/{restore,verify}`, `longbow-cli backup`, `restore`, `list-backups`, `verify-backup` |
 | **Streaming CDC** | `CreateStreamConnector`, `StopStreamConnector`, `ListStreamConnectors`, `GetStreamStats`, `RegisterStreamSchema`, `IngestStreamEvent` | `GET/POST/DELETE /api/v1/streams/connectors`, `POST /api/v1/streams/{ingest,schemas}`, `longbow-cli stream-{create,stop,list,stats,ingest}` |
 | **Multi-Modal** | `MultiModalIngest`, `MultiModalIngestParquet`, `MultiModalSearch` | `POST /api/v1/datasets/{name}/multimodal-{ingest,search}`, `longbow-cli multimodal-{ingest,search}`, `client.ingest_media(...)`, `client.ingest_media_parquet(...)`, `client.multimodal_search(...)` |

@@ -12,6 +12,8 @@ import (
 	"github.com/23skdu/longbow/client"
 	"github.com/23skdu/longbow/internal/security"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func getCLIAuthClient(uri, apiKey, tenant, caCert, certFile, keyFile string) *client.SmartClient {
@@ -35,16 +37,17 @@ func getCLIAuthClient(uri, apiKey, tenant, caCert, certFile, keyFile string) *cl
 func runCreateAPIKey(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("create-api-key", flag.ExitOnError)
 	name := fs.String("name", "", "API key name")
-	role := fs.String("role", "reader", "Role: admin, tenant-admin, writer, reader")
+	role := fs.String("role", "reader", "Role: admin, tenant-admin, writer (read-write), ingest-only, reader (read-only)")
 	tenant := fs.String("tenant", "", "Tenant ID / namespace")
 	datasets := fs.String("datasets", "", "Comma-separated allowed datasets")
+	rowFilters := fs.String("row-filters", "", "Optional JSON object of RLS row filters (e.g. '{\"department\":\"eng\"}')")
 	ttl := fs.Int64("ttl", 0, "Optional TTL in seconds")
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Server URI")
 	apiKey := fs.String("api-key", os.Getenv("LONGBOW_API_KEY"), "Admin API key")
 	_ = fs.Parse(args)
 
 	if *name == "" {
-		log.Fatal("Usage: longbow-cli create-api-key -name <name> [-role <role>] [-tenant <ns>]")
+		log.Fatal("Usage: longbow-cli create-api-key -name <name> [-role <role>] [-tenant <ns>] [-datasets d1,d2] [-row-filters '<json>'] [-ttl 0]")
 	}
 	sc := getCLIAuthClient(*uri, *apiKey, *tenant, "", "", "")
 	defer func() { _ = sc.Close() }()
@@ -53,12 +56,19 @@ func runCreateAPIKey(ctx context.Context, args []string) {
 	if *datasets != "" {
 		dsList = strings.Split(*datasets, ",")
 	}
+	var rfMap map[string]string
+	if strings.TrimSpace(*rowFilters) != "" {
+		if err := json.Unmarshal([]byte(*rowFilters), &rfMap); err != nil {
+			log.Fatalf("Invalid -row-filters JSON: %v", err)
+		}
+	}
 	body, _ := json.Marshal(map[string]any{
 		"name":        *name,
 		"role":        *role,
 		"tenant_id":   *tenant,
 		"namespace":   *tenant,
 		"datasets":    dsList,
+		"row_filters": rfMap,
 		"ttl_seconds": *ttl,
 	})
 	executeCLIAction(sc.WithAuthContext(ctx), sc, "CreateAPIKey", body)
@@ -145,14 +155,30 @@ func runRestore(ctx context.Context, args []string) {
 	executeCLIAction(sc.WithAuthContext(ctx), sc, "RestoreBackup", body)
 }
 
+func formatCLIAuthError(actionType string, err error) string {
+	st, ok := status.FromError(err)
+	if ok {
+		switch st.Code() {
+		case codes.Unauthenticated:
+			return fmt.Sprintf("Authentication failed on %s (%s): %s\nHint: pass -api-key / LONGBOW_API_KEY or refresh your federated OIDC JWT via `longbow-cli oidc-exchange`.", actionType, st.Code(), st.Message())
+		case codes.PermissionDenied:
+			return fmt.Sprintf("Authorization denied on %s (%s): %s\nHint: verify your RBAC role/OIDC groups, target namespace, and allowed datasets.", actionType, st.Code(), st.Message())
+		}
+	}
+	return fmt.Sprintf("Action %s failed: %v", actionType, err)
+}
+
 func executeCLIAction(ctx context.Context, sc *client.SmartClient, actionType string, body []byte) {
 	stream, err := sc.DoAction(ctx, &flight.Action{Type: actionType, Body: body})
 	if err != nil {
-		log.Fatalf("Action %s failed: %v", actionType, err)
+		log.Fatal(formatCLIAuthError(actionType, err))
 	}
 	for {
 		res, err := stream.Recv()
 		if err != nil {
+			if st, ok := status.FromError(err); ok && (st.Code() == codes.Unauthenticated || st.Code() == codes.PermissionDenied) {
+				log.Fatal(formatCLIAuthError(actionType, err))
+			}
 			break
 		}
 		if len(res.Body) > 0 {

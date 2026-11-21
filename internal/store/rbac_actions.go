@@ -397,10 +397,13 @@ func (s *VectorStore) handleRBACAction(action *flight.Action, stream flight.Flig
 			raw string
 			err error
 		)
-		if req.Token != "" {
-			ak, raw, err = s.ExchangeOIDCToken(ctx, req.Token, ttl)
-		} else if tc, ok := security.TenantFromContext(ctx); ok && tc != nil && strings.HasPrefix(tc.KeyID, "oidc:") {
+		// If gRPC AuthStreamInterceptor already verified the caller's OIDC JWT and
+		// injected TenantContext into ctx, reuse it when no different body token is
+		// supplied so we do not double-validate the JWT and trip jti replay protection.
+		if tc, ok := security.TenantFromContext(ctx); ok && tc != nil && strings.HasPrefix(tc.KeyID, "oidc:") && (req.Token == "" || req.Token == extractTokenFromMetadata(ctx)) {
 			ak, raw, err = s.issueSessionForTenantContext(ctx, tc, ttl)
+		} else if req.Token != "" {
+			ak, raw, err = s.ExchangeOIDCToken(ctx, req.Token, ttl)
 		} else if tok := extractTokenFromMetadata(ctx); tok != "" {
 			ak, raw, err = s.ExchangeOIDCToken(ctx, tok, ttl)
 		} else {
@@ -517,8 +520,12 @@ func (s *VectorStore) issueSessionForTenantContext(ctx context.Context, tc *secu
 	switch {
 	case tc.IsAdmin:
 		role = RoleAdmin
+	case tc.HasPermission(string(PermManageTenant)) || tc.HasPermission(string(PermManageKeys)):
+		role = RoleTenantAdmin
 	case tc.HasPermission(string(PermWrite)):
 		role = RoleWriter
+	case tc.HasPermission(string(PermIngest)):
+		role = RoleIngest
 	}
 	rbac := s.ensureRBACManager()
 	ak, raw, err := rbac.CreateAPIKeyWithOptions(APIKeyOptions{
@@ -552,6 +559,27 @@ func (s *VectorStore) AccessValidator() security.AccessValidator {
 	default:
 		return nil
 	}
+}
+
+// DynamicAccessValidator returns an AccessValidator that resolves the store's
+// current RBAC and OIDC managers on every call. Use this when attaching gRPC
+// auth interceptors at startup so dynamically added OIDC providers or lazily
+// created session-key RBAC managers (from ExchangeOIDCToken) take effect
+// immediately without restarting the server.
+func (s *VectorStore) DynamicAccessValidator() security.AccessValidator {
+	return &dynamicStoreAccessValidator{store: s}
+}
+
+type dynamicStoreAccessValidator struct {
+	store *VectorStore
+}
+
+func (d *dynamicStoreAccessValidator) AuthorizeToken(ctx context.Context, rawToken, permission, namespace, dataset string) (*security.TenantContext, error) {
+	v := d.store.AccessValidator()
+	if v == nil {
+		return nil, security.ErrUnauthorized
+	}
+	return v.AuthorizeToken(ctx, rawToken, permission, namespace, dataset)
 }
 
 type compositeAccessValidator struct {

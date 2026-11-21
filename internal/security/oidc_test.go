@@ -216,3 +216,146 @@ func TestOIDCRowFiltersAndHelpers(t *testing.T) {
 		t.Fatalf("row filter not mapped: %+v", tc.RowFilters)
 	}
 }
+
+func TestOIDCToTenantContextAllRoles(t *testing.T) {
+	issuerCfg := OIDCIssuerConfig{
+		TenantClaim:    "tenant_id",
+		NamespaceClaim: "namespace",
+		DatasetsClaim:  "datasets",
+		RoleClaim:      "groups",
+		AdminClaim:     "role",
+		AdminValue:     "admin",
+	}
+	cases := []struct {
+		name      string
+		claims    OIDCClaims
+		wantPerms []string
+		denyPerms []string
+		wantAdmin bool
+	}{
+		{
+			name: "admin",
+			claims: OIDCClaims{
+				Subject:   "u1",
+				IssuerCfg: issuerCfg,
+				Raw:       map[string]interface{}{"groups": []interface{}{"admin"}},
+			},
+			wantPerms: []string{"read", "write", "delete", "ingest", "admin", "backup", "manage-keys", "manage-tenant"},
+			wantAdmin: true,
+		},
+		{
+			name: "tenant-admin",
+			claims: OIDCClaims{
+				Subject:   "u2",
+				IssuerCfg: issuerCfg,
+				Raw:       map[string]interface{}{"tenant_id": "t1", "namespace": "t1", "groups": []interface{}{"tenant-admin"}},
+			},
+			wantPerms: []string{"read", "write", "delete", "ingest", "backup", "manage-keys", "manage-tenant"},
+			denyPerms: []string{"admin"},
+		},
+		{
+			name: "writer",
+			claims: OIDCClaims{
+				Subject:   "u3",
+				IssuerCfg: issuerCfg,
+				Raw:       map[string]interface{}{"tenant_id": "t1", "groups": []interface{}{"writer"}},
+			},
+			wantPerms: []string{"read", "write", "delete", "ingest"},
+			denyPerms: []string{"admin", "manage-keys", "manage-tenant"},
+		},
+		{
+			name: "read-write alias",
+			claims: OIDCClaims{
+				Subject:   "u3b",
+				IssuerCfg: issuerCfg,
+				Raw:       map[string]interface{}{"tenant_id": "t1", "groups": []interface{}{"read-write"}},
+			},
+			wantPerms: []string{"read", "write", "delete", "ingest"},
+			denyPerms: []string{"admin", "manage-keys"},
+		},
+		{
+			name: "ingest-only",
+			claims: OIDCClaims{
+				Subject:   "u4",
+				IssuerCfg: issuerCfg,
+				Raw:       map[string]interface{}{"tenant_id": "t1", "groups": []interface{}{"ingest-only"}},
+			},
+			wantPerms: []string{"read", "ingest"},
+			denyPerms: []string{"write", "delete", "admin", "manage-keys"},
+		},
+		{
+			name: "reader",
+			claims: OIDCClaims{
+				Subject:   "u5",
+				IssuerCfg: issuerCfg,
+				Raw:       map[string]interface{}{"tenant_id": "t1", "groups": []interface{}{"reader"}},
+			},
+			wantPerms: []string{"read"},
+			denyPerms: []string{"ingest", "write", "delete", "admin"},
+		},
+		{
+			name: "default fallback reader",
+			claims: OIDCClaims{
+				Subject:   "u6",
+				IssuerCfg: issuerCfg,
+				Raw:       map[string]interface{}{"tenant_id": "t1"},
+			},
+			wantPerms: []string{"read"},
+			denyPerms: []string{"ingest", "write", "delete", "admin"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := tc.claims.ToTenantContext()
+			if ctx.IsAdmin != tc.wantAdmin {
+				t.Fatalf("IsAdmin = %v; want %v", ctx.IsAdmin, tc.wantAdmin)
+			}
+			for _, p := range tc.wantPerms {
+				if !ctx.HasPermission(p) {
+					t.Errorf("expected permission %q in %v", p, ctx.Permissions)
+				}
+			}
+			for _, p := range tc.denyPerms {
+				if ctx.HasPermission(p) {
+					t.Errorf("unexpected permission %q in %v", p, ctx.Permissions)
+				}
+			}
+		})
+	}
+}
+
+func FuzzOIDCToTenantContextRoles(f *testing.F) {
+	f.Add("reader", "t1", "ns1", "ds1", false)
+	f.Add("ingest-only", "t1", "ns1", "ds1", false)
+	f.Add("writer", "t1", "ns1", "ds1", false)
+	f.Add("tenant-admin", "t1", "ns1", "ds1", false)
+	f.Add("admin", "t1", "ns1", "ds1", true)
+	f.Fuzz(func(t *testing.T, role, tenant, ns, ds string, isAdmin bool) {
+		raw := map[string]interface{}{
+			"tenant_id": tenant,
+			"namespace": ns,
+			"datasets":  []interface{}{ds},
+			"groups":    []interface{}{role},
+		}
+		if isAdmin {
+			raw["role"] = "admin"
+		}
+		cl := OIDCClaims{
+			Subject: "fuzz-sub",
+			IssuerCfg: OIDCIssuerConfig{
+				TenantClaim:    "tenant_id",
+				NamespaceClaim: "namespace",
+				DatasetsClaim:  "datasets",
+				RoleClaim:      "groups",
+				AdminClaim:     "role",
+				AdminValue:     "admin",
+			},
+			Raw: raw,
+		}
+		tc := cl.ToTenantContext()
+		if !isAdmin && role != "admin" && tc.IsAdmin {
+			t.Fatalf("unexpected admin privilege escalation for role=%q", role)
+		}
+	})
+}

@@ -7,7 +7,13 @@ import math
 import warnings
 from typing import Union, List, Dict, Any, Optional, Iterator
 
-from .exceptions import LongbowConnectionError, LongbowNotFoundError, LongbowQueryError
+from .exceptions import (
+    LongbowAuthenticationError,
+    LongbowAuthorizationError,
+    LongbowConnectionError,
+    LongbowNotFoundError,
+    LongbowQueryError,
+)
 from .ingest import to_arrow_table
 
 __all__ = ["LongbowClient"]
@@ -23,7 +29,9 @@ class LongbowClient:
         uri: str = "grpc://localhost:3000",
         meta_uri: Optional[str] = None,
         api_key: Optional[str] = None,
+        oidc_token: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        namespace: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tls_root_certs: Optional[bytes] = None,
         tls_cert_chain: Optional[bytes] = None,
@@ -35,16 +43,19 @@ class LongbowClient:
         Args:
             uri: gRPC URI for the Data Plane (DoPut/DoGet).
             meta_uri: gRPC URI for the Control Plane (DoAction/Info). Defaults to uri.
-            api_key: Optional API key for authentication.
+            api_key: Optional Longbow API key or Bearer token for authentication.
+            oidc_token: Optional federated OIDC JWT (used as Bearer token when api_key is not set).
             tenant_id: Optional tenant identifier injected as x-tenant-id header.
+            namespace: Optional namespace identifier injected as x-namespace header.
             tls_root_certs: Optional PEM root CA certificates for TLS/mTLS.
             tls_cert_chain: Optional client certificate chain PEM for mTLS.
             tls_private_key: Optional client private key PEM for mTLS.
         """
         self.uri = uri
         self.meta_uri = meta_uri or uri
-        self.api_key = api_key
+        self.api_key = api_key or oidc_token
         self.tenant_id = tenant_id
+        self.namespace = namespace
         self.headers = headers or {}
         self.tls_root_certs = tls_root_certs
         self.tls_cert_chain = tls_cert_chain
@@ -67,18 +78,76 @@ class LongbowClient:
             raise LongbowConnectionError("Failed to initialize meta client")
         return self._meta_client
 
+    @staticmethod
+    def _raise_mapped_flight_error(operation: str, exc: Exception) -> None:
+        if isinstance(exc, (LongbowAuthenticationError, LongbowConnectionError, LongbowNotFoundError, LongbowQueryError)):
+            raise exc
+        exc_type = type(exc).__name__.lower()
+        msg = str(exc)
+        low = msg.lower()
+
+        is_forbidden = (
+            "unauthorized" in exc_type
+            or "permissiondenied" in low
+            or "permission_denied" in low
+            or "permission denied" in low
+            or "tenant isolation" in low
+            or "namespace mismatch" in low
+            or "dataset not authorized" in low
+            or "forbidden" in low
+        )
+        if is_forbidden:
+            raise LongbowAuthorizationError(
+                f"{operation} denied: {msg}",
+                operation=operation,
+                hint="Verify your RBAC role/OIDC groups, target namespace, and dataset allow-list.",
+            ) from exc
+
+        is_unauth = (
+            "unauthenticated" in exc_type
+            or "unauthenticated" in low
+            or "missing authentication" in low
+            or "missing credentials" in low
+            or "invalid api key" in low
+            or "api key disabled" in low
+            or "api key expired" in low
+            or "grace period expired" in low
+            or "oidc" in low
+            and any(k in low for k in ("expired", "replay", "invalid", "untrusted", "signature", "issuer", "audience"))
+        )
+        if is_unauth:
+            raise LongbowAuthenticationError(
+                f"{operation} authentication failed: {msg}",
+                operation=operation,
+                hint="Check api_key / LONGBOW_API_KEY or refresh/exchange your federated OIDC JWT.",
+            ) from exc
+
+        if "notfound" in low or "not_found" in low or "not found" in low:
+            raise LongbowNotFoundError(f"{operation} failed: {msg}") from exc
+
+        raise LongbowQueryError(f"{operation} failed: {msg}") from exc
+
     def _do_action_json(
-        self, action_type: str, payload: Dict[str, Any], default: Any = None
+        self,
+        action_type: str,
+        payload: Dict[str, Any],
+        default: Any = None,
+        bearer_override: Optional[str] = None,
     ) -> Any:
         meta = self._require_meta_client()
         action = flight.Action(action_type, json.dumps(payload).encode("utf-8"))
         try:
-            results = list(meta.do_action(action, options=self._get_call_options()))
+            results = list(
+                meta.do_action(
+                    action,
+                    options=self._get_call_options(bearer_override=bearer_override),
+                )
+            )
             if results:
                 return json.loads(results[0].body.to_pybytes())
             return {} if default is None else default
         except Exception as e:
-            raise LongbowQueryError(f"{action_type} failed: {e}")
+            self._raise_mapped_flight_error(action_type, e)
 
     def _do_get_df(self, ticket_payload: Dict[str, Any], label: str) -> pd.DataFrame:
         if self._data_client is None:
@@ -90,7 +159,8 @@ class LongbowClient:
             )
             return reader.read_all().to_pandas()
         except Exception as e:
-            raise LongbowQueryError(f"{label} failed: {e}")
+            self._raise_mapped_flight_error(label, e)
+            return pd.DataFrame()  # unreachable; satisfies type checkers
 
     @staticmethod
     def _serialize_vector(vector: Any) -> Optional[List[float]]:
@@ -141,6 +211,7 @@ class LongbowClient:
         body: Optional[Dict[str, Any]] = None,
         http_endpoint: str = "http://127.0.0.1:6000",
     ) -> Dict[str, Any]:
+        import urllib.error
         import urllib.request
 
         if not (
@@ -153,10 +224,41 @@ class LongbowClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         if self.tenant_id:
             headers["X-Tenant-ID"] = self.tenant_id
+        if self.namespace:
+            headers["X-Namespace"] = self.namespace
         data_bytes = json.dumps(body).encode("utf-8") if body is not None else None
         req = urllib.request.Request(url, data=data_bytes, headers=headers, method=method)
-        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310
-            return json.loads(resp.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                raw_err = e.read().decode("utf-8", errors="replace")
+                parsed = json.loads(raw_err)
+                detail = str(parsed.get("error") or raw_err)
+            except Exception:
+                detail = str(e.reason or e)
+            op = f"{method} {path}"
+            if e.code == 401:
+                raise LongbowAuthenticationError(
+                    f"{op} authentication failed (HTTP 401): {detail}",
+                    status_code=401,
+                    code="UNAUTHENTICATED",
+                    operation=op,
+                    hint="Provide a valid api_key / Bearer token or exchange a fresh OIDC JWT via exchange_oidc_token().",
+                ) from e
+            if e.code == 403:
+                raise LongbowAuthorizationError(
+                    f"{op} denied (HTTP 403): {detail}",
+                    status_code=403,
+                    code="PERMISSION_DENIED",
+                    operation=op,
+                    hint="Verify your RBAC role/OIDC groups, target namespace, and allowed datasets.",
+                ) from e
+            if e.code == 404:
+                raise LongbowNotFoundError(f"{op} not found (HTTP 404): {detail}") from e
+            raise LongbowQueryError(f"{op} failed (HTTP {e.code}): {detail}") from e
 
     def connect(self):
         """Establish connections to the server."""
@@ -191,7 +293,11 @@ class LongbowClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def _get_call_options(self, timeout: Optional[float] = None):
+    def _get_call_options(
+        self,
+        timeout: Optional[float] = None,
+        bearer_override: Optional[str] = None,
+    ):
         call_headers = []
         for k, v in self.headers.items():
             call_headers.append((k.encode("utf-8"), v.encode("utf-8")))
@@ -199,9 +305,13 @@ class LongbowClient:
         if self.tenant_id:
             call_headers.append((b"x-tenant-id", self.tenant_id.encode("utf-8")))
 
-        if self.api_key:
+        if self.namespace:
+            call_headers.append((b"x-namespace", self.namespace.encode("utf-8")))
+
+        token = bearer_override if bearer_override is not None else self.api_key
+        if token:
             call_headers.append(
-                (b"authorization", f"Bearer {self.api_key}".encode("utf-8"))
+                (b"authorization", f"Bearer {token}".encode("utf-8"))
             )
 
         if timeout is not None:
@@ -239,12 +349,16 @@ class LongbowClient:
         table: Any = data if isinstance(data, pa.Table) else to_arrow_table(data)
         descriptor = flight.FlightDescriptor.for_path(dataset)
         call_opts = self._get_call_options(timeout=timeout)
-        writer, reader = self._require_data_client().do_put(
-            descriptor, table.schema, options=call_opts
-        )
-        for batch in table.to_batches(max_chunksize=batch_size):
-            writer.write_batch(batch)
-        writer.done_writing()  # Signal completion without blocking
+        try:
+            writer, reader = self._require_data_client().do_put(
+                descriptor, table.schema, options=call_opts
+            )
+            for batch in table.to_batches(max_chunksize=batch_size):
+                writer.write_batch(batch)
+            writer.done_writing()  # Signal completion without blocking
+        except Exception as e:
+            self._raise_mapped_flight_error(f"DoPut({dataset})", e)
+            return
 
         # Read server acknowledgment if available
         try:
@@ -1605,6 +1719,108 @@ class LongbowClient:
             "RemoveOIDCProvider", {"issuer_url": issuer_url}, default={}
         )
 
+    def add_aws_oidc_provider(
+        self,
+        issuer_url: str,
+        audience: str = "longbow",
+        *,
+        jwks_url: str = "",
+        trust_policy_arn: str = "",
+        tenant_claim: str = "tenant_id",
+        namespace_claim: str = "namespace",
+        datasets_claim: str = "datasets",
+        role_claim: str = "groups",
+        row_filter_claim: str = "row_filters",
+        admin_claim: str = "role",
+        admin_value: str = "admin",
+        http_endpoint: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Register an AWS IRSA / EKS / Cognito OIDC federation provider."""
+        cfg: Dict[str, Any] = {
+            "provider": "aws",
+            "issuer_url": issuer_url,
+            "audience": audience,
+            "allowed_algs": ["RS256", "ES256"],
+            "tenant_claim": tenant_claim,
+            "namespace_claim": namespace_claim,
+            "datasets_claim": datasets_claim,
+            "role_claim": role_claim,
+            "row_filter_claim": row_filter_claim,
+            "admin_claim": admin_claim,
+            "admin_value": admin_value,
+        }
+        if jwks_url:
+            cfg["jwks_url"] = jwks_url
+        if trust_policy_arn:
+            cfg["trust_policy_arn"] = trust_policy_arn
+        if http_endpoint:
+            return self.rest_add_oidc_provider(cfg, http_endpoint=http_endpoint)
+        return self.add_oidc_provider(cfg)
+
+    def add_google_oidc_provider(
+        self,
+        audience: str = "longbow",
+        *,
+        issuer_url: str = "https://accounts.google.com",
+        jwks_url: str = "https://www.googleapis.com/oauth2/v3/certs",
+        trust_policy_arn: str = "",
+        tenant_claim: str = "tenant_id",
+        namespace_claim: str = "namespace",
+        datasets_claim: str = "datasets",
+        role_claim: str = "groups",
+        row_filter_claim: str = "row_filters",
+        admin_claim: str = "role",
+        admin_value: str = "admin",
+        http_endpoint: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Register a Google IAM / GKE Workload Identity OIDC federation provider."""
+        cfg: Dict[str, Any] = {
+            "provider": "google",
+            "issuer_url": issuer_url,
+            "jwks_url": jwks_url,
+            "audience": audience,
+            "allowed_algs": ["RS256", "ES256"],
+            "tenant_claim": tenant_claim,
+            "namespace_claim": namespace_claim,
+            "datasets_claim": datasets_claim,
+            "role_claim": role_claim,
+            "row_filter_claim": row_filter_claim,
+            "admin_claim": admin_claim,
+            "admin_value": admin_value,
+        }
+        if trust_policy_arn:
+            cfg["trust_policy_arn"] = trust_policy_arn
+        if http_endpoint:
+            return self.rest_add_oidc_provider(cfg, http_endpoint=http_endpoint)
+        return self.add_oidc_provider(cfg)
+
+    def rest_list_oidc_providers(
+        self, http_endpoint: str = "http://127.0.0.1:6000"
+    ) -> List[Dict[str, Any]]:
+        """List configured OIDC federation providers via REST v1."""
+        return self._rest_request(
+            "GET", "/api/v1/oidc/providers", http_endpoint=http_endpoint
+        ).get("providers", [])
+
+    def rest_add_oidc_provider(
+        self, config: Dict[str, Any], http_endpoint: str = "http://127.0.0.1:6000"
+    ) -> Dict[str, Any]:
+        """Register or update an OIDC federation provider via REST v1."""
+        return self._rest_request(
+            "POST", "/api/v1/oidc/providers", config, http_endpoint=http_endpoint
+        )
+
+    def rest_remove_oidc_provider(
+        self, issuer_url: str, http_endpoint: str = "http://127.0.0.1:6000"
+    ) -> Dict[str, Any]:
+        """Remove an OIDC federation provider via REST v1."""
+        import urllib.parse
+
+        qs = urllib.parse.urlencode({"issuer_url": issuer_url})
+        return self._rest_request(
+            "DELETE", f"/api/v1/oidc/providers?{qs}", http_endpoint=http_endpoint
+        )
+
     def exchange_oidc_token(
         self,
         oidc_token: str,
@@ -1612,6 +1828,12 @@ class LongbowClient:
         http_endpoint: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Exchange a federated OIDC JWT for a short-lived Longbow session token."""
+        if not oidc_token or not oidc_token.strip():
+            raise LongbowAuthenticationError(
+                "OIDC token is required for token exchange",
+                operation="ExchangeOIDCToken",
+                hint="Pass a valid federated JWT or call acquire_aws_web_identity_token() / acquire_google_id_token().",
+            )
         if http_endpoint:
             resp = self._rest_request(
                 "POST",
@@ -1624,10 +1846,30 @@ class LongbowClient:
                 "ExchangeOIDCToken",
                 {"token": oidc_token, "ttl_seconds": ttl_seconds},
                 default={},
+                bearer_override=oidc_token,
             )
         if resp.get("token"):
             self.api_key = resp["token"]
         return resp
+
+    def authenticate_with_aws_oidc(
+        self,
+        ttl_seconds: int = 900,
+        http_endpoint: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Acquire an AWS IRSA/EKS JWT and exchange it for a short-lived Longbow session token."""
+        tok = self.acquire_aws_web_identity_token()
+        return self.exchange_oidc_token(tok, ttl_seconds=ttl_seconds, http_endpoint=http_endpoint)
+
+    def authenticate_with_google_oidc(
+        self,
+        audience: str = "longbow",
+        ttl_seconds: int = 900,
+        http_endpoint: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Acquire a Google Cloud IAM identity token and exchange it for a short-lived Longbow session token."""
+        tok = self.acquire_google_id_token(audience=audience)
+        return self.exchange_oidc_token(tok, ttl_seconds=ttl_seconds, http_endpoint=http_endpoint)
 
     @staticmethod
     def acquire_aws_web_identity_token() -> str:

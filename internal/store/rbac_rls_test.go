@@ -174,3 +174,84 @@ func FuzzRBACAuthorizeToken(f *testing.F) {
 		_, _ = mgr.AuthorizeToken(context.Background(), name, perm, ns, ds)
 	})
 }
+
+func TestRBACAllFiveRolesDatasetReadIngestWriteMatrix(t *testing.T) {
+	mgr := NewRBACManager()
+
+	type roleCase struct {
+		role        Role
+		allowed     []Permission
+		denied      []Permission
+		crossTenant bool
+	}
+
+	cases := []roleCase{
+		{
+			role:        RoleAdmin,
+			allowed:     []Permission{PermRead, PermIngest, PermWrite, PermDelete, PermBackup, PermManageKeys, PermManageTenant, PermAdmin},
+			crossTenant: true,
+		},
+		{
+			role:    RoleTenantAdmin,
+			allowed: []Permission{PermRead, PermIngest, PermWrite, PermDelete, PermBackup, PermManageKeys, PermManageTenant},
+			denied:  []Permission{PermAdmin},
+		},
+		{
+			role:    RoleWriter,
+			allowed: []Permission{PermRead, PermIngest, PermWrite, PermDelete},
+			denied:  []Permission{PermBackup, PermManageKeys, PermManageTenant, PermAdmin},
+		},
+		{
+			role:    RoleIngest,
+			allowed: []Permission{PermRead, PermIngest},
+			denied:  []Permission{PermWrite, PermDelete, PermBackup, PermManageKeys, PermManageTenant, PermAdmin},
+		},
+		{
+			role:    RoleReader,
+			allowed: []Permission{PermRead},
+			denied:  []Permission{PermIngest, PermWrite, PermDelete, PermBackup, PermManageKeys, PermManageTenant, PermAdmin},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(string(tc.role), func(t *testing.T) {
+			opts := APIKeyOptions{
+				Name: "key-" + string(tc.role),
+				Role: tc.role,
+			}
+			if tc.role != RoleAdmin {
+				opts.TenantID = "team-a"
+				opts.Namespace = "team-a"
+				opts.Datasets = []string{"team-a/docs"}
+			}
+			_, raw, err := mgr.CreateAPIKeyWithOptions(opts)
+			require.NoError(t, err)
+
+			for _, perm := range tc.allowed {
+				ok, err := mgr.CheckPermission(raw, perm, "team-a", "team-a/docs")
+				require.NoError(t, err, "role %s should allow %s", tc.role, perm)
+				require.True(t, ok)
+			}
+			for _, perm := range tc.denied {
+				ok, err := mgr.CheckPermission(raw, perm, "team-a", "team-a/docs")
+				require.Error(t, err, "role %s should deny %s", tc.role, perm)
+				require.False(t, ok)
+			}
+
+			// Dataset allow-list & cross-namespace enforcement for non-admin roles
+			if !tc.crossTenant {
+				ok, err := mgr.CheckPermission(raw, PermRead, "team-a", "team-a/secret")
+				require.Error(t, err, "role %s should deny unlisted dataset", tc.role)
+				require.False(t, ok)
+
+				ok, err = mgr.CheckPermission(raw, PermRead, "team-b", "team-b/docs")
+				require.Error(t, err, "role %s should deny cross-namespace access", tc.role)
+				require.False(t, ok)
+			} else {
+				ok, err := mgr.CheckPermission(raw, PermRead, "team-b", "team-b/docs")
+				require.NoError(t, err)
+				require.True(t, ok)
+			}
+		})
+	}
+}

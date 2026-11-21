@@ -648,9 +648,10 @@ func run() error {
 		vectorStore.EnableOIDC(oidcMgr)
 		logger.Info().Int("issuers", len(issuers)).Msg("OIDC federation enabled")
 	}
-	authValidator := vectorStore.AccessValidator()
+	var authValidator security.AccessValidator
 	var auditLog *security.AuditLogger
-	if authValidator != nil {
+	if cfg.RBACEnabled || cfg.OIDCEnabled {
+		authValidator = vectorStore.DynamicAccessValidator()
 		auditLog = vectorStore.AuditLogger()
 	}
 

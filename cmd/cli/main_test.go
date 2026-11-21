@@ -2,7 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestParseFloats(t *testing.T) {
@@ -180,5 +185,22 @@ func TestTemporalSearchTypes(t *testing.T) {
 		if body["search_type"] == "" {
 			t.Errorf("empty search_type for %s", typ)
 		}
+	}
+}
+
+func TestFormatCLIAuthError(t *testing.T) {
+	unauth := formatCLIAuthError("ListAPIKeys", status.Error(codes.Unauthenticated, "invalid or expired token"))
+	if !strings.Contains(unauth, "Authentication failed on ListAPIKeys (Unauthenticated)") {
+		t.Fatalf("unexpected Unauthenticated formatting: %q", unauth)
+	}
+
+	perm := formatCLIAuthError("CreateAPIKey", status.Error(codes.PermissionDenied, "missing manage-keys permission"))
+	if !strings.Contains(perm, "Authorization denied on CreateAPIKey (PermissionDenied)") {
+		t.Fatalf("unexpected PermissionDenied formatting: %q", perm)
+	}
+
+	other := formatCLIAuthError("Ping", errors.New("connection refused"))
+	if !strings.Contains(other, "Ping") || !strings.Contains(other, "connection refused") {
+		t.Fatalf("unexpected generic error formatting: %q", other)
 	}
 }

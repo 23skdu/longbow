@@ -314,3 +314,61 @@ func TestVectorStoreOIDCRESTAndActions(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, exStream.results, 1)
 }
+
+func TestOIDC_DynamicAccessValidatorAndNoDoubleReplayOnFlightExchange(t *testing.T) {
+	oidcMgr, priv := setupStoreOIDCTest(t)
+
+	// Start with OIDC-only (RBAC not enabled at startup), matching LONGBOW_OIDC_ENABLED=true, LONGBOW_RBAC_ENABLED=false.
+	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<30, 1<<30, 0)
+	defer func() { _ = s.Close() }()
+	s.EnableOIDC(oidcMgr)
+
+	// Capture DynamicAccessValidator once at startup (as cmd/longbow does for gRPC interceptors).
+	dynValidator := s.DynamicAccessValidator()
+
+	now := time.Now()
+	jwtTok := signStoreTestJWT(t, priv, jwt.MapClaims{
+		"iss":       "https://issuer.example",
+		"aud":       "longbow",
+		"sub":       "ingest-svc",
+		"exp":       now.Add(time.Hour).Unix(),
+		"iat":       now.Unix(),
+		"jti":       "dyn-jti-1",
+		"tenant_id": "acme",
+		"namespace": "acme",
+		"datasets":  []interface{}{"acme/events"},
+		"groups":    []interface{}{"ingest-only"},
+	})
+
+	// Simulate AuthStreamInterceptor validating the Bearer JWT first (which consumes jti)
+	// and injecting TenantContext into ctx before DoAction("ExchangeOIDCToken") runs with the same token in body.
+	mdCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+jwtTok))
+	tc, err := dynValidator.AuthorizeToken(mdCtx, jwtTok, "", "", "")
+	require.NoError(t, err)
+	require.True(t, tc.HasPermission(string(PermIngest)))
+	require.False(t, tc.HasPermission(string(PermWrite)))
+
+	exBody, _ := json.Marshal(map[string]any{"token": jwtTok, "ttl_seconds": 300})
+	exStream := &captureActionStream{ctx: security.ContextWithTenant(mdCtx, tc)}
+	handled, err := s.handleRBACAction(&flight.Action{Type: "ExchangeOIDCToken", Body: exBody}, exStream)
+	require.True(t, handled)
+	require.NoError(t, err, "pre-authenticated ExchangeOIDCToken must not re-validate JWT and trip jti replay")
+	require.Len(t, exStream.results, 1)
+
+	var resp struct {
+		Token string `json:"token"`
+		Role  Role   `json:"role"`
+	}
+	require.NoError(t, json.Unmarshal(exStream.results[0].Body, &resp))
+	require.NotEmpty(t, resp.Token)
+	require.Equal(t, RoleIngest, resp.Role)
+
+	// The SAME startup DynamicAccessValidator must now accept the minted session API key
+	// even though RBAC was lazily initialized by ExchangeOIDCToken.
+	sessTC, err := dynValidator.AuthorizeToken(context.Background(), resp.Token, string(PermIngest), "acme", "acme/events")
+	require.NoError(t, err)
+	require.Equal(t, "acme", sessTC.TenantID)
+	// ingest-only must still be denied write/delete.
+	_, err = dynValidator.AuthorizeToken(context.Background(), resp.Token, string(PermWrite), "acme", "acme/events")
+	require.Error(t, err)
+}

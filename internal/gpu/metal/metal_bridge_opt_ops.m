@@ -202,65 +202,6 @@ void metal_set_metric(MetalIndexOptimized* handle, DistanceMetric metric) {
     handle->metric = metric;
 }
 
-int metal_add_vectors_optimized(MetalIndexOptimized* handle, float* vectors, int64_t* ids, int count) {
-    @autoreleasepool {
-        if (!handle || !vectors) {
-            return -1;
-        }
-
-        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
-
-        int requiredCapacity = handle->vectorCount + count;
-        int newCapacity = handle->capacity;
-
-        if (requiredCapacity > newCapacity) {
-            newCapacity = requiredCapacity > 0 ? requiredCapacity : 1024;
-            while (newCapacity < requiredCapacity) {
-                newCapacity *= 2;
-            }
-        }
-
-        size_t bufferSize = (size_t)newCapacity * handle->dimensions * sizeof(float);
-        id<MTLBuffer> newVectorBuffer = [device newBufferWithLength:bufferSize
-                                                            options:MTLResourceStorageModeShared];
-
-        if (!newVectorBuffer) {
-            return -1;
-        }
-
-        if (handle->vectorBuffer && handle->vectorCount > 0) {
-            id<MTLBuffer> oldBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
-            memcpy([newVectorBuffer contents], [oldBuffer contents],
-                   (size_t)handle->vectorCount * handle->dimensions * sizeof(float));
-            CFRelease(handle->vectorBuffer);
-        }
-
-        float* dest = (float*)[newVectorBuffer contents] + (handle->vectorCount * handle->dimensions);
-        memcpy(dest, vectors, (size_t)count * handle->dimensions * sizeof(float));
-
-        if (!handle->idBuffer) {
-            size_t idBufferSize = (size_t)newCapacity * sizeof(int64_t);
-            id<MTLBuffer> idBuf = [device newBufferWithLength:idBufferSize
-                                                       options:MTLResourceStorageModeShared];
-            if (idBuf) {
-                handle->idBuffer = (__bridge_retained void*)idBuf;
-            }
-        }
-
-        if (handle->idBuffer && ids) {
-            id<MTLBuffer> idBuffer = (__bridge id<MTLBuffer>)handle->idBuffer;
-            int64_t* idDest = (int64_t*)[idBuffer contents] + handle->vectorCount;
-            memcpy(idDest, ids, (size_t)count * sizeof(int64_t));
-        }
-
-        handle->vectorBuffer = (__bridge_retained void*)newVectorBuffer;
-        handle->vectorCount = requiredCapacity;
-        handle->capacity = newCapacity;
-
-        return 0;
-    }
-}
-
 int metal_get_count_optimized(MetalIndexOptimized* handle) {
     return handle ? handle->vectorCount : 0;
 }

@@ -14,7 +14,8 @@ The removed work covered:
   - **M3**: Decomposition of `arrow_hnsw_insert.go`, `navigation_search.go`, `adaptive_index.go`, `arrow_search_context.go`, `internal/query/zero_alloc_utils.go`, and `fast_path_filter.go`.
   - **M4**: Splitting `internal/simd/gen/all_kernels_gen.go` into `families/` generating 5 AMD64 assembly family files, splitting `simd_arm64.s` across 6 files + shared macro header, splitting `internal/gpu/cuda/kernels.cu` across 5 files, and extracting `metal_bridge.{h,*.m}` + Go PQ/dtype helpers in `internal/gpu/metal/`.
   - **M5 (initial standalone domain extractions)**: Extracted `internal/store/rbac`, `internal/store/geo`, `internal/store/temporal`, `internal/store/index/learned`, and `internal/store/index/bm25` (including splitting 812-LOC `bm25_inverted_index.go` and extracting pluggable index types into `internal/store/types/pluggable_types.go`), with type/constructor aliases preserved in parent packages.
-  - **M6**: Added `scripts/check_module_sizes.sh` (`make module-size-check`, `scripts/verify.sh` `--staged` check, CI `validate` job, Gate 14 in `docs/gates.md`) warning on hand-maintained files `> 800 LOC`, failing new files `> 1,200 LOC`, and enforcing a shrinkable legacy allow-list.
+  - **M6**: Added `scripts/check_module_sizes.sh` (`make module-size-check`, `scripts/verify.sh` `--staged` check, CI `validate` job, Gate 14 in `docs/gates.md`) warning on hand-maintained files `> 800 LOC`, failing new files `> 1,200 LOC`, and enforcing a shrinkable legacy allow-list (updated for macOS bash 3.2 compatibility).
+- **macOS Metal GPU & ARM64 Darwin SIMD**: Runtime Metal shader compilation from embedded `kernels.metal`, Metal bridge buffer-index/top-k/CFRelease/deadlock/race fixes across `MetalIndexOptimized`, `MetalIndex`, and `MetalHybridIndex`, 32-byte TurboQuant Metal alignment, ARM64 NEON `int16`/`uint8` unsigned widening (`VUADDLP_2D`) fix, and all-dtype × dims `128`/`384`/`768` GPU & NEON verification suites.
 
 See `docs/performance.md` for benchmark results and baselines, `docs/gates.md`
 for repository conformance gates, and `docs/testplan.md` for the full
@@ -51,7 +52,8 @@ Target budgets for hand-maintained code remain `<= 500 LOC` soft / `<= 800 LOC` 
 | Vet | `make vet` | pass |
 | Unit tests | `make test-short` | pass |
 | Static check | `make lint` | 0 issues |
-| Dead code | `make deadcode` | pre-existing only |
+| Dead code | `golangci-lint run --enable-only=unused ./...` | 0 issues |
+| Metal GPU & ARM64 NEON | `go test -tags gpu -race ./internal/gpu/... ./internal/onnx/metal/...` | pass |
 | Module size guardrail | `make module-size-check` | pass |
 | Observability | `make observability-check` | pass |
 | Accuracy | `make accuracy-gate` | pass |

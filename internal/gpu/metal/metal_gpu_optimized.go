@@ -462,13 +462,6 @@ func (idx *MetalIndexOptimized) Search(vector []float32, k int) ([]int64, []floa
 	return ids, distances, nil
 }
 
-const (
-	vecTypeF32  = C.VectorTypeGPU(0)
-	vecTypeF16  = C.VectorTypeGPU(1)
-	vecTypeC64  = C.VectorTypeGPU(2)
-	vecTypeC128 = C.VectorTypeGPU(3)
-)
-
 func (idx *MetalIndexOptimized) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	if len(vectors) == 0 {
 		return nil, nil, nil

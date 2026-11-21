@@ -47,13 +47,6 @@ typedef enum {
     METRIC_DOT = 2
 } DistanceMetric;
 
-typedef enum {
-    VECTOR_F32 = 0,
-    VECTOR_F16 = 1,
-    VECTOR_C64 = 2,
-    VECTOR_C128 = 3
-} VectorTypeGPU;
-
 struct MetalIndexOptimized {
     void* device;
     void* commandQueue;
@@ -131,11 +124,9 @@ int metal_greedy_search_optimized(MetalIndexOptimized* handle, float* query, uin
 int metal_greedy_search_tq_optimized(MetalIndexOptimized* handle, float* query, int pow2, int bitsPerAngle, uint32_t* entryPoint, float* entryDist);
 int metal_update_graph_optimized(MetalIndexOptimized* handle, uint32_t* offsets, int numOffsets, uint32_t* neighbors, int numNeighbors, float* weights, int numWeights);
 void metal_set_metric(MetalIndexOptimized* handle, DistanceMetric metric);
-int metal_add_vectors_optimized(MetalIndexOptimized* handle, float* vectors, int64_t* ids, int count);
 int metal_get_count_optimized(MetalIndexOptimized* handle);
 int metal_search_optimized(MetalIndexOptimized* handle, float* query, void** page_buffers, int* page_starts, int num_pages, int totalVectors, int k, int64_t* resultIDs, float* resultDistances);
 void metal_cleanup_optimized(MetalIndexOptimized* handle);
-int metal_search_typed(MetalIndexOptimized* handle, void* query, int k, int64_t* resultIDs, float* resultDistances, VectorTypeGPU vtype);
 int metal_add_tq_vectors_optimized(MetalIndexOptimized* handle, unsigned char* tqData, int stride, int64_t* ids, int count);
 int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, int pow2, int bitsPerAngle, int64_t* resultIDs, float* resultDistances);
 int metal_add_pq(MetalIndexOptimized* handle, const unsigned char* codes, const int64_t* ids, int count, int m);

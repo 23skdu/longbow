@@ -245,6 +245,7 @@ func (vs *VectorStore) SetTemporalIndex(cfg TemporalConfig) {
 	vs.IterateDatasets(func(name string, ds *Dataset) {
 		if ds.TemporalIndex == nil && cfg.Enabled {
 			ds.TemporalIndex = NewTemporalIndex(0)
+			ds.TemporalIndex.ds = ds
 		}
 	})
 }

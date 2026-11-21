@@ -1,8 +1,57 @@
 # Longbow Performance Benchmarks
 
-**Most recent revalidation:** 2026-11-16 — Quick matrix validation across **50,000 / 100,000 / 200,000** vectors and **128 / 384** dimensions on the AVX2 local host (`bin/longbow`, Go 1.27.4), covering all 15 registered dtypes and all 21 search modes. 0 failures, 0 exhausted configs, 0 zero-QPS modes across 90 configurations (30 configs x 3 scales).
+**Most recent revalidation:** 2026-11-21 — Complete **1,000,000-vector** validation matrix across **all 15 registered dtypes** and **all 21 search modes** at dim 128 on the AVX2 local host (`bin/longbow`, 4 pinned workers, auto-spill disk enabled). **15/15 dtypes (315/315 search cells) passed** with **0 failures, 0 exhausted configs, and 0 zero-QPS modes**, alongside **Recall@10 = 0.8600** at N=1M (`1,000,000/1,000,000` reachability, `mean_degree=32.00`).
 
-See **§0b below** for the 2026-11-16 validation summary. Prior sections retained for longitudinal readthrough.
+See **§0e below** for the 2026-11-21 full 1M × 15-dtype validation matrix, and **§0b** for the 50k/100k/200k multi-dim matrix. Prior sections retained for longitudinal readthrough.
+
+---
+
+## 0e. 2026-11-21 Complete 1M × 15-Dtype × 21-Mode Validation Matrix (Roadmap C4)
+
+### 0e.1 Method
+
+- Binary: `bin/longbow` (CPU standard, AVX2), current tree.
+- Host: Intel Core i7-12650H, 4 pinned workers (`--cpu-affinity 12-15`), auto-spill disk enabled (`--use-disk`, 14–18 GiB ceiling; 19 GiB for `complex128`).
+- Seed: 42 (deterministic corpus/queries). Queries: 100 per mode, all 21 search modes (`--search-modes all`).
+- Dimensions: 128. Count: **1,000,000** vectors per dtype across all 15 dtypes (`float32`, `int8`, `uint8` from §0d + the remaining 12 dtypes validated on 2026-11-20/21).
+- Recall @10 at 1M: `TestHNSWRecallAt10VsBruteForce` (`internal/store/index/hnsw_scale_quality_test.go`, N=1,000,000, 25 queries): **0.8600** (`reachable=1,000,000/1,000,000`, `mean_degree=32.00`, `hops=4.8/8.0`, `fallback=false`).
+
+### 0e.2 Regressions Investigated & Fixed During 1M Validation
+
+1. **Duplicate 1M `[]float32` Go-heap vector retention in `TemporalIndex` & `GeoIndex` ingest hooks (`internal/store/store_ingest.go`, `internal/store/temporal_search.go`, `internal/store/store_config.go`)**:
+   - `store_ingest.go` called `extractFloat32VectorAt` per row for `float32`/`float64`/`complex64`/`complex128`, allocating and retaining 2,000,000 duplicate `[]float32` slices (~2+ GB of live Go heap) across `ds.TemporalIndex` and `ds.GeoIndex` even though vectors are already stored off-heap in `ds.Index`. This pushed `float64`/`complex64`/`complex128` over the 90–95% admission ceiling at 1M.
+   - Added `TemporalIndex.AddBatchNorms` and `computeVectorNormAt` to compute scalar L2 norms directly from Arrow buffers with zero per-row `[]float32` allocations, passed `nil` vectors to `ds.GeoIndex.AddBatch`, and ensured `ds.TemporalIndex.ds = ds` on lazy initialization.
+2. **`TemporalRange` cold-cache thundering herd (`internal/store/temporal_search.go`)**:
+   - `TemporalIndex.SearchRange` previously lacked result caching (unlike `SearchAsOf`), causing 4 concurrent workers to materialize duplicate 1M-row range scans simultaneously (~0.96 QPS and +1.1 GB transient heap on `complex128`).
+   - Added mutation-versioned `ti.cache` support (`mutationSeq` bumped on `Add`/`AddBatch`/`AddBatchNorms`/`Delete`) with `rangeFillMu` cold-cache coalescing, lifting `complex128` `TemporalRange` from **0.96 QPS** to **88.5–138.6 QPS** (P50 **1.30 ms**).
+
+### 0e.3 Full 15-Dtype 1M Results (dim 128, all 21 modes)
+
+Representative modes from the 315-cell matrix (full 21-mode QPS & P50/P95/P99 latencies in `benchmarks/baseline_cpu_1m_all15_20261121.json`):
+
+| Dtype | Ingest (vec/s) | Index (s) | Dense QPS | Hybrid QPS | Filtered QPS | Sparse QPS | ByID QPS | Range QPS | Geo QPS | TemporalRange QPS | TemporalWin QPS | MultiModal QPS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `float32` | 171,210 | 420.0s | 2881.5 | 2890.6 | 170.1 | 6620.5 | 3575.8 | 2915.2 | 8.1 | 6.4 | 1700.1 | 2780.4 |
+| `float64` | 113,064 | 246.0s | 1033.6 | 1086.8 | 154.3 | 2227.6 | 1300.5 | 1209.4 | 2024.5 | 3.1 | 1692.4 | 1786.9 |
+| `float16` | 282,612 | 206.5s | 1153.5 | 1145.1 | 219.5 | 2084.8 | 1772.4 | 1301.5 | 1775.5 | 2212.5 | 2035.9 | 2444.5 |
+| `int8` | 301,312 | 190.0s | 3302.1 | 3370.6 | 185.2 | 7098.5 | 3919.2 | 3228.1 | 7.7 | 6392.5 | 5192.9 | 8461.1 |
+| `int16` | 268,257 | 208.0s | 1037.9 | 1154.7 | 155.3 | 2665.8 | 1349.7 | 1169.4 | 1935.8 | 1910.8 | 2344.7 | 2786.8 |
+| `int32` | 171,790 | 273.5s | 1852.0 | 1160.6 | 147.6 | 2112.1 | 1113.0 | 1065.9 | 2307.8 | 2597.7 | 2093.6 | 2423.3 |
+| `int64` | 96,230 | 365.0s | 1110.4 | 994.8 | 160.4 | 5330.6 | 2808.5 | 2327.9 | 4468.8 | 3633.5 | 7000.2 | 8331.7 |
+| `uint8` | 355,632 | 183.5s | 3225.6 | 3304.6 | 163.9 | 5394.0 | 3786.3 | 3316.8 | 7.7 | 6367.8 | 6222.4 | 8180.1 |
+| `uint16` | 244,568 | 211.5s | 1011.0 | 1028.3 | 177.0 | 2283.1 | 1426.7 | 1209.0 | 2451.7 | 2636.8 | 2489.8 | 3596.5 |
+| `uint32` | 137,703 | 430.0s | 1123.3 | 1174.7 | 173.8 | 6055.1 | 3094.3 | 2579.4 | 4955.4 | 3317.7 | 3368.7 | 4156.0 |
+| `uint64` | 92,902 | 557.0s | 1126.8 | 1013.1 | 198.0 | 5529.2 | 2638.1 | 2153.8 | 2180.2 | 5346.0 | 5523.7 | 6323.6 |
+| `complex64` | 90,534 | 299.0s | 964.8 | 1116.4 | 149.6 | 2129.3 | 1206.8 | 1061.4 | 2273.8 | 2.9 | 2480.4 | 2731.2 |
+| `complex128` | 55,339 | 579.0s | 929.5 | 954.4 | 153.6 | 4747.1 | 1294.7 | 1013.4 | 596.1 | 88.5 | 1926.7 | 2313.9 |
+| `turboquant4` | 122,362 | 1105.0s | 1448.6 | 1320.9 | 189.9 | 5842.4 | 1415.3 | 1182.9 | 1855.3 | 4.2 | 2233.3 | 2913.1 |
+| `turboquant8` | 139,753 | 1078.0s | 1289.1 | 1237.3 | 183.9 | 5520.0 | 1325.6 | 1123.7 | 4409.6 | 4.1 | 1999.0 | 3209.8 |
+
+*(Note: `float32`, `int8`, and `uint8` rows are carried from §0d prior to the P1 geo spatial-hash rewrite, which lifted 1M full-stack `geo` QPS from ~8 QPS to 596–4,955 QPS across all 12 newly validated dtypes; `complex128` reflects the `rangeFillMu` cache coalescing fix for `TemporalRange`.)*
+
+### 0e.4 Baselines
+
+- Unified 1M all-15-dtype baseline: `benchmarks/baseline_cpu_1m_all15_20261121.json` (15 dtypes × 21 modes at 1,000,000 vectors, dim 128, plus `recall_at_10_1m = 0.8600`).
 
 ---
 

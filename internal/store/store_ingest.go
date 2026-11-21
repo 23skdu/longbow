@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -885,7 +886,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		if vecColIdx != -1 {
 			numRows := int(rec.NumRows())
 			ids := make([]uint64, 0, numRows)
-			vectors := make([][]float32, 0, numRows)
+			norms := make([]float32, 0, numRows)
 			timestamps := make([]int64, 0, numRows)
 
 			var idCol arrow.Array
@@ -904,8 +905,9 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 				listLen = int(fs.Len())
 			}
 
-			// Extract directly on this ingestion worker goroutine so we do not block
-			// behind long-running HNSW linkage tasks in index.GetSharedPool().
+			// Compute L2 norms directly from the Arrow buffer without allocating
+			// duplicate per-row []float32 copies on the Go heap (vectors are already
+			// stored off-heap in ds.Index).
 			for i := 0; i < numRows; i++ {
 				if !vecCol.IsValid(i) || (idCol != nil && !idCol.IsValid(i)) {
 					continue
@@ -919,17 +921,19 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 						rowTs = int64(arr.Value(i))
 					}
 				}
-				vec := extractFloat32VectorAt(vecCol, listLen, i)
-				if len(vec) == 0 {
+				norm, ok := computeVectorNormAt(vecCol, listLen, i)
+				if !ok {
 					continue
 				}
 				ids = append(ids, uint64(baseRowID)+uint64(i))
-				vectors = append(vectors, vec)
+				norms = append(norms, norm)
 				timestamps = append(timestamps, rowTs)
 			}
 
-			// Batch Add
-			_ = ds.TemporalIndex.AddBatch(ids, vectors, timestamps, nil)
+			// Batch Add (norm-only to avoid multi-GB duplicate Go-heap vector copies at 1M scale)
+			if len(ids) > 0 {
+				_ = ds.TemporalIndex.AddBatchNorms(ids, norms, timestamps, listLen)
+			}
 		}
 	}
 	traceLog("temporal index")
@@ -980,7 +984,6 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		if vecColIdx != -1 {
 			numRows := int(rec.NumRows())
 			validIds := make([]uint64, 0, numRows)
-			validVecs := make([][]float32, 0, numRows)
 			validPoints := make([]types.GeoPoint, 0, numRows)
 
 			var idCol arrow.Array
@@ -988,10 +991,6 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 				idCol = rec.Column(idColIdx)
 			}
 			vecCol := rec.Column(vecColIdx)
-			var listLen int
-			if fs, ok := vecCol.DataType().(*arrow.FixedSizeListType); ok {
-				listLen = int(fs.Len())
-			}
 
 			if geoArr, ok := rec.Column(geoPointIdx).(*array.FixedSizeList); ok {
 				if geoValArr, ok := geoArr.ListValues().(*array.Float64); ok {
@@ -1004,10 +1003,11 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 							continue
 						}
 						validIds = append(validIds, uint64(baseRowID)+uint64(i))
-						validVecs = append(validVecs, extractFloat32VectorAt(vecCol, listLen, i))
 						validPoints = append(validPoints, types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]})
 					}
-					_ = ds.GeoIndex.AddBatch(validIds, validVecs, validPoints, nil)
+					// Pass nil vectors to avoid duplicating 1M []float32 copies on the Go heap;
+					// vectors are already stored off-heap in ds.Index.
+					_ = ds.GeoIndex.AddBatch(validIds, nil, validPoints, nil)
 				}
 			}
 		}
@@ -1040,7 +1040,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	return nil
 }
 
-func extractFloat32VectorAt(vecCol arrow.Array, listLen, row int) []float32 {
+func computeVectorNormAt(vecCol arrow.Array, listLen, row int) (float32, bool) {
 	var vStart, vEnd int
 	var values arrow.Array
 	switch col := vecCol.(type) {
@@ -1055,25 +1055,28 @@ func extractFloat32VectorAt(vecCol arrow.Array, listLen, row int) []float32 {
 		values = col.ListValues()
 	}
 	if values == nil || vStart < 0 || vEnd <= vStart {
-		return nil
+		return 0, false
 	}
 	switch valArr := values.(type) {
 	case *array.Float32:
 		if vEnd <= valArr.Len() {
 			src := valArr.Float32Values()[vStart:vEnd]
-			sub := make([]float32, len(src))
-			copy(sub, src)
-			return sub
+			var sum float64
+			for _, v := range src {
+				fv := float64(v)
+				sum += fv * fv
+			}
+			return float32(math.Sqrt(sum)), true
 		}
 	case *array.Float64:
 		if vEnd <= valArr.Len() {
 			f64Values := valArr.Float64Values()[vStart:vEnd]
-			sub := make([]float32, len(f64Values))
-			for j, v := range f64Values {
-				sub[j] = float32(v)
+			var sum float64
+			for _, v := range f64Values {
+				sum += v * v
 			}
-			return sub
+			return float32(math.Sqrt(sum)), true
 		}
 	}
-	return nil
+	return 0, false
 }

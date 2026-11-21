@@ -104,7 +104,9 @@ type TemporalIndex struct {
 	segmentTree  atomic.Pointer[SegmentTree]
 	history      *VersionHistory
 	cache        *TemporalResultCache
+	rangeFillMu  sync.Mutex
 	pointCount   atomic.Int64
+	mutationSeq  atomic.Uint64
 	gpuIndex     atomic.Value // holds gputypes.Index
 	ds           *Dataset     // parent dataset back-pointer
 
@@ -275,6 +277,7 @@ func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metad
 		segmentTree.Insert(timestamp, timestamp, uint32(id)) // #nosec G115
 	}
 	ti.pointCount.Add(1)
+	ti.mutationSeq.Add(1)
 
 	if ti.history != nil {
 		ti.history.Add(id, vector, norm, timestamp, metadata)
@@ -393,6 +396,83 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 		}
 	}
 	ti.pointCount.Add(int64(n))
+	ti.mutationSeq.Add(1)
+	ti.mu.Unlock()
+
+	return nil
+}
+
+// AddBatchNorms inserts a batch of temporal entries using precomputed L2 norms
+// without retaining duplicate per-row []float32 vector copies on the Go heap.
+// Used by the ingestion path when vectors are already stored off-heap in the
+// dataset's primary vector index.
+func (ti *TemporalIndex) AddBatchNorms(ids []uint64, norms []float32, timestamps []int64, dim int) error {
+	n := len(ids)
+	if n == 0 {
+		return nil
+	}
+	if len(norms) != n || len(timestamps) != n {
+		return fmt.Errorf("mismatched batch lengths: ids=%d norms=%d timestamps=%d", n, len(norms), len(timestamps))
+	}
+
+	ti.mu.Lock()
+	if ti.dimension == 0 && dim > 0 {
+		ti.dimension = dim
+	}
+	for i := range ids {
+		vec := &TemporalVector{
+			ID:        ids[i],
+			Norm:      norms[i],
+			Timestamp: timestamps[i],
+			Tombstone: false,
+		}
+		shard := ti.getShard(ids[i])
+		shard.mu.Lock()
+		shard.data[ids[i]] = vec
+		shard.mu.Unlock()
+		if ti.history != nil {
+			ti.history.Add(ids[i], nil, norms[i], timestamps[i], nil)
+		}
+	}
+
+	if ti.asyncIngest.Load() {
+		task := temporalIngestTask{
+			timestamps: timestamps,
+			ids:        ids,
+			norms:      norms,
+		}
+		select {
+		case ti.ingestCh <- task:
+		default:
+			tree := ti.temporalTree.Load()
+			if tree != nil {
+				tree.InsertBatch(timestamps, ids, norms)
+			}
+			segmentTree := ti.segmentTree.Load()
+			if segmentTree != nil {
+				uids := make([]uint32, n)
+				for i, id := range ids {
+					uids[i] = uint32(id) // #nosec G115
+				}
+				segmentTree.InsertBatch(timestamps, timestamps, uids)
+			}
+		}
+	} else {
+		tree := ti.temporalTree.Load()
+		if tree != nil {
+			tree.InsertBatch(timestamps, ids, norms)
+		}
+		segmentTree := ti.segmentTree.Load()
+		if segmentTree != nil {
+			uids := make([]uint32, n)
+			for i, id := range ids {
+				uids[i] = uint32(id) // #nosec G115
+			}
+			segmentTree.InsertBatch(timestamps, timestamps, uids)
+		}
+	}
+	ti.pointCount.Add(int64(n))
+	ti.mutationSeq.Add(1)
 	ti.mu.Unlock()
 
 	return nil
@@ -421,6 +501,7 @@ func (ti *TemporalIndex) Delete(id uint64) error {
 	if segmentTree != nil {
 		segmentTree.Remove(vec.Timestamp, vec.Timestamp, uint32(id)) // #nosec G115
 	}
+	ti.mutationSeq.Add(1)
 	// We don't decrement pointCount here because it's a tombstone
 	return nil
 }
@@ -633,6 +714,20 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 		return []lbtypes.SearchResult{}, nil
 	}
 
+	cacheKey := fmt.Sprintf("range:%d:%d:%d:%d", startTime, endTime, k, ti.mutationSeq.Load())
+	if ti.cache != nil {
+		if cached, ok := ti.cache.Get(cacheKey); ok {
+			return cached, nil
+		}
+		// Coalesce concurrent cold-cache misses so multiple workers do not
+		// materialize duplicate 1M-row range allocations simultaneously.
+		ti.rangeFillMu.Lock()
+		defer ti.rangeFillMu.Unlock()
+		if cached, ok := ti.cache.Get(cacheKey); ok {
+			return cached, nil
+		}
+	}
+
 	vIdx := ti.GetVectorIndex()
 	if vIdx != nil {
 		dim := ti.dimension
@@ -660,6 +755,9 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 				results, err = vIdx.SearchVectors(ctx, queryVec, k, nil, options)
 			}
 			if err == nil {
+				if ti.cache != nil {
+					ti.cache.Set(cacheKey, results, 5*time.Minute)
+				}
 				return results, nil
 			}
 		}
@@ -721,7 +819,11 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 		}
 	}
 
-	return drainTemporalTopK(h), nil
+	searchResults := drainTemporalTopK(h)
+	if ti.cache != nil {
+		ti.cache.Set(cacheKey, searchResults, 5*time.Minute)
+	}
+	return searchResults, nil
 }
 
 // SearchSlidingWindow performs a search over the last n vector updates.

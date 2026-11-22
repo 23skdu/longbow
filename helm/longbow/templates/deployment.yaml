@@ -433,6 +433,10 @@ spec:
               value: {{ .Values.rbac.secretsPath | default "/data/rbac_secrets" | quote }}
             - name: LONGBOW_SECRETS_PREFIX
               value: {{ .Values.rbac.secretsPrefix | default "longbow/rbac" | quote }}
+            {{- if .Values.rbac.startupNamespacePolicies }}
+            - name: LONGBOW_STARTUP_NAMESPACE_POLICIES
+              value: {{ .Values.rbac.startupNamespacePolicies | toJson | quote }}
+            {{- end }}
             - name: LONGBOW_SECRETS_VAULT_ADDR
               value: {{ .Values.rbac.vaultAddr | default "" | quote }}
             - name: LONGBOW_SECRETS_VAULT_TOKEN

@@ -500,6 +500,11 @@ rbac:
   # Kubernetes Secret containing the bootstrap admin key.
   existingSecret: ""
   existingSecretKey: "bootstrap-api-key"
+  # Namespace ACLs to provision before the server accepts traffic.
+  # Each item supports: namespace, admin_key_ids, writer_key_ids,
+  # reader_key_ids, public_permissions, and ephemeral. Durable policies are
+  # written to secretsProvider; ephemeral: true keeps them runtime-only.
+  startupNamespacePolicies: []
   # file, memory, vault, gcp, or aws. `memory` is for tests only.
   secretsProvider: "file"
   secretsPath: "/data/rbac_secrets"

@@ -517,6 +517,8 @@ helm-lint:
 	@echo "Linting Helm chart..."
 	$(HELM) lint helm/longbow
 	$(HELM) template longbow helm/longbow --debug > /dev/null
+	$(HELM) template longbow helm/longbow \
+		--set-json 'rbac.startupNamespacePolicies=[{"namespace":"team-a","ephemeral":true}]' > /dev/null
 	@echo "Helm chart valid."
 
 bench-ci: build

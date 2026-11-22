@@ -224,7 +224,8 @@ graph was left partly disconnected; see `docs/development/roadmap.md` §9.2.
 | `rbac.bootstrapKey` | Bootstrap admin API key (prefer `rbac.existingSecret`) | `""` |
 | `rbac.existingSecret` | Kubernetes Secret containing the bootstrap admin key | `""` |
 | `rbac.existingSecretKey` | Key in `rbac.existingSecret` holding the bootstrap admin key | `bootstrap-api-key` |
-| `rbac.secretsProvider` | API-key store: `file`, `memory`, `vault`, `gcp`, or `aws` | `file` |
+| `rbac.startupNamespacePolicies` | Namespace ACLs to create at startup (see example below) | `[]` |
+| `rbac.secretsProvider` | RBAC record store: `file`, `memory`, `vault`, `gcp`, or `aws` | `file` |
 | `rbac.secretsPath` | File-store path (mounted under the WAL PVC by default) | `/data/rbac_secrets` |
 | `rbac.secretsPrefix` | Provider-side prefix for Longbow secrets | `longbow/rbac` |
 | `rbac.vaultAddr` | Vault address (required for `vault`) | `""` |
@@ -253,5 +254,26 @@ helm upgrade --install longbow ./helm/longbow \
   --set rbac.existingSecret=longbow-rbac-bootstrap \
   --set rbac.secretsProvider=file
 ```
+
+Startup namespaces can be declared in `values.yaml` and are provisioned before
+the server starts accepting traffic:
+
+```yaml
+rbac:
+  startupNamespacePolicies:
+    - namespace: team-a
+      admin_key_ids: [bootstrap-admin]
+      writer_key_ids: [team-a-writer]
+      reader_key_ids: [team-a-reader]
+      public_permissions: [read]
+    - namespace: scratch
+      public_permissions: [write]
+      ephemeral: true
+```
+
+Omit `ephemeral` (or set it to `false`) to persist the ACL and namespace through
+the configured `rbac.secretsProvider`. Set `ephemeral: true` for a runtime-only
+namespace that disappears on restart. Durable records reuse `rbac.secretsPath`
+with the default `file` provider, so no additional volume is required.
 
 Verify the deployment with `python3 scripts/verify_rbac.py --url http://<metrics-host>:9090`.

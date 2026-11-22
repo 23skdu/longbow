@@ -292,8 +292,12 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 
 // WaitForIndexing blocks until all pending indexing jobs for this dataset are complete.
 func (d *Dataset) WaitForIndexing() {
-	for d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0 {
-		time.Sleep(10 * time.Millisecond)
+	// Bounded wait: under sustained concurrent ingest the pending counts may
+	// never reach zero. Block briefly to let in-flight work settle, then
+	// proceed so searches are not stalled indefinitely (shared-namespace fix).
+	deadline := time.Now().Add(50 * time.Millisecond)
+	for (d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

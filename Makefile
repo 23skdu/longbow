@@ -32,7 +32,7 @@ IMAGE_TAG     ?= $(TAG)
 	test-adbc test-adbc-python test-adbc-so test-version \
 	cross-compile check-simd module-size-check test-bench-harness check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
 	accuracy-gate oracle-gate search-gate observability-inventory observability-check observability-rules \
-	docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-gpu docker-build-all \
+	docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-nvidia docker-build-all \
 	makehooks install-commit-hook install-hooks verify pre-commit
 
 # Default target
@@ -125,7 +125,7 @@ help:
 	@echo "  docker-build-tpu     Build TPU Docker container image"
 	@echo "  docker-build-nvidia  Build NVIDIA GPU Docker container image"
 	@echo "  docker-build-emlgo-cpu Build EMLGo CPU Docker container image"
-	@echo "  docker-build-emlgo-gpu Build EMLGo GPU Docker container image"
+	@echo "  docker-build-emlgo-nvidia Build EMLGo GPU Docker container image"
 	@echo "  docker-build-all     Build all Docker container images"
 
 # ==============================================================================
@@ -572,11 +572,11 @@ docker-build-emlgo-cpu:
 	@echo "Building EMLGo CPU Docker image..."
 	$(DOCKER) build -f Dockerfile.emlgo-cpu -t longbow-emlgo-cpu:$(IMAGE_TAG) .
 
-docker-build-emlgo-gpu:
+docker-build-emlgo-nvidia:
 	@echo "Building EMLGo GPU Docker image..."
-	$(DOCKER) build -f Dockerfile.emlgo-gpu -t longbow-emlgo-gpu:$(IMAGE_TAG) .
+	$(DOCKER) build -f Dockerfile.emlgo-nvidia -t longbow-emlgo-nvidia:$(IMAGE_TAG) .
 
-docker-build-all: docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-gpu
+docker-build-all: docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-nvidia
 	@echo "All Docker container images built successfully."
 
 release: ci check-version build-release build-adbc

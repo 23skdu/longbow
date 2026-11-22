@@ -425,12 +425,12 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Extract metadata for EMLGo GPU Image
-        id: meta-emlgo-gpu
+        id: meta-emlgo-nvidia
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           flavor: |
-            suffix=-emlgo-gpu
+            suffix=-emlgo-nvidia
           tags: |
             type=ref,event=tag
             type=raw,value=latest
@@ -440,11 +440,11 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile.emlgo-gpu
+          file: Dockerfile.emlgo-nvidia
           platforms: linux/amd64
           push: false
-          tags: ${{ steps.meta-emlgo-gpu.outputs.tags }}
-          labels: ${{ steps.meta-emlgo-gpu.outputs.labels }}
+          tags: ${{ steps.meta-emlgo-nvidia.outputs.tags }}
+          labels: ${{ steps.meta-emlgo-nvidia.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

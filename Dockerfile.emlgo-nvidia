@@ -1,4 +1,4 @@
-# Dockerfile.emlgo-gpu
+# Dockerfile.emlgo-nvidia
 # NVIDIA CUDA-enabled build with EMLGo high-performance SIMD math backend
 #
 # Combines CUDA GPU acceleration with EMLGo's AVX2/AVX-512 fastmath kernels

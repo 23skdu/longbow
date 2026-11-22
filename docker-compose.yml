@@ -157,13 +157,13 @@ services:
       dockerfile: Dockerfile.emlgo-cpu
 
   # EMLGo GPU (SIMD math + CUDA)
-  longbow-emlgo-gpu:
+  longbow-emlgo-nvidia:
     <<: *common-service
-    profiles: ["emlgo-gpu"]
-    container_name: longbow-emlgo-gpu
+    profiles: ["emlgo-nvidia"]
+    container_name: longbow-emlgo-nvidia
     build:
       context: .
-      dockerfile: Dockerfile.emlgo-gpu
+      dockerfile: Dockerfile.emlgo-nvidia
     deploy:
       resources:
         reservations:

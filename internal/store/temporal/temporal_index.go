@@ -105,9 +105,14 @@ type TemporalIndex struct {
 	gpuIndex      atomic.Value // holds gputypes.Index
 	vectorIndexFn func() lbtypes.VectorIndexer
 
-	ingestCh    chan temporalIngestTask
-	ingestWg    sync.WaitGroup
-	asyncIngest atomic.Bool
+	ingestMu            sync.Mutex
+	ingestQueue         []temporalIngestTask
+	ingestScratch       []temporalIngestTask
+	ingestWorkerRunning bool
+	ingestClosed        bool
+	ingestWg            sync.WaitGroup
+	asyncIngest         atomic.Bool
+	closed              atomic.Bool
 }
 
 type temporalIngestTask struct {
@@ -174,7 +179,6 @@ func NewTemporalIndex(dimension int) *TemporalIndex {
 	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	ti.temporalTree.Store(NewTemporalTree(arena))
-	ti.startIngestWorker()
 	ti.asyncIngest.Store(true)
 	return ti
 }
@@ -184,12 +188,17 @@ func (ti *TemporalIndex) getShard(id uint64) *temporalShard {
 	return &ti.shards[id%uint64(TemporalShards)]
 }
 
+var errTemporalIndexClosed = fmt.Errorf("temporal index is closed")
+
+const temporalIngestQueueCap = 64
+
 // Close releases resources associated with the temporal index.
 func (ti *TemporalIndex) Close() error {
 	ti.stopIngestWorker()
 
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
+	ti.closed.Store(true)
 
 	// Clear the sharded maps
 	for i := 0; i < TemporalShards; i++ {
@@ -210,53 +219,110 @@ func (ti *TemporalIndex) Close() error {
 }
 
 // SetAsyncIngestion enables or disables asynchronous temporal ingestion.
-// When enabled, AddBatch offloads TemporalTree and SegmentTree updates to
-// a background worker, returning immediately after storing vector data in shards.
+// When enabled, AddBatch and AddBatchNorms offload TemporalTree and SegmentTree
+// updates to an on-demand worker that exits once the queue is drained.
 func (ti *TemporalIndex) SetAsyncIngestion(async bool) {
-	if async {
-		if !ti.asyncIngest.Swap(true) {
-			ti.startIngestWorker()
-		}
-	} else {
-		if ti.asyncIngest.Swap(false) {
-			ti.stopIngestWorker()
-		}
+	ti.ingestMu.Lock()
+	if ti.ingestClosed {
+		ti.ingestMu.Unlock()
+		return
+	}
+	ti.asyncIngest.Store(async)
+	ti.ingestMu.Unlock()
+	if !async {
+		ti.ingestWg.Wait()
 	}
 }
 
-func (ti *TemporalIndex) startIngestWorker() {
-	ti.ingestCh = make(chan temporalIngestTask, 64)
-	ti.ingestWg.Add(1)
-	go func() {
-		defer ti.ingestWg.Done()
-		for task := range ti.ingestCh {
-			tree := ti.temporalTree.Load()
-			if tree != nil {
-				tree.InsertBatch(task.timestamps, task.ids, task.norms)
-			}
-			segmentTree := ti.segmentTree.Load()
-			if segmentTree != nil {
-				uids := make([]uint32, len(task.ids))
-				for i, id := range task.ids {
-					uids[i] = uint32(id) // #nosec G115
-				}
-				segmentTree.InsertBatch(task.timestamps, task.timestamps, uids)
-			}
+func (ti *TemporalIndex) dispatchTreeTask(task temporalIngestTask) {
+	if ti.asyncIngest.Load() && ti.enqueueAsyncTask(task) {
+		return
+	}
+	ti.applyTreeTask(task)
+}
+
+func (ti *TemporalIndex) enqueueAsyncTask(task temporalIngestTask) bool {
+	ti.ingestMu.Lock()
+	if ti.ingestClosed || !ti.asyncIngest.Load() || len(ti.ingestQueue) >= temporalIngestQueueCap {
+		ti.ingestMu.Unlock()
+		return false
+	}
+	ti.ingestQueue = append(ti.ingestQueue, task)
+	if !ti.ingestWorkerRunning {
+		ti.ingestWorkerRunning = true
+		ti.ingestWg.Add(1)
+		go ti.runIngestWorker()
+	}
+	ti.ingestMu.Unlock()
+	return true
+}
+
+func (ti *TemporalIndex) applyTreeTask(task temporalIngestTask) {
+	tree := ti.temporalTree.Load()
+	if tree != nil {
+		tree.InsertBatch(task.timestamps, task.ids, task.norms)
+	}
+	segmentTree := ti.segmentTree.Load()
+	if segmentTree != nil {
+		uids := make([]uint32, len(task.ids))
+		for i, id := range task.ids {
+			uids[i] = uint32(id) // #nosec G115
 		}
-	}()
+		segmentTree.InsertBatch(task.timestamps, task.timestamps, uids)
+	}
+}
+
+// runIngestWorker drains queued tree updates on demand and exits once empty so
+// idle TemporalIndex instances keep zero background goroutines.
+func (ti *TemporalIndex) runIngestWorker() {
+	defer ti.ingestWg.Done()
+	for {
+		ti.ingestMu.Lock()
+		if len(ti.ingestQueue) == 0 {
+			ti.ingestWorkerRunning = false
+			ti.ingestQueue = nil
+			ti.ingestScratch = nil
+			ti.ingestMu.Unlock()
+			return
+		}
+		pending := ti.ingestQueue
+		ti.ingestQueue = ti.ingestScratch[:0]
+		ti.ingestScratch = nil
+		ti.ingestMu.Unlock()
+
+		for i, task := range pending {
+			ti.applyTreeTask(task)
+			pending[i] = temporalIngestTask{}
+		}
+
+		ti.ingestMu.Lock()
+		if len(ti.ingestQueue) == 0 {
+			ti.ingestWorkerRunning = false
+			ti.ingestQueue = nil
+			ti.ingestScratch = nil
+			ti.ingestMu.Unlock()
+			return
+		}
+		ti.ingestScratch = pending[:0]
+		ti.ingestMu.Unlock()
+	}
 }
 
 func (ti *TemporalIndex) stopIngestWorker() {
-	if ti.ingestCh != nil {
-		close(ti.ingestCh)
-		ti.ingestWg.Wait()
-		ti.ingestCh = nil
-	}
+	ti.ingestMu.Lock()
+	ti.ingestClosed = true
+	ti.asyncIngest.Store(false)
+	ti.ingestMu.Unlock()
+	ti.ingestWg.Wait()
 }
 
 // Add inserts a new vector with a timestamp into the temporal index.
 func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metadata []byte) error {
 	ti.mu.Lock()
+	if ti.closed.Load() {
+		ti.mu.Unlock()
+		return errTemporalIndexClosed
+	}
 	defer ti.mu.Unlock()
 
 	if ti.dimension == 0 && len(vector) > 0 {
@@ -306,6 +372,10 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 	}
 
 	ti.mu.Lock()
+	if ti.closed.Load() {
+		ti.mu.Unlock()
+		return errTemporalIndexClosed
+	}
 	dim := ti.dimension
 	if dim == 0 {
 		for _, v := range vectors {
@@ -345,6 +415,10 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 	wg.Wait()
 
 	ti.mu.Lock()
+	if ti.closed.Load() {
+		ti.mu.Unlock()
+		return errTemporalIndexClosed
+	}
 	for i := range ids {
 		if i >= len(vectors) || len(vectors[i]) != dim {
 			continue
@@ -370,43 +444,11 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 		}
 	}
 
-	if ti.asyncIngest.Load() {
-		task := temporalIngestTask{
-			timestamps: timestamps,
-			ids:        ids,
-			norms:      norms,
-		}
-		select {
-		case ti.ingestCh <- task:
-		default:
-			// Channel full; fall back to synchronous insert
-			tree := ti.temporalTree.Load()
-			if tree != nil {
-				tree.InsertBatch(timestamps, ids, norms)
-			}
-			segmentTree := ti.segmentTree.Load()
-			if segmentTree != nil {
-				uids := make([]uint32, n)
-				for i, id := range ids {
-					uids[i] = uint32(id) // #nosec G115
-				}
-				segmentTree.InsertBatch(timestamps, timestamps, uids)
-			}
-		}
-	} else {
-		tree := ti.temporalTree.Load()
-		if tree != nil {
-			tree.InsertBatch(timestamps, ids, norms)
-		}
-		segmentTree := ti.segmentTree.Load()
-		if segmentTree != nil {
-			uids := make([]uint32, n)
-			for i, id := range ids {
-				uids[i] = uint32(id) // #nosec G115
-			}
-			segmentTree.InsertBatch(timestamps, timestamps, uids)
-		}
-	}
+	ti.dispatchTreeTask(temporalIngestTask{
+		timestamps: timestamps,
+		ids:        ids,
+		norms:      norms,
+	})
 	ti.pointCount.Add(int64(n))
 	ti.mutationSeq.Add(1)
 	ti.mu.Unlock()

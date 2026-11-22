@@ -22,6 +22,10 @@ func (ti *TemporalIndex) AddBatchNorms(ids []uint64, norms []float32, timestamps
 	}
 
 	ti.mu.Lock()
+	if ti.closed.Load() {
+		ti.mu.Unlock()
+		return errTemporalIndexClosed
+	}
 	if ti.dimension == 0 && dim > 0 {
 		ti.dimension = dim
 	}
@@ -41,42 +45,11 @@ func (ti *TemporalIndex) AddBatchNorms(ids []uint64, norms []float32, timestamps
 		}
 	}
 
-	if ti.asyncIngest.Load() {
-		task := temporalIngestTask{
-			timestamps: timestamps,
-			ids:        ids,
-			norms:      norms,
-		}
-		select {
-		case ti.ingestCh <- task:
-		default:
-			tree := ti.temporalTree.Load()
-			if tree != nil {
-				tree.InsertBatch(timestamps, ids, norms)
-			}
-			segmentTree := ti.segmentTree.Load()
-			if segmentTree != nil {
-				uids := make([]uint32, n)
-				for i, id := range ids {
-					uids[i] = uint32(id) // #nosec G115
-				}
-				segmentTree.InsertBatch(timestamps, timestamps, uids)
-			}
-		}
-	} else {
-		tree := ti.temporalTree.Load()
-		if tree != nil {
-			tree.InsertBatch(timestamps, ids, norms)
-		}
-		segmentTree := ti.segmentTree.Load()
-		if segmentTree != nil {
-			uids := make([]uint32, n)
-			for i, id := range ids {
-				uids[i] = uint32(id) // #nosec G115
-			}
-			segmentTree.InsertBatch(timestamps, timestamps, uids)
-		}
-	}
+	ti.dispatchTreeTask(temporalIngestTask{
+		timestamps: timestamps,
+		ids:        ids,
+		norms:      norms,
+	})
 	ti.pointCount.Add(int64(n))
 	ti.mutationSeq.Add(1)
 	ti.mu.Unlock()
@@ -87,6 +60,10 @@ func (ti *TemporalIndex) AddBatchNorms(ids []uint64, norms []float32, timestamps
 // Delete marks a vector as deleted (tombstoned) in the temporal index.
 func (ti *TemporalIndex) Delete(id uint64) error {
 	ti.mu.Lock()
+	if ti.closed.Load() {
+		ti.mu.Unlock()
+		return errTemporalIndexClosed
+	}
 	defer ti.mu.Unlock()
 
 	shard := ti.getShard(id)
@@ -115,6 +92,10 @@ func (ti *TemporalIndex) Delete(id uint64) error {
 // Update updates an existing vector and metadata at a new timestamp.
 func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, metadata []byte) error {
 	ti.mu.Lock()
+	if ti.closed.Load() {
+		ti.mu.Unlock()
+		return errTemporalIndexClosed
+	}
 	defer ti.mu.Unlock()
 
 	shard := ti.getShard(id)
@@ -159,6 +140,10 @@ func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, me
 // DeleteByTime removes or tombstones vectors with timestamps before the specified value.
 func (ti *TemporalIndex) DeleteByTime(ctx context.Context, beforeTimestamp int64) (int, error) {
 	ti.mu.Lock()
+	if ti.closed.Load() {
+		ti.mu.Unlock()
+		return 0, errTemporalIndexClosed
+	}
 	defer ti.mu.Unlock()
 
 	tree := ti.temporalTree.Load()

@@ -246,6 +246,7 @@ func (vs *VectorStore) SetTemporalIndex(cfg TemporalConfig) {
 		if ds.TemporalIndex == nil && cfg.Enabled {
 			ds.TemporalIndex = NewTemporalIndex(0)
 			ds.TemporalIndex.SetVectorIndexProvider(func() VectorIndex { return ds.Index })
+			ds.TemporalIndex.SetDatasetLabel(name)
 		}
 	})
 }

@@ -168,6 +168,12 @@ waitLoop:
 		s.logger.Info().Msg("Persistence closed successfully")
 	}
 
+	// Step 6: Close remaining datasets when shutdown completed cleanly so
+	// indices, temporal arenas, and Arrow records do not outlive the store.
+	if ctx.Err() == nil {
+		s.closeDatasets()
+	}
+
 	elapsed := time.Since(start)
 	if shutdownErr != nil {
 		s.logger.Error().
@@ -211,4 +217,21 @@ func (s *VectorStore) drainIndexQueue(ctx context.Context) error {
 // isShutdown returns true if Shutdown has been called
 func (s *VectorStore) isShutdown() bool {
 	return atomic.LoadInt32(&s.shutdownState) == stateShutdown
+}
+
+// closeDatasets detaches and closes all remaining datasets in the store.
+func (s *VectorStore) closeDatasets() {
+	var toClose []*Dataset
+	s.UpdateDatasets(func(m map[string]*Dataset) {
+		toClose = make([]*Dataset, 0, len(m))
+		for k, ds := range m {
+			if ds != nil {
+				toClose = append(toClose, ds)
+			}
+			delete(m, k)
+		}
+	})
+	for _, ds := range toClose {
+		ds.Close()
+	}
 }

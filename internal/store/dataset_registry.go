@@ -83,8 +83,10 @@ func (vs *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset)
 				slabArena := lbmem.NewSlabArena(4 * 1024 * 1024)
 				newDs.BM25ArenaIndex = NewBM25ArenaIndex(slabArena, 10000)
 			}
-			if vs.temporalConfig.Enabled {
+			if vs.temporalConfig.Enabled && newDs.TemporalIndex == nil {
 				newDs.TemporalIndex = NewTemporalIndex(0)
+				newDs.TemporalIndex.SetVectorIndexProvider(func() VectorIndex { return newDs.Index })
+				newDs.TemporalIndex.SetDatasetLabel(name)
 			}
 			m[name] = newDs
 			result = newDs

@@ -185,22 +185,26 @@ class Agent:
             if self.ids:
                 self._time_op(op, lambda: self.client.search_by_id(dataset=self.dataset, id=vid, k=5))
         elif op.startswith("temporal"):
-            self._time_op(op, lambda: self.client.temporal_search(search_type="sliding_window", window_size=50, k=5))
+            if self.ids:
+                self._time_op(op, lambda: self.client.temporal_search(search_type="sliding_window", window_size=50, k=5))
         elif op.startswith("geo"):
             self._time_op(op, lambda: self.client.geo_search(dataset=self.dataset, center={"lat": 37.7, "lon": -122.4},
                                                              radius_km=5, search_type="radius", k=5))
         elif op == "graphrag":
-            self._time_op(op, lambda: self.client.graph_rag_expand(dataset=self.dataset, node_ids=[1]) if hasattr(self.client, "graph_rag_expand") else None)
+            if self.ids:
+                self._time_op(op, lambda: self.client.graph_rag_expand(dataset=self.dataset, node_ids=[1]) if hasattr(self.client, "graph_rag_expand") else None)
         elif op == "traverse":
             if self.ids:
                 self._time_op(op, lambda: self.client.traverse(dataset=self.dataset, start=self.rng.choice(self.ids), max_hops=2))
         elif op == "recommend":
-            seeds = self.ids[:2] if len(self.ids) >= 2 else [vid]
-            self._time_op(op, lambda: self.client.recommend(dataset=self.dataset, seed_ids=seeds, k=5, max_hops=2))
+            if len(self.ids) >= 2:
+                seeds = self.ids[:2]
+                self._time_op(op, lambda: self.client.recommend(dataset=self.dataset, seed_ids=seeds, k=5, max_hops=2))
         elif op == "multimodal":
             self._time_op(op, lambda: self.client.multimodal_search(dataset=self.dataset, modality="text", text_query="memory", k=3))
         elif op == "federated":
-            self._time_op(op, lambda: self.client.federated_search(collections=[self.dataset], vector=v, k=5))
+            if self.ids:
+                self._time_op(op, lambda: self.client.federated_search(collections=[self.dataset], vector=v, k=5))
         elif op == "text":
             self._time_op(op, lambda: self.client.advanced_text_search(dataset=self.dataset, query="memory AND agent", k=5))
         elif op == "learned":

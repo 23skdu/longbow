@@ -38,7 +38,7 @@ DOCKERFILES = [
         "entrypoint": '["/longbow"]',
     },
     {
-        "name": "Dockerfile.emlgo-gpu",
+        "name": "Dockerfile.emlgo-nvidia",
         "stages": ["nvidia/cuda:13.5.0-devel-ubuntu24.04", "nvidia/cuda:13.5.0-runtime-ubuntu24.04"],
         "runtime_user": "longbow:longbow",
         "ports": ["3000", "3001", "9090"],

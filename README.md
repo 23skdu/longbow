@@ -78,7 +78,7 @@ docker build -f Dockerfile.nvidia -t longbow:nvidia .
 
 # EMLGo builds (high-performance SIMD math backend)
 docker build -f Dockerfile.emlgo-cpu -t longbow:emlgo-cpu .
-docker build -f Dockerfile.emlgo-gpu -t longbow:emlgo-gpu .
+docker build -f Dockerfile.emlgo-nvidia -t longbow:emlgo-nvidia .
 ```
 
 ## Configuration

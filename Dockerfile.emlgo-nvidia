@@ -5,10 +5,10 @@
 # for maximum performance on hybrid CPU+GPU workloads.
 #
 # Build:
-#   docker build -f Dockerfile.emlgo-gpu -t longbow:emlgo-gpu .
+#   docker build -f Dockerfile.emlgo-nvidia -t longbow:emlgo-nvidia .
 #
 # Build with io_uring:
-#   docker build -f Dockerfile.emlgo-gpu -t longbow:emlgo-gpu-iouring . --build-arg ENABLE_IOURING=true
+#   docker build -f Dockerfile.emlgo-nvidia -t longbow:emlgo-nvidia-iouring . --build-arg ENABLE_IOURING=true
 
 # -------------------------------------------------------------------
 # Stage 1: Build with CUDA
@@ -74,7 +74,7 @@ RUN go build -mod=vendor -tags "gpu,emlgo" -ldflags="-s -w" -buildvcs=false -tri
 # -------------------------------------------------------------------
 FROM nvidia/cuda:13.5.0-runtime-ubuntu24.04
 
-LABEL org.opencontainers.image.title="longbow-emlgo-gpu" \
+LABEL org.opencontainers.image.title="longbow-emlgo-nvidia" \
       org.opencontainers.image.description="High-performance vector store with Arrow Flight (EMLGo CUDA)" \
       org.opencontainers.image.source="https://github.com/23skdu/longbow" \
       org.opencontainers.image.licenses="MIT"

@@ -69,7 +69,7 @@ Each is also published under a `sha-<short-sha>` tag and, on a git tag push, und
 
 Two caveats when reproducing this locally:
 
-- The standard-image build step sets no `file:`, so it resolves to a `Dockerfile` at the repository root. The repo does not track one -- the only Dockerfiles present are `Dockerfile.cpu`, `Dockerfile.metal`, `Dockerfile.nvidia`, `Dockerfile.tpu`, and `Dockerfile.emlgo-cpu` / `Dockerfile.emlgo-gpu`. Pass `-f` explicitly when building.
+- The standard-image build step sets no `file:`, so it resolves to a `Dockerfile` at the repository root. The repo does not track one -- the only Dockerfiles present are `Dockerfile.cpu`, `Dockerfile.metal`, `Dockerfile.nvidia`, `Dockerfile.tpu`, and `Dockerfile.emlgo-cpu` / `Dockerfile.emlgo-nvidia`. Pass `-f` explicitly when building.
 - There is no separate Metal, CPU-only, or EMLGo image tag. `Dockerfile.metal` and the `Dockerfile.emlgo-*` variants are not referenced by any workflow, so build them yourself if you need those configurations (see below).
 
 ### Building Docker Images Locally
@@ -85,7 +85,7 @@ docker build -f Dockerfile.nvidia -t longbow:nvidia .
 docker build -f Dockerfile.emlgo-cpu -t longbow:emlgo-cpu .
 
 # EMLGo GPU build (CUDA + SIMD math)
-docker build -f Dockerfile.emlgo-gpu -t longbow:emlgo-gpu .
+docker build -f Dockerfile.emlgo-nvidia -t longbow:emlgo-nvidia .
 
 # With io_uring support
 docker build -f Dockerfile.cpu -t longbow:cpu-iouring . --build-arg ENABLE_IOURING=true

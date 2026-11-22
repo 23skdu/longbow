@@ -64,7 +64,7 @@ var allDockerfiles = []dockerfileMeta{
 		entrypoint: `["/longbow"]`,
 	},
 	{
-		filename:      "Dockerfile.emlgo-gpu",
+		filename:      "Dockerfile.emlgo-nvidia",
 		stages:        []string{"nvidia/cuda:13.5.0-devel-ubuntu24.04", "nvidia/cuda:13.5.0-runtime-ubuntu24.04"},
 		runtimeUser:   "longbow:longbow",
 		exposedPorts:  []string{"3000", "3001", "9090"},

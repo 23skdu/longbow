@@ -26,7 +26,7 @@ func TestWebSocketUpgradeRequiresAuthentication(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, http.StatusUnauthorized, httpResp.StatusCode)
 
-	conn, httpResp, err := websocket.DefaultDialer.Dial(wsURL, http.Header{
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, http.Header{
 		"Authorization": []string{"Bearer " + adminRaw},
 	})
 	require.NoError(t, err)

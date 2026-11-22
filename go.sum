@@ -61,6 +61,8 @@ cloud.google.com/go/trace v1.16.0/go.mod h1:r+bdAn16dKLSV1G2D5v3e58IlQlizfxWrUfj
 dario.cat/mergo v1.0.2 h1:85+piFYR1tMbRrLcDwR18y4UKJ3aH1Tbzi24VRW1TK8=
 dario.cat/mergo v1.0.2/go.mod h1:E/hbnu0NxMFBjpMIE34DRGLWqDy0g5FuKDhCb31ngxA=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
+github.com/23skdu/emlgo v0.9.0 h1:qPUXzWgc7owdrpXIWPFDPv3Yok91Lhvz71g7VdsIPns=
+github.com/23skdu/emlgo v0.9.0/go.mod h1:rvStHxsYN05Q+6k5D44FjnhUS4GbAYCYbiaKIMNiIfY=
 github.com/AthenZ/athenz v1.12.51 h1:ZUevJT9XaVg5BQ5G0dhDnCvfgubXd1aoYeeU2GuBFzY=
 github.com/AthenZ/athenz v1.12.51/go.mod h1:7dbXwnU3J+HTQgTVoWl3aAmLdtNeI7HIFYQtAsJl8Hs=
 github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c h1:udKWzYgxTojEKWjV8V+WSxDXJ4NFATAsZjh8iIbsQIg=

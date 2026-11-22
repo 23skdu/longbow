@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	cloud.google.com/go/storage v1.71.0
-	github.com/23skdu/emlgo v0.0.0
+	github.com/23skdu/emlgo v0.9.0
 	github.com/IBM/sarama v1.61.1
 	github.com/RoaringBitmap/roaring/v2 v2.30.0
 	github.com/apache/arrow-adbc/go/adbc v1.13.0
@@ -182,6 +182,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
 
-replace github.com/23skdu/emlgo => ../emlgo
 
 replace github.com/hamba/avro/v2 => github.com/iskorotkov/avro/v2 v2.35.0

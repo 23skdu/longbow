@@ -150,30 +150,31 @@ type Config struct {
 	// Security, RBAC, TLS/mTLS, and KMS Encryption Configuration (Items 3 & 11)
 	// RBACEnabled is retained only so existing LONGBOW_RBAC_ENABLED values are
 	// accepted. RBAC is always enforced and the value is deliberately ignored.
-	RBACEnabled          bool          `envconfig:"RBAC_ENABLED" default:"false"`
-	RBACBootstrapKey     string        `envconfig:"RBAC_BOOTSTRAP_KEY" default:""`
-	SecretsProvider      string        `envconfig:"SECRETS_PROVIDER" default:"file"`
-	SecretsPath          string        `envconfig:"SECRETS_PATH" default:"data/rbac_secrets"`
-	SecretsPrefix        string        `envconfig:"SECRETS_PREFIX" default:"longbow/rbac"`
-	SecretsVaultAddr     string        `envconfig:"SECRETS_VAULT_ADDR" default:""`
-	SecretsVaultToken    string        `envconfig:"SECRETS_VAULT_TOKEN" default:""`
-	SecretsVaultMount    string        `envconfig:"SECRETS_VAULT_MOUNT" default:"secret"`
-	SecretsGCPProjectID  string        `envconfig:"SECRETS_GCP_PROJECT_ID" default:""`
-	SecretsGCPToken      string        `envconfig:"SECRETS_GCP_TOKEN" default:""`
-	SecretsAWSRegion     string        `envconfig:"SECRETS_AWS_REGION" default:""`
-	SecretsAWSEndpoint   string        `envconfig:"SECRETS_AWS_ENDPOINT" default:""`
-	TLSEnabled           bool          `envconfig:"TLS_ENABLED" default:"false"`
-	TLSCertFile          string        `envconfig:"TLS_CERT_FILE" default:""`
-	TLSKeyFile           string        `envconfig:"TLS_KEY_FILE" default:""`
-	TLSCAFile            string        `envconfig:"TLS_CA_FILE" default:""`
-	TLSRequireClientCert bool          `envconfig:"TLS_REQUIRE_CLIENT_CERT" default:"false"`
-	TLSMinVersion        string        `envconfig:"TLS_MIN_VERSION" default:"1.2"`
-	TLSReloadInterval    time.Duration `envconfig:"TLS_RELOAD_INTERVAL" default:"5m"`
-	EncryptionAtRest     bool          `envconfig:"ENCRYPTION_AT_REST" default:"false"`
-	KMSProvider          string        `envconfig:"KMS_PROVIDER" default:"local"`
-	KMSMasterKey         string        `envconfig:"KMS_MASTER_KEY" default:""`
-	OIDCEnabled          bool          `envconfig:"OIDC_ENABLED" default:"false"`
-	OIDCIssuers          string        `envconfig:"OIDC_ISSUERS" default:""`
+	RBACEnabled              bool          `envconfig:"RBAC_ENABLED" default:"false"`
+	RBACBootstrapKey         string        `envconfig:"RBAC_BOOTSTRAP_KEY" default:""`
+	StartupNamespacePolicies string        `envconfig:"STARTUP_NAMESPACE_POLICIES" default:""`
+	SecretsProvider          string        `envconfig:"SECRETS_PROVIDER" default:"file"`
+	SecretsPath              string        `envconfig:"SECRETS_PATH" default:"data/rbac_secrets"`
+	SecretsPrefix            string        `envconfig:"SECRETS_PREFIX" default:"longbow/rbac"`
+	SecretsVaultAddr         string        `envconfig:"SECRETS_VAULT_ADDR" default:""`
+	SecretsVaultToken        string        `envconfig:"SECRETS_VAULT_TOKEN" default:""`
+	SecretsVaultMount        string        `envconfig:"SECRETS_VAULT_MOUNT" default:"secret"`
+	SecretsGCPProjectID      string        `envconfig:"SECRETS_GCP_PROJECT_ID" default:""`
+	SecretsGCPToken          string        `envconfig:"SECRETS_GCP_TOKEN" default:""`
+	SecretsAWSRegion         string        `envconfig:"SECRETS_AWS_REGION" default:""`
+	SecretsAWSEndpoint       string        `envconfig:"SECRETS_AWS_ENDPOINT" default:""`
+	TLSEnabled               bool          `envconfig:"TLS_ENABLED" default:"false"`
+	TLSCertFile              string        `envconfig:"TLS_CERT_FILE" default:""`
+	TLSKeyFile               string        `envconfig:"TLS_KEY_FILE" default:""`
+	TLSCAFile                string        `envconfig:"TLS_CA_FILE" default:""`
+	TLSRequireClientCert     bool          `envconfig:"TLS_REQUIRE_CLIENT_CERT" default:"false"`
+	TLSMinVersion            string        `envconfig:"TLS_MIN_VERSION" default:"1.2"`
+	TLSReloadInterval        time.Duration `envconfig:"TLS_RELOAD_INTERVAL" default:"5m"`
+	EncryptionAtRest         bool          `envconfig:"ENCRYPTION_AT_REST" default:"false"`
+	KMSProvider              string        `envconfig:"KMS_PROVIDER" default:"local"`
+	KMSMasterKey             string        `envconfig:"KMS_MASTER_KEY" default:""`
+	OIDCEnabled              bool          `envconfig:"OIDC_ENABLED" default:"false"`
+	OIDCIssuers              string        `envconfig:"OIDC_ISSUERS" default:""`
 }
 
 // Global config instance for hook functions
@@ -239,6 +240,9 @@ func ValidateConfig(cfg *Config) error {
 		}
 	default:
 		return fmt.Errorf("%w: unknown provider %q", ErrInvalidSecrets, cfg.SecretsProvider)
+	}
+	if _, err := ParseStartupNamespacePolicies(cfg.StartupNamespacePolicies); err != nil {
+		return err
 	}
 	return nil
 }

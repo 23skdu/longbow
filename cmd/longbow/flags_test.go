@@ -299,6 +299,19 @@ func TestParseCLIFlags_MetricsAddr(t *testing.T) {
 	}
 }
 
+func TestParseCLIFlags_StartupNamespacePolicies(t *testing.T) {
+	var buf bytes.Buffer
+	raw := `[{"namespace":"team-a","ephemeral":true}]`
+	cfg := Config{}
+	err := parseCLIFlags(&cfg, []string{"--startup-namespace-policies", raw}, &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.StartupNamespacePolicies != raw {
+		t.Errorf("StartupNamespacePolicies = %q, want %q", cfg.StartupNamespacePolicies, raw)
+	}
+}
+
 func TestParseCLIFlags_MetaAddrEmptyDefault(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{MetaAddr: "0.0.0.0:3001"}

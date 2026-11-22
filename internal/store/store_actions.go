@@ -830,6 +830,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			WriterKeyIDs      []string     `json:"writer_key_ids,omitempty"`
 			ReaderKeyIDs      []string     `json:"reader_key_ids,omitempty"`
 			PublicPermissions []Permission `json:"public_permissions,omitempty"`
+			Ephemeral         bool         `json:"ephemeral,omitempty"`
 		}
 		if err := json.Unmarshal(action.Body, &req); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
@@ -839,6 +840,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			WriterKeyIDs:      req.WriterKeyIDs,
 			ReaderKeyIDs:      req.ReaderKeyIDs,
 			PublicPermissions: req.PublicPermissions,
+			Ephemeral:         req.Ephemeral,
 		}
 		if err := s.CreateNamespaceWithPolicy(stream.Context(), req.Name, policy); err != nil {
 			return status.Errorf(codes.PermissionDenied, "failed to create namespace: %v", err)

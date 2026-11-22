@@ -35,6 +35,7 @@ func (s *VectorStore) namespacesHTTPHandler() http.Handler {
 				WriterKeyIDs      []string     `json:"writer_key_ids,omitempty"`
 				ReaderKeyIDs      []string     `json:"reader_key_ids,omitempty"`
 				PublicPermissions []Permission `json:"public_permissions,omitempty"`
+				Ephemeral         bool         `json:"ephemeral,omitempty"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeRESTError(w, "namespaces", r.Method, http.StatusBadRequest, err.Error())
@@ -45,6 +46,7 @@ func (s *VectorStore) namespacesHTTPHandler() http.Handler {
 				WriterKeyIDs:      req.WriterKeyIDs,
 				ReaderKeyIDs:      req.ReaderKeyIDs,
 				PublicPermissions: req.PublicPermissions,
+				Ephemeral:         req.Ephemeral,
 			}
 			if err := s.CreateNamespaceWithPolicy(r.Context(), req.Name, policy); err != nil {
 				writeRESTError(w, "namespaces", r.Method, http.StatusBadRequest, err.Error())

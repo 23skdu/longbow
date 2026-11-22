@@ -61,6 +61,32 @@ func initAuthAndTLS(cfg *Config, vectorStore *store.VectorStore, logger zerolog.
 			"RBAC is always enforced: set LONGBOW_RBAC_BOOTSTRAP_KEY or provision an admin API key in the %s secrets provider",
 			cfg.SecretsProvider)
 	}
+	// Durable ACLs were rehydrated with the API keys above. Recreate their
+	// namespace objects so empty namespaces are available immediately after a
+	// restart, not only namespaces that contain replayed datasets.
+	durablePolicies := rbacMgr.ListNamespacePolicies()
+	for _, policy := range durablePolicies {
+		if err := vectorStore.EnsureNamespace(policy.Namespace); err != nil {
+			return nil, nil, nil, fmt.Errorf("restore durable namespace %q: %w", policy.Namespace, err)
+		}
+	}
+	if len(durablePolicies) > 0 {
+		logger.Info().Int("namespaces", len(durablePolicies)).Msg("Restored durable namespace ACLs from secret store")
+	}
+
+	startupPolicies, err := ParseStartupNamespacePolicies(cfg.StartupNamespacePolicies)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for _, policy := range startupPolicies {
+		if err := vectorStore.ProvisionNamespaceWithPolicy(policy); err != nil {
+			return nil, nil, nil, fmt.Errorf("provision startup namespace %q: %w", policy.Namespace, err)
+		}
+	}
+	if len(startupPolicies) > 0 {
+		logger.Info().Int("namespaces", len(startupPolicies)).Msg("Provisioned startup namespace ACLs")
+	}
+
 	if cfg.OIDCEnabled {
 		var issuers []security.OIDCIssuerConfig
 		if strings.TrimSpace(cfg.OIDCIssuers) != "" {

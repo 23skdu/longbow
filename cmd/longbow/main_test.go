@@ -68,15 +68,24 @@ func getFreePort() (int, error) {
 
 // serverInstance holds a running server process
 type serverInstance struct {
-	cmd         *exec.Cmd
-	dataAddr    string
-	metaAddr    string
-	metricsAddr string
-	dataDir     string
+	cmd           *exec.Cmd
+	dataAddr      string
+	metaAddr      string
+	metricsAddr   string
+	dataDir       string
+	removeDataDir bool
 }
 
 // startServer starts the longbow binary with test configuration
 func startServer(t *testing.T) *serverInstance {
+	t.Helper()
+	return startServerWithEnv(t, "", nil)
+}
+
+// startServerWithEnv starts the longbow binary with extra environment values.
+// A non-empty dataDir is reused without being marked for cleanup, which lets
+// restart tests preserve WAL and secret-store state.
+func startServerWithEnv(t *testing.T, dataDir string, extraEnv []string) *serverInstance {
 	t.Helper()
 
 	dataPort, err := getFreePort()
@@ -92,16 +101,20 @@ func startServer(t *testing.T) *serverInstance {
 		t.Fatalf("Failed to get metrics port: %v", err)
 	}
 
-	dataDir, err := os.MkdirTemp("", "longbow-data-*")
-	if err != nil {
-		t.Fatalf("Failed to create data dir: %v", err)
+	removeDataDir := dataDir == ""
+	if removeDataDir {
+		dataDir, err = os.MkdirTemp("", "longbow-data-*")
+		if err != nil {
+			t.Fatalf("Failed to create data dir: %v", err)
+		}
 	}
 
 	si := &serverInstance{
-		dataAddr:    fmt.Sprintf("127.0.0.1:%d", dataPort),
-		metaAddr:    fmt.Sprintf("127.0.0.1:%d", metaPort),
-		metricsAddr: fmt.Sprintf("127.0.0.1:%d", metricsPort),
-		dataDir:     dataDir,
+		dataAddr:      fmt.Sprintf("127.0.0.1:%d", dataPort),
+		metaAddr:      fmt.Sprintf("127.0.0.1:%d", metaPort),
+		metricsAddr:   fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		dataDir:       dataDir,
+		removeDataDir: removeDataDir,
 	}
 
 	si.cmd = exec.Command(binaryPath)
@@ -116,11 +129,14 @@ func startServer(t *testing.T) *serverInstance {
 		"LONGBOW_SECRETS_PROVIDER=file",
 		"LONGBOW_SECRETS_PATH="+filepath.Join(dataDir, "rbac_secrets"),
 	)
+	si.cmd.Env = append(si.cmd.Env, extraEnv...)
 	si.cmd.Stdout = os.Stdout
 	si.cmd.Stderr = os.Stderr
 
 	if err := si.cmd.Start(); err != nil {
-		_ = os.RemoveAll(dataDir)
+		if removeDataDir {
+			_ = os.RemoveAll(dataDir)
+		}
 		t.Fatalf("Failed to start server: %v", err)
 	}
 
@@ -144,13 +160,18 @@ func startServer(t *testing.T) *serverInstance {
 	}
 }
 
-// stop gracefully stops the server
-func (si *serverInstance) stop() {
+// stopPreserveData gracefully stops the server without removing its data directory.
+func (si *serverInstance) stopPreserveData() {
 	if si.cmd != nil && si.cmd.Process != nil {
 		_ = si.cmd.Process.Signal(syscall.SIGTERM)
 		_ = si.cmd.Wait()
 	}
-	if si.dataDir != "" {
+}
+
+// stop gracefully stops the server and removes test-owned data.
+func (si *serverInstance) stop() {
+	si.stopPreserveData()
+	if si.removeDataDir && si.dataDir != "" {
 		_ = os.RemoveAll(si.dataDir)
 	}
 }

@@ -189,6 +189,33 @@ func (vs *VectorStore) CreateNamespace(name string) error {
 	return nil
 }
 
+// EnsureNamespace creates name if it does not already exist. It is used by
+// startup provisioning and performs no request authorization; callers must be
+// trusted server bootstrap code.
+func (vs *VectorStore) EnsureNamespace(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return errors.New("namespace name cannot be empty")
+	}
+	if vs.NamespaceExists(name) {
+		return nil
+	}
+	return vs.CreateNamespace(name)
+}
+
+// ProvisionNamespaceWithPolicy creates a namespace if needed and installs its
+// ACL. It is a startup-only helper: unlike CreateNamespaceWithPolicy it does
+// not require a request context or add an authenticated creator as admin.
+func (vs *VectorStore) ProvisionNamespaceWithPolicy(policy NamespacePolicy) error {
+	policy.Namespace = strings.TrimSpace(policy.Namespace)
+	if err := policy.Validate(); err != nil {
+		return err
+	}
+	if err := vs.EnsureNamespace(policy.Namespace); err != nil {
+		return err
+	}
+	return vs.ensureRBACManager().SetNamespacePolicy(policy)
+}
+
 // CreateNamespaceWithPolicy creates a namespace with its ACL. Only a server
 // administrator (PermManageTenant or PermAdmin) may call it; the authenticated
 // creator is automatically registered as the namespace admin.

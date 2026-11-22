@@ -45,6 +45,7 @@ func parseCLIFlags(cfg *Config, args []string, output io.Writer) error {
 	fs.StringVar(&cfg.ListenAddr, "listen-addr", cfg.ListenAddr, "gRPC data listen address")
 	fs.StringVar(&cfg.MetaAddr, "meta-addr", cfg.MetaAddr, "gRPC meta listen address")
 	fs.StringVar(&cfg.MetricsAddr, "metrics-addr", cfg.MetricsAddr, "Prometheus metrics listen address")
+	fs.StringVar(&cfg.StartupNamespacePolicies, "startup-namespace-policies", cfg.StartupNamespacePolicies, "JSON array of namespace ACLs to provision at startup")
 	fs.Int64Var(&cfg.MaxMemory, "max-memory", cfg.MaxMemory, "Maximum memory in bytes (e.g. 17179869184 for 16GB)")
 	fs.StringVar(&cfg.DataPath, "data-path", cfg.DataPath, "Data directory path")
 	fs.StringVar(&cfg.NodeID, "node-id", cfg.NodeID, "Unique node identifier (default: hostname)")

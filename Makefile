@@ -55,7 +55,7 @@ help:
 	@echo "  build-verify         Build tensor-verify CLI binary"
 	@echo "  build-wasm-client    Build Longbow WASM edge client binary (dist/longbow.wasm)"
 	@echo "  cross-compile        Verify ARM64 cross-compilation (build & vet)"
-	@echo "  clean                Remove compiled binaries, C-shared headers, virtualenvs, test artifacts, and Longbow Docker images"
+	@echo "  clean                Remove build/test artifacts, virtualenvs, Longbow images, and unused Docker resources"
 	@echo "  deps                 Download and tidy Go modules and sync vendor directory"
 	@echo "  deps-upgrade         Upgrade all Go modules, tidy go.mod, and sync vendor"
 	@echo ""
@@ -204,7 +204,7 @@ deps-upgrade:
 	$(GO) mod vendor
 
 clean:
-	@echo "Cleaning build, virtualenv, test artifacts, and Longbow Docker images..."
+	@echo "Cleaning build/test artifacts, virtualenvs, Longbow images, and unused Docker resources..."
 	rm -f liblongbow_adbc.so liblongbow_adbc.h bench-tool longbow coverage.out coverage.html coverage.txt mem.out cpu.out *.test *.prof *.pprof
 	rm -rf bin/ build/ dist/ scratch/ data/ profiles/ internal/profiling/profiles/ reports/ benchmark_results/
 	rm -rf venv/ .venv/ scripts/venv/ longbowclientsdk/venv/ longbowclientsdk/.venv/
@@ -215,6 +215,7 @@ clean:
 			$(DOCKER) rmi -f $$IMAGES || true; \
 		fi; \
 		$(DOCKER) image prune -f >/dev/null 2>&1 || true; \
+		$(DOCKER) system prune -f >/dev/null 2>&1 || true; \
 	fi
 	$(GO) clean -testcache -cache -fuzzcache
 	@if command -v $(GO) >/dev/null 2>&1; then \

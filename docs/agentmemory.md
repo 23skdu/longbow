@@ -339,6 +339,144 @@ filters = [
 
 Supported operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `like`
 
+## Expanded Search Modalities for Agent Memory
+
+Longbow exposes a broad set of search modalities so an agent can retrieve the right memory for the right situation. Each modality below includes a short explanation and a typical agent use case.
+
+### Dense (Semantic) Search
+
+Finds memories whose embedding is closest to a query vector. This is the default "what do I know about X?" lookup.
+
+- **Use case:** An agent recalling prior conversations that are semantically related to the current user request.
+
+### Sparse / BM25 Search
+
+Keyword-driven full-text search over the inverted index, with no vector required.
+
+- **Use case:** An agent looking up an exact project name, ticket ID, or entity string that must match verbatim.
+
+### Hybrid Search (Dense + Sparse)
+
+Blends vector similarity and BM25 with a tunable `alpha` (1.0 = full text, 0.0 = full vector).
+
+- **Use case:** An agent answering "tell me about the Atlas migration" where both the concept and the literal name matter.
+
+### Filtered Search
+
+Dense search constrained by metadata predicates (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `like`).
+
+- **Use case:** An agent retrieving only high-importance memories (`importance >= 5`) from a specific source.
+
+### Range Search
+
+Returns all memories within a distance threshold of a query vector, up to a cap.
+
+- **Use case:** An agent finding every memory "close enough" to a concept rather than just the top-k.
+
+### Search by ID (Neighbor Expansion)
+
+Uses a stored memory as the query and returns its nearest neighbors.
+
+- **Use case:** An agent expanding from a known fact to discover related context.
+
+### Temporal Search
+
+Time-aware retrieval over the temporal index.
+
+- **As-of:** state of memory at a specific timestamp.
+- **Range:** memories within a time window.
+- **Sliding window:** the last N memories.
+- **Sliding window by duration:** memories from the last `1h` / `30m` / `1d`.
+- **Use case:** An agent answering "what did we decide yesterday?" or maintaining a rolling session context.
+
+### Temporal Version History
+
+Returns all versions of a memory identified by its vector ID.
+
+- **Use case:** An agent auditing how a fact evolved over time or rolling back to a previous version.
+
+### Temporal Aggregation
+
+Aggregates temporal buckets (counts/averages) over a time range.
+
+- **Use case:** An agent summarizing activity volume per hour/day for a user or project.
+
+### Geo-Spatial Search
+
+Location-aware retrieval.
+
+- **Radius:** memories within N km of a center point.
+- **Bounding box:** memories inside a lat/lon rectangle.
+- **Hybrid:** vector similarity constrained to a geographic radius.
+- **Use case:** An embodied/AR agent retrieving memories tied to the user's current physical location.
+
+### GraphRAG Expansion
+
+Expands a set of seed nodes through the knowledge graph and blends graph reachability with vector similarity.
+
+- **Use case:** An agent answering multi-hop questions ("who collaborates with the person who owns this project?").
+
+### Graph Traversal
+
+Walks the knowledge graph from a start node up to N hops with a decay factor.
+
+- **Use case:** An agent exploring related entities and concepts from a known anchor.
+
+### Recommendation (Hybrid Vector-Graph)
+
+Combines seed-vector similarity with graph proximity to recommend related memories.
+
+- **Use case:** An agent suggesting follow-up topics or next-best memories after a conversation turn.
+
+### PageRank Centrality
+
+Computes importance scores for nodes in the knowledge graph.
+
+- **Use case:** An agent prioritizing authoritative entities when ranking retrieved context.
+
+### Community Detection
+
+Clusters the knowledge graph into communities.
+
+- **Use case:** An agent grouping related topics or users for summarization or routing.
+
+### Multimodal Search
+
+Cross-modal retrieval (text-to-image, image-to-text, audio) through the multimodal pipeline.
+
+- **Use case:** An agent retrieving an image memory from a text description, or vice versa.
+
+### Federated Search
+
+Scatter-gathers search across multiple collections/datasets.
+
+- **Use case:** An agent searching across several user namespaces or tenants in one call.
+
+### Advanced Text Search
+
+Boolean, phrase, and fuzzy text queries over the inverted index.
+
+- **Use case:** An agent running precise queries like `"project Atlas" AND deadline`.
+
+### Learned (Adaptive) Search
+
+Uses the learned index to adapt retrieval to query features and dataset size, improving latency as the agent grows.
+
+- **Use case:** A long-running agent whose memory grows from hundreds to millions of records without manual tuning.
+
+### Facets and Analytics
+
+Returns aggregated facet counts and search analytics over a dataset.
+
+- **Use case:** An agent inspecting memory composition (e.g., how many memories per source/type) before deciding a strategy.
+
+### Vector and Graph Lookups
+
+Direct fetch of a stored vector by ID and graph statistics for a dataset.
+
+- **Use case:** An agent verifying a specific memory or checking graph health before traversal.
+
+
 ## Memory Patterns
 
 ### Agent Memory Storage

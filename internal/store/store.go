@@ -55,6 +55,7 @@ type VectorStore struct {
 	ingestionQueue      *IngestionRingBuffer     // Lock-free ring buffer for high-throughput ingestion.
 	persistenceQueue    chan persistenceJob      // Async persistence queue
 	pendingOverflowJobs atomic.Int64             // Jobs spinning in applyBatchToMemory
+	datasetLockWaiters  atomic.Int64             // Threads queued on dataset-level locks; autoscaler busy signal
 
 	// Background hybrid text/BM25 indexing (lazily started, see text_index_worker.go).
 	textQueueOnce sync.Once

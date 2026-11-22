@@ -114,7 +114,9 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			ds.dataMu.Unlock()
 		}
 	}()
+	s.datasetLockWaiters.Add(1)
 	ds.dataMu.Lock()
+	s.datasetLockWaiters.Add(-1)
 	dataMuLocked = true
 
 	s.lazyInitDatasetIndexLocked(ds, name, rec)

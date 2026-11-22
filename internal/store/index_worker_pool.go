@@ -165,8 +165,72 @@ func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
 
 				if qLen > 100 && currWorkers < maxWorkers {
 					s.StartIngestionWorkers(1)
-				} else if CanScaleDownIngestion(s.pendingOverflowJobs.Load(), currWorkers, calculateMinWorkers(2)) && qLen == 0 {
+					return
+				}
+				pending, waiters := s.pendingScaleDownWork()
+				if CanScaleDownIngestion(pending, waiters, currWorkers, MinIngestionWorkers) && qLen == 0 {
 					s.StopIngestionWorkers(1)
+				}
+			}
+		}
+	}()
+}
+
+// pendingScaleDownWork returns the job backlog and dataset-lock waiter count
+// used by both worker-pool autoscalers. A lock waiter is a real busy signal:
+// during a shared-namespace convoy the job counters can be empty while callers
+// are still blocked on a dataset lock.
+func (s *VectorStore) pendingScaleDownWork() (pending, waiters int64) {
+	waiters = s.datasetLockWaiters.Load()
+	pending = s.pendingOverflowJobs.Load()
+	if datasets := s.datasets.Load(); datasets != nil {
+		for _, ds := range *datasets {
+			if ds == nil {
+				continue
+			}
+			pending += ds.PendingIndexJobs.Load()
+		}
+	}
+	return pending, waiters
+}
+
+// StartIndexingAutoscaler adjusts the indexing worker pool using the same
+// hysteresis policy as ingestion. It runs alongside the ingestion autoscaler so
+// that neither pool drains while datasets are contended.
+func (s *VectorStore) StartIndexingAutoscaler(ctx context.Context) {
+	s.workerMu.Lock()
+	initial := len(s.indexingWorkerCancels)
+	s.workerMu.Unlock()
+	if initial < MinIndexingWorkers {
+		s.StartIndexingWorkers(MinIndexingWorkers - initial)
+	}
+
+	s.workerWg.Add(1)
+	go func() {
+		defer s.workerWg.Done()
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.stopChan:
+				return
+			case <-ticker.C:
+				pending, waiters := s.pendingScaleDownWork()
+				s.workerMu.Lock()
+				currWorkers := len(s.indexingWorkerCancels)
+				s.workerMu.Unlock()
+
+				maxWorkers := runtime.NumCPU()
+				if maxWorkers < MinIndexingWorkers {
+					maxWorkers = MinIndexingWorkers
+				}
+				if pending > 64 && currWorkers < maxWorkers {
+					s.StartIndexingWorkers(1)
+				} else if CanScaleDownIndexing(pending, waiters, currWorkers, MinIndexingWorkers) {
+					s.StopIndexingWorkers(1)
 				}
 			}
 		}

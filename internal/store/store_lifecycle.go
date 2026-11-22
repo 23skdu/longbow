@@ -36,6 +36,7 @@ func (s *VectorStore) StartLifecycleManager(ctx context.Context) {
 	s.StartWALCheckTicker(5 * time.Second)
 	s.StartMetricsTicker(15 * time.Second)
 	s.StartIngestionAutoscaler(ctx)
+	s.StartIndexingAutoscaler(ctx)
 	if s.evictionManager != nil {
 		s.evictionManager.Start(ctx)
 	}

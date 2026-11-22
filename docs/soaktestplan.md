@@ -82,3 +82,33 @@ All 21 search modalities from the test plan are exercised.
 `scripts/agent_soak.py` — drives N concurrent agents against a running
 Longbow server using the Python SDK. Each agent runs its own read/write loop
 with the workload mix above. Metrics are sampled and persisted every minute.
+
+## 7. Findings (2026-11-21 Soak Investigation)
+
+- Shared namespaces (multiple agents per namespace) stalled after ~60s with 0
+  errors and a responsive server. Root cause: lock convoy on dataset-level
+  mutexes during concurrent insert/upsert/delete/search, plus `WaitForIndexing`
+  blocking indefinitely under sustained load.
+- Fixes applied:
+  - Bounded `WaitForIndexing` (200ms) so searches proceed under load.
+  - Range and by-ID search release `dataMu` before the expensive index call.
+  - Auto-scaler hysteresis: higher minimum workers and a busy-signal guard
+    (`pendingOverflowJobs`) to avoid draining under load.
+- Remaining risk: heavy graph analytics (PageRank, communities, GraphRAG
+  expansion) on shared namespaces can still dominate lock hold time; these
+  should run on dedicated analytics workers or snapshots.
+
+## 8. Recommendations for Larger Global-GraphRAG Agent Soak Tests
+
+- Use **separate namespaces per agent** for write-heavy paths; use a shared
+  "global graph" namespace read-only for GraphRAG expansion.
+- Run GraphRAG/PageRank/community detection on a **snapshot or replica** to
+  avoid blocking ingest/search locks.
+- Add **cross-agent verification**: agent B searches memories written by
+  agent A within the shared global namespace.
+- Scale to **50+ agents** with **2-4 agents per namespace** only after the
+  shared-namespace lock convoy is fully resolved (see roadmap).
+- Track **per-op QPS** and **stall detection** (>50% QPS drop for >2 min) as
+  failure criteria.
+- Include **multi-modal (text+geo+graph)** memories in the global graph to
+  exercise cross-modal GraphRAG.

@@ -99,6 +99,10 @@ type NamespacePolicy struct {
 	WriterKeyIDs      []string     `json:"writer_key_ids,omitempty"`
 	ReaderKeyIDs      []string     `json:"reader_key_ids,omitempty"`
 	PublicPermissions []Permission `json:"public_permissions,omitempty"`
+	// Ephemeral policies exist only in runtime memory. They are recreated from
+	// startup configuration on each process start and are not written to the
+	// secret store.
+	Ephemeral bool `json:"ephemeral,omitempty"`
 }
 
 // Validate rejects unknown public permissions and empty namespaces.
@@ -214,7 +218,7 @@ func NewRBACManager() *RBACManager {
 }
 
 // NewRBACManagerWithStore creates an RBACManager and rehydrates all previously
-// issued keys from the supplied secret store.
+// issued API keys and durable namespace ACLs from the supplied secret store.
 func NewRBACManagerWithStore(ctx context.Context, store secrets.Store) (*RBACManager, error) {
 	if store == nil {
 		store = secrets.NewMemoryStore()
@@ -229,11 +233,20 @@ func NewRBACManagerWithStore(ctx context.Context, store secrets.Store) (*RBACMan
 	}
 	stored, err := store.LoadAll(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("load RBAC API keys: %w", err)
+		return nil, fmt.Errorf("load RBAC records: %w", err)
 	}
 	for _, item := range stored {
-		if err := mgr.loadStoredKey(item); err != nil {
-			return nil, err
+		switch item.Kind {
+		case "", secrets.KindAPIKey:
+			if err := mgr.loadStoredKey(item); err != nil {
+				return nil, err
+			}
+		case secrets.KindNamespacePolicy:
+			if err := mgr.loadStoredPolicy(item); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, fmt.Errorf("unsupported RBAC record kind %q for %q", item.Kind, item.KeyID)
 		}
 	}
 	return mgr, nil
@@ -264,6 +277,29 @@ func (r *RBACManager) loadStoredKey(item secrets.StoredKey) error {
 	return nil
 }
 
+func (r *RBACManager) loadStoredPolicy(item secrets.StoredKey) error {
+	if len(item.Meta) == 0 {
+		return fmt.Errorf("stored namespace policy %q has no metadata", item.KeyID)
+	}
+	var policy NamespacePolicy
+	if err := json.Unmarshal(item.Meta, &policy); err != nil {
+		return fmt.Errorf("decode stored namespace policy %q: %w", item.KeyID, err)
+	}
+	// Ephemeral policies are never written by Longbow. Ignore stale records so
+	// a provider copied between environments cannot resurrect runtime-only ACLs.
+	if policy.Ephemeral {
+		return nil
+	}
+	if err := policy.Validate(); err != nil {
+		return fmt.Errorf("stored namespace policy %q: %w", item.KeyID, err)
+	}
+	if want := secrets.NamespacePolicyKeyID(policy.Namespace); item.KeyID != want {
+		return fmt.Errorf("stored namespace policy %q has unexpected record ID %q", policy.Namespace, item.KeyID)
+	}
+	r.policies[policy.Namespace] = &policy
+	return nil
+}
+
 // HasGlobalAdmin reports whether at least one enabled server administrator key
 // is available. Used at startup to decide whether a bootstrap key is required.
 func (r *RBACManager) HasGlobalAdmin() bool {
@@ -277,20 +313,59 @@ func (r *RBACManager) HasGlobalAdmin() bool {
 	return false
 }
 
-// SetNamespacePolicy registers or replaces a namespace ACL. Only server
-// administrators should call this (enforced by the CreateNamespace handlers).
+// SetNamespacePolicy registers or replaces a namespace ACL. Durable policies
+// are written through to the secret store; ephemeral policies remain runtime
+// only. Callers must enforce server-admin authorization before invoking it.
 func (r *RBACManager) SetNamespacePolicy(policy NamespacePolicy) error {
 	if err := policy.Validate(); err != nil {
 		return err
 	}
+	copyPolicy := cloneNamespacePolicy(policy)
+	if policy.Ephemeral {
+		// An ephemeral ACL must not leave a durable record behind, even when it
+		// replaces a previously durable policy for the same namespace.
+		if err := r.deleteStoredNamespacePolicy(policy.Namespace); err != nil {
+			return err
+		}
+	} else if err := r.persistNamespacePolicy(copyPolicy); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.policies[policy.Namespace] = &copyPolicy
+	r.mu.Unlock()
+	return nil
+}
+
+func cloneNamespacePolicy(policy NamespacePolicy) NamespacePolicy {
 	copyPolicy := policy
 	copyPolicy.AdminKeyIDs = append([]string(nil), policy.AdminKeyIDs...)
 	copyPolicy.WriterKeyIDs = append([]string(nil), policy.WriterKeyIDs...)
 	copyPolicy.ReaderKeyIDs = append([]string(nil), policy.ReaderKeyIDs...)
 	copyPolicy.PublicPermissions = append([]Permission(nil), policy.PublicPermissions...)
-	r.mu.Lock()
-	r.policies[policy.Namespace] = &copyPolicy
-	r.mu.Unlock()
+	return copyPolicy
+}
+
+func (r *RBACManager) persistNamespacePolicy(policy NamespacePolicy) error {
+	meta, err := json.Marshal(policy)
+	if err != nil {
+		return fmt.Errorf("encode namespace policy %q: %w", policy.Namespace, err)
+	}
+	record := secrets.StoredKey{
+		KeyID: secrets.NamespacePolicyKeyID(policy.Namespace),
+		Kind:  secrets.KindNamespacePolicy,
+		Meta:  meta,
+	}
+	if err := r.store.Put(context.Background(), record); err != nil {
+		return fmt.Errorf("persist namespace policy %q: %w", policy.Namespace, err)
+	}
+	return nil
+}
+
+func (r *RBACManager) deleteStoredNamespacePolicy(namespace string) error {
+	err := r.store.Delete(context.Background(), secrets.NamespacePolicyKeyID(namespace))
+	if err != nil && !errors.Is(err, secrets.ErrNotFound) {
+		return fmt.Errorf("delete namespace policy %q: %w", namespace, err)
+	}
 	return nil
 }
 
@@ -333,23 +408,39 @@ func (r *RBACManager) copyPolicyLocked(policy *NamespacePolicy) *NamespacePolicy
 	return &copyPolicy
 }
 
-// DeleteNamespacePolicy removes the ACL for a namespace.
-func (r *RBACManager) DeleteNamespacePolicy(namespace string) {
+// DeleteNamespacePolicy removes the ACL for a namespace and its durable record.
+// Ephemeral policies have no durable record to remove.
+func (r *RBACManager) DeleteNamespacePolicy(namespace string) error {
 	r.mu.Lock()
+	policy := r.policies[namespace]
 	delete(r.policies, namespace)
 	r.mu.Unlock()
+	if policy == nil || policy.Ephemeral {
+		return nil
+	}
+	return r.deleteStoredNamespacePolicy(namespace)
 }
 
-func (r *RBACManager) replaceNamespaceKeyIDLocked(oldID, newID string) {
+// replaceNamespaceKeyIDLocked rewrites ACL references after key rotation and
+// persists any durable policies that changed. The caller must hold r.mu.
+func (r *RBACManager) replaceNamespaceKeyIDLocked(oldID, newID string) error {
 	for _, policy := range r.policies {
+		changed := false
 		for _, list := range [][]string{policy.AdminKeyIDs, policy.WriterKeyIDs, policy.ReaderKeyIDs} {
 			for i, id := range list {
 				if id == oldID {
 					list[i] = newID
+					changed = true
 				}
 			}
 		}
+		if changed && !policy.Ephemeral {
+			if err := r.persistNamespacePolicy(*policy); err != nil {
+				return err
+			}
+		}
 	}
+	return nil
 }
 
 // SetAuditLogger attaches an external AuditLogger.
@@ -434,6 +525,9 @@ func (r *RBACManager) createAPIKey(opts APIKeyOptions, keyStr string) (*APIKey, 
 	if err := secrets.ValidateKeyID(keyID); err != nil {
 		return nil, fmt.Errorf("invalid API key id: %w", err)
 	}
+	if secrets.IsNamespacePolicyKeyID(keyID) {
+		return nil, fmt.Errorf("invalid API key id %q: reserved for namespace policies", keyID)
+	}
 	keyHash := sha256Hash(keyStr)
 
 	var expiresAt *time.Time
@@ -468,6 +562,7 @@ func (r *RBACManager) createAPIKey(opts APIKeyOptions, keyStr string) (*APIKey, 
 	}
 	if err := r.store.Put(context.Background(), secrets.StoredKey{
 		KeyID: keyID,
+		Kind:  secrets.KindAPIKey,
 		Raw:   keyStr,
 		Meta:  meta,
 	}); err != nil {
@@ -563,7 +658,10 @@ func (r *RBACManager) RotateAPIKey(oldRawKey string, gracePeriod time.Duration) 
 		r.mu.Unlock()
 		return nil, "", err
 	}
-	r.replaceNamespaceKeyIDLocked(oldID, newKey.KeyID)
+	if err := r.replaceNamespaceKeyIDLocked(oldID, newKey.KeyID); err != nil {
+		r.mu.Unlock()
+		return nil, "", err
+	}
 	audit := r.audit
 	r.mu.Unlock()
 

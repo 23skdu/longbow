@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -291,7 +292,9 @@ func (vs *VectorStore) DeleteNamespace(name string) error {
 	ns.mu.Unlock()
 	vs.nsManager.mu.Unlock()
 	if mgr := vs.RBAC(); mgr != nil {
-		mgr.DeleteNamespacePolicy(name)
+		if err := mgr.DeleteNamespacePolicy(name); err != nil {
+			return fmt.Errorf("delete namespace ACL for %q: %w", name, err)
+		}
 	}
 	return nil
 }

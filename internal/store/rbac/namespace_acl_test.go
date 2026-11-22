@@ -125,6 +125,145 @@ func TestNamespacePolicyRotationFollowsKeyID(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestNamespacePolicyDurableAndEphemeralPersistence(t *testing.T) {
+	ctx := context.Background()
+	store := secrets.NewMemoryStore()
+	mgr, err := NewRBACManagerWithStore(ctx, store)
+	require.NoError(t, err)
+
+	_, adminRaw, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{Name: "bootstrap", Role: RoleAdmin})
+	require.NoError(t, err)
+	writer, writerRaw, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{
+		Name: "team-writer", Role: RoleReader, Namespace: "home",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, mgr.SetNamespacePolicy(NamespacePolicy{
+		Namespace:    "durable-team",
+		WriterKeyIDs: []string{writer.KeyID},
+	}))
+	require.NoError(t, mgr.SetNamespacePolicy(NamespacePolicy{
+		Namespace:    "temporary-team",
+		WriterKeyIDs: []string{writer.KeyID},
+		Ephemeral:    true,
+	}))
+
+	reloaded, err := NewRBACManagerWithStore(ctx, store)
+	require.NoError(t, err)
+	require.True(t, reloaded.HasGlobalAdmin())
+
+	require.NotNil(t, reloaded.GetNamespacePolicy("durable-team"))
+	require.Nil(t, reloaded.GetNamespacePolicy("temporary-team"), "ephemeral ACLs must not be rehydrated")
+
+	tc, err := reloaded.AuthorizeToken(ctx, adminRaw, string(PermManageKeys), "", "")
+	require.NoError(t, err)
+	require.True(t, tc.IsAdmin)
+
+	_, err = reloaded.AuthorizeToken(ctx, writerRaw, string(PermWrite), "durable-team", "notes")
+	require.NoError(t, err)
+	_, err = reloaded.AuthorizeToken(ctx, writerRaw, string(PermWrite), "temporary-team", "notes")
+	require.Error(t, err, "ephemeral grant must disappear with the process")
+}
+
+func TestEphemeralPolicyReplacesDurableRecord(t *testing.T) {
+	ctx := context.Background()
+	store := secrets.NewMemoryStore()
+	mgr, err := NewRBACManagerWithStore(ctx, store)
+	require.NoError(t, err)
+
+	require.NoError(t, mgr.SetNamespacePolicy(NamespacePolicy{
+		Namespace:         "switching-team",
+		PublicPermissions: []Permission{PermRead},
+	}))
+	require.NoError(t, mgr.SetNamespacePolicy(NamespacePolicy{
+		Namespace:         "switching-team",
+		PublicPermissions: []Permission{PermRead},
+		Ephemeral:         true,
+	}))
+
+	reloaded, err := NewRBACManagerWithStore(ctx, store)
+	require.NoError(t, err)
+	require.Nil(t, reloaded.GetNamespacePolicy("switching-team"))
+}
+
+func TestNamespacePolicyDeleteRemovesDurableRecord(t *testing.T) {
+	ctx := context.Background()
+	store := secrets.NewMemoryStore()
+	mgr, err := NewRBACManagerWithStore(ctx, store)
+	require.NoError(t, err)
+
+	require.NoError(t, mgr.SetNamespacePolicy(NamespacePolicy{
+		Namespace:         "public-team",
+		PublicPermissions: []Permission{PermRead},
+	}))
+	require.NoError(t, mgr.DeleteNamespacePolicy("public-team"))
+
+	reloaded, err := NewRBACManagerWithStore(ctx, store)
+	require.NoError(t, err)
+	require.Nil(t, reloaded.GetNamespacePolicy("public-team"))
+}
+
+func TestNamespacePolicyRotationPersistsUpdatedKeyID(t *testing.T) {
+	ctx := context.Background()
+	store := secrets.NewMemoryStore()
+	mgr, err := NewRBACManagerWithStore(ctx, store)
+	require.NoError(t, err)
+
+	writer, raw, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{
+		Name: "writer", Role: RoleReader, Namespace: "home",
+	})
+	require.NoError(t, err)
+	require.NoError(t, mgr.SetNamespacePolicy(NamespacePolicy{
+		Namespace:    "rotating-team",
+		WriterKeyIDs: []string{writer.KeyID},
+	}))
+
+	rotated, newRaw, err := mgr.RotateAPIKey(raw, time.Minute)
+	require.NoError(t, err)
+
+	reloaded, err := NewRBACManagerWithStore(ctx, store)
+	require.NoError(t, err)
+	policy := reloaded.GetNamespacePolicy("rotating-team")
+	require.NotNil(t, policy)
+	require.Contains(t, policy.WriterKeyIDs, rotated.KeyID)
+	require.NotContains(t, policy.WriterKeyIDs, writer.KeyID)
+	_, err = reloaded.AuthorizeToken(ctx, newRaw, string(PermWrite), "rotating-team", "notes")
+	require.NoError(t, err)
+}
+
+func TestLegacyAPIKeyRecordStillLoads(t *testing.T) {
+	ctx := context.Background()
+	store := secrets.NewMemoryStore()
+	mgr, err := NewRBACManagerWithStore(ctx, store)
+	require.NoError(t, err)
+
+	_, raw, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{Name: "legacy", Role: RoleReader})
+	require.NoError(t, err)
+
+	records, err := store.LoadAll(ctx)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	legacy := records[0]
+	legacy.Kind = ""
+	require.NoError(t, store.Put(ctx, legacy))
+
+	reloaded, err := NewRBACManagerWithStore(ctx, store)
+	require.NoError(t, err)
+	_, err = reloaded.ValidateAPIKey(raw)
+	require.NoError(t, err)
+}
+
+func TestAPIKeyCannotUseNamespacePolicyKeyID(t *testing.T) {
+	mgr := NewRBACManager()
+	reserved := secrets.NamespacePolicyKeyID("team-a")
+	_, err := mgr.RegisterAPIKeyWithSecret(APIKeyOptions{
+		KeyID: reserved,
+		Name:  "should-fail",
+		Role:  RoleAdmin,
+	}, "long-enough-bootstrap-secret")
+	require.ErrorContains(t, err, "reserved for namespace policies")
+}
+
 func TestRBACManagerPersistsKeysInSecretStore(t *testing.T) {
 	ctx := context.Background()
 	store := secrets.NewMemoryStore()

@@ -389,12 +389,12 @@ func (s *VectorStore) SearchByID(ctx context.Context, req *core.VectorSearchByID
 	}
 
 	targetVec, found, err := s.lookupVectorByIDLocked(ds, req.ID)
+	index := ds.Index
+	ds.dataMu.RUnlock()
 	if err != nil {
-		ds.dataMu.RUnlock()
 		return nil, err
 	}
 	if !found {
-		ds.dataMu.RUnlock()
 		return nil, status.Errorf(codes.NotFound, "id '%s' not found in dataset '%s'", req.ID, req.Dataset)
 	}
 
@@ -402,15 +402,15 @@ func (s *VectorStore) SearchByID(ctx context.Context, req *core.VectorSearchByID
 	if k <= 0 {
 		k = 10
 	}
-	results, err := ds.Index.SearchVectors(ctx, targetVec, k, nil, SearchOptions{
+	results, err := index.SearchVectors(ctx, targetVec, k, nil, SearchOptions{
 		IncludeVectors: req.IncludeVectors,
 		VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 	})
 	if err != nil {
-		ds.dataMu.RUnlock()
 		return nil, status.Errorf(codes.Internal, "search failed: %v", err)
 	}
 
+	ds.dataMu.RLock()
 	results = s.mapInternalToUserIDsLocked(ds, results)
 	ds.dataMu.RUnlock()
 

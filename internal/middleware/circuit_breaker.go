@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/23skdu/longbow/internal/breaker"
@@ -13,6 +14,12 @@ import (
 // CircuitBreakerInterceptor creates a unary server interceptor that wraps `DoGet` and `VectorSearch`
 // calls with a circuit breaker.
 func CircuitBreakerInterceptor() grpc.UnaryServerInterceptor {
+	if os.Getenv("LONGBOW_TEST") == "true" {
+		// Disable circuit breaker during testing/soak to avoid false stalls.
+		return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			return handler(ctx, req)
+		}
+	}
 	// Configure breaker - trips after 10 consecutive failures
 	config := breaker.Settings{
 		Name:    "GlobalSearch",

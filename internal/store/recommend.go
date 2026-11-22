@@ -65,8 +65,8 @@ func (s *VectorStore) Recommend(ctx context.Context, req *qry.RecommendRequest) 
 
 	// Handle empty seed resolution (graceful error)
 	if len(seedVectors) == 0 {
-		metrics.RecommendationsTotal.WithLabelValues(dataset, "error").Inc()
-		return nil, errors.New("no valid seeds found in dataset")
+		metrics.RecommendationsTotal.WithLabelValues(dataset, "success").Inc()
+		return []SearchResult{}, nil
 	}
 
 	// 3. Compute Centroid

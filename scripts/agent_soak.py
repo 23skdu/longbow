@@ -177,7 +177,10 @@ class Agent:
             self._time_op(op, lambda: self.client.search(dataset=self.dataset, vector=v, k=5,
                                                           filters=[{"field": "importance", "op": "gte", "value": 1}]))
         elif op == "range":
-            self._time_op(op, lambda: self.client.range_search(dataset=self.dataset, vector=v, threshold=0.5, max_results=10))
+            if self.ids:
+                self._time_op(op, lambda: self.client.range_search(dataset=self.dataset, vector=v, threshold=0.5, max_results=10))
+            else:
+                self._time_op("dense", lambda: self.client.search(dataset=self.dataset, vector=v, k=5))
         elif op == "byid":
             if self.ids:
                 self._time_op(op, lambda: self.client.search_by_id(dataset=self.dataset, id=vid, k=5))
@@ -189,7 +192,8 @@ class Agent:
         elif op == "graphrag":
             self._time_op(op, lambda: self.client.graph_rag_expand(dataset=self.dataset, node_ids=[1]) if hasattr(self.client, "graph_rag_expand") else None)
         elif op == "traverse":
-            self._time_op(op, lambda: self.client.traverse(dataset=self.dataset, start=vid, max_hops=2))
+            if self.ids:
+                self._time_op(op, lambda: self.client.traverse(dataset=self.dataset, start=self.rng.choice(self.ids), max_hops=2))
         elif op == "recommend":
             seeds = self.ids[:2] if len(self.ids) >= 2 else [vid]
             self._time_op(op, lambda: self.client.recommend(dataset=self.dataset, seed_ids=seeds, k=5, max_hops=2))

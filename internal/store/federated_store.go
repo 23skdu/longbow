@@ -54,6 +54,13 @@ func (s *VectorStore) syncDatasetToFederatedRouter(router *FederatedQueryRouter,
 		if !ok {
 			continue
 		}
+		// Skip if already registered to avoid taking the router lock on every search.
+		router.mu.RLock()
+		_, exists := router.searchers[name]
+		router.mu.RUnlock()
+		if exists {
+			continue
+		}
 		vecCount, dim := datasetCollectionMetrics(ds)
 		router.UpsertCollection(name, &storeDatasetSearcher{store: s, dataset: name}, &CollectionInfo{
 			Name:        name,

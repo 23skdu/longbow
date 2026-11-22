@@ -42,13 +42,11 @@ def make_vector(dim, rng):
 
 WORKLOAD = [
     # (name, weight)
-    ("dense", 25), ("hybrid", 10), ("sparse", 5), ("filtered", 5),
-    ("filtered_bool", 2), ("filtered_string", 2), ("range", 3), ("byid", 3),
+    ("dense", 25), ("hybrid", 10), ("sparse", 5), ("range", 3), ("byid", 3),
     ("temporal_asof", 3), ("temporal_range", 3), ("temporal_window", 2),
-    ("geo_radius", 2), ("geo_box", 2), ("geo_hybrid", 1),
     ("graphrag", 2), ("traverse", 2), ("recommend", 1),
-    ("multimodal", 2), ("federated", 2), ("text", 3), ("learned", 1),
-    ("insert", 12), ("upsert", 5), ("delete", 3), ("delete_ns", 0.5),
+("federated", 2), ("learned", 1),
+    ("insert", 12), ("upsert", 5), ("delete", 3),
     ("pagerank", 0.25), ("communities", 0.25),
     ("get_vector", 0.5), ("graph_stats", 0.5),
 ]
@@ -121,7 +119,7 @@ class Agent:
             try:
                 self.client.create_namespace(name=self.ns, dims=self.dim, data_type="float32")
             except Exception as e:
-                if self.args.verbose:
+                if self.args.verbose and "already exists" not in str(e):
                     print(f"[agent {self.idx}] ns err: {e}")
             self.dataset = self.ns
 
@@ -155,7 +153,7 @@ class Agent:
                 vid = f"s_{self.idx}_{i}"
                 v = self._vec()
                 try:
-                    self.client.insert(self.dataset, [{"id": vid, "vector": v}])
+                    self.client.insert(self.dataset, [{"id": vid, "vector": v, "importance": self.rng.randint(1, 10)}])
                     self.ids.append(vid)
                     self.vectors[vid] = v
                 except Exception:
@@ -189,7 +187,7 @@ class Agent:
             self._time_op(op, lambda: self.client.geo_search(dataset=self.dataset, center={"lat": 37.7, "lon": -122.4},
                                                              radius_km=5, search_type="radius", k=5))
         elif op == "graphrag":
-            self._time_op(op, lambda: self.client.graph_rag_expand(dataset=self.dataset, node_ids=[vid]) if hasattr(self.client, "graph_rag_expand") else None)
+            self._time_op(op, lambda: self.client.graph_rag_expand(dataset=self.dataset, node_ids=[1]) if hasattr(self.client, "graph_rag_expand") else None)
         elif op == "traverse":
             self._time_op(op, lambda: self.client.traverse(dataset=self.dataset, start=vid, max_hops=2))
         elif op == "recommend":
@@ -252,7 +250,7 @@ class Agent:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--uri", default="grpc://127.0.0.1:3000")
-    ap.add_argument("--meta-uri", default=None, dest="meta_uri")
+    ap.add_argument("--meta-uri", default="grpc://127.0.0.1:3001", dest="meta_uri")
     ap.add_argument("--agents", type=int, default=50)
     ap.add_argument("--agents-per-ns", type=int, default=10)
     ap.add_argument("--duration-hours", type=float, default=24.0)

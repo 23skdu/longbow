@@ -122,3 +122,10 @@ Subtasks:
 - [ ] **Encryption-at-rest soak**: enable disk encryption and measure ingest/search latency and CPU overhead.
 - [ ] **Auth + encryption combined**: full secure soak (TLS + mTLS + encrypted disk) for 1h with 8 agents.
 - [ ] **Performance comparison report**: collate plaintext vs TLS vs mTLS vs encrypted-disk QPS/latency/RSS.
+
+### Multi-Namespace Permission Soak (Planned)
+
+- [ ] **Server-side RBAC for shared namespaces**: enforce write/delete permissions per agent on `shared_<i>` and `master`.
+- [ ] **Cross-agent memory verification tests**: agent B reads/searches memories written by agent A.
+- [ ] **21-namespace soak gate**: 10 agents, 1h, 0 errors, no QPS stall.
+- [ ] **Permission audit logging**: log denied write/delete attempts under load.

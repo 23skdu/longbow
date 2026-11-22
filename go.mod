@@ -13,7 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.19
 	github.com/aws/aws-sdk-go-v2/credentials v1.21.1
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.116.0
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -181,6 +181,5 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
-
 
 replace github.com/hamba/avro/v2 => github.com/iskorotkov/avro/v2 v2.35.0

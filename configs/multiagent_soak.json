@@ -1,0 +1,19 @@
+{
+  "agents": 3,
+  "uri": "grpc://127.0.0.1:3000",
+  "meta_uri": "grpc://127.0.0.1:3001",
+  "duration_hours": 1.0,
+  "dim": 128,
+  "seed": 42,
+  "think_time_ms": 10,
+  "sample_interval_s": 60,
+  "namespaces": {
+    "private_prefix": "private_",
+    "shared_prefix": "shared_",
+    "common": "master"
+  },
+  "rbac": {
+    "admin_api_key_env": "LONGBOW_RBAC_BOOTSTRAP_KEY",
+    "require": true
+  }
+}

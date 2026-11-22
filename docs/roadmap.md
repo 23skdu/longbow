@@ -2,7 +2,7 @@
 
 The canonical roadmap lives at [`development/roadmap.md`](development/roadmap.md).
 It tracks performance, scalability, modularization, and security work, including
-the always-on RBAC and durable namespace-ACL plan.
+the always-on RBAC, namespace-ACL, and durable API-key plan.
 
 For release gates and verification artifacts, see
 [`development/gates.md`](development/gates.md). For test matrices, see

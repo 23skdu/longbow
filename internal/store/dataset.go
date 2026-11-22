@@ -25,6 +25,8 @@ type HNSWSettings struct {
 	// EfConstruction is the size of the dynamic list for the nearest neighbors (used during construction).
 	EfConstruction int
 }
+
+// Dataset represents a dataset value.
 type Dataset struct {
 	Records    *LockFreeSlice[arrow.RecordBatch]
 	lastAccess int64 // UnixNano
@@ -527,14 +529,17 @@ func (d *Dataset) Close() {
 		d.Graph = nil
 	}
 
-	// Release records
-	records := d.Records.Read()
-	for _, r := range records {
-		if r != nil {
-			r.Release()
+	// Release records. Tests and replay paths can construct a Dataset literal
+	// without the constructor, so the lock-free slice may be nil.
+	if d.Records != nil {
+		records := d.Records.Read()
+		for _, r := range records {
+			if r != nil {
+				r.Release()
+			}
 		}
+		d.Records.UpdateInPlace(nil)
 	}
-	d.Records.UpdateInPlace(nil)
 	d.TotalIngestedRows.Store(0)
 
 	d.PrimaryIndex = nil
@@ -542,22 +547,28 @@ func (d *Dataset) Close() {
 	d.Uint64PrimaryIndex = nil
 	d.recordEviction = nil
 }
+
+// GetMetric returns the metric.
 func (d *Dataset) GetMetric() DistanceMetric {
 	return d.Metric
 }
 
+// GetLogger returns the logger.
 func (d *Dataset) GetLogger() zerolog.Logger {
 	return d.Logger
 }
 
+// GetTopo returns the topo.
 func (d *Dataset) GetTopo() *memory.NUMATopology {
 	return d.Topo
 }
 
+// GetEvictionManager returns the eviction manager.
 func (d *Dataset) GetEvictionManager() any {
 	return d.EvictionManager
 }
 
+// GetDiskStore returns the disk store.
 func (d *Dataset) GetDiskStore() any {
 	if d.DiskStore == nil {
 		return nil

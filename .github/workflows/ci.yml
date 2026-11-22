@@ -98,6 +98,10 @@ jobs:
       - name: Verify 100% Package Fuzz Coverage Gate
         run: ./scripts/check_fuzz_coverage.sh
 
+      - name: Check godoc coverage (advisory)
+        continue-on-error: true
+        run: make godoc-check
+
       - name: Test Benchmark Harness Helpers
         run: |
           python3 scripts/tests/test_benchmark_validation.py
@@ -538,7 +542,7 @@ jobs:
           GOOS=darwin GOARCH=arm64 go build -o dist/longbow-darwin-arm64 ./cmd/longbow
 
       - name: Upload Darwin ARM64 artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: longbow-darwin-arm64
           path: dist/longbow-darwin-arm64

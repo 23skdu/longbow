@@ -20,10 +20,11 @@ HELM          ?= $(shell which helm 2>/dev/null || echo /home/linuxbrew/.linuxbr
 MARKDOWNLINT  ?= $(shell which markdownlint 2>/dev/null || echo /home/linuxbrew/.linuxbrew/bin/markdownlint)
 PYTHON        ?= $(shell which python3 2>/dev/null || echo /home/linuxbrew/.linuxbrew/bin/python3)
 DOCKER        ?= $(shell which docker 2>/dev/null || echo docker)
-IMAGE_TAG     ?= latest
+TAG           ?= latest
+IMAGE_TAG     ?= $(TAG)
 
 .PHONY: all help ci release build build-release build-debug build-race build-adbc build-bench build-verify build-wasm-client clean \
-	deps deps-upgrade lint lint-fast lint-fix lint-docs actionlint lint-workflows install-tools vet staticcheck deadcode fmt fmt-check \
+	deps deps-upgrade lint lint-fast lint-fix lint-docs actionlint lint-workflows install-tools godoc-check vet staticcheck deadcode fmt fmt-check \
 	security sec sec-gosec sec-vulncheck sec-audit \
 	perf perf-check cpu-profile profile-check mem mem-check mem-bench mem-escape mem-profile mem-asan mem-valgrind \
 	fuzz test-fuzz fuzz-coverage \
@@ -261,6 +262,10 @@ fmt-check:
 markdown-lint:
 	@echo "Running markdown linting on documentation..."
 	$(MARKDOWNLINT) -c .markdownlint.json docs/*.md README.md
+
+godoc-check:
+	@echo "Checking godoc coverage for exported symbols..."
+	$(GOLANGCI_LINT) run -c .golangci.godoc.yml ./...
 
 actionlint:
 	@echo "Running actionlint on GitHub Actions workflows..."

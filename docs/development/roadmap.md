@@ -16,10 +16,48 @@ The removed work covered:
   - **M5 (initial standalone domain extractions)**: Extracted `internal/store/rbac`, `internal/store/geo`, `internal/store/temporal`, `internal/store/index/learned`, and `internal/store/index/bm25` (including splitting 812-LOC `bm25_inverted_index.go` and extracting pluggable index types into `internal/store/types/pluggable_types.go`), with type/constructor aliases preserved in parent packages.
   - **M6**: Added `scripts/check_module_sizes.sh` (`make module-size-check`, `scripts/verify.sh` `--staged` check, CI `validate` job, Gate 14 in `docs/development/gates.md`) warning on hand-maintained files `> 800 LOC`, failing new files `> 1,200 LOC`, and enforcing a shrinkable legacy allow-list (updated for macOS bash 3.2 compatibility).
 - **macOS Metal GPU & ARM64 Darwin SIMD**: Runtime Metal shader compilation from embedded `kernels.metal`, Metal bridge buffer-index/top-k/CFRelease/deadlock/race fixes across `MetalIndexOptimized`, `MetalIndex`, and `MetalHybridIndex`, 32-byte TurboQuant Metal alignment, ARM64 NEON `int16`/`uint8` unsigned widening (`VUADDLP_2D`) fix, and all-dtype × dims `128`/`384`/`768` GPU & NEON verification suites.
+- **Always-on RBAC & durable namespace ACLs**: removed every RBAC bypass from the server and both simulators, added namespace-scoped admin/writer/reader grants plus configurable public permissions, and added durable API-key storage for file/memory/Vault/GCP/AWS providers. See the completed plan below.
 
 See `docs/development/performance.md` for benchmark results and baselines, `docs/development/gates.md`
 for repository conformance gates, and `docs/development/testplan.md` for the full
 search-mode and dtype matrix.
+
+---
+
+## Completed — Always-On RBAC & Durable Namespace ACLs
+
+RBAC is now a security invariant, not an optional feature. The plan below is
+recorded here so the scope and verification strategy remain auditable.
+
+- [x] **Remove all bypasses**: `LONGBOW_RBAC_ENABLED=false`,
+  `LONGBOW_RBAC_ENABLED` gating in server wiring, `--no-require-rbac`
+  (Python), `-require-rbac=false` (Go), and the shared-config `require` switch
+  no longer exist. The server refuses to start unless a bootstrap admin key or
+  a persisted admin key is available.
+- [x] **Namespace-scoped ACLs**: `NamespacePolicy` records admin, writer, and
+  reader key IDs plus `public_permissions` per namespace. Grants are attached
+  to `TenantContext.NamespacePermissions` and are never promoted to global
+  permissions. Public permissions apply to any authenticated key, but only in
+  the namespace that publishes them.
+- [x] **Server-admin-only namespace creation**: REST, GraphQL, and Flight
+  namespace creation require `manage-tenant` globally and automatically record
+  the creator as namespace admin.
+- [x] **Durable API keys**: a pluggable secret store (`file`, `memory`,
+  `vault`, `gcp`, `aws`) stores API keys on create/rotate and reloads them at
+  startup. Raw secrets are not retained in memory; RBAC maps are keyed by
+  SHA-256 hash.
+- [x] **Unit tests**: secret backend tests, RBAC ACL tests (public read/write,
+  admin/writer/reader, rotation, restart persistence), config validation
+  tests, and simulator config tests.
+- [x] **RBAC-only verification script**: `scripts/verify_rbac.py` exercises
+  only authorization behavior against a running server. It checks
+  unauthenticated rejection, admin provisioning, namespace ACL isolation,
+  public namespaces, server-admin-only namespace creation, and immediate key
+  revocation. `scripts/tests/test_verify_rbac.py` unit-tests the verifier with
+  a fake transport.
+
+Operator setup and the full verification commands are documented in
+[`docs/rbac.md`](rbac.md).
 
 ---
 

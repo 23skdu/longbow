@@ -39,6 +39,13 @@ func TestRESTAPI_EndToEndCRUDAndSearch(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
 	vs.dataPath = t.TempDir()
+	mgr := NewRBACManager()
+	vs.EnableRBAC(mgr)
+	_, adminRaw, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{
+		Name: "rest-e2e-admin",
+		Role: RoleAdmin,
+	})
+	require.NoError(t, err)
 	vs.StartIngestionWorkers(2)
 	vs.StartIndexingWorkers(2)
 	defer func() { _ = vs.Close() }()
@@ -49,11 +56,11 @@ func TestRESTAPI_EndToEndCRUDAndSearch(t *testing.T) {
 	defer srv.Close()
 	c := srv.Client()
 
-	code, health := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/health", "", nil)
+	code, health := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/health", adminRaw, nil)
 	require.Equal(t, http.StatusOK, code)
 	require.Equal(t, "ok", health["status"])
 
-	code, spec := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/openapi.json", "", nil)
+	code, spec := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/openapi.json", adminRaw, nil)
 	require.Equal(t, http.StatusOK, code)
 	require.Equal(t, "3.0.3", spec["openapi"])
 	paths := spec["paths"].(map[string]any)
@@ -61,14 +68,14 @@ func TestRESTAPI_EndToEndCRUDAndSearch(t *testing.T) {
 	require.Contains(t, paths, "/api/v1/cloud/clusters")
 
 	// Namespace CRUD
-	code, _ = doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/namespaces", "", map[string]string{"name": "ns1"})
+	code, _ = doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/namespaces", adminRaw, map[string]string{"name": "ns1"})
 	require.Equal(t, http.StatusCreated, code)
-	code, nsList := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/namespaces", "", nil)
+	code, nsList := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/namespaces", adminRaw, nil)
 	require.Equal(t, http.StatusOK, code)
 	require.GreaterOrEqual(t, int(nsList["count"].(float64)), 2)
 
 	// Upsert vectors via REST
-	code, up := doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/datasets/articles/vectors", "", map[string]any{
+	code, up := doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/datasets/articles/vectors", adminRaw, map[string]any{
 		"vectors": []map[string]any{
 			{"id": "a1", "vector": []float32{1, 0, 0, 0}, "text": "vector database indexing", "metadata": map[string]any{"topic": "db"}},
 			{"id": "a2", "vector": []float32{0.9, 0.1, 0, 0}, "text": "hnsw graph search", "metadata": map[string]any{"topic": "db"}},
@@ -79,23 +86,23 @@ func TestRESTAPI_EndToEndCRUDAndSearch(t *testing.T) {
 	require.Equal(t, float64(3), up["upserted"])
 
 	// Inspect vector & dataset
-	code, vecObj := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/datasets/articles/vectors/a1", "", nil)
+	code, vecObj := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/datasets/articles/vectors/a1", adminRaw, nil)
 	require.Equal(t, http.StatusOK, code)
 	require.Equal(t, "a1", vecObj["id"])
 
-	code, dsInfo := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/datasets/articles", "", nil)
+	code, dsInfo := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/datasets/articles", adminRaw, nil)
 	require.Equal(t, http.StatusOK, code)
 	require.Equal(t, float64(3), dsInfo["row_count"])
 
 	// Dense search, hybrid search, recommend, and aggregations
-	code, searchRes := doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/datasets/articles/search", "", map[string]any{
+	code, searchRes := doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/datasets/articles/search", adminRaw, map[string]any{
 		"vector": []float32{1, 0, 0, 0},
 		"k":      2,
 	})
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, searchRes["results"])
 
-	code, hybridRes := doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/datasets/articles/hybrid", "", map[string]any{
+	code, hybridRes := doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/datasets/articles/hybrid", adminRaw, map[string]any{
 		"vector":     []float32{0.9, 0.1, 0, 0},
 		"text_query": "hnsw graph",
 		"k":          2,
@@ -104,7 +111,7 @@ func TestRESTAPI_EndToEndCRUDAndSearch(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, hybridRes["results"])
 
-	code, recRes := doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/datasets/articles/recommend", "", map[string]any{
+	code, recRes := doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/datasets/articles/recommend", adminRaw, map[string]any{
 		"seed_ids": []string{"a1"},
 		"k":        2,
 		"alpha":    0.8,
@@ -112,7 +119,7 @@ func TestRESTAPI_EndToEndCRUDAndSearch(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, recRes["results"])
 
-	code, aggRes := doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/datasets/articles/aggregations", "", map[string]any{
+	code, aggRes := doJSONReq(t, c, http.MethodPost, srv.URL+"/api/v1/datasets/articles/aggregations", adminRaw, map[string]any{
 		"group_by":     []string{"text"},
 		"aggregations": []map[string]any{{"alias": "cnt", "op": "count"}},
 	})
@@ -120,20 +127,20 @@ func TestRESTAPI_EndToEndCRUDAndSearch(t *testing.T) {
 	require.Equal(t, float64(3), aggRes["source_rows"])
 
 	// Delete vector and dataset
-	code, _ = doJSONReq(t, c, http.MethodDelete, srv.URL+"/api/v1/datasets/articles/vectors/a3", "", nil)
+	code, _ = doJSONReq(t, c, http.MethodDelete, srv.URL+"/api/v1/datasets/articles/vectors/a3", adminRaw, nil)
 	require.Equal(t, http.StatusOK, code)
-	code, _ = doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/datasets/articles/vectors/a3", "", nil)
+	code, _ = doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/datasets/articles/vectors/a3", adminRaw, nil)
 	require.Equal(t, http.StatusNotFound, code)
 
 	// Admin usage summary endpoint (Item 9.5)
 	_ = vs.GetUsageMeter().CheckAndConsumeQuery(context.Background(), "acme", 512)
-	code, adminUsage := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/admin/usage", "", nil)
+	code, adminUsage := doJSONReq(t, c, http.MethodGet, srv.URL+"/api/v1/admin/usage", adminRaw, nil)
 	require.Equal(t, http.StatusOK, code)
 	require.Contains(t, adminUsage, "summary")
 
-	code, _ = doJSONReq(t, c, http.MethodDelete, srv.URL+"/api/v1/datasets/articles", "", nil)
+	code, _ = doJSONReq(t, c, http.MethodDelete, srv.URL+"/api/v1/datasets/articles", adminRaw, nil)
 	require.Equal(t, http.StatusOK, code)
-	code, _ = doJSONReq(t, c, http.MethodDelete, srv.URL+"/api/v1/namespaces/ns1", "", nil)
+	code, _ = doJSONReq(t, c, http.MethodDelete, srv.URL+"/api/v1/namespaces/ns1", adminRaw, nil)
 	require.Equal(t, http.StatusOK, code)
 }
 
@@ -209,6 +216,13 @@ func TestGraphQL_QueriesMutationsIntrospection(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
 	vs.dataPath = t.TempDir()
+	mgr := NewRBACManager()
+	vs.EnableRBAC(mgr)
+	_, adminRaw, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{
+		Name: "rest-e2e-admin",
+		Role: RoleAdmin,
+	})
+	require.NoError(t, err)
 	vs.StartIngestionWorkers(2)
 	vs.StartIndexingWorkers(2)
 	defer func() { _ = vs.Close() }()
@@ -219,7 +233,7 @@ func TestGraphQL_QueriesMutationsIntrospection(t *testing.T) {
 	defer srv.Close()
 
 	// 1. Mutation: createNamespace + upsertVectors + createCloudCluster
-	code, mutResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/graphql", "", map[string]any{
+	code, mutResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/graphql", adminRaw, map[string]any{
 		"query": `mutation Seed($ds: String!, $vecs: [VectorInput!]!) {
 			createNamespace(name: "gqlns") { name status }
 			upsertVectors(dataset: $ds, vectors: $vecs) { dataset upserted }
@@ -240,7 +254,7 @@ func TestGraphQL_QueriesMutationsIntrospection(t *testing.T) {
 	require.Equal(t, float64(4), mutData["createCloudCluster"].(map[string]any)["nodes"])
 
 	// 2. Query with aliases, variables, and introspection
-	code, qResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/graphql", "", map[string]any{
+	code, qResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/graphql", adminRaw, map[string]any{
 		"query": `query Inspect($vec: [Float!]!, $k: Int = 1) {
 			sysHealth: health { status activeDatasets }
 			dataset(name: "gql_items") { name rowCount vectorDim }
@@ -273,6 +287,13 @@ func TestRESTAndGraphQLExtendedRoadmapEndpoints(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
 	vs.dataPath = t.TempDir()
+	mgr := NewRBACManager()
+	vs.EnableRBAC(mgr)
+	_, adminRaw, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{
+		Name: "rest-e2e-admin",
+		Role: RoleAdmin,
+	})
+	require.NoError(t, err)
 	vs.StartIngestionWorkers(1)
 	vs.StartIndexingWorkers(1)
 	defer func() { _ = vs.Close() }()
@@ -283,7 +304,7 @@ func TestRESTAndGraphQLExtendedRoadmapEndpoints(t *testing.T) {
 	defer srv.Close()
 
 	// 1. Register schema via REST POST /api/v1/datasets/ext_ds/schema
-	code, schemaResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/schema", "", map[string]any{
+	code, schemaResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/schema", adminRaw, map[string]any{
 		"compatibility": "BACKWARD",
 		"constraints": []map[string]any{
 			{"field": "vector", "vector_dim": 4},
@@ -293,7 +314,7 @@ func TestRESTAndGraphQLExtendedRoadmapEndpoints(t *testing.T) {
 	require.Equal(t, float64(1), schemaResp["version"])
 
 	// 2. Verify StoreRecordBatch enforces registered schema constraint on wrong dimension
-	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/vectors", "", map[string]any{
+	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/vectors", adminRaw, map[string]any{
 		"vectors": []map[string]any{
 			{"id": "bad_dim", "vector": []float32{1, 0}},
 		},
@@ -301,7 +322,7 @@ func TestRESTAndGraphQLExtendedRoadmapEndpoints(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, code)
 
 	// 3. Create a streaming materialized view before ingesting valid vectors
-	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/views", "", map[string]any{
+	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/views", adminRaw, map[string]any{
 		"name":           "ext_by_cat",
 		"source_dataset": "ext_ds",
 		"group_by":       []string{"category"},
@@ -311,7 +332,7 @@ func TestRESTAndGraphQLExtendedRoadmapEndpoints(t *testing.T) {
 	require.Equal(t, http.StatusCreated, code)
 
 	// 4. Ingest valid 4D vectors and verify streaming view auto-refreshes & planner serves /aggregations
-	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/vectors", "", map[string]any{
+	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/vectors", adminRaw, map[string]any{
 		"vectors": []map[string]any{
 			{"id": "v1", "vector": []float32{1, 0, 0, 0}, "text": "gpu cluster", "metadata": map[string]any{"category": "infra"}},
 			{"id": "v2", "vector": []float32{0, 1, 0, 0}, "text": "cpu node", "metadata": map[string]any{"category": "infra"}},
@@ -319,28 +340,28 @@ func TestRESTAndGraphQLExtendedRoadmapEndpoints(t *testing.T) {
 	})
 	require.Equal(t, http.StatusOK, code)
 
-	code, aggResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/aggregations", "", map[string]any{
+	code, aggResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/aggregations", adminRaw, map[string]any{
 		"group_by": []string{"category"},
 	})
 	require.Equal(t, http.StatusOK, code)
 	require.Equal(t, float64(2), aggResp["source_rows"])
 
 	// 5. Provenance, Explain, Sharding Topology, Search Analytics, and Extended GraphQL fields
-	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/provenance", "", map[string]any{
+	code, _ = doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/provenance", adminRaw, map[string]any{
 		"vector_id":          "v1",
 		"source_document_id": "doc-99",
 		"embedding_model":    "bge-small",
 	})
 	require.Equal(t, http.StatusOK, code)
 
-	code, expResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/explain", "", map[string]any{
+	code, expResp := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/datasets/ext_ds/explain", adminRaw, map[string]any{
 		"vector": []float32{1, 0, 0, 0},
 		"k":      1,
 	})
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, expResp["candidates"])
 
-	code, gqlExt := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/graphql", "", map[string]any{
+	code, gqlExt := doJSONReq(t, srv.Client(), http.MethodPost, srv.URL+"/api/v1/graphql", adminRaw, map[string]any{
 		"query": `{
 			provenance(dataset: "ext_ds", vectorId: "v1") { vectorId sourceDocumentId }
 			materializedViews(name: "ext_by_cat") { sourceRows }

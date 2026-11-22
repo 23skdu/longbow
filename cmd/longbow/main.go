@@ -109,7 +109,7 @@ func run() error {
 
 	startWebSocketServer(&cfg, wsServer, authValidator, auditLog, logger)
 
-	metricsSrv := startHTTPMetricsServer(&cfg, vectorStore, certReloader, startTime, logger)
+	metricsSrv := startHTTPMetricsServer(&cfg, vectorStore, certReloader, authValidator, auditLog, startTime, logger)
 
 	ringManager, forwarder, gossipSrv := initMeshAndRing(&cfg, vectorStore, logger)
 	if gossipSrv != nil {

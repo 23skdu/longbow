@@ -80,6 +80,11 @@ func (s *VectorStore) requireHTTPGlobalPermission(ctx context.Context, perm Perm
 	if tc.IsAdmin {
 		return nil
 	}
+	// A namespace-scoped principal must not be able to reach global
+	// administration through REST handlers that echo X-Tenant-ID.
+	if tc.Namespace != "" && tc.Namespace != "*" {
+		return security.ErrForbidden
+	}
 	for _, p := range tc.Permissions {
 		if p == string(perm) || p == string(PermAdmin) {
 			return nil

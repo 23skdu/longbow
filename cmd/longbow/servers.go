@@ -43,7 +43,37 @@ func metricsListenAddr(cfg *Config) string {
 	return cfg.MetricsAddr
 }
 
-func startHTTPMetricsServer(cfg *Config, vectorStore *store.VectorStore, certReloader *security.CertReloader, startTime time.Time, logger zerolog.Logger) *http.Server {
+// adminHTTPWrap requires a verified global administrator. Namespace-scoped
+// credentials are rejected even when they carry an administrative permission.
+func adminHTTPWrap(next http.Handler, validator security.AccessValidator, audit *security.AuditLogger, logger zerolog.Logger) http.Handler {
+	auth := middleware.HTTPAuthMiddleware(validator, audit, string(store.PermAdmin))
+	return auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tc, ok := security.TenantFromContext(r.Context())
+		if !ok || tc == nil || !tc.IsAdmin || (tc.Namespace != "" && tc.Namespace != "*") {
+			logger.Warn().Str("path", r.URL.Path).Str("remote", r.RemoteAddr).Msg("Rejected non-global admin for operational endpoint")
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
+func readinessHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !globalIsReady.Load() {
+			http.Error(w, "Not Ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	}
+}
+
+func startHTTPMetricsServer(cfg *Config, vectorStore *store.VectorStore, certReloader *security.CertReloader, validator security.AccessValidator, audit *security.AuditLogger, startTime time.Time, logger zerolog.Logger) *http.Server {
 	metricsSrvChan := make(chan *http.Server, 1)
 	go func() {
 		metricsAddr := metricsListenAddr(cfg)
@@ -62,11 +92,8 @@ func startHTTPMetricsServer(cfg *Config, vectorStore *store.VectorStore, certRel
 		hm.RegisterChecker(health.NewTracingChecker(logger, otel.Tracer("longbow.health.tracing")))
 		mux.Handle("/health", hm.HTTPHandler())
 
-		mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("OK"))
-		})
-		mux.HandleFunc("/progress", func(w http.ResponseWriter, r *http.Request) {
+		mux.Handle("/ready", readinessHandler())
+		progressHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 
 			var limitBytes, usedBytes int64
@@ -132,16 +159,19 @@ func startHTTPMetricsServer(cfg *Config, vectorStore *store.VectorStore, certRel
 				_, _ = w.Write([]byte(err.Error()))
 			}
 		})
-		// pprof endpoints (Phase 6)
-		mux.HandleFunc("/debug/pprof/", pprof.Index)
-		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		mux.Handle("/progress", adminHTTPWrap(progressHandler, validator, audit, logger))
+
+		// Profiling and diagnostics expose process internals and require a
+		// global administrator. pprof endpoints (Phase 6)
+		mux.Handle("/debug/pprof/", adminHTTPWrap(http.HandlerFunc(pprof.Index), validator, audit, logger))
+		mux.Handle("/debug/pprof/cmdline", adminHTTPWrap(http.HandlerFunc(pprof.Cmdline), validator, audit, logger))
+		mux.Handle("/debug/pprof/profile", adminHTTPWrap(http.HandlerFunc(pprof.Profile), validator, audit, logger))
+		mux.Handle("/debug/pprof/symbol", adminHTTPWrap(http.HandlerFunc(pprof.Symbol), validator, audit, logger))
+		mux.Handle("/debug/pprof/trace", adminHTTPWrap(http.HandlerFunc(pprof.Trace), validator, audit, logger))
 
 		// /diagnostics: returns SIMD impl details and key memory config.
-		// Use: curl http://ancalagon:<port>/diagnostics | jq .
-		mux.HandleFunc("/diagnostics", func(w http.ResponseWriter, r *http.Request) {
+		// Use: curl -H 'Authorization: Bearer <global-admin-key>' http://ancalagon:<port>/diagnostics | jq .
+		diagnosticsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			resp := simd.GetImplementationDetails()
 			resp["max_memory_bytes"] = cfg.MaxMemory
@@ -151,6 +181,7 @@ func startHTTPMetricsServer(cfg *Config, vectorStore *store.VectorStore, certRel
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		})
+		mux.Handle("/diagnostics", adminHTTPWrap(diagnosticsHandler, validator, audit, logger))
 
 		vectorStore.RegisterHTTPHandlers(mux)
 

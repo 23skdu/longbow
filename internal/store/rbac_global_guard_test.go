@@ -64,6 +64,16 @@ func TestNamespaceAdminCannotUseGlobalAdminRoutes(t *testing.T) {
 	code, _ := doJSONReqWithHeader(t, srv.Client(), http.MethodGet, srv.URL+"/api/v1/rbac/keys", readerRaw, "admin-ns", nil)
 	require.Equal(t, http.StatusForbidden, code)
 
+	scopedAdmin, scopedAdminRaw, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{
+		Name:      "namespace-scoped-admin-role",
+		Role:      RoleAdmin,
+		Namespace: "admin-ns",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, scopedAdmin)
+	code, _ = doJSONReqWithHeader(t, srv.Client(), http.MethodGet, srv.URL+"/api/v1/rbac/keys", scopedAdminRaw, "admin-ns", nil)
+	require.Equal(t, http.StatusForbidden, code)
+
 	code, _ = doJSONReqWithHeader(t, srv.Client(), http.MethodGet, srv.URL+"/api/v1/rbac/keys", adminRaw, "", nil)
 	require.Equal(t, http.StatusOK, code)
 }

@@ -105,10 +105,29 @@ type NamespacePolicy struct {
 	Ephemeral bool `json:"ephemeral,omitempty"`
 }
 
-// Validate rejects unknown public permissions and empty namespaces.
+// ValidateNamespaceName enforces one namespace-name syntax for startup
+// policies, runtime creation, and REST/Flight payloads. Names become the first
+// path segment of a dataset path, so separators and whitespace are unsafe.
+func ValidateNamespaceName(name string) error {
+	if name != strings.TrimSpace(name) {
+		return errors.New("namespace name must not contain leading or trailing whitespace")
+	}
+	if name == "" {
+		return errors.New("namespace name cannot be empty")
+	}
+	if len(name) > 128 {
+		return errors.New("namespace name must be at most 128 characters")
+	}
+	if strings.ContainsAny(name, "/\\\n\r\t\v\f ") || strings.Contains(name, "..") {
+		return fmt.Errorf("invalid namespace name %q", name)
+	}
+	return nil
+}
+
+// Validate rejects unknown public permissions and invalid namespace names.
 func (p NamespacePolicy) Validate() error {
-	if strings.TrimSpace(p.Namespace) == "" {
-		return errors.New("namespace policy requires a namespace name")
+	if err := ValidateNamespaceName(p.Namespace); err != nil {
+		return fmt.Errorf("namespace policy: %w", err)
 	}
 	for _, perm := range p.PublicPermissions {
 		switch perm {
@@ -137,7 +156,9 @@ func (p NamespacePolicy) Allows(perm Permission) bool {
 func namespacePermissionsForRole(role NamespaceRole) []Permission {
 	switch role {
 	case NamespaceRoleAdmin:
-		return []Permission{PermRead, PermWrite, PermDelete, PermIngest, PermManageTenant, PermManageKeys}
+		// Namespace admins manage data in one namespace only. Global key and
+		// tenant administration are intentionally not granted here.
+		return []Permission{PermRead, PermWrite, PermDelete, PermIngest}
 	case NamespaceRoleWriter:
 		return []Permission{PermRead, PermWrite, PermDelete, PermIngest}
 	case NamespaceRoleReader:

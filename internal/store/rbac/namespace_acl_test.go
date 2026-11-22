@@ -86,9 +86,11 @@ func TestNamespacePolicyAdminAndUsers(t *testing.T) {
 		ReaderKeyIDs: []string{reader.KeyID},
 	}))
 
-	tc, err := mgr.AuthorizeToken(ctx, adminRaw, string(PermManageTenant), "team", "")
+	tc, err := mgr.AuthorizeToken(ctx, adminRaw, string(PermWrite), "team", "notes")
 	require.NoError(t, err)
-	require.True(t, tc.HasNamespacePermission("team", string(PermManageTenant)))
+	require.True(t, tc.HasNamespacePermission("team", string(PermWrite)))
+	_, err = mgr.AuthorizeToken(ctx, adminRaw, string(PermManageTenant), "team", "")
+	require.ErrorIs(t, err, security.ErrForbidden)
 	_, err = mgr.AuthorizeToken(ctx, adminRaw, string(PermRead), "unrelated", "notes")
 	require.ErrorIs(t, err, security.ErrTenantIsolation)
 

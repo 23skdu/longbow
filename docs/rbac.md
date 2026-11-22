@@ -135,11 +135,13 @@ Rules:
   no ACL fields or auto-admin grant; use REST or data-plane Flight to configure
   ACLs.
 - Namespace grants are attached to `TenantContext.NamespacePermissions` for
-  that namespace only. They **never** become global permissions.
-- `admin_key_ids` grants `read`, `write`, `delete`, `ingest`, `manage-keys`, and
-  namespace-scoped `manage-tenant`; `writer_key_ids` grants data mutation
-  permissions; `reader_key_ids` grants `read`. An explicit key-specific grant
-  takes precedence over public permissions for that namespace.
+  that namespace only. They **never** become global permissions, including on
+  administrative REST routes that accept `X-Tenant-ID`.
+- `admin_key_ids` grants `read`, `write`, `delete`, and `ingest` within that
+  namespace; `writer_key_ids` grants data mutation permissions; `reader_key_ids`
+  grants `read`. Namespace ACLs do not grant `manage-keys` or `manage-tenant`.
+  An explicit key-specific grant takes precedence over public permissions for
+  that namespace.
 - `public_permissions` are granted to **every authenticated RBAC key**,
   including exchanged OIDC session keys. Supported values are `read`, `write`,
   `delete`, and `ingest`; write-class permissions imply `read`. Direct OIDC JWT

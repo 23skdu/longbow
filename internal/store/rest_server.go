@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,6 +25,33 @@ func (s *VectorStore) httpAuthWrap(requiredPerm Permission, next http.Handler) h
 			return
 		}
 		security.HTTPAuthMiddleware(validator, s.AuditLogger(), string(requiredPerm))(next).ServeHTTP(w, r)
+	})
+}
+
+// httpGlobalAuthWrap authenticates and then verifies global authority. It is
+// for administrative endpoints whose permissions must never be satisfied by a
+// namespace-scoped ACL grant, even when the caller supplies X-Tenant-ID.
+func (s *VectorStore) httpGlobalAuthWrap(requiredPerm Permission, next http.Handler) http.Handler {
+	return s.httpAuthWrap(requiredPerm, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := s.requireHTTPGlobalPermission(r.Context(), requiredPerm, ""); err != nil {
+			code := http.StatusForbidden
+			if errors.Is(err, security.ErrUnauthorized) {
+				code = http.StatusUnauthorized
+			}
+			writeRESTError(w, "auth", r.Method, code, err.Error())
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
+func (s *VectorStore) httpGlobalMethodAuthWrap(readPerm, writePerm Permission, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		perm := readPerm
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			perm = writePerm
+		}
+		s.httpGlobalAuthWrap(perm, next).ServeHTTP(w, r)
 	})
 }
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/security/secrets"
 	"github.com/23skdu/longbow/internal/store"
+	"github.com/23skdu/longbow/internal/store/rbac"
 )
 
 // ErrInvalidStartupNamespacePolicies indicates malformed declarative namespace ACLs.
@@ -43,8 +44,8 @@ func ParseStartupNamespacePolicies(raw string) ([]store.NamespacePolicy, error) 
 		if err := policy.Validate(); err != nil {
 			return nil, fmt.Errorf("%w: policy %d: %v", ErrInvalidStartupNamespacePolicies, i, err)
 		}
-		if strings.Contains(policy.Namespace, "/") || strings.Contains(policy.Namespace, `\`) {
-			return nil, fmt.Errorf("%w: policy %d: namespace %q contains a path separator", ErrInvalidStartupNamespacePolicies, i, policy.Namespace)
+		if err := rbac.ValidateNamespaceName(policy.Namespace); err != nil {
+			return nil, fmt.Errorf("%w: policy %d: %v", ErrInvalidStartupNamespacePolicies, i, err)
 		}
 		if _, duplicate := seen[policy.Namespace]; duplicate {
 			return nil, fmt.Errorf("%w: duplicate namespace %q", ErrInvalidStartupNamespacePolicies, policy.Namespace)

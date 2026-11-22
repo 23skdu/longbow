@@ -10,6 +10,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/security"
+	"github.com/23skdu/longbow/internal/store/rbac"
 )
 
 // Namespace represents a tenant isolation unit containing related datasets.
@@ -169,8 +170,8 @@ func newNamespaceManager() *namespaceManager {
 // CreateNamespace creates a new namespace with the given name.
 // Returns error if namespace already exists.
 func (vs *VectorStore) CreateNamespace(name string) error {
-	if name == "" {
-		return errors.New("namespace name cannot be empty")
+	if err := rbac.ValidateNamespaceName(name); err != nil {
+		return err
 	}
 
 	if vs.nsManager == nil {

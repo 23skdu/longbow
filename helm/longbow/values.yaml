@@ -360,8 +360,8 @@ s3:
   usePathStyle: false # Set true for MinIO
   # Credentials - use existingSecret or provide directly (not recommended)
   existingSecret: ""
-  existingSecretAccessKeyKey: "access-key-id"
-  existingSecretSecretKeyKey: "secret-access-key"
+  existingSecretAccessKeyKey: "access-key-id" # checkov:skip=CKV_SECRET_6: not a secret, config key name
+  existingSecretSecretKeyKey: "secret-access-key" # checkov:skip=CKV_SECRET_6: not a secret, config key name
   # Direct credentials (not recommended for production)
   accessKeyId: ""
   secretAccessKey: ""

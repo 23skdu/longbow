@@ -24,7 +24,7 @@ TAG           ?= latest
 IMAGE_TAG     ?= $(TAG)
 
 .PHONY: all help ci release build build-release build-debug build-race build-adbc build-bench build-verify build-wasm-client clean \
-	deps deps-upgrade lint lint-fast lint-fix lint-docs actionlint lint-workflows install-tools godoc-check vet staticcheck deadcode fmt fmt-check \
+	deps deps-upgrade lint lint-fast lint-fix lint-docs actionlint lint-workflows install-tools godoc-check vet staticcheck deadcode fmt fmt-check gosec govulncheck trivy checkov \
 	security sec sec-gosec sec-vulncheck sec-audit \
 	perf perf-check cpu-profile profile-check mem mem-check mem-bench mem-escape mem-profile mem-asan mem-valgrind \
 	fuzz test-fuzz fuzz-coverage \
@@ -262,6 +262,22 @@ fmt-check:
 markdown-lint:
 	@echo "Running markdown linting on documentation..."
 	$(MARKDOWNLINT) -c .markdownlint.json docs/*.md README.md
+
+gosec:
+	@echo "Running gosec security analysis..."
+	gosec ./...
+
+govulncheck:
+	@echo "Running govulncheck vulnerability analysis..."
+	govulncheck ./...
+
+trivy:
+	@echo "Running Trivy filesystem scan..."
+	trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --skip-dirs vendor,data,bin .
+
+checkov:
+	@echo "Running Checkov IaC scan..."
+	checkov -d . --skip-path vendor --skip-path data --skip-path bin --quiet
 
 godoc-check:
 	@echo "Checking godoc coverage for exported symbols..."

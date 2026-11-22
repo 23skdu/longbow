@@ -54,16 +54,25 @@ recorded here so the scope and verification strategy remain auditable.
   listeners start. Durable policies survive restart and recreate empty
   namespaces; `ephemeral: true` policies are runtime-only and remove stale
   durable records. Helm exposes `rbac.startupNamespacePolicies`.
+- [x] **Listener coverage**: Flight, RDMA, and gRPC health use the same auth
+  interceptors. WebSocket upgrades require authentication and per-dataset read
+  authorization, start after RBAC provisioning, and reject mismatched origins.
+  `/progress`, `/diagnostics`, and pprof require a global admin; `/ready`
+  reports startup completion.
+- [x] **Replay pruning**: datasets and namespace objects recreated by WAL or
+  snapshot replay are dropped after ACL rehydration unless a durable namespace
+  policy still owns them.
 - [x] **Unit tests**: secret backend tests, RBAC ACL tests (public read/write,
   admin/writer/reader, rotation, restart persistence), config parsing and
   validation tests, startup namespace provisioning/restart tests, Helm template
   checks, and simulator config tests.
 - [x] **RBAC-only verification script**: `scripts/verify_rbac.py` exercises
   only authorization behavior against a running server. It checks
-  unauthenticated rejection, admin provisioning, namespace ACL isolation,
-  public namespaces, server-admin-only namespace creation, and immediate key
-  revocation. `scripts/tests/test_verify_rbac.py` unit-tests the verifier with
-  a fake transport.
+  unauthenticated rejection, admin provisioning, namespace reader/writer/admin
+  scoping, global-admin guards, authenticated public namespaces,
+  server-admin-only namespace creation, and immediate key revocation. Its unit
+  tests run via `make test-rbac-verifier`, and CI runs the live script against a
+  disposable server.
 
 Operator setup and the full verification commands are documented in
 [`docs/rbac.md`](../rbac.md).
@@ -153,6 +162,7 @@ A native Go tool (like `cmd/bench-tool`) that simulates agent behaviors at scale
 with a Python collation script similar to `scripts/unified_benchmark.py`.
 
 Subtasks:
+
 - [x] **Design `cmd/agentsoak` CLI**: `-config` loads `configs/multiagent_soak.json`; flags for agents, duration, dim, seed, namespace names, and output JSON override it; reuse `client.SmartClient`.
 - [x] **Agent goroutine model**: each agent runs its own read/write/delete loop with random pauses; per-agent private, shared, and common namespaces with server-enforced RBAC.
 - [ ] **Workload mix**: dense/hybrid/sparse/filtered/range/by-id/temporal/geo/graph/multimodal/federated/insert/upsert/delete with configurable weights.

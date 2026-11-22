@@ -2,9 +2,10 @@
 
 Longbow **always enforces** Role-Based Access Control (RBAC) and Row-Level
 Security (RLS) across **Arrow Flight gRPC** (Data Plane `:3000` and Control
-Plane `:3001`), **HTTP REST v1** (`/api/v1/*`, served on the REST/metrics
-listener), and **GraphQL** (`/api/v1/graphql`). OIDC federation is optional and
-additive; when enabled it supplies identities to the same authorization model.
+Plane `:3001`), the **RDMA gRPC** handshake, **WebSocket CDC** (`/ws`), **HTTP
+REST v1** (`/api/v1/*`, served on the REST/metrics listener), and **GraphQL**
+(`/api/v1/graphql`). OIDC federation is optional and additive; when enabled it
+supplies identities to the same authorization model.
 
 There is no RBAC off switch. `LONGBOW_RBAC_ENABLED` is accepted only for
 backward compatibility with old deployment manifests and is ignored.
@@ -24,7 +25,10 @@ At startup Longbow:
 5. Recreates namespace objects for every rehydrated durable ACL, including empty
    namespaces that contain no replayed datasets.
 6. Provisions any namespaces declared in `LONGBOW_STARTUP_NAMESPACE_POLICIES`
-   before the Flight and REST/GraphQL listeners accept traffic.
+   before listeners accept traffic.
+7. Prunes datasets and namespace objects recreated by WAL/snapshot replay when
+   they no longer have a durable ACL, and starts the WebSocket listener only
+   after the validator is installed.
 
 If no admin is available, the process exits with an error such as:
 
@@ -95,6 +99,19 @@ Defined in `internal/store/rbac/` and aligned with OIDC claim mapping in
 Namespace creation and deletion require the **global** `manage-tenant`
 permission; `admin` and `tenant-admin` keys carry it. A namespace-scoped
 `manage-tenant` grant from a namespace ACL does not satisfy this global check.
+
+### Listener and endpoint coverage
+
+- All gRPC methods on the Flight and RDMA listeners pass through the same auth
+  interceptors. The gRPC health service is not an authentication bypass;
+  HTTP liveness probes on the metrics listener remain available for orchestrators.
+- WebSocket `/ws` requires a valid API key or OIDC session at upgrade time and
+  rechecks `read` authorization for every dataset subscription. An `Origin`
+  header that does not match the request host is rejected.
+- `/progress`, `/diagnostics`, and `/debug/pprof/*` require an unscoped global
+  admin. `/health` and `/metrics` remain unauthenticated for liveness and
+  Prometheus scraping; `/ready` is unauthenticated but returns `503` until
+  startup completes.
 
 ---
 

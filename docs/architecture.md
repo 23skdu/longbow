@@ -413,8 +413,9 @@ Namespaces provide a bulk lifecycle management layer:
 - **Bulk Deletion**: Deleting a namespace recursively drops all contained datasets and removes its durable ACL record from the RBAC secrets provider.
 - **Resource Reclamation**: When a namespace is deleted, its memory is immediately returned to the system-wide pool, and its persistent snapshots/WAL logs are purged from the filesystem.
 - **Isolation**: Tombstones are scoped to a dataset within a namespace. Deleting a record in one namespace has no effect on identical IDs in another namespace.
-- **Declarative Bootstrap**: `LONGBOW_STARTUP_NAMESPACE_POLICIES` (or `--startup-namespace-policies`) provisions namespace objects and ACLs during server initialization, before any listener accepts traffic. Durable policies are stored with API keys in the configured secrets provider; `ephemeral: true` policies remain process-local and are removed on restart.
+- **Declarative Bootstrap**: `LONGBOW_STARTUP_NAMESPACE_POLICIES` (or `--startup-namespace-policies`) provisions namespace objects and ACLs during server initialization, before any listener accepts traffic. Every key ID in a startup ACL must resolve to a registered API key. Durable policies are stored with API keys in the configured secrets provider; `ephemeral: true` policies remain process-local and are removed on restart.
 - **Restart Rehydration**: durable namespace policies are loaded from the secrets provider with the API keys and recreate their namespace objects, including namespaces that contain no replayed datasets.
+- **Replay Pruning**: WAL/snapshot replay happens before RBAC rehydration. After ACLs are loaded, datasets and namespace objects without a durable owner are dropped so deleted or ephemeral namespaces cannot be resurrected by old records.
 
 ### 5.5 Operational Best Practices
 
@@ -541,7 +542,7 @@ Longbow uses a multi-stage search strategy for optimal resource utilization:
 
 ## 8. RDMA Networking
 
-For distributed search across accelerated nodes, Longbow implements **RDMA over RoCEv2**. This allows pushing Arrow batches directly from a client into a remote node's GPU VRAM or TPU HBM, bypassing the OS network stack.
+For distributed search across accelerated nodes, Longbow implements **RDMA over RoCEv2**. This allows pushing Arrow batches directly from a client into a remote node's GPU VRAM or TPU HBM, bypassing the OS network stack. The RDMA handshake is a gRPC service and uses the same authentication interceptors as the Flight listeners, including for health checks.
 
 ---
 

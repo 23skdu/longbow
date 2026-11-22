@@ -38,7 +38,15 @@ Namespace ACLs can also be declared before listeners start with
 `LONGBOW_STARTUP_NAMESPACE_POLICIES` (or `--startup-namespace-policies`). Durable
 policies persist in the configured provider; `ephemeral: true` policies remain
 runtime-only. Public namespace permissions are granted only to authenticated
-keys. See [RBAC documentation](rbac.md) for provider details and the JSON schema.
+keys, and startup rejects ACLs that reference unregistered key IDs. WAL replay
+cannot resurrect a deleted or runtime-only namespace after ACL rehydration. See
+[RBAC documentation](rbac.md) for provider details and the JSON schema.
+
+All gRPC listeners (Flight, RDMA, and health) use the same authentication
+interceptors. WebSocket `/ws` authenticates the upgrade and each dataset
+subscription. `/progress`, `/diagnostics`, and pprof require an unscoped global
+admin; `/health`, `/ready`, and `/metrics` are unauthenticated orchestration and
+scraping endpoints, with `/ready` returning `503` until startup completes.
 
 ### API Key Lifecycle & CLI Management
 

@@ -383,7 +383,7 @@ Clients (including the Python SDK) monitor this metadata and should implement ba
 
 Longbow serves `/metrics` from the HTTP listener bound to `LONGBOW_METRICS_ADDR`. When that variable is unset the bare binary falls back to `:6000` — the metrics listener reads the environment variable directly and does **not** use `cfg.MetricsAddr`, whose `envconfig` default of `0.0.0.0:9090` is only logged at startup and validated by `ValidateConfig`. The Helm chart and `docker-compose.yml` both set `LONGBOW_METRICS_ADDR=0.0.0.0:9090` explicitly, which is where the familiar 9090 comes from.
 
-The same listener also serves `/health`, `/ready`, `/progress`, `/diagnostics` and the `/debug/pprof/` endpoints. `/diagnostics` returns a JSON blob that includes a `max_memory_bytes` field; that is an HTTP response field, not a Prometheus series.
+The same listener also serves `/health`, `/ready`, `/progress`, `/diagnostics` and the `/debug/pprof/` endpoints. `/health` and `/metrics` are unauthenticated for liveness and scraping, and `/ready` is unauthenticated but returns `503` until startup completes. `/progress`, `/diagnostics`, and `/debug/pprof/*` require an unscoped global admin key; namespace-scoped credentials are rejected. `/diagnostics` returns a JSON blob that includes a `max_memory_bytes` field; that is an HTTP response field, not a Prometheus series.
 
 ### Key Metrics
 

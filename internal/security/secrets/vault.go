@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -83,7 +84,7 @@ func (s *VaultStore) do(ctx context.Context, method, path string, body, out any)
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("secrets: vault %s %s: %s: %s", method, path, resp.Status, strings.TrimSpace(string(payload)))
+		return &httpStatusError{Status: resp.StatusCode, Body: string(payload)}
 	}
 	if out != nil && len(payload) > 0 {
 		if err := json.Unmarshal(payload, out); err != nil {
@@ -139,5 +140,13 @@ func (s *VaultStore) Delete(ctx context.Context, keyID string) error {
 	if err != nil {
 		return err
 	}
-	return s.do(ctx, http.MethodDelete, path, nil, nil)
+	err = s.do(ctx, http.MethodDelete, path, nil, nil)
+	if err == nil {
+		return nil
+	}
+	var statusErr *httpStatusError
+	if errors.As(err, &statusErr) && statusErr.Status == http.StatusNotFound {
+		return fmt.Errorf("%w: vault key %q", ErrNotFound, keyID)
+	}
+	return err
 }

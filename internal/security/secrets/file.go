@@ -67,6 +67,9 @@ func (s *FileStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 }
 
 func (s *FileStore) Put(ctx context.Context, key StoredKey) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	path, err := s.path(key.KeyID)
 	if err != nil {
 		return err
@@ -75,9 +78,35 @@ func (s *FileStore) Put(ctx context.Context, key StoredKey) error {
 	if err != nil {
 		return err
 	}
-	// The path is validated and confined to the store directory above.
-	if err := os.WriteFile(path, data, 0600); err != nil { // #nosec G304 -- validated KeyID confined to store dir
+	// Write to a temporary file in the same directory, fsync it, then rename so
+	// a crash cannot leave a half-written credential record behind.
+	tmp, err := os.CreateTemp(s.dir, ".tmp-"+key.KeyID+"-")
+	if err != nil {
+		return fmt.Errorf("secrets: create temp file for %s: %w", key.KeyID, err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if err := tmp.Chmod(0600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("secrets: chmod temp file for %s: %w", key.KeyID, err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("secrets: write temp file for %s: %w", key.KeyID, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("secrets: sync temp file for %s: %w", key.KeyID, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("secrets: close temp file for %s: %w", key.KeyID, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil { // #nosec G304 -- validated KeyID confined to store dir
 		return fmt.Errorf("secrets: write %s: %w", key.KeyID, err)
+	}
+	if dir, err := os.Open(s.dir); err == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
 	}
 	return ctx.Err()
 }

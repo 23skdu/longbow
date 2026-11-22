@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -257,6 +258,75 @@ func TestAWSStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []StoredKey{sampleKey("aws_key")}, keys)
 	require.NoError(t, s.Delete(ctx, "aws_key"))
+}
+
+func TestGCPSecretIDPreservesCaseDistinction(t *testing.T) {
+	lower, err := gcpSecretID(DefaultPrefix, "gcp_key")
+	require.NoError(t, err)
+	require.Equal(t, "longbow-rbac-gcp_key", lower)
+
+	upper, err := gcpSecretID(DefaultPrefix, "GCP_KEY")
+	require.NoError(t, err)
+	require.NotEqual(t, lower, upper)
+}
+
+func TestDeleteMissingIsIdempotentForExternalProviders(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("vault", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, http.MethodDelete, r.Method)
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"errors":[]}`)
+		}))
+		defer srv.Close()
+		s, err := NewVaultStore(VaultConfig{Addr: srv.URL, Token: "test-token"})
+		require.NoError(t, err)
+		require.ErrorIs(t, s.Delete(ctx, "missing_key"), ErrNotFound)
+	})
+
+	t.Run("gcp", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, http.MethodDelete, r.Method)
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"error":{"code":404,"message":"not found"}}`)
+		}))
+		defer srv.Close()
+		s, err := NewGCPStore(ctx, GCPConfig{
+			ProjectID: "p", Token: "test-token", BaseURL: srv.URL + "/v1/projects/p/secrets",
+		})
+		require.NoError(t, err)
+		require.ErrorIs(t, s.Delete(ctx, "missing_key"), ErrNotFound)
+	})
+
+	t.Run("aws", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Contains(t, r.Header.Get("X-Amz-Target"), "DeleteSecret")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"__type":"ResourceNotFoundException","message":"not found"}`)
+		}))
+		defer srv.Close()
+		s, err := NewAWSStore(ctx, AWSConfig{
+			Region: "us-east-1", Endpoint: srv.URL,
+			Credentials: credentials.NewStaticCredentialsProvider("AKID", "SECRET", ""),
+		})
+		require.NoError(t, err)
+		require.ErrorIs(t, s.Delete(ctx, "missing_key"), ErrNotFound)
+	})
+}
+
+func TestFileStorePutLeavesNoTemporaryRecords(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "keys")
+	s, err := NewFileStore(dir)
+	require.NoError(t, err)
+	require.NoError(t, s.Put(ctx, sampleKey("atomic_key")))
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		require.False(t, strings.HasPrefix(entry.Name(), ".tmp-"), entry.Name())
+	}
 }
 
 func mustJSON(t *testing.T, v any) []byte {

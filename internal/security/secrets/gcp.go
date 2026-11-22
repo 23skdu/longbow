@@ -3,7 +3,9 @@ package secrets
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,7 +46,15 @@ func gcpSecretID(prefix, keyID string) (string, error) {
 		return "", err
 	}
 	clean := strings.NewReplacer("/", "-", ".", "-", "_", "-").Replace(strings.ToLower(prefix))
-	return clean + "-" + strings.ToLower(keyID), nil
+	lower := strings.ToLower(keyID)
+	secretID := clean + "-" + lower
+	if keyID != lower {
+		// GCP secret IDs are normalized to lowercase. Preserve case-sensitive
+		// key-ID semantics with a stable suffix for mixed-case IDs.
+		sum := sha256.Sum256([]byte(keyID))
+		secretID += "-" + hex.EncodeToString(sum[:])[:8]
+	}
+	return secretID, nil
 }
 
 func NewGCPStore(ctx context.Context, cfg GCPConfig) (*GCPStore, error) {
@@ -197,6 +207,12 @@ func (s *GCPStore) Delete(ctx context.Context, keyID string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.do(ctx, http.MethodDelete, s.baseURL+"/"+url.PathEscape(secretID), nil, nil)
+	status, err := s.do(ctx, http.MethodDelete, s.baseURL+"/"+url.PathEscape(secretID), nil, nil)
+	if err == nil {
+		return nil
+	}
+	if status == http.StatusNotFound {
+		return fmt.Errorf("%w: gcp key %q", ErrNotFound, keyID)
+	}
 	return err
 }

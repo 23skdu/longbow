@@ -200,7 +200,16 @@ func (s *AWSStore) Delete(ctx context.Context, keyID string) error {
 	if err != nil {
 		return err
 	}
-	return s.do(ctx, "DeleteSecret", map[string]any{
+	err = s.do(ctx, "DeleteSecret", map[string]any{
 		"SecretId": name, "ForceDeleteWithoutRecovery": true,
 	}, nil)
+	if err == nil {
+		return nil
+	}
+	var statusErr *httpStatusError
+	if errors.As(err, &statusErr) &&
+		(statusErr.Status == http.StatusNotFound || strings.Contains(statusErr.Body, "ResourceNotFoundException")) {
+		return fmt.Errorf("%w: aws key %q", ErrNotFound, keyID)
+	}
+	return err
 }

@@ -17,16 +17,20 @@ Defined in `internal/store/rbac.go`:
 | `writer` | Tenant/namespace-scoped `read`, `write` |
 | `reader` | Tenant/namespace-scoped `read` |
 
-### Enabling RBAC
+### RBAC Bootstrap
 
-Configure via environment variables (`cmd/longbow/main.go`):
+RBAC is always enforced and cannot be disabled. Configure the bootstrap admin
+and secret provider via environment variables (`cmd/longbow/config.go`):
 
 ```bash
-export LONGBOW_RBAC_ENABLED=true
 export LONGBOW_RBAC_BOOTSTRAP_KEY="<initial-admin-secret>"
+export LONGBOW_SECRETS_PROVIDER=file  # or vault, gcp, aws
 ```
 
-When `LONGBOW_RBAC_BOOTSTRAP_KEY` is provided at startup, the server registers it as a bootstrap `admin` key so administrators can immediately provision scoped keys.
+When `LONGBOW_RBAC_BOOTSTRAP_KEY` is provided, the server registers it as a
+bootstrap `admin` key and writes it through to the configured provider. Without
+a bootstrap key, the server must load at least one admin key from that provider
+or it refuses to start. See [RBAC documentation](rbac.md) for provider details.
 
 ### API Key Lifecycle & CLI Management
 
@@ -198,7 +202,7 @@ gcloud iam service-accounts add-iam-policy-binding \
 
 ### Migrating from Static API Keys to OIDC Federation
 
-1. **Enable OIDC alongside RBAC** (`LONGBOW_RBAC_ENABLED=true`, `LONGBOW_OIDC_ENABLED=true`, `LONGBOW_OIDC_ISSUERS='[...]'`). Longbow's `compositeAccessValidator` evaluates both static `lbk_` API keys and federated OIDC JWTs concurrently during migration.
+1. **Enable OIDC alongside always-on RBAC** (`LONGBOW_OIDC_ENABLED=true`, `LONGBOW_OIDC_ISSUERS='[...]'`). Longbow's `compositeAccessValidator` evaluates both static API keys and federated OIDC JWTs concurrently during migration.
 2. **Acquire & Exchange Cloud Tokens** using the Go SDK (`client.AcquireAWSWebIdentityToken()` / `client.AcquireGoogleIDToken(...)` + `sc.ExchangeOIDCToken(...)`) or Python SDK (`LongbowClient.acquire_aws_web_identity_token()` / `acquire_google_id_token(...)` + `exchange_oidc_token(...)`).
 3. **Verify Audit Attribution** in `GET /api/v1/rbac/audit` (`oidc:<provider>:<sub>`) and monitor `grafana/dashboards/oidc-federation.json`.
 4. **Revoke Legacy API Keys** via `longbow-cli revoke-api-key` or `POST /api/v1/rbac/keys` rotation once workloads exclusively authenticate via OIDC.

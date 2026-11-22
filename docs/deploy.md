@@ -486,9 +486,9 @@ Longbow provides multi-tenant isolation, Role-Based Access Control (RBAC), Row-L
 
 ### Authentication, RBAC & Row-Level Security
 
-1. **API Key Authentication & RBAC (`internal/store/rbac.go`)**
-   - Enable via `LONGBOW_RBAC_ENABLED=true` and `LONGBOW_RBAC_BOOTSTRAP_KEY="<admin-key>"`.
-   - Roles: `admin`, `tenant-admin`, `writer`, and `reader` with tenant and dataset scoping.
+1. **API Key Authentication & RBAC (`internal/store/rbac/`)**
+   - RBAC is always enforced. Set `LONGBOW_RBAC_BOOTSTRAP_KEY="<admin-key>"` on first start or provision an admin key in the configured `LONGBOW_SECRETS_PROVIDER` (`file`, `vault`, `gcp`, or `aws`).
+   - Roles: `admin`, `tenant-admin`, `writer`, and `reader` with tenant and dataset scoping, plus per-namespace admin/writer/reader ACLs and configurable public permissions.
    - Manage keys via Flight `DoAction`, REST `/api/v1/rbac/keys`, or `longbow-cli create-api-key` / `rotate-api-key` / `revoke-api-key` / `list-api-keys`.
 
 2. **Row-Level Security (`internal/security/rls.go`)**
@@ -700,7 +700,7 @@ The Helm chart (`helm/longbow/templates/hpa.yaml`) supports `autoscaling/v2` sca
 
 ### TLS / mTLS, KMS & Encryption at Rest
 
-Configure transport security and encrypted WAL/disk spill using `LONGBOW_TLS_*`, `LONGBOW_RBAC_*`, `LONGBOW_ENCRYPTION_AT_REST`, and `LONGBOW_KMS_*` environment variables. When `LONGBOW_TLS_ENABLED=true`, both the gRPC/Arrow Flight server and the HTTP REST/GraphQL/metrics listener use the `CertReloader` TLS/mTLS configuration with hot certificate rotation. When `LONGBOW_RBAC_ENABLED=true`, both Flight RPCs and `/api/v1/*` HTTP handlers enforce Bearer/`X-API-Key` authorization and audit logging. See [security-compliance.md](security-compliance.md) for full details and SOC2/GDPR compliance controls.
+Configure transport security, encrypted WAL/disk spill, and durable API keys using `LONGBOW_TLS_*`, `LONGBOW_RBAC_BOOTSTRAP_KEY`, `LONGBOW_SECRETS_*`, `LONGBOW_ENCRYPTION_AT_REST`, and `LONGBOW_KMS_*` environment variables. When `LONGBOW_TLS_ENABLED=true`, both the gRPC/Arrow Flight server and the HTTP REST/GraphQL/metrics listener use the `CertReloader` TLS/mTLS configuration with hot certificate rotation. Both Flight RPCs and `/api/v1/*` HTTP handlers always enforce Bearer/`X-API-Key` authorization and audit logging. See [rbac.md](rbac.md) and [security-compliance.md](security-compliance.md) for full details and SOC2/GDPR compliance controls.
 
 ### Managed Cloud Multi-Region Replication & Usage Admin Dashboard
 

@@ -137,7 +137,6 @@ actually enforced.
 Start the server with a known bootstrap admin key:
 
 ```bash
-LONGBOW_RBAC_ENABLED=true \
 LONGBOW_RBAC_BOOTSTRAP_KEY="local-soak-admin-key-0123456789" \
 ./bin/longbow
 ```
@@ -155,6 +154,7 @@ Customize the layout with flags, for example `--agents 5 --private-prefix own_
 permission tiers stay fixed; only the names and agent count change. See
 [`configs/README.md`](../../configs/README.md) for the full schema.
 
-For a local unauthenticated smoke run, pass `--no-require-rbac` (Python) or
-`-require-rbac=false` (Go); the tools print a warning because the boundaries
-are then not enforced.
+There is no unauthenticated smoke mode. Both simulators always require the
+bootstrap admin key and abort if the server does not enforce the permission
+boundaries. Use `scripts/verify_rbac.py` for a focused RBAC-only check without
+running the soak workload.

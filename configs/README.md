@@ -45,11 +45,14 @@ Changing `agents` to `N` produces `2N + 1` namespaces. Changing the prefixes or
 the common namespace name changes the generated dataset names; the permission
 tiers stay the same.
 
-Start the server with a known bootstrap admin key so the simulators can
-provision scoped keys:
+RBAC is always enforced. Start the server with a known bootstrap admin key so
+the simulators can provision scoped keys (the secrets provider defaults to a
+durable local file store):
 
 ```bash
-LONGBOW_RBAC_ENABLED=true \
 LONGBOW_RBAC_BOOTSTRAP_KEY="local-soak-admin-key-0123456789" \
 ./bin/longbow
 ```
+
+The simulators require that key and always verify the permission boundaries at
+startup; there is no no-RBAC mode.

@@ -6,7 +6,8 @@ Maintainer- and contributor-only documents for Longbow. User-facing guides remai
 
 - [Development Guide](development.md) — environment setup, contribution workflow, benchmarking, and regression test plan.
 - [Code & Quality Gates](gates.md) — the verification gates enforced by local tooling and CI.
-- [Roadmap](roadmap.md) — remaining performance, scalability, and modularization work.
+- [Roadmap](../roadmap.md) — canonical, prioritized remaining work. This
+  directory's [roadmap index](roadmap.md) is a stable link target for older docs.
 
 ## Performance & Validation
 

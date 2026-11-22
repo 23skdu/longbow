@@ -117,9 +117,10 @@ RBAC roles (`admin`, `tenant-admin`, `writer`, `ingest-only`, `reader`), dataset
 
 Pure-Go WASM local HNSW index, offline-first conflict resolution, TypeScript Edge SDK (`sdk/edge-js`), and HTTP sync/search endpoints.
 
-### 17. [Feature Parity Roadmap (Items 1–15)](development/roadmap.md)
+### 17. [Roadmap](roadmap.md)
 
-End-to-end roadmap covering Managed Cloud multi-region replication, first-class REST/GraphQL APIs, RBAC, backup/PITR, streaming CDC, multi-modal pipelines, usage metering, sharding, encryption/mTLS, schemas, materialized views, advanced text search, and provenance.
+Prioritized remaining work across release correctness, multi-agent soak
+reliability, secure soak variants, modularization, and test depth.
 
 ---
 
@@ -133,7 +134,7 @@ Contributor- and maintainer-only documents are grouped in [docs/development/](de
 - [24-Hour Agent-Memory Soak Test Plan](development/soaktestplan.md) — long-running stability validation
 - [Global GraphRAG & Clustering Test Plan](development/globaltestplan.md) — multi-node GCP validation
 - [Code & Quality Gates](development/gates.md) — repository conformance gates
-- [Roadmap](development/roadmap.md) — remaining performance and scale work
+- [Roadmap](roadmap.md) — remaining performance, scale, and reliability work
 - [SIMD Architecture & Dispatch](development/simd-architecture.md) — kernel dispatch internals
 
 ---

@@ -20,8 +20,9 @@ import (
 // everywhere therefore round trips within tolerance and passes.
 //
 // scripts/check_avx512_coverage.sh runs this under Intel SDE
-// (docs/development/roadmap.md item 5). There was no evidence before it that the VBMI
-// packer agreed with the definition it implements.
+// (docs/roadmap.md, "AVX-512 VBMI TurboQuant packer parity"). There was no
+// evidence before it that the VBMI packer agreed with the definition it
+// implements.
 
 // tq2VBMIProbe spans [-2*PI, 2*PI] so both clamp arms are exercised, and
 // includes exact multiples of PI, which sit on the rounding boundary and are

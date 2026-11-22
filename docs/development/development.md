@@ -377,7 +377,7 @@ cp data/perf_logs/perf_matrix_cpu_regression_*.md docs/development/performance.m
 | Bench logs | `data/perf_logs/bench_cpu_*.log` | Bench-tool output |
 | Perf matrix | `data/perf_logs/perf_matrix_*.json` | Aggregated all configs |
 | Performance doc | `docs/development/performance.md` | Analysis and findings |
-| Next steps | `docs/development/roadmap.md` | Optimization recommendations |
+| Next steps | `docs/roadmap.md` | Optimization recommendations |
 
 #### Pass/Fail Criteria
 

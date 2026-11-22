@@ -32,13 +32,21 @@ import (
 	"google.golang.org/grpc"
 )
 
+// metricsListenAddr resolves the REST/metrics listener from the validated
+// config, which already includes environment variables and CLI overrides.
+// The legacy fallback is retained only for callers that construct an empty
+// Config directly.
+func metricsListenAddr(cfg *Config) string {
+	if cfg == nil || strings.TrimSpace(cfg.MetricsAddr) == "" {
+		return ":6000"
+	}
+	return cfg.MetricsAddr
+}
+
 func startHTTPMetricsServer(cfg *Config, vectorStore *store.VectorStore, certReloader *security.CertReloader, startTime time.Time, logger zerolog.Logger) *http.Server {
 	metricsSrvChan := make(chan *http.Server, 1)
 	go func() {
-		metricsAddr := os.Getenv("LONGBOW_METRICS_ADDR")
-		if metricsAddr == "" {
-			metricsAddr = ":6000"
-		}
+		metricsAddr := metricsListenAddr(cfg)
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
 

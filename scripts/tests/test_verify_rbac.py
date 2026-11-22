@@ -103,7 +103,7 @@ class FakeTransport:
             self.namespaces[body["name"]] = {
                 "reader_key_ids": set(body.get("reader_key_ids", [])),
                 "writer_key_ids": set(body.get("writer_key_ids", [])),
-                "admin_key_ids": {"bootstrap-admin"},
+                "admin_key_ids": set(body.get("admin_key_ids", [])) | {"bootstrap-admin"},
                 "public_permissions": set(body.get("public_permissions", [])),
             }
             return 201, {"name": body["name"], "status": "created"}
@@ -132,7 +132,7 @@ class FakeTransport:
     def _has_permission(self, key, namespace, perm):
         if key is None:
             return self.allow_unauthenticated
-        if key["role"] == "admin":
+        if key["role"] == "admin" and not key["namespace"]:
             return True
         policy = self.namespaces.get(namespace)
         if policy:
@@ -145,6 +145,8 @@ class FakeTransport:
                 return True
             if perm in policy["public_permissions"]:
                 return True
+        if key["role"] == "admin":
+            return False
         if key["namespace"] and key["namespace"] != namespace:
             return False
         return perm in ROLE_PERMS.get(key["role"], set())
@@ -166,11 +168,18 @@ class VerifyRBACTests(unittest.TestCase):
         verifier = vr.Verifier(transport, "bootstrap-admin", suffix="unit")
         checks = verifier.run()
 
-        self.assertGreaterEqual(len(checks), 15)
+        self.assertGreaterEqual(len(checks), 22)
         labels = [label for label, _, _ in checks]
         self.assertIn("unauthenticated request is rejected", labels)
         self.assertIn("namespace reader cannot write", labels)
         self.assertIn("writer cannot enter a private namespace", labels)
+        self.assertIn(
+            "namespace-scoped admin cannot list API keys", labels
+        )
+        self.assertIn(
+            "namespace-scoped admin cannot create a namespace", labels
+        )
+        self.assertIn("public namespace still requires authentication", labels)
         self.assertIn("outsider cannot read a private namespace", labels)
         self.assertIn("non-admin cannot create a namespace", labels)
         self.assertIn("revoked key is rejected", labels)

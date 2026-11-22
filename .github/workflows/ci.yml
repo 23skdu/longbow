@@ -110,6 +110,9 @@ jobs:
           python3 scripts/tests/test_benchmark_attribution.py
           python3 scripts/tests/test_ab_stats.py
 
+      - name: Test RBAC Verification Script Helpers
+        run: python3 scripts/tests/test_verify_rbac.py
+
       - name: Test Release Version Consistency Helpers
         run: python3 scripts/tests/test_version_consistency.py
 
@@ -229,6 +232,55 @@ jobs:
           config: ".markdownlint.json"
           globs: "docs/**/*.md"
 
+  rbac-enforcement:
+    name: RBAC Enforcement Verification
+    needs: [validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Build Longbow
+        run: go build -o /tmp/longbow-rbac ./cmd/longbow
+
+      - name: Run RBAC-only verifier against a disposable server
+        env:
+          LONGBOW_RBAC_BOOTSTRAP_KEY: ci-rbac-admin-key-0123456789
+          RBAC_URL: http://127.0.0.1:39092
+        run: |
+          set -euo pipefail
+          DATA_DIR=$(mktemp -d)
+          LOG_FILE=/tmp/longbow-rbac.log
+          LONGBOW_LISTEN_ADDR=127.0.0.1:39090 \
+          LONGBOW_META_ADDR=127.0.0.1:39091 \
+          LONGBOW_METRICS_ADDR=127.0.0.1:39092 \
+          LONGBOW_DATA_PATH="$DATA_DIR" \
+          LONGBOW_MAX_MEMORY=1073741824 \
+          LONGBOW_TESTING=true \
+          LONGBOW_SECRETS_PROVIDER=file \
+          LONGBOW_SECRETS_PATH="$DATA_DIR/rbac_secrets" \
+            /tmp/longbow-rbac >"$LOG_FILE" 2>&1 &
+          SERVER_PID=$!
+          cleanup() {
+            kill "$SERVER_PID" 2>/dev/null || true
+            wait "$SERVER_PID" 2>/dev/null || true
+            rm -rf "$DATA_DIR"
+          }
+          trap cleanup EXIT
+          for _ in $(seq 1 60); do
+            if curl -fsS "$RBAC_URL/ready" >/dev/null 2>&1; then break; fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then cat "$LOG_FILE"; exit 1; fi
+            sleep 1
+          done
+          if ! curl -fsS "$RBAC_URL/ready" >/dev/null 2>&1; then cat "$LOG_FILE"; exit 1; fi
+          LONGBOW_RBAC_VERIFY_URL="$RBAC_URL" python3 scripts/verify_rbac.py
+
   emulation:
     name: Hardware Emulation (ARM64 & Intel SDE)
     runs-on: ubuntu-latest
@@ -282,7 +334,7 @@ jobs:
 
   release-containers:
     name: Build & Push Release Containers
-    needs: [validate, security, observability, helm-and-docs, oidc-federation-security]
+    needs: [validate, security, observability, helm-and-docs, oidc-federation-security, rbac-enforcement]
     runs-on: ubuntu-latest
     permissions:
       contents: read

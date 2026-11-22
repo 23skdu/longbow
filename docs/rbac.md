@@ -327,13 +327,19 @@ LONGBOW_RBAC_BOOTSTRAP_KEY='a-long-random-admin-secret' \
   python3 scripts/verify_rbac.py --url http://127.0.0.1:9090
 ```
 
+The same live check is available as `make rbac-verify` after exporting
+`LONGBOW_RBAC_BOOTSTRAP_KEY` (and optionally `LONGBOW_RBAC_VERIFY_URL`). CI runs
+it against a disposable server with a generated bootstrap key. The script's own
+unit tests run with `make test-rbac-verifier`.
+
 `--admin-key` can be used instead of `LONGBOW_RBAC_BOOTSTRAP_KEY`. The script
 checks only authorization behavior: unauthenticated rejection, admin key
-listing, key creation and namespace provisioning, namespace reader/writer
-isolation, public namespace access, admin-only namespace creation, and
-immediate revocation. It checks HTTP status codes and leaves uniquely named
-test keys, namespaces, and datasets behind; run it against a disposable server
-or namespace set.
+listing, key creation and namespace provisioning, namespace reader/writer/admin
+scoping, rejection of namespace-scoped admins from global key and tenant
+administration, public namespace access requiring authentication, admin-only
+namespace creation, and immediate revocation. It checks HTTP status codes and
+leaves uniquely named test keys, namespaces, and datasets behind; run it
+against a disposable server or namespace set.
 
 Unit tests:
 

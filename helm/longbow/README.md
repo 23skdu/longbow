@@ -282,4 +282,6 @@ and durable ACLs are written to `rbac.secretsPath` on the dedicated
 durable volume); otherwise keys and ACLs are lost on pod replacement. External
 providers (`vault`, `gcp`, `aws`) do not need this PVC.
 
-Verify the deployment with `python3 scripts/verify_rbac.py --url http://<metrics-host>:9090`.
+Verify the deployment with `make rbac-verify` after exporting
+`LONGBOW_RBAC_BOOTSTRAP_KEY` and `LONGBOW_RBAC_VERIFY_URL=http://<metrics-host>:9090`,
+or call `python3 scripts/verify_rbac.py --url http://<metrics-host>:9090` directly.

@@ -30,7 +30,7 @@ IMAGE_TAG     ?= $(TAG)
 	fuzz test-fuzz fuzz-coverage \
 	test test-short test-all test-wasm test-features race test-coverage coverage-gate coverage-html test-docker \
 	test-adbc test-adbc-python test-adbc-so test-version \
-	cross-compile check-simd module-size-check test-bench-harness check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
+	cross-compile check-simd module-size-check test-bench-harness test-rbac-verifier rbac-verify check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
 	accuracy-gate oracle-gate search-gate observability-inventory observability-check observability-rules \
 	docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-nvidia docker-build-all \
 	makehooks install-commit-hook install-hooks verify pre-commit
@@ -97,6 +97,8 @@ help:
 	@echo "  test-fuzz            Run fuzz test harnesses"
 	@echo "  fuzz-coverage        Verify 100% package fuzz-target presence"
 	@echo "  test-docker          Run Dockerfile unit tests (Go and Python)"
+	@echo "  test-rbac-verifier   Unit-test the RBAC-only verification script"
+	@echo "  rbac-verify          Run scripts/verify_rbac.py against a running server"
 	@echo "  test-bench-harness   Run benchmark harness test suite (122 Python tests)"
 	@echo "  test-version         Run release version consistency unit tests"
 	@echo "  check-version        Verify binary and Helm chart versions agree"
@@ -132,7 +134,7 @@ help:
 # Combined Local CI Pipeline
 # ==============================================================================
 
-ci: fmt-check lint vet build build-adbc cross-compile check-simd module-size-check test-coverage fuzz-coverage test-docker test-bench-harness test-version check-version accuracy-gate oracle-gate search-gate observability-check observability-rules sec-gosec helm-lint
+ci: fmt-check lint vet build build-adbc cross-compile check-simd module-size-check test-coverage fuzz-coverage test-docker test-bench-harness test-rbac-verifier test-version check-version accuracy-gate oracle-gate search-gate observability-check observability-rules sec-gosec helm-lint
 	@echo "=========================================================="
 	@echo " ✓ Complete local CI verification pipeline passed 100%!"
 	@echo "=========================================================="
@@ -461,6 +463,15 @@ test-docker:
 	@echo "Running Dockerfile unit tests (Go & Python)..."
 	$(GO) test -v ./tests/docker/...
 	$(PYTHON) tests/docker/test_dockerfiles.py
+
+test-rbac-verifier:
+	@echo "Running RBAC verification script unit tests..."
+	$(PYTHON) scripts/tests/test_verify_rbac.py
+
+rbac-verify:
+	@echo "Verifying RBAC on a running Longbow server..."
+	@test -n "$$LONGBOW_RBAC_BOOTSTRAP_KEY" || { echo "set LONGBOW_RBAC_BOOTSTRAP_KEY before running rbac-verify" >&2; exit 1; }
+	$(PYTHON) scripts/verify_rbac.py --url "$${LONGBOW_RBAC_VERIFY_URL:-http://127.0.0.1:9090}"
 
 test-bench-harness:
 	@echo "Running benchmark harness test suite..."

@@ -5,8 +5,10 @@ This script exercises authorization behavior and nothing else. It verifies:
 
 * protected REST endpoints reject unauthenticated requests;
 * a bootstrap/admin key can create scoped API keys and namespaces;
-* namespace reader/writer grants are scoped to that namespace;
-* public namespace permissions work for any authenticated key;
+* namespace reader/writer/admin grants are scoped to that namespace;
+* namespace-scoped admins cannot reach global key or tenant administration;
+* public namespace permissions work for any authenticated key but never for
+  anonymous requests;
 * non-admins cannot create namespaces; and
 * revoked keys stop working immediately.
 
@@ -163,9 +165,11 @@ class Verifier:
         self._create_key("reader", "reader", self.home_ns)
         self._create_key("writer", "writer", self.home_ns)
         self._create_key("outsider", "reader", self.home_ns)
+        self._create_key("scoped_admin", "admin", self.home_ns)
 
         self._create_namespace(
             self.acl_ns,
+            admin_key_ids=[self.keys["scoped_admin_id"]],
             reader_key_ids=[self.keys["reader_id"]],
             writer_key_ids=[self.keys["writer_id"]],
         )
@@ -175,6 +179,8 @@ class Verifier:
         # 4. Namespace ACL grants override the key's home namespace.
         self._create_dataset(f"{self.acl_ns}/probe", key_label="writer")
         self._read_dataset(f"{self.acl_ns}/probe", "reader")
+        self._create_dataset(f"{self.acl_ns}/admin_probe", key_label="scoped_admin")
+        self._read_dataset(f"{self.acl_ns}/admin_probe", "scoped_admin")
 
         status, _ = self._call(
             "POST",
@@ -192,9 +198,38 @@ class Verifier:
         )
         self._check("writer cannot enter a private namespace", status, ALLOWED_DENIED)
 
+        # A namespace ACL admin is a data administrator only. Global key and
+        # tenant administration must still require an unscoped admin key.
+        status, _ = self._call(
+            "GET",
+            "/api/v1/rbac/keys",
+            key_label="scoped_admin",
+            namespace=self.acl_ns,
+        )
+        self._check(
+            "namespace-scoped admin cannot list API keys", status, ALLOWED_DENIED
+        )
+
+        status, _ = self._call(
+            "POST",
+            "/api/v1/namespaces",
+            key_label="scoped_admin",
+            namespace=self.acl_ns,
+            body={"name": f"rbac_verify_scoped_escalation_{self.suffix}"},
+        )
+        self._check(
+            "namespace-scoped admin cannot create a namespace", status, ALLOWED_DENIED
+        )
+
         # 5. Public permissions apply to any authenticated key, but only there.
         self._create_dataset(f"{self.public_ns}/probe")
         self._create_dataset(f"{self.private_ns}/probe")
+        status, _ = self._call(
+            "GET", "/api/v1/datasets/" + f"{self.public_ns}/probe"
+        )
+        self._check(
+            "public namespace still requires authentication", status, ALLOWED_DENIED
+        )
         self._read_dataset(f"{self.public_ns}/probe", "outsider")
 
         status, _ = self._call(

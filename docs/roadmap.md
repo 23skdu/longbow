@@ -99,3 +99,18 @@ operations.
 - [ ] **Auto-scaler hysteresis**: prevent the ingestion/indexing auto-scaler from draining below a minimum (currently 4) while pending work exists; add a "busy" signal from the dataset lock queue.
 - [ ] **Shared-namespace soak gate**: add a CI soak variant (8 agents, 2 per namespace, 10 min) that fails on QPS drop > 50% or stall; track in `docs/soaktestplan.md`.
 - [ ] **Cross-agent memory test**: verify memories written by one agent are searchable by another within the same namespace under concurrent load.
+
+### AgentSoak Go Tool & Collation Pipeline (Planned)
+
+A native Go tool (like `cmd/bench-tool`) that simulates agent behaviors at scale,
+with a Python collation script similar to `scripts/unified_benchmark.py`.
+
+Subtasks:
+- [ ] **Design `cmd/agentsoak` CLI**: flags for agents, agents-per-ns, duration, dim, seed, output JSON; reuse `client.SmartClient`.
+- [ ] **Agent goroutine model**: each agent runs its own read/write/delete loop with random pauses; shared namespaces for cross-agent reads.
+- [ ] **Workload mix**: dense/hybrid/sparse/filtered/range/by-id/temporal/geo/graph/multimodal/federated/insert/upsert/delete with configurable weights.
+- [ ] **Cross-agent memory verification**: agent B searches memories written by agent A; assert non-empty results.
+- [ ] **Metrics collection**: QPS, error rate, p50/p95/p99, memory RSS, per-op counts; JSON output.
+- [ ] **Python collation script** (`scripts/agent_soak_bench.py`): run the Go tool, aggregate multiple runs, generate report/CSV.
+- [ ] **CI soak gate**: 8 agents, 2 per namespace, 10 min, fail on >50% QPS drop or stall.
+- [ ] **Unit/fuzz tests**: 100% coverage for agent loop, workload selection, metrics, and report collation.

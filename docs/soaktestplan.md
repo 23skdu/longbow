@@ -112,3 +112,17 @@ with the workload mix above. Metrics are sampled and persisted every minute.
   failure criteria.
 - Include **multi-modal (text+geo+graph)** memories in the global graph to
   exercise cross-modal GraphRAG.
+
+## 9. Multi-Namespace Permission Scenario (21 Namespaces)
+
+A specialized soak scenario with 10 agents and 21 namespaces:
+
+- `private_<i>` (10): owned by agent i; read/write/delete.
+- `shared_<i>` (10): agent i can write; all agents can read/search.
+- `master` (1): all agents can read/write; none may delete.
+
+This validates cross-agent memory visibility, permission boundaries (simulated),
+and shared-namespace concurrency. Script: `scripts/agent_soak_scenario.py`.
+
+Run:
+    python3 scripts/agent_soak_scenario.py --agents 10 --duration-hours 1 --dim 128

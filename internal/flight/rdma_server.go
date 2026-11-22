@@ -83,8 +83,10 @@ func (s *RDMAServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGet
 	return s.BaseFlightServer.DoGet(tkt, stream)
 }
 
-// StartRDMAListener starts the RDMA listener on the specified port.
-func (s *RDMAServer) StartRDMAListener(addr string) error {
+// StartRDMAListener starts the RDMA listener on the specified port. Callers
+// must pass the same authentication interceptors used by the Flight servers;
+// the RDMA handshake is a gRPC service and is not implicitly trusted.
+func (s *RDMAServer) StartRDMAListener(addr string, opts ...grpc.ServerOption) error {
 	// In RoCEv2, this is often a standard TCP listener for the handshake,
 	// followed by RDMA for the data path.
 	l, err := net.Listen("tcp", addr)
@@ -92,7 +94,7 @@ func (s *RDMAServer) StartRDMAListener(addr string) error {
 		return err
 	}
 	s.listener = l
-	s.grpcSrv = grpc.NewServer()
+	s.grpcSrv = grpc.NewServer(opts...)
 	flight.RegisterFlightServiceServer(s.grpcSrv, s)
 	fmt.Printf("RDMA Listener started on %s\n", addr)
 	return s.grpcSrv.Serve(l)

@@ -3,21 +3,69 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/23skdu/longbow/internal/security"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	CheckOrigin:     websocketOriginAllowed,
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+}
+
+// websocketOriginAllowed blocks cross-site browser upgrades while still
+// allowing non-browser clients, which do not send an Origin header.
+func websocketOriginAllowed(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, r.Host)
+}
+
+func websocketCredentials(r *http.Request) (token, namespace, dataset string) {
+	if authz := r.Header.Get("Authorization"); authz != "" {
+		if strings.HasPrefix(strings.ToLower(authz), "bearer ") {
+			token = strings.TrimSpace(authz[7:])
+		} else {
+			token = strings.TrimSpace(authz)
+		}
+	}
+	if token == "" {
+		token = strings.TrimSpace(r.Header.Get("X-API-Key"))
+	}
+	if token == "" {
+		token = strings.TrimSpace(r.URL.Query().Get("access_token"))
+	}
+	if token == "" {
+		token = strings.TrimSpace(r.URL.Query().Get("token"))
+	}
+
+	namespace = strings.TrimSpace(r.Header.Get("X-Tenant-ID"))
+	if namespace == "" {
+		namespace = strings.TrimSpace(r.URL.Query().Get("namespace"))
+	}
+	if namespace == "" {
+		namespace = strings.TrimSpace(r.URL.Query().Get("tenant"))
+	}
+	dataset = strings.TrimSpace(r.Header.Get("X-Dataset"))
+	if dataset == "" {
+		dataset = strings.TrimSpace(r.URL.Query().Get("dataset"))
+	}
+	return token, namespace, dataset
 }
 
 // WSMessageType defines the category of a WebSocket message.
@@ -63,6 +111,8 @@ type WSDataPayload struct {
 type WebSocketServer struct {
 	logger     zerolog.Logger
 	cdc        *ChangeDataCapture
+	validator  security.AccessValidator
+	audit      *security.AuditLogger
 	conns      map[*websocket.Conn]*WSConnection
 	connMu     sync.RWMutex
 	httpServer *http.Server
@@ -184,6 +234,20 @@ func NewWebSocketServer(logger zerolog.Logger, cdc *ChangeDataCapture) *WebSocke
 	}
 }
 
+// SetAuth installs the RBAC validator used for upgrades and subscriptions.
+// It must be called before Start; a missing validator fails every upgrade.
+func (w *WebSocketServer) SetAuth(validator security.AccessValidator, audit *security.AuditLogger) {
+	w.validator = validator
+	w.audit = audit
+}
+
+func (w *WebSocketServer) recordWSAudit(req *http.Request, namespace, dataset, reason string) {
+	if w.audit == nil {
+		return
+	}
+	w.audit.RecordEvent(req.Context(), "", namespace, "websocket_upgrade", dataset, req.RemoteAddr, false, reason)
+}
+
 // Start begins listening for WebSocket connections on the specified address.
 func (w *WebSocketServer) Start(addr string) error {
 	w.logger.Info().Str("addr", addr).Msg("Starting WebSocket server")
@@ -225,6 +289,29 @@ func (w *WebSocketServer) Stop() error {
 }
 
 func (w *WebSocketServer) handleWS(wr http.ResponseWriter, req *http.Request) {
+	if w.validator == nil {
+		w.recordWSAudit(req, "", "", "missing RBAC validator")
+		http.Error(wr, "WebSocket RBAC is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	token, namespace, dataset := websocketCredentials(req)
+	if token == "" {
+		w.recordWSAudit(req, namespace, dataset, "missing credentials")
+		http.Error(wr, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	tc, err := w.validator.AuthorizeToken(req.Context(), token, string(PermRead), namespace, dataset)
+	if err != nil {
+		code := http.StatusUnauthorized
+		if errors.Is(err, security.ErrForbidden) || errors.Is(err, security.ErrTenantIsolation) {
+			code = http.StatusForbidden
+		}
+		w.recordWSAudit(req, namespace, dataset, err.Error())
+		http.Error(wr, err.Error(), code)
+		return
+	}
+	reqCtx := security.ContextWithTenant(req.Context(), tc)
+
 	conn, err := upgrader.Upgrade(wr, req, nil)
 	if err != nil {
 		w.logger.Error().Err(err).Msg("Failed to upgrade WebSocket")
@@ -238,7 +325,7 @@ func (w *WebSocketServer) handleWS(wr http.ResponseWriter, req *http.Request) {
 		writeChan: make(chan []byte, 256),
 		closed:    false,
 	}
-	wsConn.ctx, wsConn.cancel = context.WithCancel(context.Background())
+	wsConn.ctx, wsConn.cancel = context.WithCancel(reqCtx)
 
 	w.connMu.Lock()
 	w.conns[conn] = wsConn
@@ -330,6 +417,24 @@ func (w *WebSocketServer) handleMessage(wsConn *WSConnection, data []byte) error
 	}
 }
 
+func (w *WebSocketServer) authorizeDatasetSubscription(wsConn *WSConnection, dataset string) error {
+	tc, ok := security.TenantFromContext(wsConn.ctx)
+	if !ok || tc == nil || w.validator == nil {
+		return errors.New("unauthorized subscription")
+	}
+	namespace, name := ParseNamespacedPath(dataset)
+	if name == "" {
+		return fmt.Errorf("invalid dataset %q", dataset)
+	}
+	if tc.HasNamespacePermission(namespace, string(PermRead)) {
+		return nil
+	}
+	if tc.HasPermission(string(PermRead)) && tc.CanAccessDataset(namespace, name) {
+		return nil
+	}
+	return fmt.Errorf("forbidden dataset %q", dataset)
+}
+
 func (w *WebSocketServer) handleSubscribe(wsConn *WSConnection, payload []byte) error {
 	var subPayload WSSubscribePayload
 	if err := json.Unmarshal(payload, &subPayload); err != nil {
@@ -338,6 +443,9 @@ func (w *WebSocketServer) handleSubscribe(wsConn *WSConnection, payload []byte) 
 
 	if subPayload.Dataset == "" {
 		return fmt.Errorf("dataset is required")
+	}
+	if err := w.authorizeDatasetSubscription(wsConn, subPayload.Dataset); err != nil {
+		return err
 	}
 
 	filter := CDCFilter{}

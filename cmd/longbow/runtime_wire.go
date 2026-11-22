@@ -15,6 +15,7 @@ import (
 	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/mathutil"
 	lbmem "github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/security"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/23skdu/longbow/internal/tensor"
@@ -264,16 +265,12 @@ func initFeatureSubsystems(cfg *Config, vectorStore *store.VectorStore, logger z
 			Msg("CDC initialized")
 	}
 
-	// Initialize WebSocket Server (Part 17.2)
+	// Create the WebSocket server here, but do not start it until RBAC has
+	// been initialized. startWebSocketServer installs the validator first.
 	var wsServer *store.WebSocketServer
 	if cfg.WebSocketEnabled && cdc != nil {
 		wsServer = store.NewWebSocketServer(logger, cdc)
-		go func() {
-			if err := wsServer.Start(cfg.WebSocketAddr); err != nil {
-				logger.Error().Err(err).Msg("WebSocket server failed")
-			}
-		}()
-		logger.Info().Str("addr", cfg.WebSocketAddr).Msg("WebSocket server started")
+		logger.Info().Str("addr", cfg.WebSocketAddr).Msg("WebSocket server created")
 	}
 
 	// Initialize MQ Exporter (Part 17.3)
@@ -367,4 +364,19 @@ func initFeatureSubsystems(cfg *Config, vectorStore *store.VectorStore, logger z
 	vectorStore.StartIngestionWorkers(cfg.IngestionWorkerCount)
 
 	return wsServer, mqExporter
+}
+
+// startWebSocketServer installs RBAC before opening the listener. Starting the
+// listener earlier would expose CDC data before namespaces and keys are loaded.
+func startWebSocketServer(cfg *Config, wsServer *store.WebSocketServer, validator security.AccessValidator, audit *security.AuditLogger, logger zerolog.Logger) {
+	if wsServer == nil {
+		return
+	}
+	wsServer.SetAuth(validator, audit)
+	go func() {
+		if err := wsServer.Start(cfg.WebSocketAddr); err != nil {
+			logger.Error().Err(err).Msg("WebSocket server failed")
+		}
+	}()
+	logger.Info().Str("addr", cfg.WebSocketAddr).Msg("WebSocket server started")
 }

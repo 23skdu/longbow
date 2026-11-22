@@ -107,6 +107,8 @@ func run() error {
 		defer certReloader.Stop()
 	}
 
+	startWebSocketServer(&cfg, wsServer, authValidator, auditLog, logger)
+
 	metricsSrv := startHTTPMetricsServer(&cfg, vectorStore, certReloader, startTime, logger)
 
 	ringManager, forwarder, gossipSrv := initMeshAndRing(&cfg, vectorStore, logger)

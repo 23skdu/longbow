@@ -76,9 +76,8 @@ func AuthUnaryInterceptor(validator security.AccessValidator, audit *security.Au
 		if validator == nil {
 			return handler(ctx, req)
 		}
-		if strings.HasPrefix(info.FullMethod, "/grpc.health.v1.Health/") {
-			return handler(ctx, req)
-		}
+		// All gRPC methods, including health checks, require a valid principal.
+		// HTTP liveness probes remain available on the metrics listener.
 		token, ns, ds := ExtractBearerToken(ctx)
 		if token == "" {
 			if audit != nil {

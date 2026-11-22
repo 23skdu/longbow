@@ -67,6 +67,10 @@ func TestAuthUnaryAndHTTPMiddleware(t *testing.T) {
 	_, err := unary(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/arrow.flight.protocol.FlightService/DoGet"}, handler)
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 
+	// gRPC health checks are not an authentication bypass.
+	_, err = unary(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/grpc.health.v1.Health/Check"}, handler)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+
 	// Reader calling DoPut -> PermissionDenied
 	readerCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		"authorization", "Bearer reader-t1",

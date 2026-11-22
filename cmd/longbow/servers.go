@@ -410,7 +410,7 @@ func startFlightAndRDMAServers(
 		go func() {
 			addr := fmt.Sprintf("0.0.0.0:%d", cfg.RDMAPort)
 			logger.Info().Str("addr", addr).Msg("Starting RDMA Zero-Copy Server")
-			if err := rdmaSrv.StartRDMAListener(addr); err != nil {
+			if err := rdmaSrv.StartRDMAListener(addr, serverOpts...); err != nil {
 				logger.Error().Err(err).Msg("RDMA server failed")
 			}
 		}()

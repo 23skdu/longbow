@@ -60,7 +60,7 @@ func (s *VectorStore) AuthorizeDatasetAccess(ctx context.Context, perm Permissio
 
 	// If middleware already attached a verified TenantContext, verify permission + scope directly.
 	if tc, ok := security.TenantFromContext(ctx); ok && tc != nil {
-		if !tc.HasPermission(string(perm)) {
+		if !tc.HasPermission(string(perm)) && !tc.HasNamespacePermission(ns, string(perm)) {
 			if audit != nil {
 				audit.RecordEvent(ctx, tc.KeyID, tc.TenantID, string(perm), datasetPath, "flight", false, "permission denied")
 			}

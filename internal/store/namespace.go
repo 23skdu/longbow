@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/security"
 )
 
 // Namespace represents a tenant isolation unit containing related datasets.
@@ -187,6 +188,39 @@ func (vs *VectorStore) CreateNamespace(name string) error {
 	return nil
 }
 
+// CreateNamespaceWithPolicy creates a namespace with its ACL. Only a server
+// administrator (PermManageTenant or PermAdmin) may call it; the authenticated
+// creator is automatically registered as the namespace admin.
+func (vs *VectorStore) CreateNamespaceWithPolicy(ctx context.Context, name string, policy NamespacePolicy) error {
+	if err := vs.requireHTTPGlobalPermission(ctx, PermManageTenant, ""); err != nil {
+		return err
+	}
+	policy.Namespace = name
+	if tc, ok := security.TenantFromContext(ctx); ok && tc != nil && tc.KeyID != "" {
+		found := false
+		for _, id := range policy.AdminKeyIDs {
+			if id == tc.KeyID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			policy.AdminKeyIDs = append(policy.AdminKeyIDs, tc.KeyID)
+		}
+	}
+	if err := policy.Validate(); err != nil {
+		return err
+	}
+	if err := vs.CreateNamespace(name); err != nil {
+		return err
+	}
+	if err := vs.ensureRBACManager().SetNamespacePolicy(policy); err != nil {
+		_ = vs.DeleteNamespace(name)
+		return err
+	}
+	return nil
+}
+
 // NamespaceExists checks if a namespace exists.
 func (vs *VectorStore) NamespaceExists(name string) bool {
 	if vs.nsManager == nil {
@@ -256,6 +290,9 @@ func (vs *VectorStore) DeleteNamespace(name string) error {
 
 	ns.mu.Unlock()
 	vs.nsManager.mu.Unlock()
+	if mgr := vs.RBAC(); mgr != nil {
+		mgr.DeleteNamespacePolicy(name)
+	}
 	return nil
 }
 

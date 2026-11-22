@@ -29,6 +29,12 @@ type TenantContext struct {
 	Datasets    []string          `json:"datasets,omitempty"`
 	RowFilters  map[string]string `json:"row_filters,omitempty"`
 	IsAdmin     bool              `json:"is_admin"`
+
+	// NamespacePermissions records namespace-scoped grants from namespace ACLs
+	// (namespace admins, readers/writers, and public namespace permissions).
+	// It is intentionally separate from Permissions: a grant in namespace A
+	// must not become a global permission valid in namespace B.
+	NamespacePermissions map[string][]string `json:"namespace_permissions,omitempty"`
 }
 
 // ContextWithTenant returns a derived context carrying TenantContext.
@@ -57,6 +63,11 @@ func (tc *TenantContext) CanAccessDataset(namespace, dataset string) bool {
 		return false
 	}
 	if tc.IsAdmin {
+		return true
+	}
+	// Namespace ACL grants (including public namespaces) are scoped to the
+	// namespace they were issued for and override the key's default boundaries.
+	if len(tc.NamespacePermissions[namespace]) > 0 {
 		return true
 	}
 	if tc.TenantID != "" && namespace != "" && !strings.EqualFold(tc.TenantID, namespace) {
@@ -95,6 +106,23 @@ func (tc *TenantContext) HasPermission(perm string) bool {
 		return true
 	}
 	for _, p := range tc.Permissions {
+		if p == perm || p == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// HasNamespacePermission checks a namespace-scoped ACL grant. Global admins
+// and globally permitted keys keep their existing behavior.
+func (tc *TenantContext) HasNamespacePermission(namespace, perm string) bool {
+	if tc == nil || namespace == "" {
+		return false
+	}
+	if tc.IsAdmin {
+		return true
+	}
+	for _, p := range tc.NamespacePermissions[namespace] {
 		if p == perm || p == "*" {
 			return true
 		}

@@ -12,19 +12,16 @@ func TestRBACManager_Lifecycle(t *testing.T) {
 	manager := NewRBACManager()
 
 	// 1. Create API Key
-	apiKey, err := manager.CreateAPIKey("test-key", RoleReadWrite, "default", []string{"dataset1"})
+	apiKey, rawKey, err := manager.CreateAPIKeyWithOptions(APIKeyOptions{
+		Name:      "test-key",
+		Role:      RoleReadWrite,
+		TenantID:  "default",
+		Namespace: "default",
+		Datasets:  []string{"dataset1"},
+	})
 	require.NoError(t, err)
 	require.NotNil(t, apiKey)
 	require.True(t, apiKey.Enabled)
-
-	// We need to find the raw key string to use it in other methods
-	var rawKey string
-	for k, ak := range manager.apiKeys {
-		if ak.KeyID == apiKey.KeyID {
-			rawKey = k
-			break
-		}
-	}
 	require.NotEmpty(t, rawKey)
 
 	// 2. Validate
@@ -80,15 +77,12 @@ func TestRBACManager_Lifecycle(t *testing.T) {
 
 func TestRBACManager_Expiration(t *testing.T) {
 	manager := NewRBACManager()
-	apiKey, _ := manager.CreateAPIKey("expiring-key", RoleReadOnly, "ns", nil)
-
-	var rawKey string
-	for k, ak := range manager.apiKeys {
-		if ak.KeyID == apiKey.KeyID {
-			rawKey = k
-			break
-		}
-	}
+	apiKey, rawKey, _ := manager.CreateAPIKeyWithOptions(APIKeyOptions{
+		Name:      "expiring-key",
+		Role:      RoleReadOnly,
+		TenantID:  "ns",
+		Namespace: "ns",
+	})
 
 	// Set expiration in the past
 	past := time.Now().Add(-1 * time.Hour)
@@ -134,14 +128,17 @@ func FuzzRBACAuthorize(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, ns, ds, roleStr, permStr string) {
 		mgr := NewRBACManager()
-		rawKey, err := mgr.CreateAPIKey("fuzz-key", Role(roleStr), ns, []string{ds})
-		if err != nil || rawKey == nil {
+		_, rawKey, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{
+			Name:      "fuzz-key",
+			Role:      Role(roleStr),
+			TenantID:  ns,
+			Namespace: ns,
+			Datasets:  []string{ds},
+		})
+		if err != nil || rawKey == "" {
 			return
 		}
-		for raw := range mgr.apiKeys {
-			_, _ = mgr.ValidateAPIKey(raw)
-			_, _ = mgr.CheckPermission(raw, Permission(permStr), ns, ds)
-			break
-		}
+		_, _ = mgr.ValidateAPIKey(rawKey)
+		_, _ = mgr.CheckPermission(rawKey, Permission(permStr), ns, ds)
 	})
 }

@@ -384,16 +384,16 @@ func (s *VectorStore) execGQLQueryField(ctx context.Context, field string, args 
 func (s *VectorStore) execGQLMutationField(ctx context.Context, field string, args map[string]any) (any, error) {
 	switch field {
 	case "createNamespace":
-		if err := s.requireHTTPGlobalPermission(ctx, PermWrite, ""); err != nil {
+		if err := s.requireHTTPGlobalPermission(ctx, PermManageTenant, ""); err != nil {
 			return nil, err
 		}
 		name := argString(args, "name")
-		if err := s.CreateNamespace(name); err != nil {
+		if err := s.CreateNamespaceWithPolicy(ctx, name, NamespacePolicy{}); err != nil {
 			return nil, err
 		}
 		return map[string]any{"name": name, "status": "created"}, nil
 	case "deleteNamespace":
-		if err := s.requireHTTPGlobalPermission(ctx, PermWrite, ""); err != nil {
+		if err := s.requireHTTPGlobalPermission(ctx, PermManageTenant, ""); err != nil {
 			return nil, err
 		}
 		name := argString(args, "name")

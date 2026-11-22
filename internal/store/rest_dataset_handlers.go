@@ -24,19 +24,29 @@ func (s *VectorStore) namespacesHTTPHandler() http.Handler {
 				"count":      len(names),
 			})
 		case http.MethodPost:
-			if err := s.requireHTTPGlobalPermission(r.Context(), PermWrite, ""); err != nil {
+			if err := s.requireHTTPGlobalPermission(r.Context(), PermManageTenant, ""); err != nil {
 				writeRESTError(w, "namespaces", r.Method, http.StatusForbidden, err.Error())
 				return
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, maxRESTBodyBytes)
 			var req struct {
-				Name string `json:"name"`
+				Name              string       `json:"name"`
+				AdminKeyIDs       []string     `json:"admin_key_ids,omitempty"`
+				WriterKeyIDs      []string     `json:"writer_key_ids,omitempty"`
+				ReaderKeyIDs      []string     `json:"reader_key_ids,omitempty"`
+				PublicPermissions []Permission `json:"public_permissions,omitempty"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeRESTError(w, "namespaces", r.Method, http.StatusBadRequest, err.Error())
 				return
 			}
-			if err := s.CreateNamespace(req.Name); err != nil {
+			policy := NamespacePolicy{
+				AdminKeyIDs:       req.AdminKeyIDs,
+				WriterKeyIDs:      req.WriterKeyIDs,
+				ReaderKeyIDs:      req.ReaderKeyIDs,
+				PublicPermissions: req.PublicPermissions,
+			}
+			if err := s.CreateNamespaceWithPolicy(r.Context(), req.Name, policy); err != nil {
 				writeRESTError(w, "namespaces", r.Method, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -70,7 +80,7 @@ func (s *VectorStore) namespaceItemHTTPHandler() http.Handler {
 				"datasets": s.ListDatasetsInNamespace(name),
 			})
 		case http.MethodDelete:
-			if err := s.requireHTTPGlobalPermission(r.Context(), PermWrite, ""); err != nil {
+			if err := s.requireHTTPGlobalPermission(r.Context(), PermManageTenant, ""); err != nil {
 				writeRESTError(w, "namespace_item", r.Method, http.StatusForbidden, err.Error())
 				return
 			}

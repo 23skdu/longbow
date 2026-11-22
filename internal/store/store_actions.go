@@ -825,13 +825,23 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 	case "CreateNamespace":
 		var req struct {
-			Name string `json:"name"`
+			Name              string       `json:"name"`
+			AdminKeyIDs       []string     `json:"admin_key_ids,omitempty"`
+			WriterKeyIDs      []string     `json:"writer_key_ids,omitempty"`
+			ReaderKeyIDs      []string     `json:"reader_key_ids,omitempty"`
+			PublicPermissions []Permission `json:"public_permissions,omitempty"`
 		}
 		if err := json.Unmarshal(action.Body, &req); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
-		if err := s.CreateNamespace(req.Name); err != nil {
-			return status.Errorf(codes.AlreadyExists, "failed to create namespace: %v", err)
+		policy := NamespacePolicy{
+			AdminKeyIDs:       req.AdminKeyIDs,
+			WriterKeyIDs:      req.WriterKeyIDs,
+			ReaderKeyIDs:      req.ReaderKeyIDs,
+			PublicPermissions: req.PublicPermissions,
+		}
+		if err := s.CreateNamespaceWithPolicy(stream.Context(), req.Name, policy); err != nil {
+			return status.Errorf(codes.PermissionDenied, "failed to create namespace: %v", err)
 		}
 		return stream.Send(&flight.Result{Body: []byte("namespace created")})
 

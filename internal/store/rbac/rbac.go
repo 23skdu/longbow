@@ -5,14 +5,15 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/internal/security"
+	"github.com/23skdu/longbow/internal/security/secrets"
 )
 
 // Role defines the access level for a user or service.
@@ -79,6 +80,87 @@ func (r Role) HasPermission(perm Permission) bool {
 	return false
 }
 
+// NamespaceRole is a role granted to an API key inside one namespace.
+type NamespaceRole string
+
+const (
+	NamespaceRoleAdmin  NamespaceRole = "admin"
+	NamespaceRoleWriter NamespaceRole = "writer"
+	NamespaceRoleReader NamespaceRole = "reader"
+)
+
+// NamespacePolicy is the ACL attached to a namespace. Namespaces are created
+// by a server administrator; the policy records the namespace admin and its
+// read/write users, plus an optional public permission set that is granted to
+// every authenticated API key.
+type NamespacePolicy struct {
+	Namespace         string       `json:"namespace"`
+	AdminKeyIDs       []string     `json:"admin_key_ids,omitempty"`
+	WriterKeyIDs      []string     `json:"writer_key_ids,omitempty"`
+	ReaderKeyIDs      []string     `json:"reader_key_ids,omitempty"`
+	PublicPermissions []Permission `json:"public_permissions,omitempty"`
+}
+
+// Validate rejects unknown public permissions and empty namespaces.
+func (p NamespacePolicy) Validate() error {
+	if strings.TrimSpace(p.Namespace) == "" {
+		return errors.New("namespace policy requires a namespace name")
+	}
+	for _, perm := range p.PublicPermissions {
+		switch perm {
+		case PermRead, PermWrite, PermDelete, PermIngest:
+		default:
+			return fmt.Errorf("unsupported public namespace permission %q", perm)
+		}
+	}
+	return nil
+}
+
+// Allows reports whether the policy grants perm to the general authenticated
+// population. Write/delete/ingest grants imply read access.
+func (p NamespacePolicy) Allows(perm Permission) bool {
+	for _, granted := range p.PublicPermissions {
+		if granted == perm || granted == "*" {
+			return true
+		}
+		if (granted == PermWrite || granted == PermDelete || granted == PermIngest) && perm == PermRead {
+			return true
+		}
+	}
+	return false
+}
+
+func namespacePermissionsForRole(role NamespaceRole) []Permission {
+	switch role {
+	case NamespaceRoleAdmin:
+		return []Permission{PermRead, PermWrite, PermDelete, PermIngest, PermManageTenant, PermManageKeys}
+	case NamespaceRoleWriter:
+		return []Permission{PermRead, PermWrite, PermDelete, PermIngest}
+	case NamespaceRoleReader:
+		return []Permission{PermRead}
+	default:
+		return nil
+	}
+}
+
+func containsString(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
+func permissionIn(list []string, want Permission) bool {
+	for _, p := range list {
+		if p == string(want) || p == "*" {
+			return true
+		}
+	}
+	return false
+}
+
 // APIKey represents a security credential for accessing the store with associated permissions.
 type APIKey struct {
 	KeyID          string            `json:"key_id"`
@@ -101,6 +183,7 @@ type APIKey struct {
 
 // APIKeyOptions configures API key creation.
 type APIKeyOptions struct {
+	KeyID      string // optional stable identifier (used by bootstrap/admin keys)
 	Name       string
 	Role       Role
 	TenantID   string
@@ -110,24 +193,162 @@ type APIKeyOptions struct {
 	TTL        time.Duration
 }
 
-// RBACManager handles Role-Based Access Control for the vector store.
+// RBACManager handles Role-Based Access Control for the vector store. Raw API
+// secrets are never retained in memory: apiKeys is keyed by SHA-256 hash and
+// the durable raw secret lives in the configured secrets.Store.
 type RBACManager struct {
-	mu        sync.RWMutex
-	apiKeys   map[string]*APIKey
-	keyHashes map[string]*APIKey
-	roles     map[string]map[Role]bool
-	audit     *security.AuditLogger
-	rls       *security.RLSEvaluator
+	mu       sync.RWMutex
+	apiKeys  map[string]*APIKey // by key hash
+	keyIDs   map[string]*APIKey
+	policies map[string]*NamespacePolicy
+	store    secrets.Store
+	audit    *security.AuditLogger
+	rls      *security.RLSEvaluator
 }
 
-// NewRBACManager creates a new instance of RBACManager.
+// NewRBACManager creates an RBACManager backed by a process-local secret store.
+// Use NewRBACManagerWithStore for durable provider-backed storage.
 func NewRBACManager() *RBACManager {
-	return &RBACManager{
-		apiKeys:   make(map[string]*APIKey),
-		keyHashes: make(map[string]*APIKey),
-		roles:     make(map[string]map[Role]bool),
-		audit:     security.NewAuditLogger(),
-		rls:       security.NewRLSEvaluator(),
+	mgr, _ := NewRBACManagerWithStore(context.Background(), secrets.NewMemoryStore())
+	return mgr
+}
+
+// NewRBACManagerWithStore creates an RBACManager and rehydrates all previously
+// issued keys from the supplied secret store.
+func NewRBACManagerWithStore(ctx context.Context, store secrets.Store) (*RBACManager, error) {
+	if store == nil {
+		store = secrets.NewMemoryStore()
+	}
+	mgr := &RBACManager{
+		apiKeys:  make(map[string]*APIKey),
+		keyIDs:   make(map[string]*APIKey),
+		policies: make(map[string]*NamespacePolicy),
+		store:    store,
+		audit:    security.NewAuditLogger(),
+		rls:      security.NewRLSEvaluator(),
+	}
+	stored, err := store.LoadAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load RBAC API keys: %w", err)
+	}
+	for _, item := range stored {
+		if err := mgr.loadStoredKey(item); err != nil {
+			return nil, err
+		}
+	}
+	return mgr, nil
+}
+
+func (r *RBACManager) loadStoredKey(item secrets.StoredKey) error {
+	if len(item.Meta) == 0 {
+		return fmt.Errorf("stored RBAC key %q has no metadata", item.KeyID)
+	}
+	var ak APIKey
+	if err := json.Unmarshal(item.Meta, &ak); err != nil {
+		return fmt.Errorf("decode stored RBAC key %q: %w", item.KeyID, err)
+	}
+	if ak.KeyID == "" {
+		ak.KeyID = item.KeyID
+	}
+	if ak.KeyHash == "" {
+		ak.KeyHash = sha256Hash(item.Raw)
+	}
+	if ak.KeyHash != sha256Hash(item.Raw) {
+		return fmt.Errorf("stored RBAC key %q does not match its hash", item.KeyID)
+	}
+	if !ak.Enabled {
+		return nil
+	}
+	r.apiKeys[ak.KeyHash] = &ak
+	r.keyIDs[ak.KeyID] = &ak
+	return nil
+}
+
+// HasGlobalAdmin reports whether at least one enabled server administrator key
+// is available. Used at startup to decide whether a bootstrap key is required.
+func (r *RBACManager) HasGlobalAdmin() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, ak := range r.apiKeys {
+		if ak.Enabled && ak.Role == RoleAdmin && (ak.Namespace == "" || ak.Namespace == "*") {
+			return true
+		}
+	}
+	return false
+}
+
+// SetNamespacePolicy registers or replaces a namespace ACL. Only server
+// administrators should call this (enforced by the CreateNamespace handlers).
+func (r *RBACManager) SetNamespacePolicy(policy NamespacePolicy) error {
+	if err := policy.Validate(); err != nil {
+		return err
+	}
+	copyPolicy := policy
+	copyPolicy.AdminKeyIDs = append([]string(nil), policy.AdminKeyIDs...)
+	copyPolicy.WriterKeyIDs = append([]string(nil), policy.WriterKeyIDs...)
+	copyPolicy.ReaderKeyIDs = append([]string(nil), policy.ReaderKeyIDs...)
+	copyPolicy.PublicPermissions = append([]Permission(nil), policy.PublicPermissions...)
+	r.mu.Lock()
+	r.policies[policy.Namespace] = &copyPolicy
+	r.mu.Unlock()
+	return nil
+}
+
+// GetNamespacePolicy returns a copy of the ACL for a namespace, or nil.
+func (r *RBACManager) GetNamespacePolicy(namespace string) *NamespacePolicy {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	policy := r.policies[namespace]
+	if policy == nil {
+		return nil
+	}
+	copyPolicy := *policy
+	copyPolicy.AdminKeyIDs = append([]string(nil), policy.AdminKeyIDs...)
+	copyPolicy.WriterKeyIDs = append([]string(nil), policy.WriterKeyIDs...)
+	copyPolicy.ReaderKeyIDs = append([]string(nil), policy.ReaderKeyIDs...)
+	copyPolicy.PublicPermissions = append([]Permission(nil), policy.PublicPermissions...)
+	return &copyPolicy
+}
+
+// ListNamespacePolicies returns copies of all namespace ACLs.
+func (r *RBACManager) ListNamespacePolicies() []NamespacePolicy {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]NamespacePolicy, 0, len(r.policies))
+	for _, policy := range r.policies {
+		out = append(out, *r.copyPolicyLocked(policy))
+	}
+	return out
+}
+
+func (r *RBACManager) copyPolicyLocked(policy *NamespacePolicy) *NamespacePolicy {
+	if policy == nil {
+		return nil
+	}
+	copyPolicy := *policy
+	copyPolicy.AdminKeyIDs = append([]string(nil), policy.AdminKeyIDs...)
+	copyPolicy.WriterKeyIDs = append([]string(nil), policy.WriterKeyIDs...)
+	copyPolicy.ReaderKeyIDs = append([]string(nil), policy.ReaderKeyIDs...)
+	copyPolicy.PublicPermissions = append([]Permission(nil), policy.PublicPermissions...)
+	return &copyPolicy
+}
+
+// DeleteNamespacePolicy removes the ACL for a namespace.
+func (r *RBACManager) DeleteNamespacePolicy(namespace string) {
+	r.mu.Lock()
+	delete(r.policies, namespace)
+	r.mu.Unlock()
+}
+
+func (r *RBACManager) replaceNamespaceKeyIDLocked(oldID, newID string) {
+	for _, policy := range r.policies {
+		for _, list := range [][]string{policy.AdminKeyIDs, policy.WriterKeyIDs, policy.ReaderKeyIDs} {
+			for i, id := range list {
+				if id == oldID {
+					list[i] = newID
+				}
+			}
+		}
 	}
 }
 
@@ -173,6 +394,17 @@ func (r *RBACManager) RegisterAPIKeyWithSecret(opts APIKeyOptions, raw string) (
 	if len(raw) < 16 {
 		return nil, fmt.Errorf("bootstrap API key must be at least 16 characters")
 	}
+	hash := sha256Hash(raw)
+	r.mu.RLock()
+	existing := r.apiKeys[hash]
+	r.mu.RUnlock()
+	if existing != nil {
+		// Idempotent restart registration of the same configured bootstrap key.
+		return existing, nil
+	}
+	if opts.KeyID == "" {
+		opts.KeyID = "bootstrap-admin"
+	}
 	return r.createAPIKey(opts, raw)
 }
 
@@ -191,6 +423,17 @@ func (r *RBACManager) createAPIKey(opts APIKeyOptions, keyStr string) (*APIKey, 
 	if _, ok := rolePermissions[opts.Role]; !ok {
 		return nil, fmt.Errorf("invalid role: %s", opts.Role)
 	}
+	keyID := opts.KeyID
+	if keyID == "" {
+		generated, err := generateKeyID()
+		if err != nil {
+			return nil, err
+		}
+		keyID = generated
+	}
+	if err := secrets.ValidateKeyID(keyID); err != nil {
+		return nil, fmt.Errorf("invalid API key id: %w", err)
+	}
 	keyHash := sha256Hash(keyStr)
 
 	var expiresAt *time.Time
@@ -205,7 +448,7 @@ func (r *RBACManager) createAPIKey(opts APIKeyOptions, keyStr string) (*APIKey, 
 	}
 
 	apiKey := &APIKey{
-		KeyID:       generateKeyID(),
+		KeyID:       keyID,
 		KeyHash:     keyHash,
 		Name:        opts.Name,
 		Role:        opts.Role,
@@ -219,9 +462,24 @@ func (r *RBACManager) createAPIKey(opts APIKeyOptions, keyStr string) (*APIKey, 
 		Enabled:     true,
 	}
 
+	meta, err := json.Marshal(apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("encode RBAC key metadata: %w", err)
+	}
+	if err := r.store.Put(context.Background(), secrets.StoredKey{
+		KeyID: keyID,
+		Raw:   keyStr,
+		Meta:  meta,
+	}); err != nil {
+		return nil, fmt.Errorf("persist RBAC API key: %w", err)
+	}
+
 	r.mu.Lock()
-	r.apiKeys[keyStr] = apiKey
-	r.keyHashes[keyHash] = apiKey
+	if old := r.keyIDs[keyID]; old != nil && old.KeyHash != keyHash {
+		delete(r.apiKeys, old.KeyHash)
+	}
+	r.apiKeys[keyHash] = apiKey
+	r.keyIDs[keyID] = apiKey
 	audit := r.audit
 	r.mu.Unlock()
 
@@ -230,6 +488,32 @@ func (r *RBACManager) createAPIKey(opts APIKeyOptions, keyStr string) (*APIKey, 
 	}
 
 	return apiKey, nil
+}
+
+// persistAPIKeyMeta writes an updated key record back to the secret store while
+// preserving the provider-stored raw secret. Admin mutations are infrequent,
+// so re-reading the provider is preferable to caching raw secrets in memory.
+func (r *RBACManager) persistAPIKeyMeta(ak *APIKey) error {
+	meta, err := json.Marshal(ak)
+	if err != nil {
+		return fmt.Errorf("encode RBAC key metadata: %w", err)
+	}
+	ctx := context.Background()
+	stored, err := r.store.LoadAll(ctx)
+	if err != nil {
+		return fmt.Errorf("load RBAC secret store: %w", err)
+	}
+	for _, item := range stored {
+		if item.KeyID != ak.KeyID {
+			continue
+		}
+		item.Meta = meta
+		if err := r.store.Put(ctx, item); err != nil {
+			return fmt.Errorf("persist RBAC API key: %w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("RBAC API key %q not found in secret store", ak.KeyID)
 }
 
 // RotateAPIKey issues a replacement key with the same role/tenant scope and places a grace period on the old key.
@@ -263,6 +547,10 @@ func (r *RBACManager) RotateAPIKey(oldRawKey string, gracePeriod time.Duration) 
 		oldKey.Enabled = false
 		oldKey.RevokedAt = &now
 	}
+	if err := r.persistAPIKeyMeta(oldKey); err != nil {
+		r.mu.Unlock()
+		return nil, "", err
+	}
 	r.mu.Unlock()
 
 	newKey, newRawKey, err := r.CreateAPIKeyWithOptions(opts)
@@ -271,6 +559,11 @@ func (r *RBACManager) RotateAPIKey(oldRawKey string, gracePeriod time.Duration) 
 	}
 	r.mu.Lock()
 	newKey.RotatedFrom = oldID
+	if err := r.persistAPIKeyMeta(newKey); err != nil {
+		r.mu.Unlock()
+		return nil, "", err
+	}
+	r.replaceNamespaceKeyIDLocked(oldID, newKey.KeyID)
 	audit := r.audit
 	r.mu.Unlock()
 
@@ -290,15 +583,12 @@ func (r *RBACManager) GetAPIKey(keyStr string) (*APIKey, bool) {
 
 func (r *RBACManager) lookupLocked(keyStr string) *APIKey {
 	if ak, ok := r.apiKeys[keyStr]; ok {
+		return ak // already a SHA-256 hash
+	}
+	if ak, ok := r.apiKeys[sha256Hash(keyStr)]; ok {
 		return ak
 	}
-	if ak, ok := r.keyHashes[sha256Hash(keyStr)]; ok {
-		return ak
-	}
-	if ak, ok := r.keyHashes[keyStr]; ok {
-		return ak
-	}
-	return nil
+	return r.keyIDs[keyStr]
 }
 
 // ValidateAPIKey checks if an API key exists, is enabled, and has not expired.
@@ -324,6 +614,40 @@ func (r *RBACManager) ValidateAPIKey(keyStr string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// namespacePermissionsLocked builds the per-namespace grants for a key. It is
+// called with r.mu held. Grants are attached to every request context so the
+// store can authorize a namespace even when the auth interceptor did not see
+// one in the request metadata.
+func (r *RBACManager) namespacePermissionsLocked(apiKey *APIKey) map[string][]string {
+	out := make(map[string][]string)
+	for name, policy := range r.policies {
+		var granted []Permission
+		switch {
+		case containsString(policy.AdminKeyIDs, apiKey.KeyID):
+			granted = namespacePermissionsForRole(NamespaceRoleAdmin)
+		case containsString(policy.WriterKeyIDs, apiKey.KeyID):
+			granted = namespacePermissionsForRole(NamespaceRoleWriter)
+		case containsString(policy.ReaderKeyIDs, apiKey.KeyID):
+			granted = namespacePermissionsForRole(NamespaceRoleReader)
+		default:
+			for _, perm := range []Permission{PermRead, PermWrite, PermDelete, PermIngest} {
+				if policy.Allows(perm) {
+					granted = append(granted, perm)
+				}
+			}
+		}
+		if len(granted) == 0 {
+			continue
+		}
+		strs := make([]string, len(granted))
+		for i, perm := range granted {
+			strs[i] = string(perm)
+		}
+		out[name] = strs
+	}
+	return out
 }
 
 // AuthorizeToken implements security.AccessValidator, validating key, permission, and tenant/dataset scope.
@@ -358,7 +682,8 @@ func (r *RBACManager) AuthorizeToken(ctx context.Context, rawToken, permission, 
 		return nil, fmt.Errorf("%w: API key expired", security.ErrUnauthorized)
 	}
 
-	if perm != "" && !apiKey.Role.HasPermission(perm) {
+	nsPerms := r.namespacePermissionsLocked(apiKey)
+	if perm != "" && !apiKey.Role.HasPermission(perm) && !permissionIn(nsPerms[namespace], perm) {
 		r.mu.RUnlock()
 		if audit != nil {
 			audit.RecordEvent(ctx, apiKey.KeyID, apiKey.TenantID, "authorize:"+permission, dataset, "rpc", false, "permission denied")
@@ -366,8 +691,9 @@ func (r *RBACManager) AuthorizeToken(ctx context.Context, rawToken, permission, 
 		return nil, fmt.Errorf("%w: permission denied for role %s", security.ErrForbidden, apiKey.Role)
 	}
 
-	// Enforce tenant/namespace boundary (Admin bypasses cross-namespace restriction unless key specifies namespace)
-	if apiKey.Namespace != "" && apiKey.Namespace != "*" && namespace != "" && apiKey.Namespace != namespace {
+	// Namespace ACL grants override the key's default tenant boundary.
+	if len(nsPerms[namespace]) == 0 &&
+		apiKey.Namespace != "" && apiKey.Namespace != "*" && namespace != "" && apiKey.Namespace != namespace {
 		r.mu.RUnlock()
 		if audit != nil {
 			audit.RecordEvent(ctx, apiKey.KeyID, apiKey.TenantID, "authorize:"+permission, namespace+"/"+dataset, "rpc", false, "namespace mismatch")
@@ -375,7 +701,10 @@ func (r *RBACManager) AuthorizeToken(ctx context.Context, rawToken, permission, 
 		return nil, fmt.Errorf("%w: namespace mismatch (%s)", security.ErrTenantIsolation, namespace)
 	}
 
-	if len(apiKey.Datasets) > 0 && dataset != "" && !datasetAllowed(apiKey.Datasets, namespace, dataset) {
+	// Public/namespace ACL grants intentionally ignore dataset allow-lists so
+	// any authenticated key can reach the namespace's datasets.
+	if len(nsPerms[namespace]) == 0 &&
+		len(apiKey.Datasets) > 0 && dataset != "" && !datasetAllowed(apiKey.Datasets, namespace, dataset) {
 		r.mu.RUnlock()
 		if audit != nil {
 			audit.RecordEvent(ctx, apiKey.KeyID, apiKey.TenantID, "authorize:"+permission, dataset, "rpc", false, "dataset not authorized")
@@ -388,15 +717,16 @@ func (r *RBACManager) AuthorizeToken(ctx context.Context, rawToken, permission, 
 		perms[i] = string(p)
 	}
 	tc := &security.TenantContext{
-		TenantID:    apiKey.TenantID,
-		Namespace:   apiKey.Namespace,
-		UserID:      apiKey.Name,
-		KeyID:       apiKey.KeyID,
-		Roles:       []string{string(apiKey.Role)},
-		Permissions: perms,
-		Datasets:    append([]string(nil), apiKey.Datasets...),
-		RowFilters:  copyStringMap(apiKey.RowFilters),
-		IsAdmin:     apiKey.Role == RoleAdmin && (apiKey.Namespace == "" || apiKey.Namespace == "*"),
+		TenantID:             apiKey.TenantID,
+		Namespace:            apiKey.Namespace,
+		UserID:               apiKey.Name,
+		KeyID:                apiKey.KeyID,
+		Roles:                []string{string(apiKey.Role)},
+		Permissions:          perms,
+		Datasets:             append([]string(nil), apiKey.Datasets...),
+		RowFilters:           copyStringMap(apiKey.RowFilters),
+		IsAdmin:              apiKey.Role == RoleAdmin && (apiKey.Namespace == "" || apiKey.Namespace == "*"),
+		NamespacePermissions: nsPerms,
 	}
 	r.mu.RUnlock()
 
@@ -428,15 +758,16 @@ func (r *RBACManager) CheckPermission(keyStr string, perm Permission, namespace,
 		return false, errors.New("API key expired")
 	}
 
-	if !apiKey.Role.HasPermission(perm) {
+	nsPerms := r.namespacePermissionsLocked(apiKey)
+	if !apiKey.Role.HasPermission(perm) && !permissionIn(nsPerms[namespace], perm) {
 		return false, errors.New("permission denied")
 	}
 
-	if apiKey.Namespace != "" && apiKey.Namespace != "*" && apiKey.Namespace != namespace {
+	if len(nsPerms[namespace]) == 0 && apiKey.Namespace != "" && apiKey.Namespace != "*" && apiKey.Namespace != namespace {
 		return false, errors.New("namespace mismatch")
 	}
 
-	if len(apiKey.Datasets) > 0 && !datasetAllowed(apiKey.Datasets, namespace, dataset) {
+	if len(nsPerms[namespace]) == 0 && len(apiKey.Datasets) > 0 && !datasetAllowed(apiKey.Datasets, namespace, dataset) {
 		return false, errors.New("dataset not authorized")
 	}
 
@@ -472,6 +803,10 @@ func (r *RBACManager) RevokeAPIKey(keyStr string) error {
 	now := time.Now()
 	apiKey.Enabled = false
 	apiKey.RevokedAt = &now
+	if err := r.persistAPIKeyMeta(apiKey); err != nil {
+		r.mu.Unlock()
+		return err
+	}
 	audit := r.audit
 	keyID := apiKey.KeyID
 	tenantID := apiKey.TenantID
@@ -486,19 +821,19 @@ func (r *RBACManager) RevokeAPIKey(keyStr string) error {
 // DeleteAPIKey removes an API key from the registry.
 func (r *RBACManager) DeleteAPIKey(keyStr string) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	apiKey := r.lookupLocked(keyStr)
 	if apiKey == nil {
+		r.mu.Unlock()
 		return errors.New("API key not found")
 	}
+	keyHash := apiKey.KeyHash
+	keyID := apiKey.KeyID
+	delete(r.apiKeys, keyHash)
+	delete(r.keyIDs, keyID)
+	r.mu.Unlock()
 
-	delete(r.apiKeys, keyStr)
-	delete(r.keyHashes, apiKey.KeyHash)
-	for raw, candidate := range r.apiKeys {
-		if candidate == apiKey {
-			delete(r.apiKeys, raw)
-		}
+	if err := r.store.Delete(context.Background(), keyID); err != nil {
+		return fmt.Errorf("delete persisted RBAC API key: %w", err)
 	}
 	return nil
 }
@@ -508,7 +843,7 @@ func (r *RBACManager) ListAPIKeys() []*APIKey {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	seen := make(map[string]struct{}, len(r.keyHashes))
+	seen := make(map[string]struct{}, len(r.apiKeys))
 	keys := make([]*APIKey, 0, len(r.apiKeys))
 	for _, ak := range r.apiKeys {
 		if _, dup := seen[ak.KeyID]; dup {
@@ -522,19 +857,29 @@ func (r *RBACManager) ListAPIKeys() []*APIKey {
 
 // UpdateAPIKey updates the properties of an existing API key.
 func (r *RBACManager) UpdateAPIKey(keyStr string, role Role, namespace string, datasets []string) error {
+	perms, ok := rolePermissions[role]
+	if !ok {
+		return fmt.Errorf("invalid role: %s", role)
+	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	apiKey := r.lookupLocked(keyStr)
 	if apiKey == nil {
+		r.mu.Unlock()
 		return errors.New("API key not found")
 	}
 
 	apiKey.Role = role
 	apiKey.Namespace = namespace
 	apiKey.Datasets = append([]string(nil), datasets...)
-	apiKey.Permissions = append([]Permission(nil), rolePermissions[role]...)
-
+	apiKey.Permissions = append([]Permission(nil), perms...)
+	if apiKey.TenantID == "" && namespace != "" && role != RoleAdmin {
+		apiKey.TenantID = namespace
+	}
+	if err := r.persistAPIKeyMeta(apiKey); err != nil {
+		r.mu.Unlock()
+		return err
+	}
+	r.mu.Unlock()
 	return nil
 }
 
@@ -550,11 +895,12 @@ func (r *RBACManager) findByRawHashOrIDLocked(idOrSecret string) *APIKey {
 	return nil
 }
 
-var keyIDCounter atomic.Uint64
-
-func generateKeyID() string {
-	seq := keyIDCounter.Add(1)
-	return fmt.Sprintf("key_%s_%06d", time.Now().Format("20060102150405"), seq)
+func generateKeyID() (string, error) {
+	idBytes := make([]byte, 16)
+	if _, err := rand.Read(idBytes); err != nil {
+		return "", fmt.Errorf("generate API key id: %w", err)
+	}
+	return "key_" + hex.EncodeToString(idBytes), nil
 }
 
 func sha256Hash(s string) string {

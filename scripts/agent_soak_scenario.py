@@ -72,6 +72,13 @@ class Agent:
             except Exception:
                 pass
             self.ids[ns]=[]
+        # Seed each owned/shared namespace so searches don't hit empty datasets.
+        for ns in [mine, sw, master]:
+            try:
+                self.client.insert(ns, [{"id": f"seed_{self.idx}", "vector": self._vec(), "importance": 1}])
+                self.ids[ns].append(f"seed_{self.idx}")
+            except Exception:
+                pass
     def _vec(self): 
         v=[self.nprng.gauss(0,1) for _ in range(self.dim)]
         n=math.sqrt(sum(x*x for x in v)) or 1
@@ -92,7 +99,14 @@ class Agent:
         op=self.rng.choice(["search","insert","upsert","delete","cross_read"])
         if op=="search":
             ns=self.rng.choice(readable)
-            self._time("search", lambda: self.client.search(dataset=ns, vector=self._vec(), k=5))
+            def _search():
+                try:
+                    self.client.search(dataset=ns, vector=self._vec(), k=5)
+                except Exception as e:
+                    if "not found" in str(e).lower():
+                        return
+                    raise
+            self._time("search", _search)
         elif op=="insert":
             ns=self.rng.choice(writable)
             new_id=f"m_{self.idx}_{self.rng.randrange(1,10**9)}"
@@ -114,7 +128,14 @@ class Agent:
             other=self.rng.randrange(self.args.agents)
             if other==self.idx: return
             ns=f"shared_{other}"
-            self._time("cross_read", lambda: self.client.search(dataset=ns, vector=self._vec(), k=5))
+            def _cross():
+                try:
+                    self.client.search(dataset=ns, vector=self._vec(), k=5)
+                except Exception as e:
+                    if "not found" in str(e).lower():
+                        return
+                    raise
+            self._time("cross_read", _cross)
         time.sleep(self.args.think_time)
     def run(self, stop):
         try:

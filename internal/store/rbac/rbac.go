@@ -357,6 +357,26 @@ func (r *RBACManager) SetNamespacePolicy(policy NamespacePolicy) error {
 	return nil
 }
 
+func cloneAPIKey(key APIKey) APIKey {
+	copyKey := key
+	copyKey.Datasets = append([]string(nil), key.Datasets...)
+	copyKey.Permissions = append([]Permission(nil), key.Permissions...)
+	copyKey.RowFilters = copyStringMap(key.RowFilters)
+	if key.ExpiresAt != nil {
+		v := *key.ExpiresAt
+		copyKey.ExpiresAt = &v
+	}
+	if key.GraceExpiresAt != nil {
+		v := *key.GraceExpiresAt
+		copyKey.GraceExpiresAt = &v
+	}
+	if key.RevokedAt != nil {
+		v := *key.RevokedAt
+		copyKey.RevokedAt = &v
+	}
+	return copyKey
+}
+
 func cloneNamespacePolicy(policy NamespacePolicy) NamespacePolicy {
 	copyPolicy := policy
 	copyPolicy.AdminKeyIDs = append([]string(nil), policy.AdminKeyIDs...)
@@ -432,22 +452,40 @@ func (r *RBACManager) copyPolicyLocked(policy *NamespacePolicy) *NamespacePolicy
 // DeleteNamespacePolicy removes the ACL for a namespace and its durable record.
 // Ephemeral policies have no durable record to remove.
 func (r *RBACManager) DeleteNamespacePolicy(namespace string) error {
-	r.mu.Lock()
-	policy := r.policies[namespace]
-	delete(r.policies, namespace)
-	r.mu.Unlock()
-	if policy == nil || policy.Ephemeral {
+	r.mu.RLock()
+	policy := r.copyPolicyLocked(r.policies[namespace])
+	r.mu.RUnlock()
+	if policy == nil {
 		return nil
 	}
-	return r.deleteStoredNamespacePolicy(namespace)
+	// Remove the durable ACL before dropping the in-memory policy. If the
+	// provider write fails, restart rehydration must still see the ACL.
+	if !policy.Ephemeral {
+		if err := r.deleteStoredNamespacePolicy(namespace); err != nil {
+			return err
+		}
+	}
+	r.mu.Lock()
+	delete(r.policies, namespace)
+	r.mu.Unlock()
+	return nil
 }
 
-// replaceNamespaceKeyIDLocked rewrites ACL references after key rotation and
-// persists any durable policies that changed. The caller must hold r.mu.
+// replaceNamespaceKeyIDLocked rewrites ACL references after key rotation. It
+// persists all durable changes before committing any in-memory policy, and
+// rolls back records already written when a later write fails. The caller must
+// hold r.mu.
 func (r *RBACManager) replaceNamespaceKeyIDLocked(oldID, newID string) error {
-	for _, policy := range r.policies {
+	type policyUpdate struct {
+		namespace string
+		before    NamespacePolicy
+		after     NamespacePolicy
+	}
+	var updates []policyUpdate
+	for namespace, policy := range r.policies {
+		after := cloneNamespacePolicy(*policy)
 		changed := false
-		for _, list := range [][]string{policy.AdminKeyIDs, policy.WriterKeyIDs, policy.ReaderKeyIDs} {
+		for _, list := range [][]string{after.AdminKeyIDs, after.WriterKeyIDs, after.ReaderKeyIDs} {
 			for i, id := range list {
 				if id == oldID {
 					list[i] = newID
@@ -455,11 +493,31 @@ func (r *RBACManager) replaceNamespaceKeyIDLocked(oldID, newID string) error {
 				}
 			}
 		}
-		if changed && !policy.Ephemeral {
-			if err := r.persistNamespacePolicy(*policy); err != nil {
-				return err
-			}
+		if changed {
+			updates = append(updates, policyUpdate{
+				namespace: namespace,
+				before:    cloneNamespacePolicy(*policy),
+				after:     after,
+			})
 		}
+	}
+
+	var applied []policyUpdate
+	for _, update := range updates {
+		if update.after.Ephemeral {
+			continue
+		}
+		if err := r.persistNamespacePolicy(update.after); err != nil {
+			for _, done := range applied {
+				_ = r.persistNamespacePolicy(done.before)
+			}
+			return fmt.Errorf("persist rotated namespace ACL %q: %w", update.namespace, err)
+		}
+		applied = append(applied, update)
+	}
+	for _, update := range updates {
+		after := update.after
+		r.policies[update.namespace] = &after
 	}
 	return nil
 }
@@ -634,10 +692,10 @@ func (r *RBACManager) persistAPIKeyMeta(ak *APIKey) error {
 
 // RotateAPIKey issues a replacement key with the same role/tenant scope and places a grace period on the old key.
 func (r *RBACManager) RotateAPIKey(oldRawKey string, gracePeriod time.Duration) (*APIKey, string, error) {
-	r.mu.Lock()
+	r.mu.RLock()
 	oldKey := r.lookupLocked(oldRawKey)
 	if oldKey == nil {
-		r.mu.Unlock()
+		r.mu.RUnlock()
 		return nil, "", errors.New("API key not found")
 	}
 	opts := APIKeyOptions{
@@ -645,8 +703,8 @@ func (r *RBACManager) RotateAPIKey(oldRawKey string, gracePeriod time.Duration) 
 		Role:       oldKey.Role,
 		TenantID:   oldKey.TenantID,
 		Namespace:  oldKey.Namespace,
-		Datasets:   oldKey.Datasets,
-		RowFilters: oldKey.RowFilters,
+		Datasets:   append([]string(nil), oldKey.Datasets...),
+		RowFilters: copyStringMap(oldKey.RowFilters),
 	}
 	if oldKey.ExpiresAt != nil {
 		rem := time.Until(*oldKey.ExpiresAt)
@@ -655,31 +713,47 @@ func (r *RBACManager) RotateAPIKey(oldRawKey string, gracePeriod time.Duration) 
 		}
 	}
 	oldID := oldKey.KeyID
-	now := time.Now()
-	if gracePeriod > 0 {
-		grace := now.Add(gracePeriod)
-		oldKey.GraceExpiresAt = &grace
-	} else {
-		oldKey.Enabled = false
-		oldKey.RevokedAt = &now
-	}
-	if err := r.persistAPIKeyMeta(oldKey); err != nil {
-		r.mu.Unlock()
-		return nil, "", err
-	}
-	r.mu.Unlock()
+	r.mu.RUnlock()
 
+	// Issue the replacement first. A provider failure here leaves the working
+	// credential untouched instead of revoking it without a successor.
 	newKey, newRawKey, err := r.CreateAPIKeyWithOptions(opts)
 	if err != nil {
 		return nil, "", err
 	}
+
 	r.mu.Lock()
+	currentOld := r.keyIDs[oldID]
+	if currentOld == nil {
+		r.rollbackRotatedKeyLocked(newKey)
+		r.mu.Unlock()
+		return nil, "", errors.New("old API key disappeared during rotation")
+	}
+	snapshot := cloneAPIKey(*currentOld)
+	now := time.Now()
+	if gracePeriod > 0 {
+		grace := now.Add(gracePeriod)
+		currentOld.GraceExpiresAt = &grace
+	} else {
+		currentOld.Enabled = false
+		currentOld.RevokedAt = &now
+	}
+	if err := r.persistAPIKeyMeta(currentOld); err != nil {
+		r.restoreRotatedKeyLocked(currentOld, snapshot)
+		r.rollbackRotatedKeyLocked(newKey)
+		r.mu.Unlock()
+		return nil, "", err
+	}
 	newKey.RotatedFrom = oldID
 	if err := r.persistAPIKeyMeta(newKey); err != nil {
+		r.restoreRotatedKeyLocked(currentOld, snapshot)
+		r.rollbackRotatedKeyLocked(newKey)
 		r.mu.Unlock()
 		return nil, "", err
 	}
 	if err := r.replaceNamespaceKeyIDLocked(oldID, newKey.KeyID); err != nil {
+		r.restoreRotatedKeyLocked(currentOld, snapshot)
+		r.rollbackRotatedKeyLocked(newKey)
 		r.mu.Unlock()
 		return nil, "", err
 	}
@@ -690,6 +764,25 @@ func (r *RBACManager) RotateAPIKey(oldRawKey string, gracePeriod time.Duration) 
 		audit.RecordEvent(context.Background(), newKey.KeyID, newKey.TenantID, "rotate_api_key", oldID, "internal", true, "")
 	}
 	return newKey, newRawKey, nil
+}
+
+// restoreRotatedKeyLocked restores an old key after a failed rotation. The
+// caller must hold r.mu.
+func (r *RBACManager) restoreRotatedKeyLocked(key *APIKey, snapshot APIKey) {
+	*key = snapshot
+	_ = r.persistAPIKeyMeta(key)
+}
+
+// rollbackRotatedKeyLocked removes a replacement key that was issued before a
+// later rotation step failed. The caller must hold r.mu.
+func (r *RBACManager) rollbackRotatedKeyLocked(key *APIKey) {
+	now := time.Now()
+	key.Enabled = false
+	key.RevokedAt = &now
+	_ = r.persistAPIKeyMeta(key)
+	delete(r.apiKeys, key.KeyHash)
+	delete(r.keyIDs, key.KeyID)
+	_ = r.store.Delete(context.Background(), key.KeyID)
 }
 
 // GetAPIKey retrieves an API key by its raw string value or SHA-256 hash.
@@ -939,21 +1032,23 @@ func (r *RBACManager) RevokeAPIKey(keyStr string) error {
 
 // DeleteAPIKey removes an API key from the registry.
 func (r *RBACManager) DeleteAPIKey(keyStr string) error {
-	r.mu.Lock()
+	r.mu.RLock()
 	apiKey := r.lookupLocked(keyStr)
 	if apiKey == nil {
-		r.mu.Unlock()
+		r.mu.RUnlock()
 		return errors.New("API key not found")
 	}
 	keyHash := apiKey.KeyHash
 	keyID := apiKey.KeyID
-	delete(r.apiKeys, keyHash)
-	delete(r.keyIDs, keyID)
-	r.mu.Unlock()
+	r.mu.RUnlock()
 
 	if err := r.store.Delete(context.Background(), keyID); err != nil {
 		return fmt.Errorf("delete persisted RBAC API key: %w", err)
 	}
+	r.mu.Lock()
+	delete(r.apiKeys, keyHash)
+	delete(r.keyIDs, keyID)
+	r.mu.Unlock()
 	return nil
 }
 
@@ -969,7 +1064,8 @@ func (r *RBACManager) ListAPIKeys() []*APIKey {
 			continue
 		}
 		seen[ak.KeyID] = struct{}{}
-		keys = append(keys, ak)
+		copyKey := cloneAPIKey(*ak)
+		keys = append(keys, &copyKey)
 	}
 	return keys
 }

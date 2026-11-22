@@ -271,15 +271,30 @@ func (vs *VectorStore) DeleteNamespace(name string) error {
 		return errors.New("namespace manager not initialized")
 	}
 
-	vs.nsManager.mu.Lock()
 	vs.logger.Info().Str("namespace", name).Msg("DeleteNamespace called")
-
-	ns, exists := vs.nsManager.namespaces[name]
+	vs.nsManager.mu.RLock()
+	_, exists := vs.nsManager.namespaces[name]
+	vs.nsManager.mu.RUnlock()
 	if !exists {
-		vs.nsManager.mu.Unlock()
 		return errors.New("namespace not found: " + name)
 	}
 
+	// Remove the durable ACL first. If the provider write fails, the namespace
+	// and its datasets remain intact and a restart can still restore the ACL.
+	// Do this without holding nsManager.mu to avoid lock-order inversion with
+	// request authorization.
+	if mgr := vs.RBAC(); mgr != nil {
+		if err := mgr.DeleteNamespacePolicy(name); err != nil {
+			return fmt.Errorf("delete namespace ACL for %q: %w", name, err)
+		}
+	}
+
+	vs.nsManager.mu.Lock()
+	ns := vs.nsManager.namespaces[name]
+	if ns == nil {
+		vs.nsManager.mu.Unlock()
+		return nil
+	}
 	ns.mu.Lock()
 
 	if len(ns.datasets) > 0 {
@@ -319,11 +334,6 @@ func (vs *VectorStore) DeleteNamespace(name string) error {
 
 	ns.mu.Unlock()
 	vs.nsManager.mu.Unlock()
-	if mgr := vs.RBAC(); mgr != nil {
-		if err := mgr.DeleteNamespacePolicy(name); err != nil {
-			return fmt.Errorf("delete namespace ACL for %q: %w", name, err)
-		}
-	}
 	return nil
 }
 

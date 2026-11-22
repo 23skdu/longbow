@@ -125,7 +125,12 @@ func (s *VectorStore) FilterResultsByRLS(ctx context.Context, datasetPath string
 			}
 		}
 	}
-	if tc == nil || tc.IsAdmin {
+	if tc == nil {
+		// RBAC is active but no verified principal is available. Never leak
+		// unfiltered rows in that case.
+		return nil
+	}
+	if tc.IsAdmin {
 		return results
 	}
 	var rls *security.RLSEvaluator

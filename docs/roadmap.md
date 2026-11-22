@@ -27,6 +27,14 @@ search-mode and dtype matrix.
 
 All Performance & Scale items and modularization phases **M1–M4** and **M6** are **complete**. Only the tightly coupled domain extractions from **M5** remain below, pending interface decoupling and test migration.
 
+### P0 — macOS-15 Runner, ARM64 Darwin Verification & Darwin ARM64 Docker Release
+
+Release verification must cover the Apple Silicon / Darwin ARM64 target end to end before a release ships. Add the following as blocking (P0) release gates:
+
+- [ ] **macOS-15 GitHub Actions runner** in the release-verification workflow (`.github/workflows/*`): provision a `macos-15` runner, install the Go toolchain + CGO dependencies used by `make build` / `make test-short`, and run the standard verification pipeline (`make build`, `make vet`, `make test-short`, `make lint`) natively on Darwin ARM64.
+- [ ] **ARM64 Darwin verification job as part of release verification**: a dedicated job in the release pipeline that builds and tests `GOOS=darwin GOARCH=arm64` (including CGO-enabled paths and the SIMD/Metal backends under `internal/gpu/metal/`), runs `cross-compile`/equivalent Darwin ARM64 checks, and uploads the resulting `longbow` Darwin ARM64 binary as a release artifact. No release is cut unless this job is green.
+- [ ] **Releasing Darwin ARM64 Docker images**: publish `darwin/arm64` (Apple Silicon) container images alongside the existing CPU/GPU images — extend the Docker build matrix (`Dockerfile*`, `docker-compose.yml`, release workflow) to build and push a Darwin ARM64 variant, tag it consistently with the other platforms, and document pull/run instructions for Apple Silicon hosts. Include the image in `make docker-build-*` / release artifact lists and the observability/verification gates.
+
 ### M5 — Remaining God-Package Domain Extractions
 
 Target budgets for hand-maintained code remain `<= 500 LOC` soft / `<= 800 LOC` hard ceiling per file and `<= 50` production files per package. Completing the remaining extractions requires introducing interface boundaries (e.g. `type X = subpkg.X` aliases plus host interfaces) to break `*VectorStore`, `*Dataset`, and `*ArrowHNSW` receiver/field coupling without import cycles:

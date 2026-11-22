@@ -467,3 +467,78 @@ jobs:
           labels: ${{ steps.meta-tpu.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  macos-15-verify:
+    name: macOS-15 Runner Verification
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Build all packages
+        run: go build -v ./...
+
+      - name: Vet all packages
+        run: go vet ./...
+
+      - name: Run Unit Tests (short mode)
+        run: go test -short ./...
+
+      - name: Enforce module size guardrails
+        run: make module-size-check
+
+  darwin-arm64-verify:
+    name: ARM64 Darwin (Apple Silicon) Verification
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Build (darwin/arm64)
+        run: GOOS=darwin GOARCH=arm64 go build -v ./...
+
+      - name: Vet (darwin/arm64)
+        run: GOOS=darwin GOARCH=arm64 go vet ./...
+
+      - name: Test (darwin/arm64)
+        run: GOOS=darwin GOARCH=arm64 go test -short ./...
+
+      - name: Run ARM64 SIMD tests
+        run: GOOS=darwin GOARCH=arm64 go test -short -run 'TestNEON|TestDispatch|TestCPU' ./internal/simd/...
+
+  release-darwin-arm64:
+    name: Release Darwin ARM64 Artifacts
+    needs: [validate, macos-15-verify, darwin-arm64-verify]
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Build Darwin ARM64 binary
+        run: |
+          mkdir -p dist
+          GOOS=darwin GOARCH=arm64 go build -o dist/longbow-darwin-arm64 ./cmd/longbow
+
+      - name: Upload Darwin ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: longbow-darwin-arm64
+          path: dist/longbow-darwin-arm64

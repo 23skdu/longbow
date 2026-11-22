@@ -23,7 +23,7 @@ DOCKER        ?= $(shell which docker 2>/dev/null || echo docker)
 IMAGE_TAG     ?= latest
 
 .PHONY: all help ci release build build-release build-debug build-race build-adbc build-bench build-verify build-wasm-client clean \
-	deps deps-upgrade lint lint-fast lint-fix lint-docs vet staticcheck deadcode fmt fmt-check \
+	deps deps-upgrade lint lint-fast lint-fix lint-docs actionlint lint-workflows install-tools vet staticcheck deadcode fmt fmt-check \
 	security sec sec-gosec sec-vulncheck sec-audit \
 	perf perf-check cpu-profile profile-check mem mem-check mem-bench mem-escape mem-profile mem-asan mem-valgrind \
 	fuzz test-fuzz fuzz-coverage \
@@ -261,6 +261,19 @@ fmt-check:
 markdown-lint:
 	@echo "Running markdown linting on documentation..."
 	$(MARKDOWNLINT) -c .markdownlint.json docs/*.md README.md
+
+actionlint:
+	@echo "Running actionlint on GitHub Actions workflows..."
+	actionlint .github/workflows/*.yml
+
+lint-workflows: actionlint
+
+install-tools:
+	@echo "Installing Homebrew/Go tools useful for this codebase..."
+	brew install actionlint staticcheck gofumpt govulncheck shellcheck hadolint yamllint 2>/dev/null || true
+	$(GO) install golang.org/x/tools/cmd/deadcode@latest
+	$(GO) install golang.org/x/tools/cmd/goimports@latest
+	@echo "Tool installation complete."
 
 lint-docs: markdown-lint
 

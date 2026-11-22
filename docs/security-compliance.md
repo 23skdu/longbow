@@ -8,7 +8,7 @@ Longbow provides multi-tenant isolation, role-based access control, TLS/mTLS tra
 
 ### Roles & Permissions
 
-Defined in `internal/store/rbac.go`:
+Defined in `internal/store/rbac/`:
 
 | Role | Granted Permissions |
 | :--- | :--- |
@@ -30,11 +30,19 @@ export LONGBOW_SECRETS_PROVIDER=file  # or vault, gcp, aws
 When `LONGBOW_RBAC_BOOTSTRAP_KEY` is provided, the server registers it as a
 bootstrap `admin` key and writes it through to the configured provider. Without
 a bootstrap key, the server must load at least one admin key from that provider
-or it refuses to start. See [RBAC documentation](rbac.md) for provider details.
+or it refuses to start. The same provider stores durable namespace ACL records,
+which are rehydrated with API keys at startup. Namespace objects for durable
+ACLs are recreated even if they contain no replayed datasets.
+
+Namespace ACLs can also be declared before listeners start with
+`LONGBOW_STARTUP_NAMESPACE_POLICIES` (or `--startup-namespace-policies`). Durable
+policies persist in the configured provider; `ephemeral: true` policies remain
+runtime-only. Public namespace permissions are granted only to authenticated
+keys. See [RBAC documentation](rbac.md) for provider details and the JSON schema.
 
 ### API Key Lifecycle & CLI Management
 
-Keys use HMAC/SHA-256 digests (`internal/store/rbac.go`) and support timed rotation grace periods and immediate revocation:
+Keys use HMAC/SHA-256 digests (`internal/store/rbac/`) and support timed rotation grace periods and immediate revocation:
 
 ```bash
 # Issue a tenant-scoped reader key
@@ -60,7 +68,7 @@ Equivalent REST v1 endpoints are exposed at `GET/POST/DELETE /api/v1/rbac/keys`,
 
 ### Tenant Isolation & Row-Level Security (RLS)
 
-- **Dataset/Namespace Scoping**: `AuthorizeDatasetAccess` and `security.TenantContext.CanAccessDataset` enforce tenant and allowed-dataset boundaries across `DoPut`, `DoGet`, `ListFlights`, `DoAction`, and `/api/v1/*` HTTP handlers.
+- **Dataset/Namespace Scoping**: `AuthorizeDatasetAccess` and `security.TenantContext.CanAccessDataset` enforce tenant, namespace-ACL, public-namespace, and allowed-dataset boundaries across `DoPut`, `DoGet`, `ListFlights`, `DoAction`, and `/api/v1/*` HTTP handlers. Namespace grants never become global permissions.
 - **Row-Level Security (`security.RLSEvaluator`)**: Dynamic metadata predicates (`eq`, `neq`, `in`, `contains`) evaluated per row during query result assembly (`FilterResultsByRLS`) using the `SetRLSPolicy` Flight action, `POST /api/v1/rbac/rls`, `longbow-cli set-rls-policy`, or Python SDK `client.set_rls_policy(...)`.
 
 ---
@@ -102,7 +110,7 @@ export LONGBOW_KMS_MASTER_KEY="<32-byte-hex-or-passphrase>"
 
 | Control Objective | Longbow Capability | Verification Artifact |
 | :--- | :--- | :--- |
-| **Access Control & Least Privilege** (SOC2 CC6.1, CC6.3) | RBAC roles, tenant scoping, RLS policies, gRPC/HTTP auth interceptors | `internal/store/rbac_rls_test.go`, `internal/middleware/auth_interceptor_test.go` |
+| **Access Control & Least Privilege** (SOC2 CC6.1, CC6.3) | RBAC roles, durable namespace ACLs, tenant scoping, RLS policies, gRPC/HTTP auth interceptors | `internal/store/rbac/`, `internal/store/rbac_rls_test.go`, `scripts/verify_rbac.py` |
 | **Encryption in Transit & at Rest** (SOC2 CC6.6, CC6.7; GDPR Art. 32) | TLS 1.2/1.3, mTLS, SIGHUP hot-reload, AES-256-GCM WAL/spill, KMS envelope keys | `internal/security/tenant_tls_kms_test.go`, `internal/storage/encryption_test.go` |
 | **Audit Logging & Non-Repudiation** (SOC2 CC7.2) | Structured immutable JSON audit ring + writer (`security.AuditLogger`), `GetAuditLog` | `internal/security/audit.go`, `internal/store/rbac_actions.go` |
 | **Right to Erasure** (GDPR Art. 17) | Vector/dataset hard deletion (`delete-vector`, `Drop`), tombstone compaction, PITR backup exclusion | `internal/store/store_actions.go`, `internal/store/backup_pitr.go` |

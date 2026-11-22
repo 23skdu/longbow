@@ -141,6 +141,12 @@ LONGBOW_RBAC_BOOTSTRAP_KEY="local-soak-admin-key-0123456789" \
 ./bin/longbow
 ```
 
+Fixed namespaces can be declared with `LONGBOW_STARTUP_NAMESPACE_POLICIES`
+before listeners start; durable ACLs survive restarts and `ephemeral: true`
+namespaces do not. The simulators still issue their own scoped keys because
+namespace ACL key IDs must reference existing API keys. See
+[`docs/rbac.md`](../rbac.md) for the JSON schema.
+
 Run either simulator (the admin key is read from `LONGBOW_RBAC_BOOTSTRAP_KEY`,
 or can be passed with `--admin-api-key` / `-admin-api-key`):
 

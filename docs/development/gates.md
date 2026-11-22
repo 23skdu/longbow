@@ -236,12 +236,14 @@ grafana/tests/test-rules.sh
 ```bash
 helm lint helm/longbow
 helm template longbow helm/longbow --debug > /dev/null
+helm template longbow helm/longbow \
+  --set-json 'rbac.startupNamespacePolicies=[{"namespace":"team-a","ephemeral":true}]' > /dev/null
 go test -v ./tests/docker/...
 python3 tests/docker/test_dockerfiles.py
 ```
 
 - **Description**:
-  - **Helm Chart Gate**: Validates that Kubernetes deployment manifests under `helm/longbow` are syntactically valid and can be dry-run templated across default values.
+  - **Helm Chart Gate**: Validates that Kubernetes deployment manifests under `helm/longbow` are syntactically valid and can be dry-run templated across default values and the non-default startup namespace ACL configuration.
   - **Dockerfile Conformance**: Validates all Dockerfiles (`Dockerfile.cpu`, `Dockerfile.tpu`, `Dockerfile.nvidia`, `Dockerfile.emlgo-cpu`, `Dockerfile.emlgo-gpu`) to ensure accurate base images, multi-stage build caching, non-root user execution, and Go 1.27.4 compatibility.
 
 ---

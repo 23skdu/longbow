@@ -15,12 +15,16 @@ backward compatibility with old deployment manifests and is ignored.
 
 At startup Longbow:
 
-1. Builds an API-key store from `LONGBOW_SECRETS_*`. The `memory` provider is
-   non-durable; all other providers persist keys.
-2. Loads all persisted API keys into the RBAC manager.
+1. Builds an RBAC record store from `LONGBOW_SECRETS_*`. The `memory` provider is
+   non-durable; all other providers persist records.
+2. Loads all persisted API keys and durable namespace ACLs into the RBAC manager.
 3. Registers `LONGBOW_RBAC_BOOTSTRAP_KEY` as the `bootstrap-admin` key when set.
 4. Without a bootstrap key, requires at least one enabled, unscoped global
    `admin` key loaded from the store.
+5. Recreates namespace objects for every rehydrated durable ACL, including empty
+   namespaces that contain no replayed datasets.
+6. Provisions any namespaces declared in `LONGBOW_STARTUP_NAMESPACE_POLICIES`
+   before the Flight and REST/GraphQL listeners accept traffic.
 
 If no admin is available, the process exits with an error such as:
 
@@ -62,15 +66,16 @@ Common optional configuration:
 | :--- | :--- | :--- |
 | `LONGBOW_SECRETS_PREFIX` | `longbow/rbac` | Provider-side namespace for Longbow secrets. |
 
-The provider persists the raw secret together with its metadata; the RBAC
-manager keeps only hash-keyed lookup maps in memory. The raw value is returned
-to the caller when a key is created or rotated, so the provider itself must be
-protected as a credential store.
+The provider persists raw API-key secrets and namespace ACL records together
+with their metadata; the RBAC manager keeps only hash-keyed API-key lookup maps
+in memory. The raw value is returned to the caller when a key is created or
+rotated, so the provider itself must be protected as a credential store.
 
-**Namespace policies are not persisted by the secret provider.** Namespace ACLs
-and public permissions are runtime state in the RBAC manager and must be
-recreated after a process restart or redeployment. API-key creation, rotation,
-and revocation metadata are persisted.
+Durable namespace policies are stored with `Kind: "namespace_policy"` and a
+deterministic record ID of `nspolicy-<sha256(namespace)[:16]>` so ACLs and
+public permissions survive restarts. Legacy `Kind`-less records are still loaded
+as API keys. Ephemeral policies are never written to the provider; applying an
+ephemeral policy also removes any stale durable record for that namespace.
 
 ---
 
@@ -104,12 +109,15 @@ REST and data-plane Flight `CreateNamespace` accept a wrapper payload with
   "admin_key_ids": ["key_team_a_admin"],
   "writer_key_ids": ["key_team_a_writer"],
   "reader_key_ids": ["key_team_a_reader"],
-  "public_permissions": ["read"]
+  "public_permissions": ["read"],
+  "ephemeral": false
 }
 ```
 
 Internally this becomes a `NamespacePolicy` whose `namespace` field is set from
-`name`. Create it with a key that has global `manage-tenant`:
+`name`. `ephemeral: true` keeps the ACL and namespace runtime-only; omit it or
+set it to `false` for a durable policy. Create it with a key that has global
+`manage-tenant`:
 
 ```bash
 curl -X POST http://127.0.0.1:9090/api/v1/namespaces \
@@ -121,9 +129,11 @@ curl -X POST http://127.0.0.1:9090/api/v1/namespaces \
 Rules:
 
 - The authenticated creator is automatically added to `admin_key_ids` when the
-  request has an API-key ID (REST and data-plane Flight). GraphQL and
-  control-plane Flight `CreateNamespace` accept only `name` and do not attach
-  ACL fields or an auto-admin grant; use REST to configure ACLs.
+  request has an API-key ID. This applies to REST, data-plane Flight, and
+  GraphQL `createNamespace`, even though GraphQL accepts only `name`.
+  Control-plane Flight `CreateNamespace` also accepts only `name` and attaches
+  no ACL fields or auto-admin grant; use REST or data-plane Flight to configure
+  ACLs.
 - Namespace grants are attached to `TenantContext.NamespacePermissions` for
   that namespace only. They **never** become global permissions.
 - `admin_key_ids` grants `read`, `write`, `delete`, `ingest`, `manage-keys`, and
@@ -143,6 +153,48 @@ Rules:
 REST, GraphQL, and Flight all enforce the global `manage-tenant` rule for
 namespace creation and deletion; only REST and data-plane Flight accept the
 ACL fields shown above.
+
+Durable ACLs are written through to the configured secrets provider and
+reloaded at startup. Deleting a namespace also removes its ACL record. Key
+rotation rewrites namespace ACL key IDs and persists the updated durable
+policy.
+
+### Startup namespaces
+
+Namespace ACLs can be declared with `LONGBOW_STARTUP_NAMESPACE_POLICIES` or
+`--startup-namespace-policies` as a strict JSON array. Unknown fields,
+duplicate namespaces, invalid permissions or key IDs, and namespace names
+containing path separators are rejected at configuration validation time.
+
+```bash
+export LONGBOW_STARTUP_NAMESPACE_POLICIES='[
+  {
+    "namespace": "team-a",
+    "admin_key_ids": ["bootstrap-admin"],
+    "writer_key_ids": ["team-a-writer"],
+    "reader_key_ids": ["team-a-reader"],
+    "public_permissions": ["read"]
+  },
+  {
+    "namespace": "scratch",
+    "public_permissions": ["write"],
+    "ephemeral": true
+  }
+]'
+```
+
+Startup provisioning runs after persisted RBAC records are rehydrated and
+before the Flight and REST/GraphQL listeners accept traffic. It creates each
+namespace object if needed, installs or replaces its ACL, and is idempotent on
+restart. It does not add an authenticated creator as admin and does not create
+API keys: key IDs in the policy must refer to keys registered with the RBAC
+manager.
+
+A durable policy (`ephemeral` omitted or `false`) recreates its namespace after
+a restart even when it contains no replayed datasets. An ephemeral policy
+exists only for the process lifetime; it never leaves a durable record and
+disappears on restart unless declared again. Rehydrated durable policies also
+recreate their empty namespace objects at startup.
 
 ---
 
@@ -171,7 +223,8 @@ its own copy for restart rehydration.
 
 - **Rotation**: the Flight `RotateAPIKey` action (and `RBACManager`) issues a
   replacement key and can keep the old key valid for a grace period. Namespace
-  ACL key IDs are rewritten in memory; there is no REST rotation endpoint.
+  ACL key IDs are rewritten and persisted for durable policies; there is no
+  REST rotation endpoint.
 - **Revocation**: `DELETE /api/v1/rbac/keys?key_id=<id>` sets `Enabled=false`,
   records `RevokedAt`, and persists the disabled metadata in the provider. The
   key stops working immediately. Hard deletion is not exposed through REST or

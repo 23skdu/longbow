@@ -23,7 +23,6 @@ Command-line flags override any value loaded from the file.
 | `namespaces.shared_prefix` | Prefix for each agent's shared-read dataset. |
 | `namespaces.common` | Dataset writable by every agent. |
 | `rbac.admin_api_key_env` | Environment variable holding the bootstrap admin key. |
-| `rbac.require` | Fail startup unless RBAC provisioning succeeds. |
 
 ## Default namespace layout
 
@@ -53,6 +52,12 @@ durable local file store):
 LONGBOW_RBAC_BOOTSTRAP_KEY="local-soak-admin-key-0123456789" \
 ./bin/longbow
 ```
+
+For fixed namespaces, pre-provision ACLs with
+`LONGBOW_STARTUP_NAMESPACE_POLICIES` (or `--startup-namespace-policies`); the
+simulators still issue their scoped API keys. The JSON supports durable ACLs
+and `ephemeral: true` runtime-only namespaces. See [`docs/rbac.md`](../docs/rbac.md)
+for the schema.
 
 The simulators require that key and always verify the permission boundaries at
 startup; there is no no-RBAC mode.

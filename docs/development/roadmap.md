@@ -16,7 +16,7 @@ The removed work covered:
   - **M5 (initial standalone domain extractions)**: Extracted `internal/store/rbac`, `internal/store/geo`, `internal/store/temporal`, `internal/store/index/learned`, and `internal/store/index/bm25` (including splitting 812-LOC `bm25_inverted_index.go` and extracting pluggable index types into `internal/store/types/pluggable_types.go`), with type/constructor aliases preserved in parent packages.
   - **M6**: Added `scripts/check_module_sizes.sh` (`make module-size-check`, `scripts/verify.sh` `--staged` check, CI `validate` job, Gate 14 in `docs/development/gates.md`) warning on hand-maintained files `> 800 LOC`, failing new files `> 1,200 LOC`, and enforcing a shrinkable legacy allow-list (updated for macOS bash 3.2 compatibility).
 - **macOS Metal GPU & ARM64 Darwin SIMD**: Runtime Metal shader compilation from embedded `kernels.metal`, Metal bridge buffer-index/top-k/CFRelease/deadlock/race fixes across `MetalIndexOptimized`, `MetalIndex`, and `MetalHybridIndex`, 32-byte TurboQuant Metal alignment, ARM64 NEON `int16`/`uint8` unsigned widening (`VUADDLP_2D`) fix, and all-dtype × dims `128`/`384`/`768` GPU & NEON verification suites.
-- **Always-on RBAC, namespace ACLs & durable API keys**: removed every RBAC bypass from the server and both simulators, added namespace-scoped admin/writer/reader grants plus configurable public permissions, and added durable API-key storage for file/Vault/GCP/AWS providers. See the completed plan below.
+- **Always-on RBAC, namespace ACLs & durable RBAC records**: removed every RBAC bypass from the server and both simulators, added namespace-scoped admin/writer/reader grants plus configurable public permissions, and added durable API-key and namespace-ACL storage for file/Vault/GCP/AWS providers. Startup namespaces can be declared as durable or ephemeral. See the completed plan below.
 
 See `docs/development/performance.md` for benchmark results and baselines, `docs/development/gates.md`
 for repository conformance gates, and `docs/development/testplan.md` for the full
@@ -40,15 +40,24 @@ recorded here so the scope and verification strategy remain auditable.
   permissions. Public permissions apply to any authenticated key, but only in
   the namespace that publishes them.
 - [x] **Server-admin-only namespace creation**: REST, GraphQL, and Flight
-  namespace creation require `manage-tenant` globally and automatically record
-  the creator as namespace admin.
-- [x] **Durable API keys**: a pluggable secret store (`file`, `memory`,
-  `vault`, `gcp`, `aws`) stores API keys on create/rotate and reloads them at
-  startup. Raw secrets are not retained in memory; RBAC maps are keyed by
-  SHA-256 hash.
+  namespace creation require `manage-tenant` globally. REST, GraphQL, and
+  data-plane Flight automatically record the creator as namespace admin;
+  control-plane Flight accepts only `name` and attaches no ACL fields.
+- [x] **Durable API keys and namespace ACLs**: a pluggable RBAC record store
+  (`file`, `memory`, `vault`, `gcp`, `aws`) stores API keys on create/rotate and
+  durable namespace policies on create/update, then reloads both at startup.
+  Raw secrets are not retained in memory; RBAC maps are keyed by SHA-256 hash.
+  Namespace deletion removes the ACL record, and key rotation rewrites and
+  persists ACL key IDs.
+- [x] **Startup namespaces**: `LONGBOW_STARTUP_NAMESPACE_POLICIES` /
+  `--startup-namespace-policies` provisions namespace objects and ACLs before
+  listeners start. Durable policies survive restart and recreate empty
+  namespaces; `ephemeral: true` policies are runtime-only and remove stale
+  durable records. Helm exposes `rbac.startupNamespacePolicies`.
 - [x] **Unit tests**: secret backend tests, RBAC ACL tests (public read/write,
-  admin/writer/reader, rotation, restart persistence), config validation
-  tests, and simulator config tests.
+  admin/writer/reader, rotation, restart persistence), config parsing and
+  validation tests, startup namespace provisioning/restart tests, Helm template
+  checks, and simulator config tests.
 - [x] **RBAC-only verification script**: `scripts/verify_rbac.py` exercises
   only authorization behavior against a running server. It checks
   unauthenticated rejection, admin provisioning, namespace ACL isolation,
@@ -57,7 +66,7 @@ recorded here so the scope and verification strategy remain auditable.
   a fake transport.
 
 Operator setup and the full verification commands are documented in
-[`docs/rbac.md`](rbac.md).
+[`docs/rbac.md`](../rbac.md).
 
 ---
 

@@ -288,6 +288,15 @@ Longbow uses a **Tombstone** mechanism for efficient deletions without blocking 
 | `GetTotalNamespaceCount` | - | Count total namespaces | `ops_test.py namespaces` |
 | `GetNamespaceDatasetCount` | - | Count datasets in a namespace | `ops_test.py namespaces` |
 
+The control-plane Flight `CreateNamespace` action accepts only `name` and does
+not attach ACLs. REST `POST /api/v1/namespaces` and data-plane Flight
+`CreateNamespace` also accept `admin_key_ids`, `writer_key_ids`,
+`reader_key_ids`, `public_permissions`, and `ephemeral`. `ephemeral: true`
+creates a runtime-only namespace/ACL; omitted or `false` stores the ACL in the
+configured RBAC secrets provider. See [RBAC documentation](rbac.md) for the
+`LONGBOW_STARTUP_NAMESPACE_POLICIES` / `--startup-namespace-policies` JSON array
+that provisions namespaces before the listeners start.
+
 **Examples:**
 
 ```python

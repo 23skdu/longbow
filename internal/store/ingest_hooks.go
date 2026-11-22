@@ -174,7 +174,7 @@ func (s *VectorStore) updateTemporalIndexForBatch(ds *Dataset, rec arrow.RecordB
 				if !ok {
 					continue
 				}
-				ids = append(ids, uint64(baseRowID)+uint64(i))
+				ids = append(ids, uint64(baseRowID)+uint64(i)) // #nosec G115
 				norms = append(norms, norm)
 				timestamps = append(timestamps, rowTs)
 			}
@@ -259,7 +259,7 @@ func (s *VectorStore) updateGeoIndexForBatch(ds *Dataset, rec arrow.RecordBatch,
 						if i*2+1 >= len(geoValues) {
 							continue
 						}
-						validIds = append(validIds, uint64(baseRowID)+uint64(i))
+						validIds = append(validIds, uint64(baseRowID)+uint64(i)) // #nosec G115
 						validPoints = append(validPoints, types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]})
 					}
 					// Pass nil vectors to avoid duplicating 1M []float32 copies on the Go heap;

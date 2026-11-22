@@ -31,15 +31,15 @@ All Performance & Scale items and modularization phases **M1–M4** and **M6** a
 
 Release verification must cover the Apple Silicon / Darwin ARM64 target end to end before a release ships. Add the following as blocking (P0) release gates:
 
-- [ ] **macOS-15 GitHub Actions runner** in the release-verification workflow (`.github/workflows/*`): provision a `macos-15` runner, install the Go toolchain + CGO dependencies used by `make build` / `make test-short`, and run the standard verification pipeline (`make build`, `make vet`, `make test-short`, `make lint`) natively on Darwin ARM64.
-- [ ] **ARM64 Darwin verification job as part of release verification**: a dedicated job in the release pipeline that builds and tests `GOOS=darwin GOARCH=arm64` (including CGO-enabled paths and the SIMD/Metal backends under `internal/gpu/metal/`), runs `cross-compile`/equivalent Darwin ARM64 checks, and uploads the resulting `longbow` Darwin ARM64 binary as a release artifact. No release is cut unless this job is green.
+- [x] **macOS-15 GitHub Actions runner** in the release-verification workflow (`.github/workflows/*`): provision a `macos-15` runner, install the Go toolchain + CGO dependencies used by `make build` / `make test-short`, and run the standard verification pipeline (`make build`, `make vet`, `make test-short`, `make lint`) natively on Darwin ARM64.
+- [x] **ARM64 Darwin verification job as part of release verification**: a dedicated job in the release pipeline that builds and tests `GOOS=darwin GOARCH=arm64` (including CGO-enabled paths and the SIMD/Metal backends under `internal/gpu/metal/`), runs `cross-compile`/equivalent Darwin ARM64 checks, and uploads the resulting `longbow` Darwin ARM64 binary as a release artifact. No release is cut unless this job is green.
 - [ ] **Releasing Darwin ARM64 Docker images**: publish `darwin/arm64` (Apple Silicon) container images alongside the existing CPU/GPU images — extend the Docker build matrix (`Dockerfile*`, `docker-compose.yml`, release workflow) to build and push a Darwin ARM64 variant, tag it consistently with the other platforms, and document pull/run instructions for Apple Silicon hosts. Include the image in `make docker-build-*` / release artifact lists and the observability/verification gates.
 
 ### ARM64 / NEON / SVE (Performance & Correctness)
 
-- [ ] **Verify ARM64 NEON float64 kernels on native hardware**: run the full NEON float64 kernel suite and distance/search parity tests on a real ARM64 (Apple Silicon / Graviton) host, not just under QEMU/emulation; confirm bit-identity with the generic reference and no overflow/clamping regressions.
-- [ ] **Complete IMP-01 arm64 atomic restore (CASAL)**: finish the ARM64 `CASAL`-based atomic restore path for off-heap graph/slab state (currently partial), including retry/ABA handling and parity with the AMD64 CAS path; add targeted concurrency tests.
-- [ ] **Consider SVE/SVE2 support**: evaluate auto-vectorization/SVE intrinsics for the hot distance and HNSW traversal kernels, behind runtime CPU-feature detection, with scalar/NEON fallbacks and cross-architecture parity tests.
+- [x] **Verify ARM64 NEON float64 kernels on native hardware**: run the full NEON float64 kernel suite and distance/search parity tests on a real ARM64 (Apple Silicon / Graviton) host, not just under QEMU/emulation; confirm bit-identity with the generic reference and no overflow/clamping regressions.
+- [x] **Complete IMP-01 arm64 atomic restore (CASAL)**: finish the ARM64 `CASAL`-based atomic restore path for off-heap graph/slab state (currently partial), including retry/ABA handling and parity with the AMD64 CAS path; add targeted concurrency tests.
+- [x] **Consider SVE/SVE2 support**: evaluate auto-vectorization/SVE intrinsics for the hot distance and HNSW traversal kernels, behind runtime CPU-feature detection, with scalar/NEON fallbacks and cross-architecture parity tests.
 
 ### M5 — Remaining God-Package Domain Extractions
 

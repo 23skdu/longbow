@@ -264,7 +264,7 @@ func (r *Runner) InferenceWithTokens(ctx context.Context, inputIds []int64, mask
 	for i := 0; i < len(inputIds); i++ {
 		v := inputIds[i]
 		for b := 0; b < 8; b++ {
-			idBytes[i*8+b] = byte(v >> (b * 8))
+			idBytes[i*8+b] = byte(v >> (b * 8)) // #nosec G115
 		}
 	}
 	if !mem.Write(idPtr, idBytes) {
@@ -275,7 +275,7 @@ func (r *Runner) InferenceWithTokens(ctx context.Context, inputIds []int64, mask
 	for i := 0; i < len(mask); i++ {
 		v := mask[i]
 		for b := 0; b < 8; b++ {
-			maskBytes[i*8+b] = byte(v >> (b * 8))
+			maskBytes[i*8+b] = byte(v >> (b * 8)) // #nosec G115
 		}
 	}
 	if !mem.Write(maskPtr, maskBytes) {

@@ -37,7 +37,7 @@ func packHeader(gen uint32, length uint32) uint64 {
 }
 
 func unpackHeader(h uint64) (gen uint32, length uint32) {
-	return uint32(h >> 32), uint32(h)
+	return uint32(h >> 32), uint32(h) // #nosec G115
 }
 
 func NewFlatAdjacency(arena *memory.SlabArena, maxNeighbors int, initialCapacity int) *FlatAdjacency {

@@ -66,15 +66,15 @@ func NewMapRCU[K comparable, V any]() *MapRCU[K, V] {
 		}
 	case int64:
 		m.hasher = func(key K) uint64 {
-			return hashUint64(uint64(any(key).(int64)))
+			return hashUint64(uint64(any(key).(int64))) // #nosec G115
 		}
 	case int:
 		m.hasher = func(key K) uint64 {
-			return hashUint64(uint64(any(key).(int)))
+			return hashUint64(uint64(any(key).(int))) // #nosec G115
 		}
 	case int32:
 		m.hasher = func(key K) uint64 {
-			return hashUint64(uint64(any(key).(int32)))
+			return hashUint64(uint64(any(key).(int32))) // #nosec G115
 		}
 	default:
 		m.hasher = func(key K) uint64 {

@@ -610,7 +610,7 @@ func AdbcConnectionGetInfo(conn *C.struct_AdbcConnection, infoCodes *C.uint32_t,
 	}
 	var codes []arrowadbc.InfoCode
 	if infoCodes != nil && infoCodesLen > 0 {
-		slice := unsafe.Slice((*uint32)(unsafe.Pointer(infoCodes)), int(infoCodesLen))
+		slice := unsafe.Slice((*uint32)(unsafe.Pointer(infoCodes)), int(infoCodesLen)) // #nosec G115
 		codes = make([]arrowadbc.InfoCode, len(slice))
 		for i, c := range slice {
 			codes[i] = arrowadbc.InfoCode(c)

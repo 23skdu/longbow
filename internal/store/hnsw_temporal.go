@@ -44,8 +44,8 @@ func NewTemporalHNSWIndex(dimension int, config TemporalHNSWConfig) *TemporalHNS
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.Dims = dimension
 	cfg.M = config.MaxM
-	cfg.EfConstruction = int32(config.EfConstruction)
-	cfg.EfSearch = int32(config.EfSearch)
+	cfg.EfConstruction = int32(config.EfConstruction) // #nosec G115
+	cfg.EfSearch = int32(config.EfSearch)             // #nosec G115
 	hnsw := index.NewArrowHNSW(nil, &cfg, nil)
 
 	return &TemporalHNSWIndex{
@@ -63,7 +63,7 @@ func (thi *TemporalHNSWIndex) Add(id uint64, vector []float32, timestamp int64) 
 
 	thi.temporalTree.Insert(timestamp, id, 0.0)
 	if thi.hnsw != nil && len(vector) > 0 {
-		_ = thi.hnsw.InsertWithVector(uint32(id), vector, 0)
+		_ = thi.hnsw.InsertWithVector(uint32(id), vector, 0) // #nosec G115
 	}
 
 	return nil

@@ -333,7 +333,7 @@ func (g *MortonGrid) collectHead(head uint32, box GeoBoundingBox, results *[]*Ge
 // findHead returns the 1-based head entry of the cell chain for key, or 0 when
 // the cell is unoccupied. Callers must hold at least the read lock.
 func (g *MortonGrid) findHead(key uint64) uint32 {
-	mask := uint64(len(g.heads) - 1)
+	mask := uint64(len(g.heads) - 1) // #nosec G115
 	i := mortonHash(key) & mask
 	for g.heads[i] != 0 {
 		if g.keys[i] == key {
@@ -347,7 +347,7 @@ func (g *MortonGrid) findHead(key uint64) uint32 {
 // findSlot returns the directory slot for code, claiming an unoccupied slot when
 // the code is absent. Callers must hold the write lock.
 func (g *MortonGrid) findSlot(code uint64) int {
-	mask := uint64(len(g.heads) - 1)
+	mask := uint64(len(g.heads) - 1) // #nosec G115
 	i := mortonHash(code) & mask
 	for g.heads[i] != 0 {
 		if g.keys[i] == code {
@@ -367,7 +367,7 @@ func (g *MortonGrid) grow() {
 	g.heads = make([]uint32, slots)
 	g.keys = make([]uint64, slots)
 
-	mask := uint64(slots - 1)
+	mask := uint64(slots - 1) // #nosec G115
 	for i, head := range oldHeads {
 		if head == 0 {
 			continue

@@ -69,9 +69,9 @@ func (h *ArrowHNSW) bootstrapSequential(
 	if vStart == nil {
 		return nil, 0, 0, fmt.Errorf("failed to retrieve first vector %d after fill", startID)
 	}
-	vEnd, _ := data.GetVector(startID + uint32(n) - 1)
+	vEnd, _ := data.GetVector(startID + uint32(n) - 1) // #nosec G115
 	if vEnd == nil {
-		return nil, 0, 0, fmt.Errorf("failed to retrieve last vector %d after fill", startID+uint32(n)-1)
+		return nil, 0, 0, fmt.Errorf("failed to retrieve last vector %d after fill", startID+uint32(n)-1) // #nosec G115
 	}
 
 	var bootstrapEp uint32 = math.MaxUint32
@@ -134,7 +134,7 @@ func (h *ArrowHNSW) linkRemainingNodes(
 	pool := GetSharedPool()
 
 	// Advance nodeCount so search kernels see the new data
-	finalID := int64(startID + uint32(n))
+	finalID := int64(startID + uint32(n)) // #nosec G115
 	h.commitMu.Lock()
 	if h.nodeCount.Load() < finalID {
 		h.nodeCount.Store(finalID)
@@ -530,7 +530,7 @@ func (h *ArrowHNSW) linkRemainingNodes(
 				metaApply := h.metadataRegistry.Load()
 				var inDegreeView inDegreeReader
 				if lc == 0 && InboundEdgeGuardEnabled {
-					snap := h.inDegreeL0.snapshotInto(uint32(len(linkageCounts)), linkageInDegree)
+					snap := h.inDegreeL0.snapshotInto(uint32(len(linkageCounts)), linkageInDegree) // #nosec G115
 					linkageInDegree = snap
 					inDegreeView = snap
 				}

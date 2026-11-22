@@ -305,7 +305,7 @@ lint-docs: markdown-lint
 security: sec-gosec sec-vulncheck sec-oidc sec-secrets
 	@echo "Security analysis passed cleanly."
 
-GOSEC_FLAGS ?= -quiet -exclude=G115
+GOSEC_FLAGS ?= -quiet
 
 sec-gosec:
 	@echo "Running gosec AST security analysis..."

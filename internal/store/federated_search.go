@@ -231,8 +231,15 @@ func (fqr *FederatedQueryRouter) Search(ctx context.Context, query []float32, co
 
 // SearchWithRRFK performs a parallel search across specified collections and merges results using RRF with rrfK.
 func (fqr *FederatedQueryRouter) SearchWithRRFK(ctx context.Context, query []float32, collections []string, k, rrfK int) ([]lbtypes.SearchResult, error) {
+	// Capture searchers under lock, then release to allow concurrent searches.
 	fqr.mu.RLock()
-	defer fqr.mu.RUnlock()
+	searchers := make(map[string]VectorSearcher, len(collections))
+	for _, col := range collections {
+		if s, ok := fqr.searchers[col]; ok {
+			searchers[col] = s
+		}
+	}
+	fqr.mu.RUnlock()
 
 	resultChan := make(chan partialResult, len(collections))
 	var wg sync.WaitGroup
@@ -241,7 +248,7 @@ func (fqr *FederatedQueryRouter) SearchWithRRFK(ctx context.Context, query []flo
 		wg.Add(1)
 		go func(col string) {
 			defer wg.Done()
-			searcher, ok := fqr.searchers[col]
+			searcher, ok := searchers[col]
 			if !ok {
 				resultChan <- partialResult{collection: col, err: fmt.Errorf("collection %s not found", col)}
 				return

@@ -67,6 +67,9 @@ The following table lists the configurable parameters of the Longbow chart and t
 | `persistence.snapshots.enabled` | Enable persistent storage for snapshots | `false` |
 | `persistence.snapshots.size` | Snapshot volume size | `10Gi` |
 | `persistence.snapshots.path` | Snapshot mount path | `/snapshots` |
+| `persistence.rbac.enabled` | Dedicated PVC for file-store API keys and ACLs | `true` |
+| `persistence.rbac.size` | RBAC volume size | `1Gi` |
+| `persistence.rbac.path` | RBAC mount path (also the default `rbac.secretsPath`) | `/data/rbac_secrets` |
 | `compaction.enabled` | Enable dataset compaction | `true` |
 | `compaction.interval` | Compaction cycle interval | `30s` |
 
@@ -102,7 +105,7 @@ The following table lists the configurable parameters of the Longbow chart and t
 Leave this on for query-driven workloads. Every bulk-inserted batch is measured
 and logged either way:
 
-```
+```text
 [HNSW] bulk batch nodes=100000 reachable=99794/100000 sampled=100.0% mean_degree=5.46 hops=3.1/6.2 addbatch_inflight=1 fallback=false
 ```
 
@@ -226,7 +229,7 @@ graph was left partly disconnected; see `docs/development/roadmap.md` §9.2.
 | `rbac.existingSecretKey` | Key in `rbac.existingSecret` holding the bootstrap admin key | `bootstrap-api-key` |
 | `rbac.startupNamespacePolicies` | Namespace ACLs to create at startup (see example below) | `[]` |
 | `rbac.secretsProvider` | RBAC record store: `file`, `memory`, `vault`, `gcp`, or `aws` | `file` |
-| `rbac.secretsPath` | File-store path (mounted under the WAL PVC by default) | `/data/rbac_secrets` |
+| `rbac.secretsPath` | File-store path (mounted from the dedicated RBAC PVC by default) | `/data/rbac_secrets` |
 | `rbac.secretsPrefix` | Provider-side prefix for Longbow secrets | `longbow/rbac` |
 | `rbac.vaultAddr` | Vault address (required for `vault`) | `""` |
 | `rbac.vaultToken` | Vault token | `""` |
@@ -273,7 +276,10 @@ rbac:
 
 Omit `ephemeral` (or set it to `false`) to persist the ACL and namespace through
 the configured `rbac.secretsProvider`. Set `ephemeral: true` for a runtime-only
-namespace that disappears on restart. Durable records reuse `rbac.secretsPath`
-with the default `file` provider, so no additional volume is required.
+namespace that disappears on restart. With the default `file` provider, API keys
+and durable ACLs are written to `rbac.secretsPath` on the dedicated
+`persistence.rbac` PVC. Keep that PVC enabled (or back the path with your own
+durable volume); otherwise keys and ACLs are lost on pod replacement. External
+providers (`vault`, `gcp`, `aws`) do not need this PVC.
 
 Verify the deployment with `python3 scripts/verify_rbac.py --url http://<metrics-host>:9090`.

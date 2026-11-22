@@ -1,4 +1,5 @@
 
+{{- $rbacFilePVC := and (eq (.Values.rbac.secretsProvider | default "file") "file") (.Values.persistence.rbac.enabled) -}}
 {{- if .Values.persistence.wal.enabled -}}
 kind: PersistentVolumeClaim
 apiVersion: v1
@@ -32,5 +33,23 @@ spec:
       storage: {{ .Values.persistence.snapshots.size | quote }}
   {{- if .Values.persistence.snapshots.storageClass }}
   storageClassName: {{ .Values.persistence.snapshots.storageClass | quote }}
+  {{- end }}
+{{- end }}
+{{- if $rbacFilePVC }}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ include "longbow.fullname" . }}-rbac
+  labels:
+    {{- include "longbow.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.rbac.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.rbac.size | quote }}
+  {{- if .Values.persistence.rbac.storageClass }}
+  storageClassName: {{ .Values.persistence.rbac.storageClass | quote }}
   {{- end }}
 {{- end }}

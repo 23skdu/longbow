@@ -314,6 +314,14 @@ persistence:
     accessMode: ReadWriteOnce
     size: 10Gi
     path: /snapshots
+  # Durable API keys and namespace ACLs for the file secrets provider.
+  # Keep enabled unless keys are stored in Vault/GCP/AWS or memory (tests only).
+  rbac:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    path: /data/rbac_secrets
 
 # Change Data Capture (CDC) Configuration
 cdc:
@@ -507,6 +515,7 @@ rbac:
   startupNamespacePolicies: []
   # file, memory, vault, gcp, or aws. `memory` is for tests only.
   secretsProvider: "file"
+  # Backed by the persistence.rbac PVC for the file provider.
   secretsPath: "/data/rbac_secrets"
   secretsPrefix: "longbow/rbac"
   # Vault KV v2 (required when secretsProvider=vault)

@@ -1,3 +1,4 @@
+{{- $rbacFilePVC := and (eq (.Values.rbac.secretsProvider | default "file") "file") (.Values.persistence.rbac.enabled) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -430,7 +431,7 @@ spec:
             - name: LONGBOW_SECRETS_PROVIDER
               value: {{ .Values.rbac.secretsProvider | default "file" | quote }}
             - name: LONGBOW_SECRETS_PATH
-              value: {{ .Values.rbac.secretsPath | default "/data/rbac_secrets" | quote }}
+              value: {{ .Values.rbac.secretsPath | default .Values.persistence.rbac.path | quote }}
             - name: LONGBOW_SECRETS_PREFIX
               value: {{ .Values.rbac.secretsPrefix | default "longbow/rbac" | quote }}
             {{- if .Values.rbac.startupNamespacePolicies }}
@@ -494,6 +495,10 @@ spec:
             - name: snapshots-storage
               mountPath: {{ .Values.persistence.snapshots.path }}
             {{- end }}
+            {{- if $rbacFilePVC }}
+            - name: rbac-storage
+              mountPath: {{ .Values.rbac.secretsPath | default .Values.persistence.rbac.path }}
+            {{- end }}
       volumes:
         {{- if .Values.persistence.wal.enabled }}
         - name: wal-storage
@@ -504,6 +509,11 @@ spec:
         - name: snapshots-storage
           persistentVolumeClaim:
             claimName: {{ include "longbow.fullname" . }}-snapshots
+        {{- end }}
+        {{- if $rbacFilePVC }}
+        - name: rbac-storage
+          persistentVolumeClaim:
+            claimName: {{ include "longbow.fullname" . }}-rbac
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

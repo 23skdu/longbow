@@ -1,6 +1,9 @@
 package store
 
 import (
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,4 +82,21 @@ func TestMemoryScaling(t *testing.T) {
 		const maxRSS = 20 * 1024 * 1024 * 1024
 		require.Less(t, rss, uint64(maxRSS), "process RSS must stay below 20 GB")
 	})
+}
+
+func readProcessRSSBytes(t *testing.T) uint64 {
+	t.Helper()
+	data, err := os.ReadFile("/proc/self/statm")
+	if err != nil {
+		t.Skipf("cannot read rss: %v", err)
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 2 {
+		t.Fatal("unexpected statm format")
+	}
+	rssPages, err := strconv.Atoi(fields[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return uint64(rssPages) * 4096 // #nosec G115
 }

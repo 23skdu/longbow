@@ -106,28 +106,28 @@ A native Go tool (like `cmd/bench-tool`) that simulates agent behaviors at scale
 with a Python collation script similar to `scripts/unified_benchmark.py`.
 
 Subtasks:
-- [x] **Design `cmd/agentsoak` CLI**: flags for agents, agents-per-ns, duration, dim, seed, output JSON; reuse `client.SmartClient`.
-- [x] **Agent goroutine model**: each agent runs its own read/write/delete loop with random pauses; shared namespaces for cross-agent reads.
+- [x] **Design `cmd/agentsoak` CLI**: `-config` loads `configs/multiagent_soak.json`; flags for agents, duration, dim, seed, namespace names, and output JSON override it; reuse `client.SmartClient`.
+- [x] **Agent goroutine model**: each agent runs its own read/write/delete loop with random pauses; per-agent private, shared, and common namespaces with server-enforced RBAC.
 - [ ] **Workload mix**: dense/hybrid/sparse/filtered/range/by-id/temporal/geo/graph/multimodal/federated/insert/upsert/delete with configurable weights.
 - [x] **Cross-agent memory verification**: agent B searches memories written by agent A; assert non-empty results.
 - [x] **Metrics collection**: QPS, error rate, p50/p95/p99, memory RSS, per-op counts; JSON output.
 - [x] **Python collation script** (`scripts/agent_soak_bench.py`): run the Go tool, aggregate multiple runs, generate report/CSV.
-- [ ] **CI soak gate**: 8 agents, 2 per namespace, 10 min, fail on >50% QPS drop or stall.
-- [ ] **Unit/fuzz tests**: 100% coverage for agent loop, workload selection, metrics, and report collation.
+- [ ] **CI soak gate**: default 3 agents / 7 namespaces, 10 min, fail on >50% QPS drop or stall.
+- [ ] **Unit/fuzz tests**: extend coverage to the full agent loop, workload selection, metrics, and report collation (config/topology/flag-override tests now exist).
 
 ### Authenticated & Encrypted Soak Variants (Planned)
 
 - [ ] **TLS soak variant**: run agent soak over TLS (gRPC with TLS) and measure latency/QPS overhead vs plaintext.
-- [ ] **mTLS / OIDC auth soak**: enable per-agent auth tokens and verify no cross-agent data leakage under load.
+- [ ] **mTLS / OIDC auth soak**: RBAC with per-agent API keys is already exercised by the multi-namespace scenario; add TLS/mTLS transport and OIDC workload identity on top.
 - [ ] **Encryption-at-rest soak**: enable disk encryption and measure ingest/search latency and CPU overhead.
 - [ ] **Auth + encryption combined**: full secure soak (TLS + mTLS + encrypted disk) for 1h with 8 agents.
 - [ ] **Performance comparison report**: collate plaintext vs TLS vs mTLS vs encrypted-disk QPS/latency/RSS.
 
-### Multi-Namespace Permission Soak (Planned)
+### Multi-Namespace Permission Soak
 
-- [ ] **Server-side RBAC for shared namespaces**: enforce write/delete permissions per agent on `shared_<i>` and `master`.
-- [x] **Cross-agent memory verification tests**: agent B reads/searches memories written by agent A (scripts/verify_cross_agent_memory.py).
-- [ ] **21-namespace soak gate**: 10 agents, 1h, 0 errors, no QPS stall.
+- [x] **Server-side RBAC for shared namespaces**: both simulators provision scoped per-agent API keys and verify at startup that private namespaces are invisible, shared namespaces are read-only for non-owners, and the common namespace is writable by all.
+- [x] **Cross-agent memory verification tests**: agent B reads/searches memories written by agent A (scripts/verify_cross_agent_memory.py and the simulator startup probes).
+- [ ] **Configurable permission soak gate**: default 3 agents / 7 namespaces (and a scaled 10-agent / 21-namespace variant), 1h, 0 errors, no QPS stall.
 - [ ] **Permission audit logging**: log denied write/delete attempts under load.
 
 ### Federated Search Concurrency (New Finding)

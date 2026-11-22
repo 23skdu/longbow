@@ -113,16 +113,48 @@ with the workload mix above. Metrics are sampled and persisted every minute.
 - Include **multi-modal (text+geo+graph)** memories in the global graph to
   exercise cross-modal GraphRAG.
 
-## 9. Multi-Namespace Permission Scenario (21 Namespaces)
+## 9. Multi-Namespace Permission Scenario (3 Agents / 7 Namespaces)
 
-A specialized soak scenario with 10 agents and 21 namespaces:
+Two equivalent simulators drive this scenario: `scripts/agent_soak_scenario.py`
+(Python SDK) and `cmd/agentsoak` (native Go client). Both default to **3 agents
+and 7 namespaces** (`2N + 1`), and both load the same
+[`configs/multiagent_soak.json`](../../configs/multiagent_soak.json). CLI flags
+override any value in the file.
 
-- `private_<i>` (10): owned by agent i; read/write/delete.
-- `shared_<i>` (10): agent i can write; all agents can read/search.
-- `master` (1): all agents can read/write; none may delete.
+| Namespace | Owner | Owner access | Other agents |
+| --- | --- | --- | --- |
+| `private_0`, `private_1`, `private_2` | agent `i` | read / write / delete | no access (not even visible) |
+| `shared_0`, `shared_1`, `shared_2` | agent `i` | read / write / delete | read / search only |
+| `master` | all | read / write / delete | read / write / delete |
 
-This validates cross-agent memory visibility, permission boundaries (simulated),
-and shared-namespace concurrency. Script: `scripts/agent_soak_scenario.py`.
+Permissions are **enforced by the server's RBAC manager**, not simulated: the
+admin client provisions the namespaces and issues two scoped API keys per
+agent (`writer` for the agent's private + owned-shared + common namespaces,
+`reader` for the other agents' shared namespaces). The simulators probe a
+forbidden cross-agent read and write at startup and abort if RBAC is not
+actually enforced.
 
-Run:
-    python3 scripts/agent_soak_scenario.py --agents 10 --duration-hours 1 --dim 128
+Start the server with a known bootstrap admin key:
+
+```bash
+LONGBOW_RBAC_ENABLED=true \
+LONGBOW_RBAC_BOOTSTRAP_KEY="local-soak-admin-key-0123456789" \
+./bin/longbow
+```
+
+Run either simulator (the admin key is read from `LONGBOW_RBAC_BOOTSTRAP_KEY`,
+or can be passed with `--admin-api-key` / `-admin-api-key`):
+
+```bash
+python3 scripts/agent_soak_scenario.py --config configs/multiagent_soak.json
+./bin/agentsoak -config configs/multiagent_soak.json
+```
+
+Customize the layout with flags, for example `--agents 5 --private-prefix own_
+--shared-prefix team_ --common global` (Go uses single-dash equivalents). The
+permission tiers stay fixed; only the names and agent count change. See
+[`configs/README.md`](../../configs/README.md) for the full schema.
+
+For a local unauthenticated smoke run, pass `--no-require-rbac` (Python) or
+`-require-rbac=false` (Go); the tools print a warning because the boundaries
+are then not enforced.

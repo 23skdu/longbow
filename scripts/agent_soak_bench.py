@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Collation script for agentsoak Go tool runs.
 
-Runs cmd/agentsoak multiple times, aggregates metrics, and emits a
-summary JSON + CSV report. Usage:
+Runs cmd/agentsoak multiple times, aggregates metrics, and emits a summary
+JSON + CSV report. The Go tool enforces RBAC by default, so set
+LONGBOW_RBAC_BOOTSTRAP_KEY (or pass -admin-api-key to the tool) before running.
+
+Usage:
     python3 scripts/agent_soak_bench.py --runs 3 --agents 8 --duration 60
 """
 import argparse, json, os, subprocess, sys, time, statistics
@@ -75,5 +78,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-PY
-chmod +x scripts/agent_soak_bench.py

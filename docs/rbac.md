@@ -78,6 +78,10 @@ Any candidate whose metadata does not satisfy the active row filters is stripped
 | `LONGBOW_OIDC_ENABLED` | `false` | Enables `OIDCManager` and dynamic OIDC/RBAC gRPC & HTTP authentication |
 | `LONGBOW_OIDC_ISSUERS` | `""` | JSON array of `OIDCIssuerConfig` objects loaded at startup |
 
+The multiagent soak simulators use `LONGBOW_RBAC_BOOTSTRAP_KEY` to provision
+scoped per-agent keys; see [`configs/README.md`](../configs/README.md) and
+[`docs/development/soaktestplan.md`](development/soaktestplan.md) §9.
+
 ```bash
 export LONGBOW_RBAC_ENABLED=true
 export LONGBOW_OIDC_ENABLED=true

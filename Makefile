@@ -166,6 +166,11 @@ build-bench:
 	@mkdir -p bin
 	$(GO) build -o bin/bench-tool ./cmd/bench-tool
 
+build-agentsoak:
+	@echo "Building agentsoak..."
+	@mkdir -p bin
+	$(GO) build -o bin/agentsoak ./cmd/agentsoak
+
 build-verify:
 	@echo "Building tensor-verify..."
 	@mkdir -p bin

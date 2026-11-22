@@ -59,17 +59,22 @@ func (s *VectorStore) DeleteVectorByID(_ context.Context, datasetName, rawID str
 	if !ok {
 		return NewNotFoundError("dataset", datasetName)
 	}
-	ds.dataMu.Lock()
-	defer ds.dataMu.Unlock()
 
+	// Resolve location under read lock, then apply tombstone under write lock
+	// briefly to avoid holding the dataset write lock during resolution.
+	ds.dataMu.RLock()
 	loc, found := resolveVectorLocationLocked(ds, rawID)
+	ds.dataMu.RUnlock()
 	if !found {
 		return NewNotFoundError("vector", rawID)
 	}
+
+	ds.dataMu.Lock()
 	if ds.Tombstones[loc.BatchIdx] == nil {
 		ds.Tombstones[loc.BatchIdx] = types.NewBitset()
 	}
 	ds.Tombstones[loc.BatchIdx].Set(loc.RowIdx)
+	ds.dataMu.Unlock()
 	metrics.TombstonesTotal.WithLabelValues(datasetName).Inc()
 	return nil
 }

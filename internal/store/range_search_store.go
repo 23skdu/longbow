@@ -43,7 +43,13 @@ func (s *VectorStore) RangeSearch(ctx context.Context, dataset string, queryVec 
 	}
 	if ds.Index == nil {
 		ds.dataMu.RUnlock()
-		return nil, status.Error(codes.FailedPrecondition, "dataset has no vector index")
+		// Wait briefly for in-flight ingestion/indexing to complete.
+		ds.WaitForIndexing()
+		ds.dataMu.RLock()
+		if ds.Index == nil {
+			ds.dataMu.RUnlock()
+			return nil, status.Error(codes.FailedPrecondition, "dataset has no vector index")
+		}
 	}
 	expectedDim := ds.Index.GetDimension()
 	actualDim := uint32(len(queryVec)) // #nosec G115

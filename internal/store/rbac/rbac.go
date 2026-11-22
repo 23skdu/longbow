@@ -164,17 +164,33 @@ func (r *RBACManager) CreateAPIKey(name string, role Role, namespace string, dat
 	return ak, err
 }
 
+// RegisterAPIKeyWithSecret registers an operator-supplied raw secret with an
+// explicit scope. It is used for bootstrap credentials configured before the
+// server starts, so the caller already knows the secret and does not need it
+// echoed back.
+func (r *RBACManager) RegisterAPIKeyWithSecret(opts APIKeyOptions, raw string) (*APIKey, error) {
+	raw = strings.TrimSpace(raw)
+	if len(raw) < 16 {
+		return nil, fmt.Errorf("bootstrap API key must be at least 16 characters")
+	}
+	return r.createAPIKey(opts, raw)
+}
+
 // CreateAPIKeyWithOptions issues a new API key and returns both the key record and the raw secret string.
 func (r *RBACManager) CreateAPIKeyWithOptions(opts APIKeyOptions) (*APIKey, string, error) {
-	if _, ok := rolePermissions[opts.Role]; !ok {
-		return nil, "", fmt.Errorf("invalid role: %s", opts.Role)
-	}
 	keyBytes := make([]byte, 32)
 	if _, err := rand.Read(keyBytes); err != nil {
 		return nil, "", fmt.Errorf("failed to generate key: %w", err)
 	}
+	raw := hex.EncodeToString(keyBytes)
+	ak, err := r.createAPIKey(opts, raw)
+	return ak, raw, err
+}
 
-	keyStr := hex.EncodeToString(keyBytes)
+func (r *RBACManager) createAPIKey(opts APIKeyOptions, keyStr string) (*APIKey, error) {
+	if _, ok := rolePermissions[opts.Role]; !ok {
+		return nil, fmt.Errorf("invalid role: %s", opts.Role)
+	}
 	keyHash := sha256Hash(keyStr)
 
 	var expiresAt *time.Time
@@ -213,7 +229,7 @@ func (r *RBACManager) CreateAPIKeyWithOptions(opts APIKeyOptions) (*APIKey, stri
 		audit.RecordEvent(context.Background(), apiKey.KeyID, apiKey.TenantID, "create_api_key", apiKey.Namespace, "internal", true, "")
 	}
 
-	return apiKey, keyStr, nil
+	return apiKey, nil
 }
 
 // RotateAPIKey issues a replacement key with the same role/tenant scope and places a grace period on the old key.

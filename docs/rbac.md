@@ -74,6 +74,7 @@ Any candidate whose metadata does not satisfy the active row filters is stripped
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `LONGBOW_RBAC_ENABLED` | `false` | Enables `RBACManager` and mints a `bootstrap-admin` API key on startup |
+| `LONGBOW_RBAC_BOOTSTRAP_KEY` | `""` | Registers the supplied secret as the `bootstrap-admin` key (at least 16 chars) so callers can provision scoped keys without reading the raw key from logs |
 | `LONGBOW_OIDC_ENABLED` | `false` | Enables `OIDCManager` and dynamic OIDC/RBAC gRPC & HTTP authentication |
 | `LONGBOW_OIDC_ISSUERS` | `""` | JSON array of `OIDCIssuerConfig` objects loaded at startup |
 

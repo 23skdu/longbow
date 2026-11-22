@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -105,6 +106,24 @@ func TestRole_HasPermission(t *testing.T) {
 	require.False(t, RoleReadOnly.HasPermission(PermWrite))
 	require.True(t, RoleIngest.HasPermission(PermIngest))
 	require.True(t, RoleIngest.HasPermission(PermRead))
+}
+
+func TestRBACManager_RegisterAPIKeyWithSecret(t *testing.T) {
+	mgr := NewRBACManager()
+	const secret = "bootstrap-admin-secret-0123456789"
+
+	ak, err := mgr.RegisterAPIKeyWithSecret(APIKeyOptions{Name: "bootstrap-admin", Role: RoleAdmin}, secret)
+	require.NoError(t, err)
+	require.Equal(t, "bootstrap-admin", ak.Name)
+	require.Equal(t, RoleAdmin, ak.Role)
+
+	tc, err := mgr.AuthorizeToken(context.Background(), secret, string(PermManageKeys), "", "")
+	require.NoError(t, err)
+	require.Equal(t, ak.KeyID, tc.KeyID)
+	require.True(t, tc.IsAdmin)
+
+	_, err = mgr.RegisterAPIKeyWithSecret(APIKeyOptions{Name: "too-short", Role: RoleAdmin}, "short")
+	require.Error(t, err)
 }
 
 // FuzzRBACAuthorize exercises key creation and authorization across arbitrary role/permission inputs.

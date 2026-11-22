@@ -23,11 +23,17 @@ func initAuthAndTLS(cfg *Config, vectorStore *store.VectorStore, logger zerolog.
 	if cfg.RBACEnabled {
 		rbacMgr := store.NewRBACManager()
 		vectorStore.EnableRBAC(rbacMgr)
-		if _, bootstrapRaw, err := rbacMgr.CreateAPIKeyWithOptions(store.APIKeyOptions{
+		bootstrapOpts := store.APIKeyOptions{
 			Name: "bootstrap-admin",
 			Role: store.RoleAdmin,
-		}); err == nil {
-			logger.Info().Str("key_id", "bootstrap-admin").Int("key_len", len(bootstrapRaw)).Msg("RBAC enabled with bootstrap admin API key")
+		}
+		if strings.TrimSpace(cfg.RBACBootstrapKey) != "" {
+			if _, err := rbacMgr.RegisterAPIKeyWithSecret(bootstrapOpts, cfg.RBACBootstrapKey); err != nil {
+				return nil, nil, nil, fmt.Errorf("invalid LONGBOW_RBAC_BOOTSTRAP_KEY: %w", err)
+			}
+			logger.Info().Msg("RBAC enabled with configured bootstrap admin API key")
+		} else if _, bootstrapRaw, err := rbacMgr.CreateAPIKeyWithOptions(bootstrapOpts); err == nil {
+			logger.Info().Str("key_id", "bootstrap-admin").Int("key_len", len(bootstrapRaw)).Msg("RBAC enabled with generated bootstrap admin API key")
 		}
 	}
 	if cfg.OIDCEnabled {

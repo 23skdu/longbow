@@ -142,7 +142,14 @@ func (s *GCPStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 					Data string `json:"data"`
 				} `json:"payload"`
 			}
-			accessURL := strings.TrimSuffix(s.baseURL, "/secrets") + "/" + secret.Name + "/versions/latest:access"
+			// ListSecrets returns a fully qualified resource name such as
+			// "projects/p/secrets/id". baseURL already contains the project
+			// path, so append only the secret ID to avoid duplicating it.
+			secretID := secret.Name
+			if idx := strings.LastIndex(secretID, "/"); idx >= 0 {
+				secretID = secretID[idx+1:]
+			}
+			accessURL := s.baseURL + "/" + url.PathEscape(secretID) + "/versions/latest:access"
 			if _, err := s.do(ctx, http.MethodGet, accessURL, nil, &got); err != nil {
 				return nil, err
 			}

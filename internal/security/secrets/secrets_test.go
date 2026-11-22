@@ -143,6 +143,7 @@ func TestGCPStore(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			_, _ = io.WriteString(w, `{}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, ":access"):
+			require.Equal(t, "/v1/projects/p/secrets/"+secretID+"/versions/latest:access", r.URL.Path)
 			_, _ = io.WriteString(w, fmt.Sprintf(`{"payload":{"data":%q}}`, payload))
 		case r.Method == http.MethodGet:
 			_, _ = io.WriteString(w, fmt.Sprintf(`{"secrets":[{"name":"projects/p/secrets/%s"}]}`, secretID))

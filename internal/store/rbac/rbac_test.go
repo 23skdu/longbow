@@ -102,6 +102,34 @@ func TestRole_HasPermission(t *testing.T) {
 	require.True(t, RoleIngest.HasPermission(PermRead))
 }
 
+func TestNamespacePolicyRejectsWildcardPermissions(t *testing.T) {
+	policy := NamespacePolicy{
+		Namespace:         "team-a",
+		PublicPermissions: []Permission{"*"},
+	}
+	require.Error(t, policy.Validate())
+}
+
+func TestRBACManager_ValidateNamespaceKeyIDs(t *testing.T) {
+	manager := NewRBACManager()
+	key, _, err := manager.CreateAPIKeyWithOptions(APIKeyOptions{
+		Name:      "team-a-admin",
+		Role:      RoleReader,
+		Namespace: "team-a",
+	})
+	require.NoError(t, err)
+
+	valid := NamespacePolicy{
+		Namespace:    "team-a",
+		AdminKeyIDs:  []string{key.KeyID},
+		ReaderKeyIDs: []string{key.KeyID},
+	}
+	require.NoError(t, manager.ValidateNamespaceKeyIDs(valid))
+
+	valid.ReaderKeyIDs = []string{"missing-key"}
+	require.ErrorContains(t, manager.ValidateNamespaceKeyIDs(valid), "unknown reader_key_ids")
+}
+
 func TestRBACManager_RegisterAPIKeyWithSecret(t *testing.T) {
 	mgr := NewRBACManager()
 	const secret = "bootstrap-admin-secret-0123456789"

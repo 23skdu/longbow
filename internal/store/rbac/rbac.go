@@ -143,7 +143,7 @@ func (p NamespacePolicy) Validate() error {
 // population. Write/delete/ingest grants imply read access.
 func (p NamespacePolicy) Allows(perm Permission) bool {
 	for _, granted := range p.PublicPermissions {
-		if granted == perm || granted == "*" {
+		if granted == perm {
 			return true
 		}
 		if (granted == PermWrite || granted == PermDelete || granted == PermIngest) && perm == PermRead {
@@ -179,7 +179,7 @@ func containsString(list []string, want string) bool {
 
 func permissionIn(list []string, want Permission) bool {
 	for _, p := range list {
-		if p == string(want) || p == "*" {
+		if p == string(want) {
 			return true
 		}
 	}
@@ -332,6 +332,26 @@ func (r *RBACManager) HasGlobalAdmin() bool {
 		}
 	}
 	return false
+}
+
+// ValidateNamespaceKeyIDs checks that every key ID referenced by a namespace
+// ACL resolves to a registered API key. Startup configuration uses this to
+// fail fast on typo'd or unprovisioned grants.
+func (r *RBACManager) ValidateNamespaceKeyIDs(policy NamespacePolicy) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for role, ids := range map[string][]string{
+		"admin_key_ids":  policy.AdminKeyIDs,
+		"writer_key_ids": policy.WriterKeyIDs,
+		"reader_key_ids": policy.ReaderKeyIDs,
+	} {
+		for _, id := range ids {
+			if r.keyIDs[id] == nil {
+				return fmt.Errorf("namespace policy %q references unknown %s %q", policy.Namespace, role, id)
+			}
+		}
+	}
+	return nil
 }
 
 // SetNamespacePolicy registers or replaces a namespace ACL. Durable policies

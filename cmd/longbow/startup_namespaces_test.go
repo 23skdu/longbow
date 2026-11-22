@@ -66,6 +66,7 @@ func TestParseStartupNamespacePoliciesErrors(t *testing.T) {
 		{name: "duplicate namespace", raw: `[{"namespace":"team-a"},{"namespace":"team-a"}]`},
 		{name: "path separator", raw: `[{"namespace":"team/a"}]`},
 		{name: "invalid permission", raw: `[{"namespace":"team-a","public_permissions":["admin"]}]`},
+		{name: "wildcard permission", raw: `[{"namespace":"team-a","public_permissions":["*"]}]`},
 		{name: "invalid key ID", raw: `[{"namespace":"team-a","writer_key_ids":["bad/key"]}]`},
 	}
 	for _, tt := range tests {

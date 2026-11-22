@@ -79,6 +79,9 @@ func initAuthAndTLS(cfg *Config, vectorStore *store.VectorStore, logger zerolog.
 		return nil, nil, nil, err
 	}
 	for _, policy := range startupPolicies {
+		if err := rbacMgr.ValidateNamespaceKeyIDs(policy); err != nil {
+			return nil, nil, nil, fmt.Errorf("provision startup namespace %q: %w", policy.Namespace, err)
+		}
 		if err := vectorStore.ProvisionNamespaceWithPolicy(policy); err != nil {
 			return nil, nil, nil, fmt.Errorf("provision startup namespace %q: %w", policy.Namespace, err)
 		}

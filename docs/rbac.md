@@ -144,8 +144,9 @@ Rules:
   that namespace.
 - `public_permissions` are granted to **every authenticated RBAC key**,
   including exchanged OIDC session keys. Supported values are `read`, `write`,
-  `delete`, and `ingest`; write-class permissions imply `read`. Direct OIDC JWT
-  validation without token exchange does not attach namespace grants.
+  `delete`, and `ingest`; write-class permissions imply `read`. Wildcards are
+  not supported. Direct OIDC JWT validation without token exchange does not
+  attach namespace grants.
 - A public namespace is not unauthenticated. A valid API key or OIDC session is
   still required to reach it.
 - Namespace grants override the key's default tenant boundary and dataset
@@ -189,8 +190,9 @@ Startup provisioning runs after persisted RBAC records are rehydrated and
 before the Flight and REST/GraphQL listeners accept traffic. It creates each
 namespace object if needed, installs or replaces its ACL, and is idempotent on
 restart. It does not add an authenticated creator as admin and does not create
-API keys: key IDs in the policy must refer to keys registered with the RBAC
-manager.
+API keys: every key ID in the policy must already refer to a key registered
+with the RBAC manager. An unknown key ID fails startup rather than installing
+a dead grant.
 
 A durable policy (`ephemeral` omitted or `false`) recreates its namespace after
 a restart even when it contains no replayed datasets. An ephemeral policy

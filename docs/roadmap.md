@@ -114,3 +114,11 @@ Subtasks:
 - [ ] **Python collation script** (`scripts/agent_soak_bench.py`): run the Go tool, aggregate multiple runs, generate report/CSV.
 - [ ] **CI soak gate**: 8 agents, 2 per namespace, 10 min, fail on >50% QPS drop or stall.
 - [ ] **Unit/fuzz tests**: 100% coverage for agent loop, workload selection, metrics, and report collation.
+
+### Authenticated & Encrypted Soak Variants (Planned)
+
+- [ ] **TLS soak variant**: run agent soak over TLS (gRPC with TLS) and measure latency/QPS overhead vs plaintext.
+- [ ] **mTLS / OIDC auth soak**: enable per-agent auth tokens and verify no cross-agent data leakage under load.
+- [ ] **Encryption-at-rest soak**: enable disk encryption and measure ingest/search latency and CPU overhead.
+- [ ] **Auth + encryption combined**: full secure soak (TLS + mTLS + encrypted disk) for 1h with 8 agents.
+- [ ] **Performance comparison report**: collate plaintext vs TLS vs mTLS vs encrypted-disk QPS/latency/RSS.

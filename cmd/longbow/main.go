@@ -5,6 +5,7 @@ import (
 	"errors"
 	_ "expvar" // Register expvar handlers
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"runtime"
@@ -18,8 +19,16 @@ import (
 
 func main() {
 	if err := run(); err != nil {
+		reportFatalError(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// reportFatalError makes startup failures visible in container logs instead of
+// exiting silently. run() returns errors from many subsystems; callers of the
+// binary must be able to see why it stopped.
+func reportFatalError(w io.Writer, err error) {
+	fmt.Fprintf(w, "Longbow exited with error: %v\n", err)
 }
 
 func run() error {

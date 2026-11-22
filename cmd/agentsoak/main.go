@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,16 +24,34 @@ import (
 )
 
 var (
-	uri        = flag.String("uri", "127.0.0.1:3000", "Data plane address")
-	agents     = flag.Int("agents", 8, "Number of agents")
-	_          = flag.Int("agents-per-ns", 2, "Agents per shared namespace")
-	duration   = flag.Duration("duration", 5*time.Minute, "Soak duration")
-	dim        = flag.Int("dim", 128, "Vector dimension")
-	seed       = flag.Int64("seed", 42, "Random seed")
-	outputJSON = flag.String("json", "", "Output JSON file")
-	thinkTime  = flag.Duration("think-time", 10*time.Millisecond, "Think time between ops")
-	verbose    = flag.Bool("verbose", false, "Verbose output")
+	configPath    = flag.String("config", defaultConfigPath, "Shared JSON config (flags override values from the file)")
+	uri           = flag.String("uri", "", "Data plane address (overrides config)")
+	agents        = flag.Int("agents", 0, "Number of agents (overrides config)")
+	duration      = flag.Duration("duration", 0, "Soak duration (overrides config duration_hours)")
+	dim           = flag.Int("dim", 0, "Vector dimension (overrides config)")
+	seed          = flag.Int64("seed", 0, "Random seed (overrides config; 0 is a valid seed)")
+	thinkTime     = flag.Duration("think-time", 0, "Think time between ops (overrides config)")
+	privatePrefix = flag.String("private-prefix", "", "Private namespace prefix (overrides config)")
+	sharedPrefix  = flag.String("shared-prefix", "", "Shared namespace prefix (overrides config)")
+	common        = flag.String("common", "", "Common namespace name (overrides config)")
+	adminAPIKey   = flag.String("admin-api-key", "", "Bootstrap admin API key (overrides config env var)")
+	requireRBAC   = flag.Bool("require-rbac", true, "Require server-enforced RBAC and scoped per-agent keys")
+	outputJSON    = flag.String("json", "", "Output JSON file")
+	verbose       = flag.Bool("verbose", false, "Verbose output")
 )
+
+// flagSet reports whether a flag was explicitly provided on the command line,
+// so zero values (e.g. -seed 0) still override the config file. It is a var so
+// tests can exercise override precedence without mutating the global flag set.
+var flagSet = func(name string) bool {
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
+}
 
 type globalMetrics struct {
 	Ops    atomic.Int64
@@ -96,6 +115,7 @@ func randVec(rng *rand.Rand, d int) []float32 {
 }
 
 func doInsert(ctx context.Context, c *client.SmartClient, dataset string, id string, vec []float32, importance int64, d int) error {
+	ctx = c.WithAuthContext(ctx)
 	schema := buildSchema(d)
 	pool := memory.NewGoAllocator()
 	b := array.NewRecordBuilder(pool, schema)
@@ -136,6 +156,7 @@ func doInsert(ctx context.Context, c *client.SmartClient, dataset string, id str
 }
 
 func doSearch(ctx context.Context, c *client.SmartClient, dataset string, vec []float32) error {
+	ctx = c.WithAuthContext(ctx)
 	req := map[string]any{"dataset": dataset, "k": 5, "vector": vec}
 	body, _ := json.Marshal(req)
 	action := &flight.Action{Type: "VectorSearch", Body: body}
@@ -155,56 +176,61 @@ func doSearch(ctx context.Context, c *client.SmartClient, dataset string, vec []
 	return nil
 }
 
+func doDelete(ctx context.Context, c *client.SmartClient, dataset, id string) error {
+	ctx = c.WithAuthContext(ctx)
+	body, _ := json.Marshal(map[string]any{"dataset": dataset, "id": id})
+	stream, err := c.DoAction(ctx, &flight.Action{Type: "delete", Body: body})
+	if err != nil {
+		return err
+	}
+	defer stream.CloseSend() // #nosec G104
+	_, err = stream.Recv()
+	if err == io.EOF {
+		return nil
+	}
+	return err
+}
+
 type agent struct {
 	id       int
-	agents   int
-	uri      string
-	dim      int
-	seed     int64
+	cfg      *soakConfig
+	topo     *topology
+	keys     agentKeys
 	metrics  *globalMetrics
 	stop     *atomic.Bool
-	ids      map[string][]uint32
+	ids      map[string][]string
 	mu       sync.Mutex
 	verified atomic.Int64
 }
 
-func (a *agent) namespaces() (string, []string, string) {
-	mine := fmt.Sprintf("private_%d", a.id)
-	sharedWrite := fmt.Sprintf("shared_%d", a.id)
-	master := "master"
-	return mine, []string{sharedWrite}, master
+// setKeyFor switches to the reader credential for another agent's shared
+// namespace and back to the writer credential for owned/common namespaces.
+func (a *agent) setKeyFor(c *client.SmartClient, ns string) {
+	if !a.cfg.RBAC.Require {
+		return
+	}
+	if a.topo.contains(a.topo.ReadOnly(a.id), ns) {
+		c.SetAPIKey(a.keys.Reader)
+		return
+	}
+	c.SetAPIKey(a.keys.Writer)
 }
 
 func (a *agent) run(ctx context.Context) {
-	rng := rand.New(rand.NewSource(a.seed + int64(a.id)*9973)) // #nosec G404
-	c, err := client.NewSmartClient(a.uri)
+	rng := rand.New(rand.NewSource(a.cfg.Seed + int64(a.id)*9973)) // #nosec G404
+	c, err := newClient(a.cfg.URI, a.keys.Writer)
 	if err != nil {
 		if *verbose {
 			log.Printf("[agent %d] connect err: %v", a.id, err)
 		}
 		return
 	}
-	defer c.Close()
+	defer c.Close() // #nosec G104
 
-	mine, sharedWrites, master := a.namespaces()
-	allShared := make([]string, a.agents)
-	for i := 0; i < a.agents; i++ {
-		allShared[i] = fmt.Sprintf("shared_%d", i)
-	}
-	namespaces := append([]string{mine, master}, allShared...)
-	namespaces = append(namespaces, sharedWrites...)
-	for _, ns := range namespaces {
-		req := map[string]any{"name": ns, "dims": a.dim, "data_type": "float32"}
-		body, _ := json.Marshal(req)
-		action := &flight.Action{Type: "CreateNamespace", Body: body}
-		stream, err := c.DoAction(ctx, action)
-		if err == nil {
-			for {
-				if _, err := stream.Recv(); err != nil {
-					break
-				}
-			}
-		}
+	mine := a.topo.private[a.id]
+	readable := a.topo.Readable(a.id)
+	writable := a.topo.Writable(a.id)
+	for _, ns := range a.topo.Namespaces() {
 		a.ids[ns] = nil
 	}
 
@@ -219,68 +245,158 @@ func (a *agent) run(ctx context.Context) {
 		var err error
 		switch op {
 		case 0:
-			ns := mine
-			if rng.Intn(2) == 0 {
-				ns = master
-			}
+			ns := writable[rng.Intn(len(writable))]
+			a.setKeyFor(c, ns)
 			id := fmt.Sprintf("m_%d_%d", a.id, rng.Intn(1<<30))
-			vec := randVec(rng, a.dim)
-			err = doInsert(ctx, c, ns, id, vec, int64(rng.Intn(10)+1), a.dim)
+			vec := randVec(rng, a.cfg.Dim)
+			err = doInsert(ctx, c, ns, id, vec, int64(rng.Intn(10)+1), a.cfg.Dim)
 			if err == nil {
 				a.mu.Lock()
-				a.ids[ns] = append(a.ids[ns], 0) // placeholder
+				a.ids[ns] = append(a.ids[ns], id)
 				a.mu.Unlock()
 			}
 			a.metrics.record("insert", time.Since(t0).Seconds(), err == nil)
 		case 1:
-			readable := append([]string{mine, master}, allShared...)
 			ns := readable[rng.Intn(len(readable))]
-			vec := randVec(rng, a.dim)
+			a.setKeyFor(c, ns)
+			vec := randVec(rng, a.cfg.Dim)
 			err = doSearch(ctx, c, ns, vec)
 			a.metrics.record("search", time.Since(t0).Seconds(), err == nil)
 		case 2:
 			// cross-agent memory verification: search another agent's shared ns
-			other := rng.Intn(a.agents)
+			other := rng.Intn(a.topo.agents)
 			if other == a.id {
 				continue
 			}
-			ns := fmt.Sprintf("shared_%d", other)
-			vec := randVec(rng, a.dim)
+			ns := a.topo.shared[other]
+			a.setKeyFor(c, ns)
+			vec := randVec(rng, a.cfg.Dim)
 			err = doSearch(ctx, c, ns, vec)
 			a.metrics.record("cross_read", time.Since(t0).Seconds(), err == nil)
 			if err == nil {
 				a.verified.Add(1)
 			}
 		case 3:
-			ns := mine
-			// best-effort delete by placeholder id not tracked; skip numeric
-			_ = ns
-			a.metrics.record("delete", time.Since(t0).Seconds(), true)
+			ns := writable[rng.Intn(len(writable))]
+			a.setKeyFor(c, ns)
+			a.mu.Lock()
+			ids := a.ids[ns]
+			var id string
+			if len(ids) > 0 {
+				id = ids[len(ids)-1]
+				a.ids[ns] = ids[:len(ids)-1]
+			}
+			a.mu.Unlock()
+			if id == "" {
+				continue
+			}
+			err = doDelete(ctx, c, ns, id)
+			a.metrics.record("delete", time.Since(t0).Seconds(), err == nil)
 		case 4:
 			ns := mine
-			vec := randVec(rng, a.dim)
+			a.setKeyFor(c, ns)
+			vec := randVec(rng, a.cfg.Dim)
 			err = doSearch(ctx, c, ns, vec)
 			a.metrics.record("federated", time.Since(t0).Seconds(), err == nil)
-			_ = master
 		}
 		if err != nil && *verbose {
 			log.Printf("[agent %d] err: %v", a.id, err)
 		}
-		time.Sleep(*thinkTime)
+		time.Sleep(time.Duration(a.cfg.ThinkTimeMS) * time.Millisecond)
 	}
+}
+
+// resolveConfig loads the shared config and applies explicitly set flags over
+// it, so zero-valued flags (-seed 0) remain valid overrides.
+func resolveConfig() (*soakConfig, error) {
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		if flagSet("config") {
+			return nil, err
+		}
+		log.Printf("shared config %s unavailable (%v); using built-in defaults", *configPath, err)
+		cfg, err = loadConfig("")
+		if err != nil {
+			return nil, err
+		}
+	}
+	if flagSet("agents") {
+		cfg.Agents = *agents
+	}
+	if flagSet("uri") {
+		cfg.URI = *uri
+	}
+	if flagSet("duration") {
+		cfg.DurationHours = duration.Hours()
+	}
+	if flagSet("dim") {
+		cfg.Dim = *dim
+	}
+	if flagSet("seed") {
+		cfg.Seed = *seed
+	}
+	if flagSet("think-time") {
+		cfg.ThinkTimeMS = int(thinkTime.Milliseconds())
+	}
+	if flagSet("private-prefix") {
+		cfg.Namespaces.PrivatePrefix = *privatePrefix
+	}
+	if flagSet("shared-prefix") {
+		cfg.Namespaces.SharedPrefix = *sharedPrefix
+	}
+	if flagSet("common") {
+		cfg.Namespaces.Common = *common
+	}
+	if flagSet("require-rbac") {
+		cfg.RBAC.Require = *requireRBAC
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 func main() {
 	flag.Parse()
+	cfg, err := resolveConfig()
+	if err != nil {
+		log.Fatalf("configuration: %v", err)
+	}
+	topo, err := newTopology(cfg)
+	if err != nil {
+		log.Fatalf("topology: %v", err)
+	}
+
+	adminKey := *adminAPIKey
+	if adminKey == "" {
+		adminKey = os.Getenv(cfg.RBAC.AdminAPIKeyEnv)
+	}
+	keys := map[int]agentKeys{}
+	if cfg.RBAC.Require {
+		if strings.TrimSpace(adminKey) == "" {
+			log.Fatalf("RBAC is required: set %s or pass -admin-api-key (use -require-rbac=false for local unauthenticated runs)", cfg.RBAC.AdminAPIKeyEnv)
+		}
+		keys, err = provision(cfg, topo, adminKey)
+		if err != nil {
+			log.Fatalf("RBAC provisioning failed: %v", err)
+		}
+		if err := verifyRBAC(cfg, topo, keys); err != nil {
+			log.Fatalf("RBAC verification failed: %v", err)
+		}
+	} else {
+		log.Printf("WARNING: RBAC disabled; permission boundaries are not enforced")
+	}
+
 	gm := newGlobalMetrics()
 	var stop atomic.Bool
-	ctx, cancel := context.WithTimeout(context.Background(), *duration)
+	runDuration := time.Duration(cfg.DurationHours * float64(time.Hour))
+	ctx, cancel := context.WithTimeout(context.Background(), runDuration)
 	defer cancel()
 
 	var wg sync.WaitGroup
-	agentsList := make([]*agent, *agents)
-	for i := 0; i < *agents; i++ {
-		a := &agent{id: i, agents: *agents, uri: *uri, dim: *dim, seed: *seed, metrics: gm, stop: &stop, ids: make(map[string][]uint32)}
+	agentsList := make([]*agent, cfg.Agents)
+	for i := 0; i < cfg.Agents; i++ {
+		a := &agent{id: i, cfg: cfg, topo: topo, keys: keys[i], metrics: gm, stop: &stop, ids: make(map[string][]string)}
 		agentsList[i] = a
 		wg.Add(1)
 		go func(ag *agent) {
@@ -329,10 +445,13 @@ Loop:
 		verified += a.verified.Load()
 	}
 	result := map[string]any{
-		"agents":     *agents,
-		"duration_s": time.Since(gm.Start).Seconds(),
-		"ops":        gm.Ops.Load(),
-		"errors":     gm.Errors.Load(),
+		"agents":           cfg.Agents,
+		"namespaces":       len(topo.Namespaces()),
+		"namespace_layout": topo.Namespaces(),
+		"rbac_enforced":    cfg.RBAC.Require,
+		"duration_s":       time.Since(gm.Start).Seconds(),
+		"ops":              gm.Ops.Load(),
+		"errors":           gm.Errors.Load(),
 		"error_rate": func() float64 {
 			if gm.Ops.Load() == 0 {
 				return 0

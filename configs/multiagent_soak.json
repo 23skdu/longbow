@@ -13,7 +13,6 @@
     "common": "master"
   },
   "rbac": {
-    "admin_api_key_env": "LONGBOW_RBAC_BOOTSTRAP_KEY",
-    "require": true
+    "admin_api_key_env": "LONGBOW_RBAC_BOOTSTRAP_KEY"
   }
 }

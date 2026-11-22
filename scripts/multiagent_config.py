@@ -23,7 +23,6 @@ BASE_DEFAULTS = {
     "shared_prefix": "shared_",
     "common": "master",
     "admin_api_key_env": "LONGBOW_RBAC_BOOTSTRAP_KEY",
-    "require_rbac": True,
     "verbose": False,
 }
 
@@ -51,8 +50,6 @@ def load_config(path=DEFAULT_CONFIG):
     rbac = raw.get("rbac", {})
     if "admin_api_key_env" in rbac:
         cfg["admin_api_key_env"] = rbac["admin_api_key_env"]
-    if "require" in rbac:
-        cfg["require_rbac"] = bool(rbac["require"])
     if int(cfg["agents"]) < 2:
         raise ValueError("scenario requires at least 2 agents for cross-agent reads")
     return cfg

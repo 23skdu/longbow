@@ -41,9 +41,6 @@ func TestLoadSharedConfig(t *testing.T) {
 	if cfg.Agents != 3 || cfg.Dim != 128 || cfg.Seed != 42 {
 		t.Fatalf("unexpected shared config: %+v", cfg)
 	}
-	if !cfg.RBAC.Require {
-		t.Fatal("shared config should require RBAC")
-	}
 	if cfg.RBAC.AdminAPIKeyEnv != "LONGBOW_RBAC_BOOTSTRAP_KEY" {
 		t.Fatalf("admin key env = %q", cfg.RBAC.AdminAPIKeyEnv)
 	}
@@ -54,7 +51,7 @@ func TestLoadConfigJSONOverrides(t *testing.T) {
 		"agents":        4,
 		"think_time_ms": 25,
 		"namespaces":    map[string]any{"private_prefix": "own_", "shared_prefix": "pool_", "common": "all"},
-		"rbac":          map[string]any{"admin_api_key_env": "MY_ADMIN_KEY", "require": false},
+		"rbac":          map[string]any{"admin_api_key_env": "MY_ADMIN_KEY"},
 	}
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -71,7 +68,7 @@ func TestLoadConfigJSONOverrides(t *testing.T) {
 	if cfg.Agents != 4 || cfg.ThinkTimeMS != 25 {
 		t.Fatalf("overrides not applied: %+v", cfg)
 	}
-	if cfg.Namespaces.Common != "all" || cfg.RBAC.Require {
+	if cfg.Namespaces.Common != "all" {
 		t.Fatalf("nested overrides not applied: %+v", cfg)
 	}
 	topo, err := newTopology(cfg)

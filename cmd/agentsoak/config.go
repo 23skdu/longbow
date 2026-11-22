@@ -28,7 +28,6 @@ type soakConfig struct {
 	} `json:"namespaces"`
 	RBAC struct {
 		AdminAPIKeyEnv string `json:"admin_api_key_env"`
-		Require        bool   `json:"require"`
 	} `json:"rbac"`
 }
 
@@ -46,7 +45,6 @@ func defaultConfig() *soakConfig {
 	c.Namespaces.SharedPrefix = "shared_"
 	c.Namespaces.Common = "master"
 	c.RBAC.AdminAPIKeyEnv = "LONGBOW_RBAC_BOOTSTRAP_KEY"
-	c.RBAC.Require = true
 	return c
 }
 
@@ -78,7 +76,6 @@ func loadConfig(path string) (*soakConfig, error) {
 		} `json:"namespaces"`
 		RBAC *struct {
 			AdminAPIKeyEnv *string `json:"admin_api_key_env"`
-			Require        *bool   `json:"require"`
 		} `json:"rbac"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -119,9 +116,6 @@ func loadConfig(path string) (*soakConfig, error) {
 	if raw.RBAC != nil {
 		if raw.RBAC.AdminAPIKeyEnv != nil {
 			cfg.RBAC.AdminAPIKeyEnv = *raw.RBAC.AdminAPIKeyEnv
-		}
-		if raw.RBAC.Require != nil {
-			cfg.RBAC.Require = *raw.RBAC.Require
 		}
 	}
 	if err := cfg.validate(); err != nil {

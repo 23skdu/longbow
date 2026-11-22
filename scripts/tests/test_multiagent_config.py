@@ -45,7 +45,7 @@ class TestDefaultConfig(unittest.TestCase):
         self.assertEqual(cfg["agents"], 3)
         self.assertEqual(cfg["dim"], 128)
         self.assertEqual(cfg["seed"], 42)
-        self.assertTrue(cfg["require_rbac"])
+        self.assertNotIn("require_rbac", cfg)  # RBAC has no off switch
         self.assertEqual(cfg["think_time"], 0.01)
 
     def test_missing_config_file_raises(self):
@@ -123,7 +123,7 @@ class TestConfigOverrides(unittest.TestCase):
             "think_time_ms": 25,
             "sample_interval_s": 15,
             "namespaces": {"private_prefix": "own_", "shared_prefix": "pool_", "common": "all"},
-            "rbac": {"admin_api_key_env": "MY_ADMIN_KEY", "require": False},
+            "rbac": {"admin_api_key_env": "MY_ADMIN_KEY"},
         }
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             json.dump(raw, f)
@@ -137,7 +137,7 @@ class TestConfigOverrides(unittest.TestCase):
             self.assertEqual(cfg["shared_prefix"], "pool_")
             self.assertEqual(cfg["common"], "all")
             self.assertEqual(cfg["admin_api_key_env"], "MY_ADMIN_KEY")
-            self.assertFalse(cfg["require_rbac"])
+            self.assertNotIn("require_rbac", cfg)
             self.assertEqual(len(mc.Topology(cfg).namespaces), 9)
         finally:
             os.unlink(path)

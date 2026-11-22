@@ -216,29 +216,22 @@ def main():
     ap.add_argument("--shared-prefix", dest="shared_prefix")
     ap.add_argument("--common")
     ap.add_argument("--admin-api-key", dest="admin_api_key")
-    ap.add_argument("--require-rbac", dest="require_rbac", action="store_true", default=None)
-    ap.add_argument("--no-require-rbac", dest="require_rbac", action="store_false", default=None)
     ap.add_argument("--verbose", action="store_true", default=None)
     flags=ap.parse_args()
 
     cfg=load_config(flags.config)
     for key in ("agents","uri","meta_uri","duration_hours","dim","seed","think_time",
-                "sample_interval","private_prefix","shared_prefix","common","require_rbac","verbose"):
+                "sample_interval","private_prefix","shared_prefix","common","verbose"):
         value=getattr(flags, key)
         if value is not None:
             cfg[key]=value
     topology=Topology(cfg)
 
     admin_key=flags.admin_api_key or os.environ.get(cfg["admin_api_key_env"], "")
-    if cfg["require_rbac"]:
-        if not admin_key:
-            ap.error(f"RBAC is required: set {cfg['admin_api_key_env']} or pass --admin-api-key "
-                     "(use --no-require-rbac only for local unauthenticated runs)")
-        keys=provision(cfg, topology, admin_key)
-        verify_rbac(cfg, topology, keys)
-    else:
-        print("WARNING: RBAC disabled by flag; permission boundaries are not enforced")
-        keys={i: {"writer": None, "reader": None} for i in range(topology.agents)}
+    if not admin_key:
+        ap.error(f"RBAC is always enforced: set {cfg['admin_api_key_env']} or pass --admin-api-key")
+    keys=provision(cfg, topology, admin_key)
+    verify_rbac(cfg, topology, keys)
 
     os.makedirs("data/soak_logs", exist_ok=True)
     ts=datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -252,7 +245,7 @@ def main():
         t=threading.Thread(target=a.run,args=(stop,),daemon=True)
         threads.append(t); t.start()
     print(f"Scenario started: {topology.agents} agents, {len(topology.namespaces)} namespaces, {cfg['duration_hours']}h"
-          f" (RBAC {'enforced' if cfg['require_rbac'] else 'disabled'})")
+          " (RBAC enforced)")
     print(f"Logging to {log_path}")
     with open(csv_path,"w") as f:
         f.write("timestamp,elapsed_s,ops,errors,error_rate,qps,p50_ms,p95_ms,p99_ms\n")

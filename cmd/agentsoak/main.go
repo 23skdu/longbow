@@ -35,7 +35,6 @@ var (
 	sharedPrefix  = flag.String("shared-prefix", "", "Shared namespace prefix (overrides config)")
 	common        = flag.String("common", "", "Common namespace name (overrides config)")
 	adminAPIKey   = flag.String("admin-api-key", "", "Bootstrap admin API key (overrides config env var)")
-	requireRBAC   = flag.Bool("require-rbac", true, "Require server-enforced RBAC and scoped per-agent keys")
 	outputJSON    = flag.String("json", "", "Output JSON file")
 	verbose       = flag.Bool("verbose", false, "Verbose output")
 )
@@ -206,9 +205,6 @@ type agent struct {
 // setKeyFor switches to the reader credential for another agent's shared
 // namespace and back to the writer credential for owned/common namespaces.
 func (a *agent) setKeyFor(c *client.SmartClient, ns string) {
-	if !a.cfg.RBAC.Require {
-		return
-	}
 	if a.topo.contains(a.topo.ReadOnly(a.id), ns) {
 		c.SetAPIKey(a.keys.Reader)
 		return
@@ -347,9 +343,6 @@ func resolveConfig() (*soakConfig, error) {
 	if flagSet("common") {
 		cfg.Namespaces.Common = *common
 	}
-	if flagSet("require-rbac") {
-		cfg.RBAC.Require = *requireRBAC
-	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -371,20 +364,15 @@ func main() {
 	if adminKey == "" {
 		adminKey = os.Getenv(cfg.RBAC.AdminAPIKeyEnv)
 	}
-	keys := map[int]agentKeys{}
-	if cfg.RBAC.Require {
-		if strings.TrimSpace(adminKey) == "" {
-			log.Fatalf("RBAC is required: set %s or pass -admin-api-key (use -require-rbac=false for local unauthenticated runs)", cfg.RBAC.AdminAPIKeyEnv)
-		}
-		keys, err = provision(cfg, topo, adminKey)
-		if err != nil {
-			log.Fatalf("RBAC provisioning failed: %v", err)
-		}
-		if err := verifyRBAC(cfg, topo, keys); err != nil {
-			log.Fatalf("RBAC verification failed: %v", err)
-		}
-	} else {
-		log.Printf("WARNING: RBAC disabled; permission boundaries are not enforced")
+	if strings.TrimSpace(adminKey) == "" {
+		log.Fatalf("RBAC is always enforced: set %s or pass -admin-api-key", cfg.RBAC.AdminAPIKeyEnv)
+	}
+	keys, err := provision(cfg, topo, adminKey)
+	if err != nil {
+		log.Fatalf("RBAC provisioning failed: %v", err)
+	}
+	if err := verifyRBAC(cfg, topo, keys); err != nil {
+		log.Fatalf("RBAC verification failed: %v", err)
 	}
 
 	gm := newGlobalMetrics()
@@ -448,7 +436,7 @@ Loop:
 		"agents":           cfg.Agents,
 		"namespaces":       len(topo.Namespaces()),
 		"namespace_layout": topo.Namespaces(),
-		"rbac_enforced":    cfg.RBAC.Require,
+		"rbac_enforced":    true,
 		"duration_s":       time.Since(gm.Start).Seconds(),
 		"ops":              gm.Ops.Load(),
 		"errors":           gm.Errors.Load(),

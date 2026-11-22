@@ -12,6 +12,7 @@ type LoadHints struct {
 	Health     uint32
 }
 
+// LoadHintsSize is a load hints size constant.
 const LoadHintsSize = 21 // Increased to 21 to accommodate version + full uint32/int64 fields
 
 // Serialize encodes LoadHints into a byte slice.
@@ -28,7 +29,7 @@ func (h *LoadHints) Serialize(buf []byte) {
 	binary.LittleEndian.PutUint32(buf[17:21], h.Health)
 }
 
-// Deserialize decodes LoadHints from a byte slice.
+// DeserializeLoadHints decodes LoadHints from a byte slice.
 func DeserializeLoadHints(buf []byte) (LoadHints, bool) {
 	if len(buf) < LoadHintsSize || buf[0] != 0x01 {
 		return LoadHints{}, false

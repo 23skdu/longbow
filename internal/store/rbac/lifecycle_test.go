@@ -15,6 +15,7 @@ type failingDeleteStore struct {
 	err error
 }
 
+// Delete runs the delete operation.
 func (s *failingDeleteStore) Delete(context.Context, string) error { return s.err }
 
 type failingPutStore struct {
@@ -24,6 +25,7 @@ type failingPutStore struct {
 	err      error
 }
 
+// Put runs the put operation.
 func (s *failingPutStore) Put(ctx context.Context, key secrets.StoredKey) error {
 	s.calls++
 	if s.calls == s.failCall {
@@ -32,6 +34,7 @@ func (s *failingPutStore) Put(ctx context.Context, key secrets.StoredKey) error 
 	return s.Store.Put(ctx, key)
 }
 
+// TestDeleteNamespacePolicyKeepsPolicyWhenProviderFails runs the test delete namespace policy keeps policy when provider fails operation.
 func TestDeleteNamespacePolicyKeepsPolicyWhenProviderFails(t *testing.T) {
 	ctx := context.Background()
 	boom := errors.New("provider unavailable")
@@ -46,6 +49,7 @@ func TestDeleteNamespacePolicyKeepsPolicyWhenProviderFails(t *testing.T) {
 	require.NotNil(t, mgr.GetNamespacePolicy("keep-me"))
 }
 
+// TestDeleteEphemeralNamespacePolicyDoesNotTouchProvider runs the test delete ephemeral namespace policy does not touch provider operation.
 func TestDeleteEphemeralNamespacePolicyDoesNotTouchProvider(t *testing.T) {
 	ctx := context.Background()
 	mgr, err := NewRBACManagerWithStore(ctx, secrets.NewMemoryStore())
@@ -57,6 +61,7 @@ func TestDeleteEphemeralNamespacePolicyDoesNotTouchProvider(t *testing.T) {
 	require.Nil(t, mgr.GetNamespacePolicy("temporary"))
 }
 
+// TestRotateAPIKeyDoesNotRevokeOldKeyWhenIssuanceFails runs the test rotate api key does not revoke old key when issuance fails operation.
 func TestRotateAPIKeyDoesNotRevokeOldKeyWhenIssuanceFails(t *testing.T) {
 	ctx := context.Background()
 	boom := errors.New("provider unavailable")
@@ -79,6 +84,7 @@ func TestRotateAPIKeyDoesNotRevokeOldKeyWhenIssuanceFails(t *testing.T) {
 	require.Nil(t, got.GraceExpiresAt)
 }
 
+// TestListAPIKeysReturnsCopies runs the test list api keys returns copies operation.
 func TestListAPIKeysReturnsCopies(t *testing.T) {
 	ctx := context.Background()
 	mgr, err := NewRBACManagerWithStore(ctx, secrets.NewMemoryStore())

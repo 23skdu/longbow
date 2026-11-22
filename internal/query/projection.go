@@ -8,11 +8,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// Projection represents a projection value.
 type Projection struct {
 	Columns []string
 	schema  *arrow.Schema
 }
 
+// NewProjection constructs a new Projection.
 func NewProjection(schema *arrow.Schema, columns []string) (*Projection, error) {
 	if len(columns) == 0 {
 		return &Projection{Columns: nil, schema: schema}, nil
@@ -30,6 +32,7 @@ func NewProjection(schema *arrow.Schema, columns []string) (*Projection, error) 
 	return &Projection{Columns: validColumns, schema: schema}, nil
 }
 
+// Apply runs the apply operation.
 func (p *Projection) Apply(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	if p == nil || len(p.Columns) == 0 {
 		return rec, nil
@@ -63,6 +66,7 @@ func (p *Projection) Apply(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	return record, nil
 }
 
+// CanPushdown reports whether the condition holds.
 func (p *Projection) CanPushdown(filters []Filter) bool {
 	if p == nil || len(p.Columns) == 0 {
 		return true
@@ -89,6 +93,7 @@ func (p *Projection) CanPushdown(filters []Filter) bool {
 	return true
 }
 
+// RequiredColumns runs the required columns operation.
 func (p *Projection) RequiredColumns() []string {
 	if p == nil {
 		return nil
@@ -96,11 +101,13 @@ func (p *Projection) RequiredColumns() []string {
 	return p.Columns
 }
 
+// ProjectionEvaluator represents a projection evaluator value.
 type ProjectionEvaluator struct {
 	proj       *Projection
 	colIndices []int
 }
 
+// NewProjectionEvaluator constructs a new ProjectionEvaluator.
 func NewProjectionEvaluator(proj *Projection, schema *arrow.Schema) (*ProjectionEvaluator, error) {
 	if proj == nil || len(proj.Columns) == 0 {
 		return &ProjectionEvaluator{}, nil
@@ -121,6 +128,7 @@ func NewProjectionEvaluator(proj *Projection, schema *arrow.Schema) (*Projection
 	}, nil
 }
 
+// ApplyToRecord runs the apply to record operation.
 func (pe *ProjectionEvaluator) ApplyToRecord(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	if pe.proj == nil || len(pe.proj.Columns) == 0 {
 		return rec, nil
@@ -146,6 +154,7 @@ func (pe *ProjectionEvaluator) ApplyToRecord(rec arrow.RecordBatch) (arrow.Recor
 	return record, nil
 }
 
+// ApplyToBatch runs the apply to batch operation.
 func (pe *ProjectionEvaluator) ApplyToBatch(rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	if pe.proj == nil || len(pe.proj.Columns) == 0 {
 		return rec, nil
@@ -171,6 +180,7 @@ func (pe *ProjectionEvaluator) ApplyToBatch(rec arrow.RecordBatch) (arrow.Record
 	return batch, nil
 }
 
+// ProjectRecord runs the project record operation.
 func ProjectRecord(mem memory.Allocator, rec arrow.RecordBatch, columns []string) (arrow.RecordBatch, error) {
 	if len(columns) == 0 {
 		return rec, nil

@@ -405,6 +405,7 @@ func TestSQ8CompressionRatio(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkSQ8Encode runs the benchmark sq8 encode operation.
 func BenchmarkSQ8Encode(b *testing.B) {
 	cfg := &SQ8Config{
 		Trained: true,
@@ -428,6 +429,7 @@ func BenchmarkSQ8Encode(b *testing.B) {
 	}
 }
 
+// BenchmarkSQ8EncodeInto runs the benchmark sq8 encode into operation.
 func BenchmarkSQ8EncodeInto(b *testing.B) {
 	cfg := &SQ8Config{
 		Trained: true,
@@ -452,6 +454,7 @@ func BenchmarkSQ8EncodeInto(b *testing.B) {
 	}
 }
 
+// BenchmarkSQ8DistanceFast runs the benchmark sq8 distance fast operation.
 func BenchmarkSQ8DistanceFast(b *testing.B) {
 	q1 := make([]uint8, 128)
 	q2 := make([]uint8, 128)
@@ -465,6 +468,7 @@ func BenchmarkSQ8DistanceFast(b *testing.B) {
 	}
 }
 
+// BenchmarkSQ8EuclideanDistance runs the benchmark sq8 euclidean distance operation.
 func BenchmarkSQ8EuclideanDistance(b *testing.B) {
 	cfg := &SQ8Config{
 		Trained: true,

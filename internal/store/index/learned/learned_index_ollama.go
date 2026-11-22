@@ -183,6 +183,7 @@ func (l *LearnedIndexWithOllama) Predict(ctx context.Context, features QueryFeat
 	return l.predictor.Predict(features)
 }
 
+// String runs the string operation.
 func (f QueryFeatures) String() string {
 	return fmt.Sprintf(
 		"dim=%d,queries=%d,k=%d,dataset=%d,collections=%d,complexity=%s,filtered=%v,hybrid=%v,provider=%s,model=%s",

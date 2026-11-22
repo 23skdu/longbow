@@ -4,6 +4,7 @@ import (
 	"sync/atomic"
 )
 
+// LockFreeQueue represents a lock free queue value.
 type LockFreeQueue[T any] struct {
 	head  atomic.Pointer[node[T]]
 	tail  atomic.Pointer[node[T]]
@@ -15,6 +16,7 @@ type node[T any] struct {
 	next  atomic.Pointer[node[T]]
 }
 
+// NewLockFreeQueue constructs a new LockFreeQueue.
 func NewLockFreeQueue[T any]() *LockFreeQueue[T] {
 	q := &LockFreeQueue[T]{}
 	q.head.Store(&q.dummy)
@@ -22,6 +24,7 @@ func NewLockFreeQueue[T any]() *LockFreeQueue[T] {
 	return q
 }
 
+// Enqueue runs the enqueue operation.
 func (q *LockFreeQueue[T]) Enqueue(value T) {
 	newNode := &node[T]{value: value}
 
@@ -39,6 +42,7 @@ func (q *LockFreeQueue[T]) Enqueue(value T) {
 	}
 }
 
+// Dequeue runs the dequeue operation.
 func (q *LockFreeQueue[T]) Dequeue() (T, bool) {
 	var zero T
 
@@ -62,6 +66,7 @@ func (q *LockFreeQueue[T]) Dequeue() (T, bool) {
 	}
 }
 
+// IsEmpty reports whether the condition holds.
 func (q *LockFreeQueue[T]) IsEmpty() bool {
 	head := q.head.Load()
 	tail := q.tail.Load()

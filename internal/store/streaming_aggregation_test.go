@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestStreamingAggregationConfig_Defaults runs the test streaming aggregation config_defaults operation.
 func TestStreamingAggregationConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -30,6 +31,7 @@ func TestStreamingAggregationConfig_Defaults(t *testing.T) {
 	assert.Equal(t, 10000, config.MaxAggregates)
 }
 
+// TestAggregationType_Constants runs the test aggregation type_constants operation.
 func TestAggregationType_Constants(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -40,6 +42,7 @@ func TestAggregationType_Constants(t *testing.T) {
 	assert.Equal(t, AggregationType("weighted"), AggregationTypeWeighted)
 }
 
+// TestNewStreamingAggregation runs the test new streaming aggregation operation.
 func TestNewStreamingAggregation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -59,6 +62,7 @@ func TestNewStreamingAggregation(t *testing.T) {
 	assert.Equal(t, 5000, sa.config.MaxAggregates)
 }
 
+// TestStreamingAggregation_CreateAggregate runs the test streaming aggregation_create aggregate operation.
 func TestStreamingAggregation_CreateAggregate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -75,6 +79,7 @@ func TestStreamingAggregation_CreateAggregate(t *testing.T) {
 	assert.Equal(t, 3, agg.Dimension)
 }
 
+// TestStreamingAggregation_CreateAggregate_AlreadyExists runs the test streaming aggregation_create aggregate_already exists operation.
 func TestStreamingAggregation_CreateAggregate_AlreadyExists(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -90,6 +95,7 @@ func TestStreamingAggregation_CreateAggregate_AlreadyExists(t *testing.T) {
 	assert.Equal(t, 3, agg.Dimension)
 }
 
+// TestStreamingAggregation_AddVector runs the test streaming aggregation_add vector operation.
 func TestStreamingAggregation_AddVector(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -107,6 +113,7 @@ func TestStreamingAggregation_AddVector(t *testing.T) {
 	assert.GreaterOrEqual(t, aggregated, int64(1))
 }
 
+// TestStreamingAggregation_AddVector_NewAggregate runs the test streaming aggregation_add vector_new aggregate operation.
 func TestStreamingAggregation_AddVector_NewAggregate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -123,6 +130,7 @@ func TestStreamingAggregation_AddVector_NewAggregate(t *testing.T) {
 	assert.Equal(t, vector, result)
 }
 
+// TestStreamingAggregation_GetMovingAverage_NotFound runs the test streaming aggregation_get moving average_not found operation.
 func TestStreamingAggregation_GetMovingAverage_NotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -135,6 +143,7 @@ func TestStreamingAggregation_GetMovingAverage_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "aggregate not found")
 }
 
+// TestStreamingAggregation_GetExponentialMovingAverage runs the test streaming aggregation_get exponential moving average operation.
 func TestStreamingAggregation_GetExponentialMovingAverage(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -155,6 +164,7 @@ func TestStreamingAggregation_GetExponentialMovingAverage(t *testing.T) {
 	assert.Len(t, result, 3)
 }
 
+// TestStreamingAggregation_GetCumulative runs the test streaming aggregation_get cumulative operation.
 func TestStreamingAggregation_GetCumulative(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -173,6 +183,7 @@ func TestStreamingAggregation_GetCumulative(t *testing.T) {
 	assert.Equal(t, []float32{5.0, 7.0, 9.0}, result)
 }
 
+// TestStreamingAggregation_GetAggregate runs the test streaming aggregation_get aggregate operation.
 func TestStreamingAggregation_GetAggregate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -188,6 +199,7 @@ func TestStreamingAggregation_GetAggregate(t *testing.T) {
 	assert.Equal(t, 3, agg.Dimension)
 }
 
+// TestStreamingAggregation_RemoveAggregate runs the test streaming aggregation_remove aggregate operation.
 func TestStreamingAggregation_RemoveAggregate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -202,6 +214,7 @@ func TestStreamingAggregation_RemoveAggregate(t *testing.T) {
 	assert.Equal(t, 0, sa.GetAggregateCount())
 }
 
+// TestStreamingAggregation_ListAggregates runs the test streaming aggregation_list aggregates operation.
 func TestStreamingAggregation_ListAggregates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -218,6 +231,7 @@ func TestStreamingAggregation_ListAggregates(t *testing.T) {
 	assert.Contains(t, ids, "vec2")
 }
 
+// TestStreamingAggregation_Clear runs the test streaming aggregation_clear operation.
 func TestStreamingAggregation_Clear(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -233,6 +247,7 @@ func TestStreamingAggregation_Clear(t *testing.T) {
 	assert.Equal(t, 0, sa.GetAggregateCount())
 }
 
+// TestStreamingAggregation_GetStats runs the test streaming aggregation_get stats operation.
 func TestStreamingAggregation_GetStats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -246,6 +261,7 @@ func TestStreamingAggregation_GetStats(t *testing.T) {
 	assert.Greater(t, received, int64(0))
 }
 
+// TestStreamingAggregation_GetConfig runs the test streaming aggregation_get config operation.
 func TestStreamingAggregation_GetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -263,6 +279,7 @@ func TestStreamingAggregation_GetConfig(t *testing.T) {
 	assert.Equal(t, config, got)
 }
 
+// TestStreamingAggregation_SetConfig runs the test streaming aggregation_set config operation.
 func TestStreamingAggregation_SetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -282,6 +299,7 @@ func TestStreamingAggregation_SetConfig(t *testing.T) {
 	assert.Equal(t, 3000, sa.config.MaxAggregates)
 }
 
+// TestStreamingAggregation_MaxAggregates_AutoEvict runs the test streaming aggregation_max aggregates_auto evict operation.
 func TestStreamingAggregation_MaxAggregates_AutoEvict(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -302,6 +320,7 @@ func TestStreamingAggregation_MaxAggregates_AutoEvict(t *testing.T) {
 	assert.Equal(t, 2, sa.GetAggregateCount())
 }
 
+// TestStreamingAggregation_MultipleVectors runs the test streaming aggregation_multiple vectors operation.
 func TestStreamingAggregation_MultipleVectors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -327,6 +346,7 @@ func TestStreamingAggregation_MultipleVectors(t *testing.T) {
 	assert.Equal(t, expected, result)
 }
 
+// TestStreamingAggregation_WindowSize_Limit runs the test streaming aggregation_window size_limit operation.
 func TestStreamingAggregation_WindowSize_Limit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -346,6 +366,7 @@ func TestStreamingAggregation_WindowSize_Limit(t *testing.T) {
 	assert.Equal(t, []float32{3.5}, result)
 }
 
+// TestStreamingAggregation_DifferentAggregateTypes runs the test streaming aggregation_different aggregate types operation.
 func TestStreamingAggregation_DifferentAggregateTypes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

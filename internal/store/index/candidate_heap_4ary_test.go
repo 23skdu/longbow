@@ -74,6 +74,7 @@ func candEqual(a, b types.Candidate) bool {
 	return a.ID == b.ID && a.Dist == b.Dist && a.Level == b.Level
 }
 
+// TestMinCandidateHeapAdapter_DrainMatchesSortedReference runs the test min candidate heap adapter_drain matches sorted reference operation.
 func TestMinCandidateHeapAdapter_DrainMatchesSortedReference(t *testing.T) {
 	rnd := rand.New(rand.NewSource(42))
 	for n := 0; n <= 1000; n++ {
@@ -114,6 +115,7 @@ func TestMinCandidateHeapAdapter_DrainMatchesSortedReference(t *testing.T) {
 	}
 }
 
+// TestMaxCandidateHeapAdapter_DrainMatchesSortedReference runs the test max candidate heap adapter_drain matches sorted reference operation.
 func TestMaxCandidateHeapAdapter_DrainMatchesSortedReference(t *testing.T) {
 	rnd := rand.New(rand.NewSource(42))
 	for n := 0; n <= 1000; n++ {
@@ -183,6 +185,7 @@ func (m *refHeapModel) pop() (types.Candidate, bool) {
 
 func (m *refHeapModel) len() int { return len(m.items) }
 
+// TestCandidateHeapAdapter_InterleavedMatchesReference runs the test candidate heap adapter_interleaved matches reference operation.
 func TestCandidateHeapAdapter_InterleavedMatchesReference(t *testing.T) {
 	for _, seed := range []int64{42, 7, 2026} {
 		seed := seed
@@ -282,6 +285,7 @@ func runInterleaved(t *testing.T, seed int64, min bool) {
 	}
 }
 
+// TestCandidateHeapAdapter_4AryInvariantAfterRandomOps runs the test candidate heap adapter_4 ary invariant after random ops operation.
 func TestCandidateHeapAdapter_4AryInvariantAfterRandomOps(t *testing.T) {
 	for _, seed := range []int64{42, 99, 123456} {
 		rnd := rand.New(rand.NewSource(seed))
@@ -311,6 +315,7 @@ func TestCandidateHeapAdapter_4AryInvariantAfterRandomOps(t *testing.T) {
 	}
 }
 
+// TestCandidateHeapAdapter_TiedDistsTerminate runs the test candidate heap adapter_tied dists terminate operation.
 func TestCandidateHeapAdapter_TiedDistsTerminate(t *testing.T) {
 	const n = 500
 
@@ -403,6 +408,7 @@ func removeCand(s []types.Candidate, c types.Candidate) []types.Candidate {
 	return s
 }
 
+// TestCandidateHeapAdapter_EdgeCases runs the test candidate heap adapter_edge cases operation.
 func TestCandidateHeapAdapter_EdgeCases(t *testing.T) {
 	t.Run("empty_pop_min_panics", func(t *testing.T) {
 		defer func() {
@@ -481,6 +487,7 @@ func TestCandidateHeapAdapter_EdgeCases(t *testing.T) {
 	}
 }
 
+// TestCandidateHeapAdapter_UpAtRootAndDownReturn runs the test candidate heap adapter_up at root and down return operation.
 func TestCandidateHeapAdapter_UpAtRootAndDownReturn(t *testing.T) {
 	rnd := rand.New(rand.NewSource(42))
 	cands := uniqueShuffledCands(rnd, 32)
@@ -534,6 +541,7 @@ func TestCandidateHeapAdapter_UpAtRootAndDownReturn(t *testing.T) {
 	checkMax4Ary(t, disorderedMax)
 }
 
+// TestCandidateHeapAdapter_NoAllocations runs the test candidate heap adapter_no allocations operation.
 func TestCandidateHeapAdapter_NoAllocations(t *testing.T) {
 	rnd := rand.New(rand.NewSource(42))
 	cands := uniqueShuffledCands(rnd, 64)
@@ -562,6 +570,7 @@ func TestCandidateHeapAdapter_NoAllocations(t *testing.T) {
 	}
 }
 
+// TestCandidateHeapAdapter_InsertOrReplace runs the test candidate heap adapter_insert or replace operation.
 func TestCandidateHeapAdapter_InsertOrReplace(t *testing.T) {
 	rnd := rand.New(rand.NewSource(12345))
 	const total = 500

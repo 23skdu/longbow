@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// FuzzSlabPoolConcurrentOperations runs the fuzz slab pool concurrent operations operation.
 func FuzzSlabPoolConcurrentOperations(f *testing.F) {
 	// Seed corpus with various operation patterns
 	f.Add(uint8(10), uint8(5), uint8(3))
@@ -71,6 +72,7 @@ func FuzzSlabPoolConcurrentOperations(f *testing.F) {
 	})
 }
 
+// FuzzSlabPoolReleaseUnused runs the fuzz slab pool release unused operation.
 func FuzzSlabPoolReleaseUnused(f *testing.F) {
 	f.Add(uint8(50), uint8(10))
 	f.Add(uint8(100), uint8(50))

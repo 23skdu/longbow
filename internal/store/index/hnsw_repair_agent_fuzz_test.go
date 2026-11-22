@@ -6,7 +6,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
-// FuzzRepairAgent_GraphSize fuzzes the graph size to ensure the agent
+// FuzzRepairAgentGraphSize fuzzes the graph size to ensure the agent
 // handles graphs of various sizes without panicking
 func FuzzRepairAgentGraphSize(f *testing.F) {
 	// Seed corpus
@@ -47,7 +47,7 @@ func FuzzRepairAgentGraphSize(f *testing.F) {
 	})
 }
 
-// FuzzRepairAgent_DeletionPattern fuzzes deletion patterns
+// FuzzRepairAgentDeletionPattern fuzzes deletion patterns
 func FuzzRepairAgentDeletionPattern(f *testing.F) {
 	// Seed corpus
 	f.Add(0, 10)  // Delete none
@@ -91,7 +91,7 @@ func FuzzRepairAgentDeletionPattern(f *testing.F) {
 	})
 }
 
-// FuzzRepairAgent_MaxRepairs fuzzes the MaxRepairsPerCycle parameter
+// FuzzRepairAgentMaxRepairs fuzzes the MaxRepairsPerCycle parameter
 func FuzzRepairAgentMaxRepairs(f *testing.F) {
 	// Seed corpus
 	f.Add(0)
@@ -134,7 +134,7 @@ func FuzzRepairAgentMaxRepairs(f *testing.F) {
 	})
 }
 
-// FuzzRepairAgent_MParameter fuzzes the HNSW M parameter
+// FuzzRepairAgentMParameter fuzzes the HNSW M parameter
 func FuzzRepairAgentMParameter(f *testing.F) {
 	// Seed corpus
 	f.Add(2)
@@ -180,7 +180,7 @@ func FuzzRepairAgentMParameter(f *testing.F) {
 	})
 }
 
-// FuzzRepairAgent_Combined fuzzes multiple parameters together
+// FuzzRepairAgentCombined fuzzes multiple parameters together
 func FuzzRepairAgentCombined(f *testing.F) {
 	// Seed corpus
 	f.Add(10, 5, 8, 5)

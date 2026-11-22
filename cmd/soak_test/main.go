@@ -43,6 +43,7 @@ var (
 	rerankTopK       = flag.Int("rerank-k", 50, "Number of results to rerank")
 )
 
+// Stats represents a stats value.
 type Stats struct {
 	IngestOps        atomic.Int64
 	DenseSearches    atomic.Int64
@@ -59,15 +60,23 @@ type Stats struct {
 	Errors           atomic.Int64
 }
 
+// SearchMode represents a search mode value.
 type SearchMode int
 
 const (
+	// DenseSearch is a dense search constant.
 	DenseSearch SearchMode = iota
+	// SparseSearch is a sparse search constant.
 	SparseSearch
+	// FilteredSearch is a filtered search constant.
 	FilteredSearch
+	// HybridSearch is a hybrid search constant.
 	HybridSearch
+	// GlobalSearch is a global search constant.
 	GlobalSearch
+	// BM25Search is a bm25 search constant.
 	BM25Search
+	// RerankedSearch is a reranked search constant.
 	RerankedSearch
 )
 

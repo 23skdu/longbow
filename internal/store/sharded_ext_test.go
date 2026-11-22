@@ -7,6 +7,7 @@ import (
 
 // ShardedDataset coverage extension tests
 
+// TestShardedDataset_LastAccess runs the test sharded dataset_last access operation.
 func TestShardedDataset_LastAccess(t *testing.T) {
 	ds := NewShardedDatasetDefault("test")
 
@@ -19,6 +20,7 @@ func TestShardedDataset_LastAccess(t *testing.T) {
 	}
 }
 
+// TestShardedDataset_Version runs the test sharded dataset_version operation.
 func TestShardedDataset_Version(t *testing.T) {
 	ds := NewShardedDatasetDefault("test")
 
@@ -38,6 +40,7 @@ func TestShardedDataset_Version(t *testing.T) {
 	}
 }
 
+// TestShardedDataset_IndexGetSet runs the test sharded dataset_index get set operation.
 func TestShardedDataset_IndexGetSet(t *testing.T) {
 	ds := NewShardedDatasetDefault("test")
 
@@ -54,6 +57,7 @@ func TestShardedDataset_IndexGetSet(t *testing.T) {
 	}
 }
 
+// TestShardedDataset_Clear runs the test sharded dataset_clear operation.
 func TestShardedDataset_Clear(t *testing.T) {
 	ds := NewShardedDatasetDefault("test")
 	ds.Clear()
@@ -64,6 +68,7 @@ func TestShardedDataset_Clear(t *testing.T) {
 
 // ShardedRWMutex coverage extension tests
 
+// TestShardedRWMutex_LockShard runs the test sharded rw mutex_lock shard operation.
 func TestShardedRWMutex_LockShard(t *testing.T) {
 	m := NewShardedRWMutexDefault()
 	m.LockShard(0)
@@ -72,6 +77,7 @@ func TestShardedRWMutex_LockShard(t *testing.T) {
 	m.UnlockShard(1)
 }
 
+// TestShardedRWMutex_RLockShard runs the test sharded rw mutex_r lock shard operation.
 func TestShardedRWMutex_RLockShard(t *testing.T) {
 	m := NewShardedRWMutexDefault()
 	m.RLockShard(0)
@@ -80,6 +86,7 @@ func TestShardedRWMutex_RLockShard(t *testing.T) {
 	m.RUnlockShard(0)
 }
 
+// TestShardedRWMutex_LockAll runs the test sharded rw mutex_lock all operation.
 func TestShardedRWMutex_LockAll(t *testing.T) {
 	m := NewShardedRWMutexDefault()
 	m.LockAll()
@@ -88,6 +95,7 @@ func TestShardedRWMutex_LockAll(t *testing.T) {
 	m.Unlock(123)
 }
 
+// TestShardedRWMutex_RLockAll runs the test sharded rw mutex_r lock all operation.
 func TestShardedRWMutex_RLockAll(t *testing.T) {
 	m := NewShardedRWMutexDefault()
 	m.RLockAll()

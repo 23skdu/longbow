@@ -51,6 +51,7 @@ func makeRoutingTestRecord(mem memory.Allocator, dims, numVectors int) arrow.Rec
 	return b.NewRecordBatch()
 }
 
+// TestShardedHNSW_Routing runs the test sharded hnsw_routing operation.
 func TestShardedHNSW_Routing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -87,6 +88,7 @@ func TestShardedHNSW_Routing(t *testing.T) {
 	assert.Equal(t, 100, totalCount)
 }
 
+// TestShardedHNSW_MergedSearch runs the test sharded hnsw_merged search operation.
 func TestShardedHNSW_MergedSearch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -136,6 +138,7 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 	// assert.True(t, len(foundShards) > 1, "Results should come from multiple shards")
 }
 
+// TestShardedHNSW_Filtering runs the test sharded hnsw_filtering operation.
 func TestShardedHNSW_Filtering(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

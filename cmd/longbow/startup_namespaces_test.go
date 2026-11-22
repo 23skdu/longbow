@@ -9,6 +9,7 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
+// TestParseStartupNamespacePoliciesEmpty runs the test parse startup namespace policies empty operation.
 func TestParseStartupNamespacePoliciesEmpty(t *testing.T) {
 	for _, raw := range []string{"", "   "} {
 		policies, err := ParseStartupNamespacePolicies(raw)
@@ -21,6 +22,7 @@ func TestParseStartupNamespacePoliciesEmpty(t *testing.T) {
 	}
 }
 
+// TestParseStartupNamespacePolicies runs the test parse startup namespace policies operation.
 func TestParseStartupNamespacePolicies(t *testing.T) {
 	raw := `[
 		{
@@ -54,6 +56,7 @@ func TestParseStartupNamespacePolicies(t *testing.T) {
 	}
 }
 
+// TestParseStartupNamespacePoliciesErrors runs the test parse startup namespace policies errors operation.
 func TestParseStartupNamespacePoliciesErrors(t *testing.T) {
 	tests := []struct {
 		name string
@@ -79,6 +82,7 @@ func TestParseStartupNamespacePoliciesErrors(t *testing.T) {
 	}
 }
 
+// TestValidateConfigStartupNamespacePolicies runs the test validate config startup namespace policies operation.
 func TestValidateConfigStartupNamespacePolicies(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:    2 * time.Hour,
@@ -103,6 +107,7 @@ func TestValidateConfigStartupNamespacePolicies(t *testing.T) {
 	}
 }
 
+// TestEnvStartupNamespacePolicies runs the test env startup namespace policies operation.
 func TestEnvStartupNamespacePolicies(t *testing.T) {
 	t.Setenv("LONGBOW_STARTUP_NAMESPACE_POLICIES", `[{"namespace":"team-a","ephemeral":true}]`)
 	var cfg Config

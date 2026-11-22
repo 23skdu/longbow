@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestVectorDataType_String runs the test vector data type_string operation.
 func TestVectorDataType_String(t *testing.T) {
 	tests := []struct {
 		dt       lbtypes.VectorDataType
@@ -37,6 +38,7 @@ func TestVectorDataType_String(t *testing.T) {
 	}
 }
 
+// TestVectorDataType_ElementSize runs the test vector data type_element size operation.
 func TestVectorDataType_ElementSize(t *testing.T) {
 	tests := []struct {
 		dt       lbtypes.VectorDataType

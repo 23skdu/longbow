@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestNewProjection runs the test new projection operation.
 func TestNewProjection(t *testing.T) {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -41,6 +42,7 @@ func TestNewProjection(t *testing.T) {
 	})
 }
 
+// TestProjection_Apply runs the test projection_apply operation.
 func TestProjection_Apply(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -91,6 +93,7 @@ func TestProjection_Apply(t *testing.T) {
 	})
 }
 
+// TestProjection_CanPushdown runs the test projection_can pushdown operation.
 func TestProjection_CanPushdown(t *testing.T) {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -124,6 +127,7 @@ func TestProjection_CanPushdown(t *testing.T) {
 	})
 }
 
+// TestProjectionEvaluator runs the test projection evaluator operation.
 func TestProjectionEvaluator(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -170,6 +174,7 @@ func TestProjectionEvaluator(t *testing.T) {
 	})
 }
 
+// TestProjectRecord runs the test project record operation.
 func TestProjectRecord(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -203,6 +208,7 @@ func TestProjectRecord(t *testing.T) {
 	})
 }
 
+// BenchmarkProjection_Apply runs the benchmark projection_apply operation.
 func BenchmarkProjection_Apply(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{

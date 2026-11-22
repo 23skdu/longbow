@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestOAuthManager_Basic runs the test o auth manager_basic operation.
 func TestOAuthManager_Basic(t *testing.T) {
 	config := SSOConfig{
 		Enabled:      true,
@@ -45,6 +46,7 @@ func TestOAuthManager_Basic(t *testing.T) {
 	assert.True(t, mgr.IsDomainAllowed("user@any.com"))
 }
 
+// TestSessionStore runs the test session store operation.
 func TestSessionStore(t *testing.T) {
 	store := NewSessionStore()
 	require.NotNil(t, store)
@@ -81,6 +83,7 @@ func TestSessionStore(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestTokenGenerator runs the test token generator operation.
 func TestTokenGenerator(t *testing.T) {
 	gen, err := NewTokenGenerator("my-issuer", "my-audience")
 	require.NoError(t, err)
@@ -115,6 +118,7 @@ func TestTokenGenerator(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestAuthMiddleware runs the test auth middleware operation.
 func TestAuthMiddleware(t *testing.T) {
 	config := SSOConfig{
 		Enabled:         true,

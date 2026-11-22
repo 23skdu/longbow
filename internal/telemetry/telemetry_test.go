@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestInitTracerProvider runs the test init tracer provider operation.
 func TestInitTracerProvider(t *testing.T) {
 	ctx := context.Background()
 
@@ -22,6 +23,7 @@ func TestInitTracerProvider(t *testing.T) {
 	}
 }
 
+// TestInitTracerProvider_WithOTLP runs the test init tracer provider_with otlp operation.
 func TestInitTracerProvider_WithOTLP(t *testing.T) {
 	// Set OTLP endpoint (this will try to connect, may fail in test env)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
@@ -43,6 +45,7 @@ func TestInitTracerProvider_WithOTLP(t *testing.T) {
 	}
 }
 
+// TestInitTracerProvider_WithDebug runs the test init tracer provider_with debug operation.
 func TestInitTracerProvider_WithDebug(t *testing.T) {
 	t.Setenv("LONGBOW_DEBUG", "true")
 

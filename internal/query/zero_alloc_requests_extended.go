@@ -7,6 +7,7 @@ import (
 	"github.com/23skdu/longbow/internal/core"
 )
 
+// ParseTemporalSearchRequest runs the parse temporal search request operation.
 func ParseTemporalSearchRequest(data []byte, req *core.TemporalSearchRequest) error {
 	i := SkipWhitespace(data, 0)
 	if i >= len(data) || data[i] != '{' {

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// TestExponentialBackoff_Backoff runs the test exponential backoff_backoff operation.
 func TestExponentialBackoff_Backoff(t *testing.T) {
 	b := &ExponentialBackoff{
 		BaseDelay: 10 * time.Millisecond,
@@ -33,6 +34,7 @@ func TestExponentialBackoff_Backoff(t *testing.T) {
 	}
 }
 
+// TestExponentialBackoff_Jitter runs the test exponential backoff_jitter operation.
 func TestExponentialBackoff_Jitter(t *testing.T) {
 	b := &ExponentialBackoff{
 		BaseDelay: 100 * time.Millisecond,
@@ -49,6 +51,7 @@ func TestExponentialBackoff_Jitter(t *testing.T) {
 	}
 }
 
+// TestDo_Success runs the test do_success operation.
 func TestDo_Success(t *testing.T) {
 	policy := &ExponentialBackoff{
 		BaseDelay: 1 * time.Millisecond,
@@ -72,6 +75,7 @@ func TestDo_Success(t *testing.T) {
 	}
 }
 
+// TestDo_MaxRetriesReached runs the test do_max retries reached operation.
 func TestDo_MaxRetriesReached(t *testing.T) {
 	policy := &ExponentialBackoff{
 		BaseDelay: 1 * time.Millisecond,
@@ -95,6 +99,7 @@ func TestDo_MaxRetriesReached(t *testing.T) {
 	}
 }
 
+// TestDo_NonRetryableError runs the test do_non retryable error operation.
 func TestDo_NonRetryableError(t *testing.T) {
 	policy := &ExponentialBackoff{
 		BaseDelay: 1 * time.Millisecond,
@@ -115,6 +120,7 @@ func TestDo_NonRetryableError(t *testing.T) {
 	}
 }
 
+// TestDo_ContextCancelled runs the test do_context cancelled operation.
 func TestDo_ContextCancelled(t *testing.T) {
 	policy := &ExponentialBackoff{
 		BaseDelay: 10 * time.Second,
@@ -132,6 +138,7 @@ func TestDo_ContextCancelled(t *testing.T) {
 	}
 }
 
+// TestDo_AttemptTimeout runs the test do_attempt timeout operation.
 func TestDo_AttemptTimeout(t *testing.T) {
 	policy := &ExponentialBackoff{
 		AttemptTimeout: 50 * time.Millisecond,
@@ -152,6 +159,7 @@ func TestDo_AttemptTimeout(t *testing.T) {
 	}
 }
 
+// TestExponentialBackoff_Interface runs the test exponential backoff_interface operation.
 func TestExponentialBackoff_Interface(t *testing.T) {
 	policy := &ExponentialBackoff{
 		Retries:        5,
@@ -168,6 +176,7 @@ func TestExponentialBackoff_Interface(t *testing.T) {
 	}
 }
 
+// TestDo_InitialContextCancelled runs the test do_initial context cancelled operation.
 func TestDo_InitialContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -180,6 +189,7 @@ func TestDo_InitialContextCancelled(t *testing.T) {
 	}
 }
 
+// TestDo_ContextCancelledDuringWait runs the test do_context cancelled during wait operation.
 func TestDo_ContextCancelledDuringWait(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	policy := &ExponentialBackoff{
@@ -205,6 +215,7 @@ func TestDo_ContextCancelledDuringWait(t *testing.T) {
 	}
 }
 
+// TestDo_LoopExhaustedWithoutCancel runs the test do_loop exhausted without cancel operation.
 func TestDo_LoopExhaustedWithoutCancel(t *testing.T) {
 	policy := &ExponentialBackoff{
 		BaseDelay: 1 * time.Millisecond,
@@ -223,6 +234,7 @@ func TestDo_LoopExhaustedWithoutCancel(t *testing.T) {
 	}
 }
 
+// TestDo_ZeroRetries runs the test do_zero retries operation.
 func TestDo_ZeroRetries(t *testing.T) {
 	policy := &ExponentialBackoff{
 		Retries: 0,
@@ -235,6 +247,7 @@ func TestDo_ZeroRetries(t *testing.T) {
 	}
 }
 
+// TestDo_NoTimeoutAndCancelNotCalled runs the test do_no timeout and cancel not called operation.
 func TestDo_NoTimeoutAndCancelNotCalled(t *testing.T) {
 	policy := &ExponentialBackoff{
 		BaseDelay: 1 * time.Millisecond,
@@ -257,6 +270,7 @@ func TestDo_NoTimeoutAndCancelNotCalled(t *testing.T) {
 	}
 }
 
+// TestDo_RetryExhausted_ReturnsLastError runs the test do_retry exhausted_returns last error operation.
 func TestDo_RetryExhausted_ReturnsLastError(t *testing.T) {
 	policy := &ExponentialBackoff{
 		BaseDelay: 1 * time.Millisecond,
@@ -271,6 +285,7 @@ func TestDo_RetryExhausted_ReturnsLastError(t *testing.T) {
 	}
 }
 
+// TestDo_WithTimeoutAndCancel runs the test do_with timeout and cancel operation.
 func TestDo_WithTimeoutAndCancel(t *testing.T) {
 	policy := &ExponentialBackoff{
 		BaseDelay:      1 * time.Millisecond,
@@ -290,6 +305,7 @@ func TestDo_WithTimeoutAndCancel(t *testing.T) {
 	}
 }
 
+// TestDo_RetryExhausted_ContextCancelled runs the test do_retry exhausted_context cancelled operation.
 func TestDo_RetryExhausted_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	policy := &ExponentialBackoff{
@@ -307,6 +323,7 @@ func TestDo_RetryExhausted_ContextCancelled(t *testing.T) {
 	}
 }
 
+// TestIsRetryable runs the test is retryable operation.
 func TestIsRetryable(t *testing.T) {
 	policy := &ExponentialBackoff{}
 

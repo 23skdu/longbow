@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestSentinelVector_Fallback runs the test sentinel vector_fallback operation.
 func TestSentinelVector_Fallback(t *testing.T) {
 	// 1. Setup GraphData with no data
 	// func NewGraphData(capacity, dims int, sq8Enabled, pqEnabled bool, pqDims int, bqEnabled, float16Enabled, packedAdjacencyEnabled bool, "test")

@@ -33,7 +33,10 @@ import (
 // keeps the nodes-skipped series moving without discarding most candidates.
 type rejectingPredicate struct{ entryPoint uint32 }
 
+// IsMatch reports whether the condition holds.
 func (p rejectingPredicate) IsMatch(id uint32) bool { return id%16 != 0 || id == p.entryPoint }
+
+// MatchBatch runs the match batch operation.
 func (p rejectingPredicate) MatchBatch(ids []uint32, dst []byte) {
 	for i, id := range ids {
 		if p.IsMatch(id) {

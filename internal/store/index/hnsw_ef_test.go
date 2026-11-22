@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHNSW_EfParameter runs the test hnsw_ef parameter operation.
 func TestHNSW_EfParameter(t *testing.T) {
 	mem := memory.NewGoAllocator()
 

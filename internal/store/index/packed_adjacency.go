@@ -435,10 +435,12 @@ func (pa *PackedAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint
 	return res, true
 }
 
+// GetNeighborsWithGenFast returns the neighbors with gen fast.
 func (pa *PackedAdjacency) GetNeighborsWithGenFast(id uint32, maxGen uint64) ([]uint32, bool) {
 	return pa.GetNeighborsWithGen(id, maxGen)
 }
 
+// GetNeighborsWithGenInto returns the neighbors with gen into.
 func (pa *PackedAdjacency) GetNeighborsWithGenInto(id uint32, maxGen uint64, dst []uint32) ([]uint32, bool) {
 	res, ok := pa.GetNeighborsWithGen(id, maxGen)
 	if !ok || len(res) == 0 {
@@ -522,6 +524,8 @@ func (pa *PackedAdjacency) getPackedRef(id uint32) (uint64, bool) {
 
 	return atomic.LoadUint64(&page[offsetInPage]), true
 }
+
+// RelocateToOffHeap runs the relocate to off heap operation.
 func (pa *PackedAdjacency) RelocateToOffHeap(alloc *memory.OffHeapAllocator) {
 	pa.mu.Lock()
 	defer pa.mu.Unlock()
@@ -552,6 +556,7 @@ func (pa *PackedAdjacency) RelocateToOffHeap(alloc *memory.OffHeapAllocator) {
 	}
 }
 
+// GetArena returns the arena.
 func (pa *PackedAdjacency) GetArena() *memory.SlabArena {
 	return pa.baseArena
 }
@@ -564,6 +569,7 @@ func (pa *PackedAdjacency) IsOffHeap() bool {
 	return pa.baseArena.IsOffHeap()
 }
 
+// Release runs the release operation.
 func (pa *PackedAdjacency) Release() {
 	newRef := pa.refCount.Add(-1)
 	metrics.SlabRefCountDistribution.WithLabelValues("adjacency").Observe(float64(newRef))
@@ -591,15 +597,18 @@ func (pa *PackedAdjacency) Release() {
 	}
 }
 
+// Retain runs the retain operation.
 func (pa *PackedAdjacency) Retain() {
 	newRef := pa.refCount.Add(1)
 	metrics.SlabRefCountDistribution.WithLabelValues("adjacency").Observe(float64(newRef))
 }
 
+// EvictToDisk runs the evict to disk operation.
 func (pa *PackedAdjacency) EvictToDisk(gd *types.GraphData, layer int, chunkSizes []int, w interface{ Write([]byte) (int, error) }) (int, []int, int64, error) {
 	return 0, chunkSizes, 0, nil
 }
 
+// RestoreFromDisk runs the restore from disk operation.
 func (pa *PackedAdjacency) RestoreFromDisk(gd *types.GraphData, layer int, chunkSizes []int, r interface{ Read([]byte) (int, error) }) error {
 	return nil
 }

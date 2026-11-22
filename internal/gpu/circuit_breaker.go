@@ -18,6 +18,7 @@ const (
 	CircuitHalfOpen
 )
 
+// String runs the string operation.
 func (s CircuitState) String() string {
 	switch s {
 	case CircuitClosed:

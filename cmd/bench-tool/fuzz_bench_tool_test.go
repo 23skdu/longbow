@@ -2,6 +2,7 @@ package main
 
 import "testing"
 
+// FuzzGenerateRecord runs the fuzz generate record operation.
 func FuzzGenerateRecord(f *testing.F) {
 	f.Add(2, 4, "float32", 4)
 	f.Add(1, 1, "bogus", 0)

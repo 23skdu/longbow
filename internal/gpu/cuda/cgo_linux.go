@@ -231,9 +231,13 @@ func GetLastError() error {
 type MemcpyKind int
 
 const (
-	MemcpyHostToHost     MemcpyKind = 0
-	MemcpyHostToDevice   MemcpyKind = 1
-	MemcpyDeviceToHost   MemcpyKind = 2
+	// MemcpyHostToHost is a memcpy host to host constant.
+	MemcpyHostToHost MemcpyKind = 0
+	// MemcpyHostToDevice is a memcpy host to device constant.
+	MemcpyHostToDevice MemcpyKind = 1
+	// MemcpyDeviceToHost is a memcpy device to host constant.
+	MemcpyDeviceToHost MemcpyKind = 2
+	// MemcpyDeviceToDevice is a memcpy device to device constant.
 	MemcpyDeviceToDevice MemcpyKind = 3
 )
 

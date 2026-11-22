@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestCircuitBreaker_StateTransitions runs the test circuit breaker_state transitions operation.
 func TestCircuitBreaker_StateTransitions(t *testing.T) {
 	cb := NewCircuitBreaker(Settings{
 		Name:        "test",
@@ -39,6 +40,7 @@ func TestCircuitBreaker_StateTransitions(t *testing.T) {
 	assert.Equal(t, StateClosed, cb.State())
 }
 
+// TestCircuitBreaker_HalfOpenMaxRequests runs the test circuit breaker_half open max requests operation.
 func TestCircuitBreaker_HalfOpenMaxRequests(t *testing.T) {
 	cb := NewCircuitBreaker(Settings{
 		Name:        "test",
@@ -67,11 +69,13 @@ func TestCircuitBreaker_HalfOpenMaxRequests(t *testing.T) {
 	assert.False(t, cb.Allow())
 }
 
+// TestCircuitBreaker_Name runs the test circuit breaker_name operation.
 func TestCircuitBreaker_Name(t *testing.T) {
 	cb := NewCircuitBreaker(Settings{Name: "my-breaker"})
 	assert.Equal(t, "my-breaker", cb.Name())
 }
 
+// TestError_Error runs the test error_error operation.
 func TestError_Error(t *testing.T) {
 	err := &Error{Msg: "circuit breaker is open"}
 	assert.Equal(t, "circuit breaker is open", err.Error())
@@ -79,6 +83,7 @@ func TestError_Error(t *testing.T) {
 	assert.Equal(t, "circuit breaker is open", ErrOpenState.Error())
 }
 
+// TestCircuitBreaker_Execute_InOpenState runs the test circuit breaker_execute_in open state operation.
 func TestCircuitBreaker_Execute_InOpenState(t *testing.T) {
 	cb := NewCircuitBreaker(Settings{
 		Name:        "test",
@@ -93,6 +98,7 @@ func TestCircuitBreaker_Execute_InOpenState(t *testing.T) {
 	assert.ErrorIs(t, err, ErrOpenState)
 }
 
+// TestCircuitBreaker_HalfOpen_FailureTripsOpen runs the test circuit breaker_half open_failure trips open operation.
 func TestCircuitBreaker_HalfOpen_FailureTripsOpen(t *testing.T) {
 	cb := NewCircuitBreaker(Settings{
 		Name:        "test",
@@ -110,6 +116,7 @@ func TestCircuitBreaker_HalfOpen_FailureTripsOpen(t *testing.T) {
 	assert.Equal(t, StateOpen, cb.State())
 }
 
+// TestCircuitBreaker_OnStateChangeCallback runs the test circuit breaker_on state change callback operation.
 func TestCircuitBreaker_OnStateChangeCallback(t *testing.T) {
 	type transition struct {
 		name string
@@ -144,6 +151,7 @@ func TestCircuitBreaker_OnStateChangeCallback(t *testing.T) {
 	assert.Equal(t, transition{"test", StateHalfOpen, StateClosed}, transitions[2])
 }
 
+// TestNewCircuitBreaker_DefaultSettings runs the test new circuit breaker_default settings operation.
 func TestNewCircuitBreaker_DefaultSettings(t *testing.T) {
 	cb := NewCircuitBreaker(Settings{})
 

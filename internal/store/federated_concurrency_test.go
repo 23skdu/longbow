@@ -35,6 +35,7 @@ func makeTestBatch(t *testing.T, dim int, n int) arrow.RecordBatch {
 	return b.NewRecordBatch()
 }
 
+// TestFederatedSearchConcurrent runs the test federated search concurrent operation.
 func TestFederatedSearchConcurrent(t *testing.T) {
 	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1024*1024*1024, 0, 0)
 	s.StartIndexingWorkers(2)
@@ -83,6 +84,7 @@ func TestFederatedSearchConcurrent(t *testing.T) {
 	}
 }
 
+// FuzzFederatedSearchDirtyFlag runs the fuzz federated search dirty flag operation.
 func FuzzFederatedSearchDirtyFlag(f *testing.F) {
 	f.Add(1)
 	f.Fuzz(func(t *testing.T, n int) {

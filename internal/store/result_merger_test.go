@@ -12,6 +12,7 @@ import (
 // — the order produced by vector search, graph re-ranking, and peer DoGet
 // streams — and the output is the best-first top-k across all streams.
 
+// TestMergeSortedStreams runs the test merge sorted streams operation.
 func TestMergeSortedStreams(t *testing.T) {
 	// Scenario 1: Basic merge of 3 best-first streams
 	ch1 := make(chan []SearchResult, 3)
@@ -45,6 +46,7 @@ func TestMergeSortedStreams(t *testing.T) {
 	}
 }
 
+// TestMergeSortedStreams_EmptyChannels runs the test merge sorted streams_empty channels operation.
 func TestMergeSortedStreams_EmptyChannels(t *testing.T) {
 	ch1 := make(chan []SearchResult)
 	close(ch1)
@@ -59,6 +61,7 @@ func TestMergeSortedStreams_EmptyChannels(t *testing.T) {
 	assert.Equal(t, float32(0.5), results[0].Score)
 }
 
+// TestMergeSortedStreams_LimitK runs the test merge sorted streams_limit k operation.
 func TestMergeSortedStreams_LimitK(t *testing.T) {
 	ch1 := make(chan []SearchResult, 1)
 
@@ -74,6 +77,7 @@ func TestMergeSortedStreams_LimitK(t *testing.T) {
 	assert.Equal(t, uint32(2), uint32(results[1].ID))
 }
 
+// TestMergeSortedStreams_InterleavedDelays runs the test merge sorted streams_interleaved delays operation.
 func TestMergeSortedStreams_InterleavedDelays(t *testing.T) {
 	ch1 := make(chan []SearchResult)
 	ch2 := make(chan []SearchResult)
@@ -127,6 +131,7 @@ func TestMergeSortedStreams_BestFirstAcrossStreams(t *testing.T) {
 	}
 }
 
+// TestMergeSortedStreams_KZeroReturnsNil runs the test merge sorted streams_k zero returns nil operation.
 func TestMergeSortedStreams_KZeroReturnsNil(t *testing.T) {
 	ch := make(chan []SearchResult, 1)
 	ch <- []SearchResult{{ID: 1, Score: 0.5}}

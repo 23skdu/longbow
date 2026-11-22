@@ -23,6 +23,7 @@ func getFreePort() int {
 	return l.LocalAddr().(*net.UDPAddr).Port
 }
 
+// TestSuspicionTimeout runs the test suspicion timeout operation.
 func TestSuspicionTimeout(t *testing.T) {
 	// 1. Setup Node A and Node B
 	portA := getFreePort()
@@ -89,6 +90,7 @@ func TestSuspicionTimeout(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond, "Node A should mark Node B as Dead")
 }
 
+// TestRefutation runs the test refutation operation.
 func TestRefutation(t *testing.T) {
 	// 1. Setup Node A and Node B
 	portA := getFreePort()

@@ -24,6 +24,7 @@ func createTestRecord(t *testing.T) arrow.RecordBatch { //nolint:staticcheck
 	return builder.NewRecordBatch() //nolint:staticcheck //nolint:staticcheck
 }
 
+// TestPeerReplicator_NewPeerReplicator runs the test peer replicator_new peer replicator operation.
 func TestPeerReplicator_NewPeerReplicator(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -43,6 +44,7 @@ func TestPeerReplicator_NewPeerReplicator(t *testing.T) {
 	}
 }
 
+// TestPeerReplicator_AddPeer runs the test peer replicator_add peer operation.
 func TestPeerReplicator_AddPeer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -64,6 +66,7 @@ func TestPeerReplicator_AddPeer(t *testing.T) {
 	}
 }
 
+// TestPeerReplicator_RemovePeer runs the test peer replicator_remove peer operation.
 func TestPeerReplicator_RemovePeer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -80,6 +83,7 @@ func TestPeerReplicator_RemovePeer(t *testing.T) {
 	}
 }
 
+// TestPeerReplicator_ReplicateRecord runs the test peer replicator_replicate record operation.
 func TestPeerReplicator_ReplicateRecord(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -115,6 +119,7 @@ func TestPeerReplicator_ReplicateRecord(t *testing.T) {
 	}
 }
 
+// TestPeerReplicator_ReplicateWithCircuitBreaker runs the test peer replicator_replicate with circuit breaker operation.
 func TestPeerReplicator_ReplicateWithCircuitBreaker(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -155,6 +160,7 @@ func TestPeerReplicator_ReplicateWithCircuitBreaker(t *testing.T) {
 	}
 }
 
+// TestPeerReplicator_AsyncReplication runs the test peer replicator_async replication operation.
 func TestPeerReplicator_AsyncReplication(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -199,6 +205,7 @@ func TestPeerReplicator_AsyncReplication(t *testing.T) {
 	}
 }
 
+// TestPeerReplicator_QuorumReplication runs the test peer replicator_quorum replication operation.
 func TestPeerReplicator_QuorumReplication(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -231,6 +238,7 @@ func TestPeerReplicator_QuorumReplication(t *testing.T) {
 	}
 }
 
+// TestPeerReplicator_Stats runs the test peer replicator_stats operation.
 func TestPeerReplicator_Stats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -247,6 +255,7 @@ func TestPeerReplicator_Stats(t *testing.T) {
 	}
 }
 
+// TestPeerReplicator_GetCircuitBreaker runs the test peer replicator_get circuit breaker operation.
 func TestPeerReplicator_GetCircuitBreaker(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

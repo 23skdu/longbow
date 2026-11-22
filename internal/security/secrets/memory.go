@@ -15,10 +15,12 @@ type MemoryStore struct {
 
 var _ Store = (*MemoryStore)(nil)
 
+// NewMemoryStore constructs a new MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{keys: make(map[string]StoredKey)}
 }
 
+// LoadAll runs the load all operation.
 func (s *MemoryStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -32,6 +34,7 @@ func (s *MemoryStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 	return out, nil
 }
 
+// Put runs the put operation.
 func (s *MemoryStore) Put(ctx context.Context, key StoredKey) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -45,6 +48,7 @@ func (s *MemoryStore) Put(ctx context.Context, key StoredKey) error {
 	return nil
 }
 
+// Delete runs the delete operation.
 func (s *MemoryStore) Delete(ctx context.Context, keyID string) error {
 	if err := ctx.Err(); err != nil {
 		return err

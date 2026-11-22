@@ -142,6 +142,7 @@ type DimensionError struct {
 	AutoDetected bool
 }
 
+// Error runs the error operation.
 func (e *DimensionError) Error() string {
 	hint := "re-create the dataset with the correct dimension"
 	if e.AutoDetected {

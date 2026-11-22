@@ -29,6 +29,7 @@ type chunkTracker struct {
 	numChunks  int
 }
 
+// CUDAIndex represents a cuda index value.
 type CUDAIndex struct {
 	handle     *C.CUDAIndexHandle
 	dim        int
@@ -79,6 +80,7 @@ func NewCUDAIndex(cfg types.GPUConfig) (types.Index, error) {
 	return NewCUDAIndexImpl(cfg)
 }
 
+// NewCUDAIndexImpl constructs a new CUDAIndexImpl.
 func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	if cfg.Dimension <= 0 {
 		return nil, &types.GPUInitializationError{
@@ -190,6 +192,7 @@ func (idx *CUDAIndex) releaseGPUOp() {
 	idx.opSem.Release(1)
 }
 
+// Close runs the close operation.
 func (idx *CUDAIndex) Close() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -227,18 +230,22 @@ func (idx *CUDAIndex) Close() error {
 	return nil
 }
 
+// Backend runs the backend operation.
 func (idx *CUDAIndex) Backend() types.GPUBackend {
 	return types.BackendCUDA
 }
 
+// DeviceID runs the device id operation.
 func (idx *CUDAIndex) DeviceID() int32 {
 	return idx.deviceInfo.DeviceID
 }
 
+// GetDeviceInfo returns the device info.
 func (idx *CUDAIndex) GetDeviceInfo() (*types.GPUInfo, error) {
 	return idx.deviceInfo, nil
 }
 
+// GetMemoryInfo returns the memory info.
 func (idx *CUDAIndex) GetMemoryInfo() (total, free, used int64, err error) {
 	if idx.memPool != nil {
 		total = idx.memPool.GetTotalMemory()
@@ -249,14 +256,17 @@ func (idx *CUDAIndex) GetMemoryInfo() (total, free, used int64, err error) {
 	return idx.deviceInfo.MemoryMB * 1024 * 1024, 0, 0, nil
 }
 
+// GetDeviceCount returns the device count.
 func (idx *CUDAIndex) GetDeviceCount() int {
 	return GetDeviceCount()
 }
 
+// GetUtilization returns the utilization.
 func (idx *CUDAIndex) GetUtilization() (float32, error) {
 	return 50.0, nil
 }
 
+// Initialize runs the initialize operation.
 func (idx *CUDAIndex) Initialize(deviceID int32) error {
 	return SetDevice(deviceID)
 }
@@ -283,6 +293,7 @@ func (idx *CUDAIndex) startSyncTicker(cfg types.GPUConfig) {
 	}()
 }
 
+// Clear runs the clear operation.
 func (idx *CUDAIndex) Clear() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -301,10 +312,12 @@ func (idx *CUDAIndex) Clear() error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (idx *CUDAIndex) Reset() error {
 	return idx.Clear()
 }
 
+// Sync runs the sync operation.
 func (idx *CUDAIndex) Sync() error {
 	return idx.Flush()
 }

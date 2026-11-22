@@ -6,6 +6,7 @@ import (
 	"github.com/23skdu/longbow/internal/core"
 )
 
+// ParseDatasetRequest runs the parse dataset request operation.
 func ParseDatasetRequest(data []byte, dsName *string) error {
 	i := SkipWhitespace(data, 0)
 	if i >= len(data) || data[i] != '{' {
@@ -55,6 +56,7 @@ func ParseDatasetRequest(data []byte, dsName *string) error {
 	return nil
 }
 
+// ParseSearchByIDRequest runs the parse search by id request operation.
 func ParseSearchByIDRequest(data []byte, req *core.VectorSearchByIDRequest) error {
 	i := SkipWhitespace(data, 0)
 	if i >= len(data) || data[i] != '{' {
@@ -150,6 +152,7 @@ func ParseSearchByIDRequest(data []byte, req *core.VectorSearchByIDRequest) erro
 	return nil
 }
 
+// ParseRecommendRequest runs the parse recommend request operation.
 func ParseRecommendRequest(data []byte, req *core.RecommendRequest) error {
 	i := SkipWhitespace(data, 0)
 	if i >= len(data) || data[i] != '{' {
@@ -251,6 +254,7 @@ func ParseRecommendRequest(data []byte, req *core.RecommendRequest) error {
 	return nil
 }
 
+// ParseGeoSearchRequest runs the parse geo search request operation.
 func ParseGeoSearchRequest(data []byte, req *core.GeoSearchRequest) error {
 	i := SkipWhitespace(data, 0)
 	if i >= len(data) || data[i] != '{' {
@@ -350,6 +354,7 @@ func ParseGeoSearchRequest(data []byte, req *core.GeoSearchRequest) error {
 	return nil
 }
 
+// ParseGeoPoint runs the parse geo point operation.
 func ParseGeoPoint(data []byte, pos int, point *core.GeoPoint) (int, error) {
 	pos = SkipWhitespace(data, pos)
 	if pos >= len(data) || data[pos] != '{' {
@@ -408,6 +413,7 @@ func ParseGeoPoint(data []byte, pos int, point *core.GeoPoint) (int, error) {
 	return pos, nil
 }
 
+// ParseGeoBoundingBox runs the parse geo bounding box operation.
 func ParseGeoBoundingBox(data []byte, pos int, box *core.GeoBoundingBox) (int, error) {
 	pos = SkipWhitespace(data, pos)
 	if pos >= len(data) || data[pos] != '{' {

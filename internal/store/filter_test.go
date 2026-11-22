@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// TestFiltering runs the test filtering operation.
 func TestFiltering(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -146,6 +147,7 @@ func TestFiltering(t *testing.T) {
 	}
 }
 
+// TestListFlightsFiltering runs the test list flights filtering operation.
 func TestListFlightsFiltering(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

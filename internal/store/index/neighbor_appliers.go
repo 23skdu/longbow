@@ -97,6 +97,7 @@ func (a *batchNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	return next
 }
 
+// OldScratch runs the old scratch operation.
 func (a *batchNeighborApplier) OldScratch() []uint32 {
 	if a.ctx == nil {
 		return nil
@@ -117,6 +118,7 @@ type addConnNeighborApplier struct {
 	ctx     *ArrowSearchContext
 }
 
+// ApplyNeighbors runs the apply neighbors operation.
 func (a *addConnNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	for _, n := range old {
 		if n == a.target {
@@ -151,6 +153,7 @@ func (a *addConnNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	return next
 }
 
+// OldScratch runs the old scratch operation.
 func (a *addConnNeighborApplier) OldScratch() []uint32 {
 	if a.ctx == nil {
 		return nil
@@ -172,6 +175,7 @@ type pruneNeighborApplier struct {
 	lastNew []uint32
 }
 
+// ApplyNeighbors runs the apply neighbors operation.
 func (a *pruneNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	if len(old) <= a.maxConn {
 		// No change; see the matching note in AddConnection.
@@ -187,6 +191,7 @@ func (a *pruneNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	return next
 }
 
+// OldScratch runs the old scratch operation.
 func (a *pruneNeighborApplier) OldScratch() []uint32 {
 	if a.ctx == nil {
 		return nil
@@ -208,6 +213,7 @@ type inboundNeighborApplier struct {
 	lastNew []uint32
 }
 
+// ApplyNeighbors runs the apply neighbors operation.
 func (a *inboundNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	for _, o := range old {
 		if o == a.target {
@@ -268,6 +274,7 @@ func (a *inboundNeighborApplier) ApplyNeighbors(old []uint32) []uint32 {
 	return next
 }
 
+// OldScratch runs the old scratch operation.
 func (a *inboundNeighborApplier) OldScratch() []uint32 {
 	if a.ctx == nil {
 		return nil

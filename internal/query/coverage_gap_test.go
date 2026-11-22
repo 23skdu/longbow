@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCoverage_NestedFieldResolution runs the test coverage_nested field resolution operation.
 func TestCoverage_NestedFieldResolution(t *testing.T) {
 	pool := memory.NewGoAllocator()
 
@@ -59,6 +60,7 @@ func TestCoverage_NestedFieldResolution(t *testing.T) {
 	})
 }
 
+// TestCoverage_ListNestedField runs the test coverage_list nested field operation.
 func TestCoverage_ListNestedField(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	// List<int32>

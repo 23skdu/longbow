@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// TestCheckpointCoordinator_New runs the test checkpoint coordinator_new operation.
 func TestCheckpointCoordinator_New(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -26,6 +27,7 @@ func TestCheckpointCoordinator_New(t *testing.T) {
 	}
 }
 
+// TestCheckpointCoordinator_InitiateCheckpoint runs the test checkpoint coordinator_initiate checkpoint operation.
 func TestCheckpointCoordinator_InitiateCheckpoint(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -46,6 +48,7 @@ func TestCheckpointCoordinator_InitiateCheckpoint(t *testing.T) {
 	}
 }
 
+// TestCheckpointCoordinator_BarrierSync runs the test checkpoint coordinator_barrier sync operation.
 func TestCheckpointCoordinator_BarrierSync(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -81,6 +84,7 @@ func TestCheckpointCoordinator_BarrierSync(t *testing.T) {
 	}
 }
 
+// TestCheckpointCoordinator_Timeout runs the test checkpoint coordinator_timeout operation.
 func TestCheckpointCoordinator_Timeout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -103,6 +107,7 @@ func TestCheckpointCoordinator_Timeout(t *testing.T) {
 	}
 }
 
+// TestCheckpointCoordinator_Metrics runs the test checkpoint coordinator_metrics operation.
 func TestCheckpointCoordinator_Metrics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -120,6 +125,7 @@ func TestCheckpointCoordinator_Metrics(t *testing.T) {
 	}
 }
 
+// TestCheckpointCoordinator_ConcurrentCheckpoints runs the test checkpoint coordinator_concurrent checkpoints operation.
 func TestCheckpointCoordinator_ConcurrentCheckpoints(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -152,6 +158,7 @@ func TestCheckpointCoordinator_ConcurrentCheckpoints(t *testing.T) {
 	}
 }
 
+// TestCheckpointCoordinator_WALTruncation runs the test checkpoint coordinator_wal truncation operation.
 func TestCheckpointCoordinator_WALTruncation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -171,6 +178,7 @@ func TestCheckpointCoordinator_WALTruncation(t *testing.T) {
 	}
 }
 
+// TestCheckpointCoordinator_Recovery runs the test checkpoint coordinator_recovery operation.
 func TestCheckpointCoordinator_Recovery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

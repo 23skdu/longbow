@@ -17,14 +17,17 @@ type StaticProvider struct {
 	Peers []string
 }
 
+// NewStaticProvider constructs a new StaticProvider.
 func NewStaticProvider(peers []string) *StaticProvider {
 	return &StaticProvider{Peers: peers}
 }
 
+// FindPeers runs the find peers operation.
 func (s *StaticProvider) FindPeers(ctx context.Context) ([]string, error) {
 	return s.Peers, nil
 }
 
+// Register runs the register operation.
 func (s *StaticProvider) Register(ctx context.Context, id string, port int) error {
 	// No-op for static list
 	return nil
@@ -35,10 +38,12 @@ type MultiProvider struct {
 	Providers []DiscoveryProvider
 }
 
+// NewMultiProvider constructs a new MultiProvider.
 func NewMultiProvider(providers ...DiscoveryProvider) *MultiProvider {
 	return &MultiProvider{Providers: providers}
 }
 
+// FindPeers runs the find peers operation.
 func (m *MultiProvider) FindPeers(ctx context.Context) ([]string, error) {
 	var allPeers []string
 	seen := make(map[string]bool)
@@ -58,6 +63,7 @@ func (m *MultiProvider) FindPeers(ctx context.Context) ([]string, error) {
 	return allPeers, nil
 }
 
+// Register runs the register operation.
 func (m *MultiProvider) Register(ctx context.Context, id string, port int) error {
 	for _, p := range m.Providers {
 		_ = p.Register(ctx, id, port)

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestIVFHNSWCompositeIndex_Basic runs the test ivfhnsw composite index_basic operation.
 func TestIVFHNSWCompositeIndex_Basic(t *testing.T) {
 	dim := 16
 	numCentroids := 4
@@ -72,6 +73,7 @@ func TestIVFHNSWCompositeIndex_Basic(t *testing.T) {
 	}
 }
 
+// TestIVFHNSWCompositeIndex_BillionScaleSimulation runs the test ivfhnsw composite index_billion scale simulation operation.
 func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 	// Simulate billion-scale by using many clusters and verifying search time
 	if testing.Short() {
@@ -130,6 +132,7 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 	fmt.Printf("Billion-scale sim: Found %d results\n", len(results))
 }
 
+// TestIVFHNSWCompositeIndex_ApplyDelta runs the test ivfhnsw composite index_apply delta operation.
 func TestIVFHNSWCompositeIndex_ApplyDelta(t *testing.T) {
 	dim := 16
 	config := IVFHNSWConfig{
@@ -174,6 +177,7 @@ func TestIVFHNSWCompositeIndex_ApplyDelta(t *testing.T) {
 	assert.Equal(t, 2, idx.Size())
 }
 
+// TestIVFHNSWCompositeIndex_ConcurrentAddBatch runs the test ivfhnsw composite index_concurrent add batch operation.
 func TestIVFHNSWCompositeIndex_ConcurrentAddBatch(t *testing.T) {
 	dim := 16
 	config := IVFHNSWConfig{

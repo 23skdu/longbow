@@ -51,6 +51,7 @@ func DefaultForwarderConfig() ForwarderConfig {
 // byteCodec is a generic gRPC codec that just passes raw bytes through.
 type byteCodec struct{}
 
+// Marshal runs the marshal operation.
 func (byteCodec) Marshal(v any) ([]byte, error) {
 	switch b := v.(type) {
 	case []byte:
@@ -60,6 +61,7 @@ func (byteCodec) Marshal(v any) ([]byte, error) {
 	}
 }
 
+// Unmarshal runs the unmarshal operation.
 func (byteCodec) Unmarshal(data []byte, v any) error {
 	switch b := v.(type) {
 	case *[]byte:
@@ -70,6 +72,7 @@ func (byteCodec) Unmarshal(data []byte, v any) error {
 	}
 }
 
+// Name runs the name operation.
 func (byteCodec) Name() string {
 	return "bytecodec"
 }

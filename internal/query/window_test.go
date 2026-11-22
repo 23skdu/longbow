@@ -17,6 +17,7 @@ func helperDecode(b []byte) map[string]interface{} {
 	return m
 }
 
+// TestWindowOperator_RowNumber runs the test window operator_row number operation.
 func TestWindowOperator_RowNumber(t *testing.T) {
 	results := []core.SearchResult{
 		{ID: 1, Distance: 0.1, Metadata: helperEncode(map[string]interface{}{"group": "A"})},
@@ -47,6 +48,7 @@ func TestWindowOperator_RowNumber(t *testing.T) {
 	assert.Equal(t, int64(3), helperDecode(processed[2].Metadata)["row_num"])
 }
 
+// TestWindowOperator_PartitionBy runs the test window operator_partition by operation.
 func TestWindowOperator_PartitionBy(t *testing.T) {
 	results := []core.SearchResult{
 		{ID: 1, Distance: 0.2, Metadata: helperEncode(map[string]interface{}{"group": "A"})},
@@ -80,6 +82,7 @@ func TestWindowOperator_PartitionBy(t *testing.T) {
 	assert.Equal(t, int64(1), resMap[4])
 }
 
+// TestWindowOperator_Aggregates runs the test window operator_aggregates operation.
 func TestWindowOperator_Aggregates(t *testing.T) {
 	results := []core.SearchResult{
 		{ID: 1, Metadata: helperEncode(map[string]interface{}{"val": 10.0})},

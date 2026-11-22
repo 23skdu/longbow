@@ -19,11 +19,13 @@ type float64Computer struct {
 	maxGen    uint64
 }
 
+// Compute runs the compute operation.
 func (c *float64Computer) Compute(ids []uint32, dists []float32) error {
 	_, err := c.ComputeBatch(ids, dists)
 	return err
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *float64Computer) ComputeSingle(id uint32) (float32, error) {
 	// Fast path: direct chunk access (same order as float32 computer)
 	cID := types.ChunkID(id)
@@ -53,6 +55,7 @@ func (c *float64Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *float64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	n := len(ids)
 	if cap(dst) < n {
@@ -132,6 +135,7 @@ func (c *float64Computer) prefetchChunk(chunk []float64, cOff, pd int) {
 	}
 }
 
+// Prefetch runs the prefetch operation.
 func (c *float64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	var chunk []float64

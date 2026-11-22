@@ -24,12 +24,14 @@ type MockS3Client struct {
 	deleteError error
 }
 
+// NewMockS3Client constructs a new MockS3Client.
 func NewMockS3Client() *MockS3Client {
 	return &MockS3Client{
 		objects: make(map[string][]byte),
 	}
 }
 
+// PutObject runs the put object operation.
 func (m *MockS3Client) PutObject(ctx context.Context, input *s3.PutObjectInput, opts ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
 	if m.putError != nil {
 		return nil, m.putError
@@ -42,6 +44,7 @@ func (m *MockS3Client) PutObject(ctx context.Context, input *s3.PutObjectInput, 
 	return &s3.PutObjectOutput{}, nil
 }
 
+// GetObject returns the object.
 func (m *MockS3Client) GetObject(ctx context.Context, input *s3.GetObjectInput, opts ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
 	if m.getError != nil {
 		return nil, m.getError
@@ -56,6 +59,7 @@ func (m *MockS3Client) GetObject(ctx context.Context, input *s3.GetObjectInput, 
 	}, nil
 }
 
+// ListObjectsV2 runs the list objects v2 operation.
 func (m *MockS3Client) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input, opts ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
 	if m.listError != nil {
 		return nil, m.listError
@@ -74,6 +78,7 @@ func (m *MockS3Client) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV
 	}, nil
 }
 
+// DeleteObject runs the delete object operation.
 func (m *MockS3Client) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput, opts ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
 	if m.deleteError != nil {
 		return nil, m.deleteError
@@ -85,21 +90,25 @@ func (m *MockS3Client) DeleteObject(ctx context.Context, input *s3.DeleteObjectI
 
 // ========== Unit Tests for Helper Functions ==========
 
+// TestBuildS3Key_NoPrefix runs the test build s3 key_no prefix operation.
 func TestBuildS3Key_NoPrefix(t *testing.T) {
 	key := buildS3Key("", "myCollection")
 	assert.Equal(t, "snapshots/myCollection.parquet", key)
 }
 
+// TestBuildS3Key_WithPrefix runs the test build s3 key_with prefix operation.
 func TestBuildS3Key_WithPrefix(t *testing.T) {
 	key := buildS3Key("tenant1", "myCollection")
 	assert.Equal(t, "tenant1/snapshots/myCollection.parquet", key)
 }
 
+// TestBuildS3Key_PrefixWithTrailingSlash runs the test build s3 key_prefix with trailing slash operation.
 func TestBuildS3Key_PrefixWithTrailingSlash(t *testing.T) {
 	key := buildS3Key("tenant1/", "myCollection")
 	assert.Equal(t, "tenant1/snapshots/myCollection.parquet", key)
 }
 
+// TestBuildS3Key_NestedPrefix runs the test build s3 key_nested prefix operation.
 func TestBuildS3Key_NestedPrefix(t *testing.T) {
 	key := buildS3Key("env/prod/region1", "myCollection")
 	assert.Equal(t, "env/prod/region1/snapshots/myCollection.parquet", key)
@@ -107,21 +116,25 @@ func TestBuildS3Key_NestedPrefix(t *testing.T) {
 
 // ========== Error Type Tests ==========
 
+// TestNotFoundError_Error runs the test not found error_error operation.
 func TestNotFoundError_Error(t *testing.T) {
 	err := &NotFoundError{Name: "test-collection"}
 	assert.Equal(t, "snapshot not found: test-collection", err.Error())
 }
 
+// TestIsNotFoundError_True runs the test is not found error_true operation.
 func TestIsNotFoundError_True(t *testing.T) {
 	err := &NotFoundError{Name: "test"}
 	assert.True(t, IsNotFoundError(err))
 }
 
+// TestIsNotFoundError_False runs the test is not found error_false operation.
 func TestIsNotFoundError_False(t *testing.T) {
 	err := errors.New("some other error")
 	assert.False(t, IsNotFoundError(err))
 }
 
+// TestIsNotFoundError_WrappedError runs the test is not found error_wrapped error operation.
 func TestIsNotFoundError_WrappedError(t *testing.T) {
 	inner := &NotFoundError{Name: "test"}
 	wrapped := errors.Join(errors.New("wrapper"), inner)
@@ -130,6 +143,7 @@ func TestIsNotFoundError_WrappedError(t *testing.T) {
 
 // ========== Config Validation Tests ==========
 
+// TestS3BackendConfig_Validate_MissingBucket runs the test s3 backend config_validate_missing bucket operation.
 func TestS3BackendConfig_Validate_MissingBucket(t *testing.T) {
 	cfg := &S3BackendConfig{
 		AccessKeyID:     "key",
@@ -140,6 +154,7 @@ func TestS3BackendConfig_Validate_MissingBucket(t *testing.T) {
 	assert.Contains(t, err.Error(), "bucket")
 }
 
+// TestS3BackendConfig_Validate_MissingCredentials runs the test s3 backend config_validate_missing credentials operation.
 func TestS3BackendConfig_Validate_MissingCredentials(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Bucket: "my-bucket",
@@ -149,6 +164,7 @@ func TestS3BackendConfig_Validate_MissingCredentials(t *testing.T) {
 	assert.Contains(t, err.Error(), "credentials")
 }
 
+// TestS3BackendConfig_Validate_MissingSecretKey runs the test s3 backend config_validate_missing secret key operation.
 func TestS3BackendConfig_Validate_MissingSecretKey(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Bucket:      "my-bucket",
@@ -159,6 +175,7 @@ func TestS3BackendConfig_Validate_MissingSecretKey(t *testing.T) {
 	assert.Contains(t, err.Error(), "credentials")
 }
 
+// TestS3BackendConfig_Validate_Success runs the test s3 backend config_validate_success operation.
 func TestS3BackendConfig_Validate_Success(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Bucket:          "my-bucket",
@@ -171,6 +188,7 @@ func TestS3BackendConfig_Validate_Success(t *testing.T) {
 
 // ========== S3Backend Creation Tests ==========
 
+// TestNewS3Backend_InvalidConfig runs the test new s3 backend_invalid config operation.
 func TestNewS3Backend_InvalidConfig(t *testing.T) {
 	cfg := &S3BackendConfig{}
 	_, err := NewS3Backend(cfg)
@@ -178,6 +196,7 @@ func TestNewS3Backend_InvalidConfig(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid S3 config")
 }
 
+// TestNewS3Backend_DefaultRegion runs the test new s3 backend_default region operation.
 func TestNewS3Backend_DefaultRegion(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Bucket:          "test-bucket",
@@ -192,6 +211,7 @@ func TestNewS3Backend_DefaultRegion(t *testing.T) {
 	assert.Equal(t, "test-bucket", backend.Bucket())
 }
 
+// TestNewS3Backend_CustomRegion runs the test new s3 backend_custom region operation.
 func TestNewS3Backend_CustomRegion(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Bucket:          "test-bucket",
@@ -205,6 +225,7 @@ func TestNewS3Backend_CustomRegion(t *testing.T) {
 	assert.NotNil(t, backend)
 }
 
+// TestNewS3Backend_WithPrefix runs the test new s3 backend_with prefix operation.
 func TestNewS3Backend_WithPrefix(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Bucket:          "test-bucket",
@@ -218,6 +239,7 @@ func TestNewS3Backend_WithPrefix(t *testing.T) {
 	assert.Equal(t, "tenant1", backend.Prefix())
 }
 
+// TestNewS3Backend_ConnectionPoolSettings runs the test new s3 backend_connection pool settings operation.
 func TestNewS3Backend_ConnectionPoolSettings(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Bucket:              "test-bucket",
@@ -234,6 +256,7 @@ func TestNewS3Backend_ConnectionPoolSettings(t *testing.T) {
 	assert.Equal(t, 25, backend.GetHTTPTransport().MaxIdleConnsPerHost)
 }
 
+// TestNewS3Backend_DefaultConnectionPoolSettings runs the test new s3 backend_default connection pool settings operation.
 func TestNewS3Backend_DefaultConnectionPoolSettings(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Bucket:          "test-bucket",
@@ -248,6 +271,7 @@ func TestNewS3Backend_DefaultConnectionPoolSettings(t *testing.T) {
 	assert.Equal(t, DefaultMaxIdleConnsPerHost, transport.MaxIdleConnsPerHost)
 }
 
+// TestS3Backend_GetHTTPClient runs the test s3 backend_get http client operation.
 func TestS3Backend_GetHTTPClient(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Bucket:          "test-bucket",
@@ -262,6 +286,7 @@ func TestS3Backend_GetHTTPClient(t *testing.T) {
 
 // ========== Interface Compliance Test ==========
 
+// TestS3Backend_ImplementsSnapshotBackend runs the test s3 backend_implements snapshot backend operation.
 func TestS3Backend_ImplementsSnapshotBackend(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Bucket:          "test-bucket",
@@ -279,6 +304,7 @@ func TestS3Backend_ImplementsSnapshotBackend(t *testing.T) {
 
 // ========== S3Backend Operation Tests with Mock ==========
 
+// TestS3Backend_Operations runs the test s3 backend_operations operation.
 func TestS3Backend_Operations(t *testing.T) {
 	mockClient := NewMockS3Client()
 	backend := &S3Backend{

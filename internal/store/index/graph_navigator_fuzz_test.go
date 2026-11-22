@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// FuzzFindPath runs the fuzz find path operation.
 func FuzzFindPath(f *testing.F) {
 	// Seed data: startID, targetID, maxHops, earlyTerminate, distThreshold
 	f.Add(uint32(0), uint32(10), 5, true, float32(0.5))

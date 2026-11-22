@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestBQEncoder_Encode runs the test bq encoder_encode operation.
 func TestBQEncoder_Encode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -48,6 +49,7 @@ func TestBQEncoder_Encode(t *testing.T) {
 	assert.Equal(t, expected, code3[0])
 }
 
+// TestBQEncoder_HammingDistance runs the test bq encoder_hamming distance operation.
 func TestBQEncoder_HammingDistance(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -64,6 +66,7 @@ func TestBQEncoder_HammingDistance(t *testing.T) {
 	assert.Equal(t, 1, dist2)
 }
 
+// TestBQEncoder_Integration runs the test bq encoder_integration operation.
 func TestBQEncoder_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

@@ -15,6 +15,7 @@ import (
 */
 import "C"
 
+// GPUMemoryPool represents a gpu memory pool value.
 type GPUMemoryPool struct {
 	deviceID         int
 	smallBuffers     map[int]*sync.Pool
@@ -30,10 +31,13 @@ var gpuMemoryPools map[int]*GPUMemoryPool
 var gpuMemoryPoolsMu sync.RWMutex
 
 const (
+	// SmallBufferThreshold is a small buffer threshold constant.
 	SmallBufferThreshold = 64 * 1024 // 64KB
-	NumSmallSizes        = 16
+	// NumSmallSizes is a num small sizes constant.
+	NumSmallSizes = 16
 )
 
+// GetGPUMemoryPool returns the gpu memory pool.
 func GetGPUMemoryPool(deviceID int) *GPUMemoryPool {
 	gpuMemoryPoolsMu.RLock()
 	pool, exists := gpuMemoryPools[deviceID]
@@ -69,6 +73,7 @@ func GetGPUMemoryPool(deviceID int) *GPUMemoryPool {
 	return pool
 }
 
+// Allocate runs the allocate operation.
 func (p *GPUMemoryPool) Allocate(size int) []byte {
 	if size <= SmallBufferThreshold {
 		for s := 4096; s <= SmallBufferThreshold; s *= 2 {
@@ -90,6 +95,7 @@ func (p *GPUMemoryPool) Allocate(size int) []byte {
 	return make([]byte, size)
 }
 
+// Deallocate runs the deallocate operation.
 func (p *GPUMemoryPool) Deallocate(buf []byte, size int) {
 	if size <= SmallBufferThreshold {
 		for s := 4096; s <= SmallBufferThreshold; s *= 2 {
@@ -103,10 +109,12 @@ func (p *GPUMemoryPool) Deallocate(buf []byte, size int) {
 	atomic.AddInt64(&p.totalAllocated, -int64(size))
 }
 
+// Stats runs the stats operation.
 func (p *GPUMemoryPool) Stats() (totalAllocated int64, hitCount int64, missCount int64) {
 	return p.totalAllocated, p.hitCount, p.missCount
 }
 
+// HitRate runs the hit rate operation.
 func (p *GPUMemoryPool) HitRate() float64 {
 	total := p.hitCount + p.missCount
 	if total == 0 {
@@ -115,6 +123,7 @@ func (p *GPUMemoryPool) HitRate() float64 {
 	return float64(p.hitCount) / float64(total)
 }
 
+// PinnedMemoryPool represents a pinned memory pool value.
 type PinnedMemoryPool struct {
 	pool      *sync.Pool
 	pageSize  int
@@ -125,6 +134,7 @@ type PinnedMemoryPool struct {
 var pinnedPools map[int]*PinnedMemoryPool
 var pinnedPoolsMu sync.RWMutex
 
+// GetPinnedMemoryPool returns the pinned memory pool.
 func GetPinnedMemoryPool(deviceID int) *PinnedMemoryPool {
 	pinnedPoolsMu.RLock()
 	pool, exists := pinnedPools[deviceID]
@@ -164,6 +174,7 @@ func (p *PinnedMemoryPool) allocatePage() []byte {
 	return buf
 }
 
+// Get returns the .
 func (p *PinnedMemoryPool) Get(size int) []byte {
 	if size <= p.pageSize {
 		return p.pool.Get().([]byte)[:size]
@@ -184,6 +195,7 @@ func (p *PinnedMemoryPool) Get(size int) []byte {
 	return buf[:size]
 }
 
+// Put runs the put operation.
 func (p *PinnedMemoryPool) Put(buf []byte) {
 	if cap(buf) == p.pageSize {
 		C.free(unsafe.Pointer(&buf[0]))
@@ -195,6 +207,7 @@ func (p *PinnedMemoryPool) Put(buf []byte) {
 	}
 }
 
+// TransferBuffer represents a transfer buffer value.
 type TransferBuffer struct {
 	cpuBuf   []byte
 	gpuBuf   unsafe.Pointer
@@ -204,6 +217,7 @@ type TransferBuffer struct {
 	stream   unsafe.Pointer
 }
 
+// NewTransferBuffer constructs a new TransferBuffer.
 func NewTransferBuffer(size int, deviceID int) (*TransferBuffer, error) {
 	tb := &TransferBuffer{
 		size:     size,
@@ -221,18 +235,22 @@ func NewTransferBuffer(size int, deviceID int) (*TransferBuffer, error) {
 	return tb, nil
 }
 
+// CPUBuffer runs the cpu buffer operation.
 func (tb *TransferBuffer) CPUBuffer() []byte {
 	return tb.cpuBuf
 }
 
+// GPUBuffer runs the gpu buffer operation.
 func (tb *TransferBuffer) GPUBuffer() unsafe.Pointer {
 	return tb.gpuBuf
 }
 
+// Size runs the size operation.
 func (tb *TransferBuffer) Size() int {
 	return tb.size
 }
 
+// CopyToGPU runs the copy to gpu operation.
 func (tb *TransferBuffer) CopyToGPU() error {
 	result := C.cudaMemcpy(tb.gpuBuf, unsafe.Pointer(&tb.cpuBuf[0]), C.size_t(tb.size), C.cudaMemcpyHostToDevice)
 	if result != C.cudaSuccess {
@@ -241,6 +259,7 @@ func (tb *TransferBuffer) CopyToGPU() error {
 	return nil
 }
 
+// CopyFromGPU runs the copy from gpu operation.
 func (tb *TransferBuffer) CopyFromGPU() error {
 	result := C.cudaMemcpy(unsafe.Pointer(&tb.cpuBuf[0]), tb.gpuBuf, C.size_t(tb.size), C.cudaMemcpyDeviceToHost)
 	if result != C.cudaSuccess {
@@ -249,6 +268,7 @@ func (tb *TransferBuffer) CopyFromGPU() error {
 	return nil
 }
 
+// Close runs the close operation.
 func (tb *TransferBuffer) Close() error {
 	if tb.cpuBuf != nil && tb.isPinned {
 		GetPinnedMemoryPool(tb.deviceID).Put(tb.cpuBuf)

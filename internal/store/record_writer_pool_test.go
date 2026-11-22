@@ -17,6 +17,7 @@ import (
 // RecordWriterPool Tests - TDD Red Phase
 // =============================================================================
 
+// TestRecordWriterPoolConfig_Defaults runs the test record writer pool config_defaults operation.
 func TestRecordWriterPoolConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -28,6 +29,7 @@ func TestRecordWriterPoolConfig_Defaults(t *testing.T) {
 	assert.True(t, cfg.UseLZ4, "LZ4 compression should be enabled by default")
 }
 
+// TestRecordWriterPoolConfig_Validation runs the test record writer pool config_validation operation.
 func TestRecordWriterPoolConfig_Validation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -66,6 +68,7 @@ func TestRecordWriterPoolConfig_Validation(t *testing.T) {
 	}
 }
 
+// TestIPCBufferPool_GetAndPut runs the test ipc buffer pool_get and put operation.
 func TestIPCBufferPool_GetAndPut(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -91,6 +94,7 @@ func TestIPCBufferPool_GetAndPut(t *testing.T) {
 	pool.Put(buf2)
 }
 
+// TestIPCBufferPool_OversizedBufferDiscarded runs the test ipc buffer pool_oversized buffer discarded operation.
 func TestIPCBufferPool_OversizedBufferDiscarded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -115,6 +119,7 @@ func TestIPCBufferPool_OversizedBufferDiscarded(t *testing.T) {
 	assert.Equal(t, int64(1), stats.Discarded, "oversized buffer should be discarded")
 }
 
+// TestIPCBufferPool_ConcurrentAccess runs the test ipc buffer pool_concurrent access operation.
 func TestIPCBufferPool_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -143,6 +148,7 @@ func TestIPCBufferPool_ConcurrentAccess(t *testing.T) {
 	assert.Equal(t, int64(goroutines*iterations), stats.Puts)
 }
 
+// TestIPCBufferPool_Stats runs the test ipc buffer pool_stats operation.
 func TestIPCBufferPool_Stats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -182,6 +188,7 @@ func TestIPCBufferPool_Stats(t *testing.T) {
 	pool.Put(buf2)
 }
 
+// TestPooledRecordWriter_WriteRecordBatch runs the test pooled record writer_write record batch operation.
 func TestPooledRecordWriter_WriteRecordBatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -216,6 +223,7 @@ func TestPooledRecordWriter_WriteRecordBatch(t *testing.T) {
 	assert.True(t, buf.Len() > 0, "buffer should contain IPC data")
 }
 
+// TestPooledRecordWriter_BufferReuse runs the test pooled record writer_buffer reuse operation.
 func TestPooledRecordWriter_BufferReuse(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -279,6 +287,7 @@ func TestPooledRecordWriter_BufferReuse(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkIPCBufferPool_GetPut runs the benchmark ipc buffer pool_get put operation.
 func BenchmarkIPCBufferPool_GetPut(b *testing.B) {
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
 
@@ -290,6 +299,7 @@ func BenchmarkIPCBufferPool_GetPut(b *testing.B) {
 	}
 }
 
+// BenchmarkIPCBufferPool_NoPool runs the benchmark ipc buffer pool_no pool operation.
 func BenchmarkIPCBufferPool_NoPool(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
@@ -299,6 +309,7 @@ func BenchmarkIPCBufferPool_NoPool(b *testing.B) {
 	}
 }
 
+// BenchmarkPooledRecordWriter runs the benchmark pooled record writer operation.
 func BenchmarkPooledRecordWriter(b *testing.B) {
 	alloc := memory.NewGoAllocator()
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
@@ -326,6 +337,7 @@ func BenchmarkPooledRecordWriter(b *testing.B) {
 	}
 }
 
+// BenchmarkUnpooledRecordWriter runs the benchmark unpooled record writer operation.
 func BenchmarkUnpooledRecordWriter(b *testing.B) {
 	alloc := memory.NewGoAllocator()
 

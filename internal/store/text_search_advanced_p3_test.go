@@ -176,6 +176,7 @@ func requireP3Parity(t *testing.T, corpus *cachedTextCorpus, query string, k, fu
 	}
 }
 
+// TestAdvancedTextCandidateParity runs the test advanced text candidate parity operation.
 func TestAdvancedTextCandidateParity(t *testing.T) {
 	const n = 400
 	corpus, records := buildP3TextCorpus(t, n, 50, parityText)
@@ -205,6 +206,7 @@ func TestAdvancedTextCandidateParity(t *testing.T) {
 	requireP3Parity(t, corpus, "quack", 10, 3)
 }
 
+// TestAdvancedTextPhraseDoesNotMissSubstrings runs the test advanced text phrase does not miss substrings operation.
 func TestAdvancedTextPhraseDoesNotMissSubstrings(t *testing.T) {
 	corpus, records := buildP3TextCorpus(t, 40, 10, func(i int) string {
 		if i == 7 {
@@ -222,6 +224,7 @@ func TestAdvancedTextPhraseDoesNotMissSubstrings(t *testing.T) {
 	}
 }
 
+// TestAdvancedTextBM25BatchParity runs the test advanced text bm25 batch parity operation.
 func TestAdvancedTextBM25BatchParity(t *testing.T) {
 	const n = 5000
 	corpus, records := buildP3TextCorpus(t, n, 500, func(i int) string {
@@ -266,6 +269,7 @@ func TestAdvancedTextBM25BatchParity(t *testing.T) {
 	}
 }
 
+// TestAdvancedTextShardReuse runs the test advanced text shard reuse operation.
 func TestAdvancedTextShardReuse(t *testing.T) {
 	records := []arrow.RecordBatch{
 		buildP3TextBatch(0, 3, func(i int) string { return fmt.Sprintf("batch zero doc%d", i) }),
@@ -333,6 +337,7 @@ func TestAdvancedTextShardReuse(t *testing.T) {
 	}
 }
 
+// TestAdvancedTextNoCandidateCap runs the test advanced text no candidate cap operation.
 func TestAdvancedTextNoCandidateCap(t *testing.T) {
 	// A query whose only match sits beyond the old 50k evaluation cap must
 	// still be found now that the cap is gone and exact candidates drive search.

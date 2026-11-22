@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// FuzzTPUEnqueue runs the fuzz tpu enqueue operation.
 func FuzzTPUEnqueue(f *testing.F) {
 	f.Add(10)
 	f.Fuzz(func(t *testing.T, size int) {

@@ -11,6 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// SetVectorPQ sets the vector pq.
 func (g *GraphData) SetVectorPQ(id uint32, code []byte) error {
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
@@ -47,10 +48,12 @@ func (g *GraphData) SetVectorPQ(id uint32, code []byte) error {
 	return fmt.Errorf("failed to set PQ vector for id %d", id)
 }
 
+// GetVector returns the vector.
 func (g *GraphData) GetVector(id uint32) (any, error) {
 	return g.GetVectorWithGen(id, math.MaxUint64)
 }
 
+// GetVectorWithGen returns the vector with gen.
 func (g *GraphData) GetVectorWithGen(id uint32, maxGen uint64) (any, error) {
 	if g.Dims <= 0 {
 		return nil, fmt.Errorf("vector type mismatch or uninitialized for ID %d (dims is 0)", id)
@@ -214,6 +217,7 @@ func (g *GraphData) GetVectorWithGen(id uint32, maxGen uint64) (any, error) {
 	return nil, fmt.Errorf("vector type mismatch or uninitialized for ID %d (type %v)", id, g.Type)
 }
 
+// SetVector sets the vector.
 func (g *GraphData) SetVector(id uint32, vec any) error {
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
@@ -377,6 +381,7 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 
 // GetComplex128Magnitude returns the pre-computed L2 magnitude for a complex128 vector.
 
+// GetComplex128Magnitude returns the complex128 magnitude.
 func (g *GraphData) GetComplex128Magnitude(id uint32) float64 {
 	if int(id) < len(g.Complex128Magnitudes) {
 		return g.Complex128Magnitudes[id]
@@ -436,6 +441,7 @@ func (g *GraphData) SetVectorsBatch(startID uint32, vecs [][]float32) error {
 	return nil
 }
 
+// GetVectorPQ returns the vector pq.
 func (g *GraphData) GetVectorPQ(id uint32) []byte {
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
@@ -457,6 +463,7 @@ func (g *GraphData) GetVectorPQ(id uint32) []byte {
 	return nil
 }
 
+// GetVectorPQWithGen returns the vector pq with gen.
 func (g *GraphData) GetVectorPQWithGen(id uint32, maxGen uint64) []byte {
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
@@ -488,6 +495,7 @@ func (g *GraphData) GetVectorPQWithGen(id uint32, maxGen uint64) []byte {
 	return nil
 }
 
+// GetVectorBQ returns the vector bq.
 func (g *GraphData) GetVectorBQ(id uint32) ([]uint64, error) {
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
@@ -511,6 +519,7 @@ func (g *GraphData) GetVectorBQ(id uint32) ([]uint64, error) {
 	return nil, fmt.Errorf("BQ vector not found for id %d", id)
 }
 
+// SetVectorBQ sets the vector bq.
 func (g *GraphData) SetVectorBQ(id uint32, vec []uint64) error {
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
@@ -535,6 +544,7 @@ func (g *GraphData) SetVectorBQ(id uint32, vec []uint64) error {
 	return fmt.Errorf("failed to set BQ vector for id %d", id)
 }
 
+// GetVectorSQ8 returns the vector sq8.
 func (g *GraphData) GetVectorSQ8(id uint32) []byte {
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize

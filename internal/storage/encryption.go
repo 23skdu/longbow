@@ -209,6 +209,7 @@ func NewEncryptedWALBackend(inner WALBackend, ce *CipherEngine) *EncryptedWALBac
 	}
 }
 
+// Write runs the write operation.
 func (w *EncryptedWALBackend) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -229,9 +230,16 @@ func (w *EncryptedWALBackend) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (w *EncryptedWALBackend) Sync() error    { return w.inner.Sync() }
-func (w *EncryptedWALBackend) Close() error   { return w.inner.Close() }
-func (w *EncryptedWALBackend) Name() string   { return w.inner.Name() + "+encrypted" }
+// Sync runs the sync operation.
+func (w *EncryptedWALBackend) Sync() error { return w.inner.Sync() }
+
+// Close runs the close operation.
+func (w *EncryptedWALBackend) Close() error { return w.inner.Close() }
+
+// Name runs the name operation.
+func (w *EncryptedWALBackend) Name() string { return w.inner.Name() + "+encrypted" }
+
+// File runs the file operation.
 func (w *EncryptedWALBackend) File() *os.File { return w.inner.File() }
 
 // DecryptWALFrames reads and decrypts all encrypted WAL frames from r.
@@ -294,6 +302,7 @@ func (b *EncryptedStorageBackend) slotSize() int {
 	return 4 + b.blockSize + 256
 }
 
+// ReadAt runs the read at operation.
 func (b *EncryptedStorageBackend) ReadAt(p []byte, off int64) (int, error) {
 	if off < 0 {
 		return 0, errors.New("storage: negative offset")
@@ -327,6 +336,7 @@ func (b *EncryptedStorageBackend) ReadAt(p []byte, off int64) (int, error) {
 	return readTotal, nil
 }
 
+// WriteAt runs the write at operation.
 func (b *EncryptedStorageBackend) WriteAt(p []byte, off int64) (int, error) {
 	if off < 0 {
 		return 0, errors.New("storage: negative offset")
@@ -404,6 +414,7 @@ func (b *EncryptedStorageBackend) writePageLocked(pageIdx int64, plain []byte) e
 	return err
 }
 
+// Readv runs the readv operation.
 func (b *EncryptedStorageBackend) Readv(iovs [][]byte, off int64) (int, error) {
 	total := 0
 	curr := off
@@ -418,6 +429,7 @@ func (b *EncryptedStorageBackend) Readv(iovs [][]byte, off int64) (int, error) {
 	return total, nil
 }
 
+// Writev runs the writev operation.
 func (b *EncryptedStorageBackend) Writev(iovs [][]byte, off int64) (int, error) {
 	total := 0
 	curr := off
@@ -432,9 +444,16 @@ func (b *EncryptedStorageBackend) Writev(iovs [][]byte, off int64) (int, error) 
 	return total, nil
 }
 
-func (b *EncryptedStorageBackend) Sync() error  { return b.inner.Sync() }
+// Sync runs the sync operation.
+func (b *EncryptedStorageBackend) Sync() error { return b.inner.Sync() }
+
+// Close runs the close operation.
 func (b *EncryptedStorageBackend) Close() error { return b.inner.Close() }
+
+// Name runs the name operation.
 func (b *EncryptedStorageBackend) Name() string { return b.inner.Name() + "+encrypted" }
+
+// Size runs the size operation.
 func (b *EncryptedStorageBackend) Size() (int64, error) {
 	b.mu.RLock()
 	sz := b.logicalSz
@@ -461,6 +480,7 @@ func NewEncryptedSnapshotBackend(inner SnapshotBackend, ce *CipherEngine) Snapsh
 	return &EncryptedSnapshotBackend{inner: inner, ce: ce}
 }
 
+// WriteSnapshot runs the write snapshot operation.
 func (s *EncryptedSnapshotBackend) WriteSnapshot(ctx context.Context, name string, data []byte) error {
 	sealed, err := s.ce.Seal(data, []byte(name))
 	if err != nil {
@@ -469,6 +489,7 @@ func (s *EncryptedSnapshotBackend) WriteSnapshot(ctx context.Context, name strin
 	return s.inner.WriteSnapshot(ctx, name, sealed)
 }
 
+// ReadSnapshot runs the read snapshot operation.
 func (s *EncryptedSnapshotBackend) ReadSnapshot(ctx context.Context, name string) (io.ReadCloser, error) {
 	rc, err := s.inner.ReadSnapshot(ctx, name)
 	if err != nil {
@@ -486,14 +507,17 @@ func (s *EncryptedSnapshotBackend) ReadSnapshot(ctx context.Context, name string
 	return io.NopCloser(bytes.NewReader(plain)), nil
 }
 
+// ListSnapshots runs the list snapshots operation.
 func (s *EncryptedSnapshotBackend) ListSnapshots(ctx context.Context) ([]string, error) {
 	return s.inner.ListSnapshots(ctx)
 }
 
+// DeleteSnapshot runs the delete snapshot operation.
 func (s *EncryptedSnapshotBackend) DeleteSnapshot(ctx context.Context, name string) error {
 	return s.inner.DeleteSnapshot(ctx, name)
 }
 
+// WriteSnapshotAsync runs the write snapshot async operation.
 func (s *EncryptedSnapshotBackend) WriteSnapshotAsync(name string, data []byte) {
 	sealed, err := s.ce.Seal(data, []byte(name))
 	if err != nil {
@@ -502,6 +526,7 @@ func (s *EncryptedSnapshotBackend) WriteSnapshotAsync(name string, data []byte) 
 	s.inner.WriteSnapshotAsync(name, sealed)
 }
 
+// WriteSnapshotFile runs the write snapshot file operation.
 func (s *EncryptedSnapshotBackend) WriteSnapshotFile(ctx context.Context, name, ext string, r io.Reader) error {
 	raw, err := io.ReadAll(r)
 	if err != nil {
@@ -514,6 +539,7 @@ func (s *EncryptedSnapshotBackend) WriteSnapshotFile(ctx context.Context, name, 
 	return s.inner.WriteSnapshotFile(ctx, name, ext, bytes.NewReader(sealed))
 }
 
+// ReadSnapshotFile runs the read snapshot file operation.
 func (s *EncryptedSnapshotBackend) ReadSnapshotFile(ctx context.Context, name, ext string) (io.ReadCloser, error) {
 	rc, err := s.inner.ReadSnapshotFile(ctx, name, ext)
 	if err != nil {
@@ -531,11 +557,18 @@ func (s *EncryptedSnapshotBackend) ReadSnapshotFile(ctx context.Context, name, e
 	return io.NopCloser(bytes.NewReader(plain)), nil
 }
 
+// Bucket runs the bucket operation.
 func (s *EncryptedSnapshotBackend) Bucket() string { return s.inner.Bucket() }
+
+// Prefix runs the prefix operation.
 func (s *EncryptedSnapshotBackend) Prefix() string { return s.inner.Prefix() }
+
+// GetHTTPTransport returns the http transport.
 func (s *EncryptedSnapshotBackend) GetHTTPTransport() *http.Transport {
 	return s.inner.GetHTTPTransport()
 }
+
+// GetHTTPClient returns the http client.
 func (s *EncryptedSnapshotBackend) GetHTTPClient() *http.Client { return s.inner.GetHTTPClient() }
 
 func minInt(a, b int) int {

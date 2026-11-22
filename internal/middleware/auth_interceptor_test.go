@@ -19,6 +19,7 @@ type stubValidator struct {
 	tokens map[string]*security.TenantContext
 }
 
+// AuthorizeToken runs the authorize token operation.
 func (s *stubValidator) AuthorizeToken(_ context.Context, rawToken, permission, namespace, dataset string) (*security.TenantContext, error) {
 	tc, ok := s.tokens[rawToken]
 	if !ok {
@@ -33,6 +34,7 @@ func (s *stubValidator) AuthorizeToken(_ context.Context, rawToken, permission, 
 	return tc, nil
 }
 
+// TestAuthUnaryAndHTTPMiddleware runs the test auth unary and http middleware operation.
 func TestAuthUnaryAndHTTPMiddleware(t *testing.T) {
 	audit := security.NewAuditLogger()
 	validator := &stubValidator{
@@ -117,6 +119,7 @@ func TestAuthUnaryAndHTTPMiddleware(t *testing.T) {
 	require.Equal(t, "tenant1", rec2.Body.String())
 }
 
+// FuzzExtractBearerToken runs the fuzz extract bearer token operation.
 func FuzzExtractBearerToken(f *testing.F) {
 	f.Add("Bearer abc123", "tenant-a", "ds1")
 	f.Add("rawtoken", "", "")

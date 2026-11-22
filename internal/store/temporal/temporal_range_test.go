@@ -278,6 +278,7 @@ func temporalRangeProbes(ops []temporalTestOp, base int64) []struct {
 	}
 }
 
+// TestTemporalRangeParity runs the test temporal range parity operation.
 func TestTemporalRangeParity(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping temporal range parity in short mode")

@@ -24,6 +24,7 @@ type stringFilterOp struct {
 	codes   []uint16
 }
 
+// SetDictionaryCodes sets the dictionary codes.
 func (o *stringFilterOp) SetDictionaryCodes(codes []uint16, dict *StringDictionary) {
 	o.codes = codes
 	o.dict = dict
@@ -32,7 +33,10 @@ func (o *stringFilterOp) SetDictionaryCodes(codes []uint16, dict *StringDictiona
 	}
 }
 
+// Compound runs the compound operation.
 func (o *stringFilterOp) Compound() bool { return false }
+
+// MatchValue runs the match value operation.
 func (o *stringFilterOp) MatchValue(val interface{}) bool {
 	v, ok := val.(string)
 	if !ok {
@@ -57,6 +61,8 @@ func (o *stringFilterOp) compareString(v string) bool {
 	}
 	return false
 }
+
+// Bind runs the bind operation.
 func (o *stringFilterOp) Bind(col arrow.Array) error {
 	if col.DataType().ID() != arrow.STRING {
 		return fmt.Errorf("expected String column, got %s", col.DataType())
@@ -70,6 +76,7 @@ func (o *stringFilterOp) Bind(col arrow.Array) error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (o *stringFilterOp) Reset(rec arrow.RecordBatch) error {
 	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
 		return fmt.Errorf("column index %d out of bounds", o.colIdx)
@@ -77,6 +84,7 @@ func (o *stringFilterOp) Reset(rec arrow.RecordBatch) error {
 	return o.Bind(rec.Column(o.colIdx))
 }
 
+// Match runs the match operation.
 func (o *stringFilterOp) Match(rowIdx int) bool {
 	if o.col.NullN() > 0 && o.col.IsNull(rowIdx) {
 		return false
@@ -125,6 +133,7 @@ func (o *stringFilterOp) Match(rowIdx int) bool {
 	return false
 }
 
+// MatchBitmap runs the match bitmap operation.
 func (o *stringFilterOp) MatchBitmap(dst []byte) {
 	start := time.Now()
 	defer func() {
@@ -321,6 +330,7 @@ func (o *stringFilterOp) MatchBitmap(dst []byte) {
 	}
 }
 
+// FilterBatch runs the filter batch operation.
 func (o *stringFilterOp) FilterBatch(indices []int) []int {
 	// String comparison is hard to vectorize without fancy SIMD (PCMPESTRM) or fixed width.
 	// Fallback to loop for now.
@@ -342,7 +352,10 @@ type boolFilterOp struct {
 	colIdx   int
 }
 
+// Compound runs the compound operation.
 func (o *boolFilterOp) Compound() bool { return false }
+
+// MatchValue runs the match value operation.
 func (o *boolFilterOp) MatchValue(val interface{}) bool {
 	if v, ok := val.(bool); ok {
 		return o.compareBool(v)
@@ -358,6 +371,8 @@ func (o *boolFilterOp) compareBool(v bool) bool {
 	}
 	return false
 }
+
+// Bind runs the bind operation.
 func (o *boolFilterOp) Bind(col arrow.Array) error {
 	if col.DataType().ID() != arrow.BOOL {
 		return fmt.Errorf("expected boolean column, got %s", col.DataType())
@@ -366,12 +381,15 @@ func (o *boolFilterOp) Bind(col arrow.Array) error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (o *boolFilterOp) Reset(rec arrow.RecordBatch) error {
 	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
 		return fmt.Errorf("column index %d out of bounds", o.colIdx)
 	}
 	return o.Bind(rec.Column(o.colIdx))
 }
+
+// Match runs the match operation.
 func (o *boolFilterOp) Match(rowIdx int) bool {
 	data := o.col.Data().Buffers()[1].Bytes()
 	offset := o.col.Data().Offset()
@@ -388,6 +406,8 @@ func (o *boolFilterOp) Match(rowIdx int) bool {
 	bit := (data[idx/8] >> (idx % 8)) & 1
 	return o.compareBool(bit == 1)
 }
+
+// MatchBitmap runs the match bitmap operation.
 func (o *boolFilterOp) MatchBitmap(dst []byte) {
 	dataBuf := o.col.Data().Buffers()[1].Bytes()
 	offset := o.col.Data().Offset()
@@ -429,6 +449,8 @@ func (o *boolFilterOp) MatchBitmap(dst []byte) {
 		}
 	}
 }
+
+// FilterBatch runs the filter batch operation.
 func (o *boolFilterOp) FilterBatch(indices []int) []int {
 	result := make([]int, 0, len(indices))
 	for _, idx := range indices {

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSearchContextCancellation runs the test search context cancellation operation.
 func TestSearchContextCancellation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -96,6 +97,7 @@ func TestSearchContextCancellation(t *testing.T) {
 	}
 }
 
+// TestCompactionContextCancellation runs the test compaction context cancellation operation.
 func TestCompactionContextCancellation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

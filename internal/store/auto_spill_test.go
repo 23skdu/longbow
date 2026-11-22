@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestProjectVectorMemory_Calculations runs the test project vector memory_calculations operation.
 func TestProjectVectorMemory_Calculations(t *testing.T) {
 	// 1. Zero vectors or zero dims should return 0
 	assert.Equal(t, int64(0), ProjectVectorMemory(0, 128, types.VectorTypeFloat32))
@@ -33,6 +34,7 @@ func TestProjectVectorMemory_Calculations(t *testing.T) {
 	assert.Less(t, tqMem, f32HighMem/2, "TurboQuant memory should be less than half of Float32")
 }
 
+// TestShouldSpillToDisk_Thresholds runs the test should spill to disk_thresholds operation.
 func TestShouldSpillToDisk_Thresholds(t *testing.T) {
 	simulatedRAM := int64(24) * 1024 * 1024 * 1024 // 24 GB RAM
 
@@ -51,6 +53,7 @@ func TestShouldSpillToDisk_Thresholds(t *testing.T) {
 	assert.False(t, ShouldSpillToDisk(500000, 128, types.VectorTypeTQ, simulatedRAM, 0.70))
 }
 
+// TestShouldSpillToDisk_EnvOverrides runs the test should spill to disk_env overrides operation.
 func TestShouldSpillToDisk_EnvOverrides(t *testing.T) {
 	defer os.Unsetenv("LONGBOW_AUTO_SPILL_DISK")
 	defer os.Unsetenv("LONGBOW_SPILL_THRESHOLD_RATIO")
@@ -60,6 +63,7 @@ func TestShouldSpillToDisk_EnvOverrides(t *testing.T) {
 	assert.False(t, (&VectorStore{}).ShouldSpillToDisk(nil, nil))
 }
 
+// TestAutoSpillToDisk_InitDiskStoreIntegration runs the test auto spill to disk_init disk store integration operation.
 func TestAutoSpillToDisk_InitDiskStoreIntegration(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "autospill_*")
 	assert.NoError(t, err)
@@ -94,6 +98,7 @@ func TestAutoSpillToDisk_InitDiskStoreIntegration(t *testing.T) {
 	}
 }
 
+// FuzzMemoryProjectionThresholds runs the fuzz memory projection thresholds operation.
 func FuzzMemoryProjectionThresholds(f *testing.F) {
 	f.Add(int64(1000), 128, int(types.VectorTypeFloat32), int64(16*1024*1024*1024))
 	f.Add(int64(500000), 384, int(types.VectorTypeComplex128), int64(24*1024*1024*1024))

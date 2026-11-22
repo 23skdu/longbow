@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestVectorStore_RCU_Integration runs the test vector store_rcu_integration operation.
 func TestVectorStore_RCU_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -65,6 +66,7 @@ func TestVectorStore_RCU_Integration(t *testing.T) {
 	require.GreaterOrEqual(t, len(finalMap), 11)
 }
 
+// TestVectorStore_Persistence_FullFlow runs the test vector store_persistence_full flow operation.
 func TestVectorStore_Persistence_FullFlow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

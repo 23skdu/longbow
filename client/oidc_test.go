@@ -23,6 +23,7 @@ type mockOIDCExchangeServer struct {
 	seenAuth string
 }
 
+// DoAction runs the do action operation.
 func (m *mockOIDCExchangeServer) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	if action.Type != "ExchangeOIDCToken" {
 		return nil
@@ -36,6 +37,7 @@ func (m *mockOIDCExchangeServer) DoAction(action *flight.Action, stream flight.F
 	return stream.Send(&flight.Result{Body: body})
 }
 
+// TestAcquireAWSWebIdentityToken runs the test acquire aws web identity token operation.
 func TestAcquireAWSWebIdentityToken(t *testing.T) {
 	t.Setenv("AWS_WEB_IDENTITY_TOKEN_FILE", "")
 	_, err := AcquireAWSWebIdentityToken()
@@ -50,6 +52,7 @@ func TestAcquireAWSWebIdentityToken(t *testing.T) {
 	require.Equal(t, "header.payload.sig", tok)
 }
 
+// TestAcquireGoogleIDToken runs the test acquire google id token operation.
 func TestAcquireGoogleIDToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Google", r.Header.Get("Metadata-Flavor"))
@@ -63,6 +66,7 @@ func TestAcquireGoogleIDToken(t *testing.T) {
 	require.Equal(t, "gcp.id.token", tok)
 }
 
+// TestSmartClientExchangeOIDCToken runs the test smart client exchange oidc token operation.
 func TestSmartClientExchangeOIDCToken(t *testing.T) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

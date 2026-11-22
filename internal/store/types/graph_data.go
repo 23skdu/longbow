@@ -164,7 +164,7 @@ type graphFallback interface {
 	GetVector(id uint32) (any, error)
 }
 
-// PackedNeighbors interface for graph adjacency management with atomic support.
+// NeighborApplier interface for graph adjacency management with atomic support.
 // NeighborApplier computes a node's next neighbour list from its current one.
 //
 // It is an interface rather than a func because of who calls it: bulk linkage
@@ -184,6 +184,7 @@ type NeighborApplier interface {
 	OldScratch() []uint32
 }
 
+// PackedNeighbors represents a packed neighbors value.
 type PackedNeighbors interface {
 	// GetNeighbors returns the list of neighbor IDs for a given node.
 	GetNeighbors(id uint32) ([]uint32, bool)
@@ -289,6 +290,7 @@ func (g *GraphData) SetGeneration(gen uint64) {
 	}
 }
 
+// NeedsChunk runs the needs chunk operation.
 func (g *GraphData) NeedsChunk(cID int) bool {
 	// 0. Topology check (Levels are always needed locally)
 	// If Levels hasn't been preallocated for this cID yet, wait for GrowMetadataSlices
@@ -445,6 +447,7 @@ func (g *GraphData) NeedsChunk(cID int) bool {
 // visibility and the same bounds rejection, so any vector the reference
 // accessor would not serve yields nil here as well.
 
+// PackedSize runs the packed size operation.
 func (g *GraphData) PackedSize() int {
 	if g.Dims <= 0 {
 		return 0
@@ -463,6 +466,7 @@ func (g *GraphData) PackedSize() int {
 
 // GetVectorsTQChunk returns a chunk of TurboQuant compressed vectors.
 
+// GetPaddedDims returns the padded dims.
 func (g *GraphData) GetPaddedDims() int {
 	return g.GetPaddedDimsForType(g.Type)
 }
@@ -493,14 +497,17 @@ func (g *GraphData) GetPaddedDimsForType(dt VectorDataType) int {
 	}
 }
 
+// DiskStore runs the disk store operation.
 func (g *GraphData) DiskStore() any {
 	return g.BackingGraph
 }
 
+// PQDims runs the pq dims operation.
 func (g *GraphData) PQDims() int {
 	return 0
 }
 
+// AcquireReader runs the acquire reader operation.
 func (g *GraphData) AcquireReader() {
 	atomic.AddInt32(&g.readerCount, 1)
 }
@@ -514,6 +521,7 @@ func (g *GraphData) ReleaseReader() {
 // Clone creates a shallow copy of the GraphData with deep copies of the structure slices.
 // This allows concurrent readers to safely access the old structure while a new one is being built (COW).
 
+// NewGraphData constructs a new GraphData.
 func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	quantization bool, sq8 bool, persistent bool,
 	dataType VectorDataType, bqEnabled bool, pqEnabled bool,
@@ -786,6 +794,7 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	return gd
 }
 
+// Release runs the release operation.
 func (g *GraphData) Release() {
 	runtime.SetFinalizer(g, nil)
 	g.release(true)
@@ -903,6 +912,7 @@ func (g *GraphData) release(waitForActive bool) {
 	}
 }
 
+// Unregister runs the unregister operation.
 func (g *GraphData) Unregister() {
 	if g.Float32Arena != nil {
 		memory.UnregisterArena(g.Float32Arena.Slab().StatsRecord())
@@ -945,6 +955,7 @@ func (g *GraphData) Unregister() {
 	}
 }
 
+// EstimateMemory runs the estimate memory operation.
 func (g *GraphData) EstimateMemory() int64 {
 	var total int64
 	if g.Float32Arena != nil {

@@ -30,6 +30,7 @@ var (
 		[]string{"operation", "component", "status"},
 	)
 
+	// TraceDurationSeconds is a trace duration seconds value.
 	TraceDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_trace_duration_seconds",
@@ -39,6 +40,7 @@ var (
 		[]string{"operation", "component"},
 	)
 
+	// TraceSamplingRate is a trace sampling rate value.
 	TraceSamplingRate = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_trace_sampling_rate",
@@ -47,6 +49,7 @@ var (
 		[]string{"service", "operation"},
 	)
 
+	// TraceErrorsTotal is a trace errors total value.
 	TraceErrorsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_trace_errors_total",
@@ -55,6 +58,7 @@ var (
 		[]string{"operation", "component", "error_type"},
 	)
 
+	// TraceContextPropagationTotal is a trace context propagation total value.
 	TraceContextPropagationTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_trace_context_propagation_total",
@@ -63,6 +67,7 @@ var (
 		[]string{"source", "target", "status"},
 	)
 
+	// TraceBufferUtilization is a trace buffer utilization value.
 	TraceBufferUtilization = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_trace_buffer_utilization",
@@ -71,6 +76,7 @@ var (
 		[]string{"buffer_type"},
 	)
 
+	// TraceExportsTotal is a trace exports total value.
 	TraceExportsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_trace_exports_total",
@@ -79,6 +85,7 @@ var (
 		[]string{"backend", "status"},
 	)
 
+	// SearchLatencyTraced is a search latency traced value.
 	SearchLatencyTraced = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_search_latency_traced_seconds",
@@ -88,6 +95,7 @@ var (
 		[]string{"dataset", "search_type"},
 	)
 
+	// IndexingLatencyTraced is a indexing latency traced value.
 	IndexingLatencyTraced = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_indexing_latency_traced_seconds",
@@ -97,6 +105,7 @@ var (
 		[]string{"dataset", "index_type"},
 	)
 
+	// IOLatencyTraced is a io latency traced value.
 	IOLatencyTraced = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_io_latency_traced_seconds",
@@ -106,6 +115,7 @@ var (
 		[]string{"operation", "storage_type"},
 	)
 
+	// CorrelationIDActive is a correlation id active value.
 	CorrelationIDActive = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_correlation_id_active",
@@ -114,6 +124,7 @@ var (
 		[]string{"operation"},
 	)
 
+	// CorrelationIDTotal is a correlation id total value.
 	CorrelationIDTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_correlation_id_total",

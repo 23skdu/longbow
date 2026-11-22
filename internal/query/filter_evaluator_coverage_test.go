@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFilterEvaluator_AllTypes runs the test filter evaluator_all types operation.
 func TestFilterEvaluator_AllTypes(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
@@ -82,6 +83,7 @@ func TestFilterEvaluator_AllTypes(t *testing.T) {
 	})
 }
 
+// TestFilterEvaluator_Compound runs the test filter evaluator_compound operation.
 func TestFilterEvaluator_Compound(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
@@ -144,6 +146,7 @@ func TestFilterEvaluator_Compound(t *testing.T) {
 	})
 }
 
+// TestFilterEvaluator_Nested runs the test filter evaluator_nested operation.
 func TestFilterEvaluator_Nested(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	structType := arrow.StructOf(
@@ -176,6 +179,7 @@ func TestFilterEvaluator_Nested(t *testing.T) {
 	assert.True(t, eval.Matches(1))
 }
 
+// TestFilterEvaluator_MatchesAll_Extended runs the test filter evaluator_matches all_extended operation.
 func TestFilterEvaluator_MatchesAll_Extended(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{{Name: "val", Type: arrow.PrimitiveTypes.Int64}}, nil)

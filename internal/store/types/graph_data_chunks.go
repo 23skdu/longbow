@@ -10,6 +10,7 @@ import (
 	"github.com/23skdu/longbow/internal/memory"
 )
 
+// VectorChunkBatch represents a vector chunk batch value.
 type VectorChunkBatch[T any] struct {
 	arena      *memory.TypedArena[T]
 	batch      memory.TypedBatch[T]
@@ -336,6 +337,7 @@ func (g *GraphData) releaseArenaMemory(s *memory.SlabArena, offset uint64, size 
 	}
 }
 
+// EnsureChunk runs the ensure chunk operation.
 func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	if g.Dims == 0 && dims > 0 {
 		g.Dims = dims
@@ -745,6 +747,7 @@ func (g *GraphData) ensureLayerNeighborsChunk(layer, cID int) error {
 	return nil
 }
 
+// GrowMetadataSlices runs the grow metadata slices operation.
 func (g *GraphData) GrowMetadataSlices(numChunks int) {
 	if numChunks <= 0 {
 		return
@@ -752,6 +755,7 @@ func (g *GraphData) GrowMetadataSlices(numChunks int) {
 
 	// 1. Topology Chunks (Layered)
 	if len(g.Neighbors) == 0 {
+		// ArrowMaxLayers is a arrow max layers constant.
 		const ArrowMaxLayers = 16 // Consistent with types.go
 		g.Neighbors = make([][]uint64, ArrowMaxLayers)
 		g.Counts = make([][]uint64, ArrowMaxLayers)

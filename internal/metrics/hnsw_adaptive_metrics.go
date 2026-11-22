@@ -12,11 +12,13 @@ var (
 		Help: "Current value of M parameter in HNSW graph",
 	}, []string{"index_name"})
 
+	// HNSWIntrinsicDimensionality is a hnsw intrinsic dimensionality value.
 	HNSWIntrinsicDimensionality = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "longbow_hnsw_intrinsic_dimensionality",
 		Help: "Estimated intrinsic dimensionality of the data",
 	}, []string{"index_name"})
 
+	// HNSWAdaptiveAdjustments is a hnsw adaptive adjustments value.
 	HNSWAdaptiveAdjustments = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "longbow_hnsw_adaptive_adjustments_total",
 		Help: "Total number of times M has been adjusted dynamically",

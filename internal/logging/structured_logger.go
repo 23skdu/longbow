@@ -7,21 +7,29 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// LogLevel represents a log level value.
 type LogLevel int
 
 const (
+	// DebugLevel is a debug level constant.
 	DebugLevel LogLevel = iota
+	// InfoLevel is a info level constant.
 	InfoLevel
+	// WarnLevel is a warn level constant.
 	WarnLevel
+	// ErrorLevel is a error level constant.
 	ErrorLevel
+	// FatalLevel is a fatal level constant.
 	FatalLevel
 )
 
+// StructuredLogger represents a structured logger value.
 type StructuredLogger struct {
 	logger zerolog.Logger
 	level  LogLevel
 }
 
+// LoggerConfig represents a logger config value.
 type LoggerConfig struct {
 	Level         LogLevel
 	EnableConsole bool
@@ -32,6 +40,7 @@ type LoggerConfig struct {
 	Component     string
 }
 
+// DefaultLoggerConfig returns the default LoggerConfig.
 func DefaultLoggerConfig() LoggerConfig {
 	return LoggerConfig{
 		Level:         InfoLevel,
@@ -43,6 +52,7 @@ func DefaultLoggerConfig() LoggerConfig {
 	}
 }
 
+// NewStructuredLogger constructs a new StructuredLogger.
 func NewStructuredLogger(config LoggerConfig) *StructuredLogger {
 	logger := zerolog.New(os.Stdout)
 	if config.EnableJSON {
@@ -75,12 +85,16 @@ func getZerologLevel(level LogLevel) zerolog.Level {
 	}
 }
 
+// ContextKey represents a context key value.
 type ContextKey string
 
 const (
+	// ComponentKey is a component key constant.
 	ComponentKey ContextKey = "component"
-	TraceIDKey   ContextKey = "trace_id"
-	SpanIDKey    ContextKey = "span_id"
+	// TraceIDKey is a trace id key constant.
+	TraceIDKey ContextKey = "trace_id"
+	// SpanIDKey is a span id key constant.
+	SpanIDKey ContextKey = "span_id"
 )
 
 func extractCtxString(ctx context.Context, k ContextKey) string {
@@ -113,6 +127,7 @@ func (l *StructuredLogger) applyContext(event *zerolog.Event, ctx context.Contex
 	return event
 }
 
+// Debug runs the debug operation.
 func (l *StructuredLogger) Debug(ctx context.Context, msg string, fields ...map[string]any) {
 	if l.level <= DebugLevel {
 		event := l.logger.Debug()
@@ -124,6 +139,7 @@ func (l *StructuredLogger) Debug(ctx context.Context, msg string, fields ...map[
 	}
 }
 
+// Info runs the info operation.
 func (l *StructuredLogger) Info(ctx context.Context, msg string, fields ...map[string]any) {
 	if l.level <= InfoLevel {
 		event := l.logger.Info()
@@ -135,6 +151,7 @@ func (l *StructuredLogger) Info(ctx context.Context, msg string, fields ...map[s
 	}
 }
 
+// Warn runs the warn operation.
 func (l *StructuredLogger) Warn(ctx context.Context, msg string, fields ...map[string]any) {
 	if l.level <= WarnLevel {
 		event := l.logger.Warn()
@@ -146,6 +163,7 @@ func (l *StructuredLogger) Warn(ctx context.Context, msg string, fields ...map[s
 	}
 }
 
+// Error runs the error operation.
 func (l *StructuredLogger) Error(ctx context.Context, msg string, fields ...map[string]any) {
 	if l.level <= ErrorLevel {
 		event := l.logger.Error()
@@ -157,6 +175,7 @@ func (l *StructuredLogger) Error(ctx context.Context, msg string, fields ...map[
 	}
 }
 
+// Fatal runs the fatal operation.
 func (l *StructuredLogger) Fatal(ctx context.Context, msg string, fields ...map[string]any) {
 	if l.level <= FatalLevel {
 		event := l.logger.Fatal()
@@ -169,6 +188,7 @@ func (l *StructuredLogger) Fatal(ctx context.Context, msg string, fields ...map[
 	}
 }
 
+// WithComponent runs the with component operation.
 func (l *StructuredLogger) WithComponent(component string) *StructuredLogger {
 	return &StructuredLogger{
 		logger: l.logger.With().Str("component", component).Logger(),
@@ -176,6 +196,7 @@ func (l *StructuredLogger) WithComponent(component string) *StructuredLogger {
 	}
 }
 
+// WithTrace runs the with trace operation.
 func (l *StructuredLogger) WithTrace(traceID, spanID string) *StructuredLogger {
 	return &StructuredLogger{
 		logger: l.logger.With().Str("trace_id", traceID).Str("span_id", spanID).Logger(),
@@ -183,6 +204,7 @@ func (l *StructuredLogger) WithTrace(traceID, spanID string) *StructuredLogger {
 	}
 }
 
+// WithFields runs the with fields operation.
 func (l *StructuredLogger) WithFields(fields map[string]any) *StructuredLogger {
 	return &StructuredLogger{
 		logger: l.logger.With().Fields(fields).Logger(),
@@ -200,12 +222,14 @@ func getFields(fields ...map[string]any) map[string]any {
 	return result
 }
 
+// GlobalLogger represents a global logger value.
 type GlobalLogger struct {
 	*StructuredLogger
 }
 
 var globalLogger *GlobalLogger
 
+// InitGlobalLogger runs the init global logger operation.
 func InitGlobalLogger(config LoggerConfig) {
 	if globalLogger == nil {
 		globalLogger = &GlobalLogger{
@@ -214,36 +238,42 @@ func InitGlobalLogger(config LoggerConfig) {
 	}
 }
 
+// Debug runs the debug operation.
 func Debug(ctx context.Context, msg string, fields ...map[string]any) {
 	if globalLogger != nil {
 		globalLogger.Debug(ctx, msg, fields...)
 	}
 }
 
+// Info runs the info operation.
 func Info(ctx context.Context, msg string, fields ...map[string]any) {
 	if globalLogger != nil {
 		globalLogger.Info(ctx, msg, fields...)
 	}
 }
 
+// Warn runs the warn operation.
 func Warn(ctx context.Context, msg string, fields ...map[string]any) {
 	if globalLogger != nil {
 		globalLogger.Warn(ctx, msg, fields...)
 	}
 }
 
+// Error runs the error operation.
 func Error(ctx context.Context, msg string, fields ...map[string]any) {
 	if globalLogger != nil {
 		globalLogger.Error(ctx, msg, fields...)
 	}
 }
 
+// Fatal runs the fatal operation.
 func Fatal(ctx context.Context, msg string, fields ...map[string]any) {
 	if globalLogger != nil {
 		globalLogger.Fatal(ctx, msg, fields...)
 	}
 }
 
+// WithComponent runs the with component operation.
 func WithComponent(component string) *GlobalLogger {
 	if globalLogger != nil {
 		return &GlobalLogger{
@@ -253,6 +283,7 @@ func WithComponent(component string) *GlobalLogger {
 	return &GlobalLogger{}
 }
 
+// WithTrace runs the with trace operation.
 func WithTrace(traceID, spanID string) *GlobalLogger {
 	if globalLogger != nil {
 		return &GlobalLogger{
@@ -262,6 +293,7 @@ func WithTrace(traceID, spanID string) *GlobalLogger {
 	return &GlobalLogger{}
 }
 
+// WithFields runs the with fields operation.
 func WithFields(fields map[string]any) *GlobalLogger {
 	if globalLogger != nil {
 		return &GlobalLogger{

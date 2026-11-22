@@ -33,9 +33,12 @@ type SyncStore interface {
 type SyncPriority int
 
 const (
-	PriorityHigh   SyncPriority = iota // Check every 100ms
-	PriorityNormal                     // Check every 1s
-	PriorityLow                        // Check every 10s
+	// PriorityHigh is a priority high constant.
+	PriorityHigh SyncPriority = iota // Check every 100ms
+	// PriorityNormal is a priority normal constant.
+	PriorityNormal // Check every 1s
+	// PriorityLow is a priority low constant.
+	PriorityLow // Check every 10s
 )
 
 // SyncWorker manages background delta replication from peers
@@ -48,12 +51,14 @@ type SyncWorker struct {
 	stopCh chan struct{}
 }
 
+// PeerState represents a peer state value.
 type PeerState struct {
 	Addr        string
 	LastSeenSeq atomic.Uint64
 	Priority    SyncPriority
 }
 
+// NewSyncWorker constructs a new SyncWorker.
 func NewSyncWorker(s SyncStore, logger *zerolog.Logger) *SyncWorker {
 	return &SyncWorker{
 		store:  s,
@@ -63,6 +68,7 @@ func NewSyncWorker(s SyncStore, logger *zerolog.Logger) *SyncWorker {
 	}
 }
 
+// AddPeer runs the add peer operation.
 func (w *SyncWorker) AddPeer(addr string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -75,10 +81,12 @@ func (w *SyncWorker) AddPeer(addr string) {
 	}
 }
 
+// Start runs the start operation.
 func (w *SyncWorker) Start() {
 	go w.run()
 }
 
+// Stop runs the stop operation.
 func (w *SyncWorker) Stop() {
 	close(w.stopCh)
 }

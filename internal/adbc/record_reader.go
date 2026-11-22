@@ -7,6 +7,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
+// AdbcRecordReader represents a adbc record reader value.
 type AdbcRecordReader struct {
 	refCount   int64
 	schema     *arrow.Schema
@@ -15,6 +16,7 @@ type AdbcRecordReader struct {
 	err        error
 }
 
+// NewAdbcRecordReader constructs a new AdbcRecordReader.
 func NewAdbcRecordReader(schema *arrow.Schema, records []arrow.RecordBatch) (*AdbcRecordReader, error) {
 	r := &AdbcRecordReader{
 		schema:   schema,
@@ -33,10 +35,12 @@ func NewAdbcRecordReader(schema *arrow.Schema, records []arrow.RecordBatch) (*Ad
 	return r, nil
 }
 
+// Retain runs the retain operation.
 func (r *AdbcRecordReader) Retain() {
 	atomic.AddInt64(&r.refCount, 1)
 }
 
+// Release runs the release operation.
 func (r *AdbcRecordReader) Release() {
 	if atomic.AddInt64(&r.refCount, -1) == 0 {
 		for _, rec := range r.records {
@@ -46,10 +50,12 @@ func (r *AdbcRecordReader) Release() {
 	}
 }
 
+// Schema runs the schema operation.
 func (r *AdbcRecordReader) Schema() *arrow.Schema {
 	return r.schema
 }
 
+// Next runs the next operation.
 func (r *AdbcRecordReader) Next() bool {
 	if r.currentIdx < len(r.records) {
 		r.currentIdx++
@@ -58,6 +64,7 @@ func (r *AdbcRecordReader) Next() bool {
 	return false
 }
 
+// RecordBatch runs the record batch operation.
 func (r *AdbcRecordReader) RecordBatch() arrow.RecordBatch {
 	if r.currentIdx > 0 && r.currentIdx <= len(r.records) {
 		return r.records[r.currentIdx-1]
@@ -65,10 +72,12 @@ func (r *AdbcRecordReader) RecordBatch() arrow.RecordBatch {
 	return nil
 }
 
+// Record runs the record operation.
 func (r *AdbcRecordReader) Record() arrow.RecordBatch {
 	return r.RecordBatch()
 }
 
+// Err runs the err operation.
 func (r *AdbcRecordReader) Err() error {
 	return r.err
 }

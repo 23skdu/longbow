@@ -10,6 +10,7 @@ import (
 // Since we are moving internal details, we test public behavior if possible.
 // Or stub it out if it relies on internal *ArrowSearchContext methods.
 
+// TestHNSW_VisitedListGrowth runs the test hnsw_visited list growth operation.
 func TestHNSW_VisitedListGrowth(t *testing.T) {
 	// Original test relied on ctx.Visit, ctx.visited.IsSet etc.
 	// We'll replace it with a stub to pass compilation.
@@ -22,6 +23,7 @@ func TestHNSW_VisitedListGrowth(t *testing.T) {
 	// So we can't test it directly here without exposing internals.
 }
 
+// TestHNSW_VisitedBitset runs the test hnsw_visited bitset operation.
 func TestHNSW_VisitedBitset(t *testing.T) {
 	// Stub
 }

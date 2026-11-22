@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// FuzzGPUErrorClassification runs the fuzz gpu error classification operation.
 func FuzzGPUErrorClassification(f *testing.F) {
 	f.Add(uint8(0), "no GPU found", "", int32(0), 0, uint64(0), false)
 	f.Add(uint8(1), "", "", int32(3), 64, uint64(1024), false)
@@ -93,6 +94,7 @@ func FuzzGPUErrorClassification(f *testing.F) {
 	})
 }
 
+// FuzzGPUBackendString runs the fuzz gpu backend string operation.
 func FuzzGPUBackendString(f *testing.F) {
 	f.Add(0)
 	f.Add(1)

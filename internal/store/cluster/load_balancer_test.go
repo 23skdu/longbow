@@ -12,6 +12,7 @@ import (
 // TDD Red Phase: Read Replica Load Balancer Tests
 // =============================================================================
 
+// TestLoadBalancerStrategy_RoundRobin runs the test load balancer strategy_round robin operation.
 func TestLoadBalancerStrategy_RoundRobin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -29,6 +30,7 @@ func TestLoadBalancerStrategy_RoundRobin(t *testing.T) {
 	}
 }
 
+// TestLoadBalancerStrategy_LeastConnections runs the test load balancer strategy_least connections operation.
 func TestLoadBalancerStrategy_LeastConnections(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -49,6 +51,7 @@ func TestLoadBalancerStrategy_LeastConnections(t *testing.T) {
 	}
 }
 
+// TestLoadBalancerStrategy_LeastConnections_Release runs the test load balancer strategy_least connections_release operation.
 func TestLoadBalancerStrategy_LeastConnections_Release(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -65,6 +68,7 @@ func TestLoadBalancerStrategy_LeastConnections_Release(t *testing.T) {
 	}
 }
 
+// TestReplicaLoadBalancer_New runs the test replica load balancer_new operation.
 func TestReplicaLoadBalancer_New(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -80,6 +84,7 @@ func TestReplicaLoadBalancer_New(t *testing.T) {
 	}
 }
 
+// TestReplicaLoadBalancer_AddRemoveReplica runs the test replica load balancer_add remove replica operation.
 func TestReplicaLoadBalancer_AddRemoveReplica(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -103,6 +108,7 @@ func TestReplicaLoadBalancer_AddRemoveReplica(t *testing.T) {
 	}
 }
 
+// TestReplicaLoadBalancer_SelectHealthy runs the test replica load balancer_select healthy operation.
 func TestReplicaLoadBalancer_SelectHealthy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -131,6 +137,7 @@ func TestReplicaLoadBalancer_SelectHealthy(t *testing.T) {
 	}
 }
 
+// TestReplicaLoadBalancer_MarkHealthy runs the test replica load balancer_mark healthy operation.
 func TestReplicaLoadBalancer_MarkHealthy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -154,6 +161,7 @@ func TestReplicaLoadBalancer_MarkHealthy(t *testing.T) {
 	}
 }
 
+// TestReplicaLoadBalancer_NoHealthyReplicas runs the test replica load balancer_no healthy replicas operation.
 func TestReplicaLoadBalancer_NoHealthyReplicas(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -173,6 +181,7 @@ func TestReplicaLoadBalancer_NoHealthyReplicas(t *testing.T) {
 	}
 }
 
+// TestReplicaLoadBalancer_ConcurrentAccess runs the test replica load balancer_concurrent access operation.
 func TestReplicaLoadBalancer_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -209,6 +218,7 @@ func TestReplicaLoadBalancer_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+// TestReplicaLoadBalancer_Metrics runs the test replica load balancer_metrics operation.
 func TestReplicaLoadBalancer_Metrics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -230,6 +240,7 @@ func TestReplicaLoadBalancer_Metrics(t *testing.T) {
 	}
 }
 
+// TestLoadBalancerStrategy_Weighted runs the test load balancer strategy_weighted operation.
 func TestLoadBalancerStrategy_Weighted(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

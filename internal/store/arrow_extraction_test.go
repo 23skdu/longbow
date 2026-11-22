@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestExtractVectorAny runs the test extract vector any operation.
 func TestExtractVectorAny(t *testing.T) {
 	mem := memory.NewGoAllocator()
 

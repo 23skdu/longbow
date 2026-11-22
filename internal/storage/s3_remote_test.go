@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestS3RemoteStorage_Integration runs the test s3 remote storage_integration operation.
 func TestS3RemoteStorage_Integration(t *testing.T) {
 	if os.Getenv("AWS_ACCESS_KEY_ID") == "" || os.Getenv("AWS_SECRET_ACCESS_KEY") == "" {
 		t.Skip("Skipping S3 integration test due to missing credentials")

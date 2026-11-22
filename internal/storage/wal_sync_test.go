@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestBufferedWAL_SyncLatency runs the test buffered wal_sync latency operation.
 func TestBufferedWAL_SyncLatency(t *testing.T) {
 	// Setup
 	tmpDir, err := os.MkdirTemp("", "wal_sync_test")
@@ -113,14 +114,23 @@ type SlowBackend struct {
 	Delay   time.Duration
 }
 
+// Write runs the write operation.
 func (b *SlowBackend) Write(p []byte) (int, error) {
 	time.Sleep(b.Delay)
 	return b.Backend.Write(p)
 }
+
+// Sync runs the sync operation.
 func (b *SlowBackend) Sync() error {
 	time.Sleep(b.Delay)
 	return b.Backend.Sync()
 }
-func (b *SlowBackend) Close() error   { return b.Backend.Close() }
-func (b *SlowBackend) Name() string   { return b.Backend.Name() }
+
+// Close runs the close operation.
+func (b *SlowBackend) Close() error { return b.Backend.Close() }
+
+// Name runs the name operation.
+func (b *SlowBackend) Name() string { return b.Backend.Name() }
+
+// File runs the file operation.
 func (b *SlowBackend) File() *os.File { return b.Backend.File() }

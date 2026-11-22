@@ -32,6 +32,7 @@ func setPrivateAtomicUint64(obj interface{}, name string, val uint64) {
 	ptr.Store(val)
 }
 
+// TestAdmissionController runs the test admission controller operation.
 func TestAdmissionController(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -116,6 +117,7 @@ func TestAdmissionController(t *testing.T) {
 	})
 }
 
+// TestAdmissionController_Expanded runs the test admission controller_expanded operation.
 func TestAdmissionController_Expanded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

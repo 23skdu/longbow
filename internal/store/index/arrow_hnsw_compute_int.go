@@ -18,6 +18,7 @@ type int16Computer struct {
 	maxGen    uint64
 }
 
+// Compute runs the compute operation.
 func (c *int16Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
 		d, err := c.ComputeSingle(id)
@@ -29,6 +30,7 @@ func (c *int16Computer) Compute(ids []uint32, dists []float32) error {
 	return nil
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []int16
@@ -55,6 +57,7 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *int16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsInt16ChunkFast(cID)
@@ -68,6 +71,7 @@ func (c *int16Computer) Prefetch(id uint32) {
 	}
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *int16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	n := len(ids)
 	if cap(dst) < n {
@@ -123,6 +127,7 @@ type uint16Computer struct {
 	maxGen    uint64
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []uint16
@@ -149,6 +154,7 @@ func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *uint16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	n := len(ids)
 	if cap(dst) < n {
@@ -194,6 +200,7 @@ func (c *uint16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, e
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *uint16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsUint16ChunkFast(cID)
@@ -217,6 +224,7 @@ type int32Computer struct {
 	maxGen    uint64
 }
 
+// Compute runs the compute operation.
 func (c *int32Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
 		d, err := c.ComputeSingle(id)
@@ -228,6 +236,7 @@ func (c *int32Computer) Compute(ids []uint32, dists []float32) error {
 	return nil
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []int32
@@ -254,6 +263,7 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *int32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsInt32ChunkFast(cID)
@@ -267,6 +277,7 @@ func (c *int32Computer) Prefetch(id uint32) {
 	}
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *int32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	n := len(ids)
 	if cap(dst) < n {
@@ -322,6 +333,7 @@ type uint32Computer struct {
 	maxGen    uint64
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []uint32
@@ -348,6 +360,7 @@ func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *uint32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	n := len(ids)
 	if cap(dst) < n {
@@ -393,6 +406,7 @@ func (c *uint32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, e
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *uint32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsUint32ChunkFast(cID)
@@ -416,6 +430,7 @@ type int64Computer struct {
 	maxGen    uint64
 }
 
+// Compute runs the compute operation.
 func (c *int64Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
 		d, err := c.ComputeSingle(id)
@@ -427,6 +442,7 @@ func (c *int64Computer) Compute(ids []uint32, dists []float32) error {
 	return nil
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []int64
@@ -453,6 +469,7 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *int64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	var chunk []int64
@@ -475,6 +492,7 @@ func (c *int64Computer) Prefetch(id uint32) {
 	}
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *int64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	n := len(ids)
 	if cap(dst) < n {
@@ -530,6 +548,7 @@ type uint64Computer struct {
 	maxGen    uint64
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []uint64
@@ -556,6 +575,7 @@ func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *uint64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	n := len(ids)
 	if cap(dst) < n {
@@ -601,6 +621,7 @@ func (c *uint64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, e
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *uint64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	var chunk []uint64

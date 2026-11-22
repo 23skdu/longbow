@@ -6,6 +6,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// TestShouldAutoQuantizeHighScale runs the test should auto quantize high scale operation.
 func TestShouldAutoQuantizeHighScale(t *testing.T) {
 	// At 500k+ vectors on a memory-constrained host, auto-standardization must
 	// engage for an uncompressed float32 dataset.

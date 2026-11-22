@@ -109,7 +109,7 @@ func (b *ArrowBitset) Capacity() int {
 	return b.blocks * 64
 }
 
-// Clear resets all bits to 0. Consistent with HNSW usage.
+// ClearSIMD resets all bits to 0. Consistent with HNSW usage.
 func (b *ArrowBitset) ClearSIMD() {
 	b.Clear()
 }

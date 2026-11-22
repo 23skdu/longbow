@@ -9,6 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// TestFastPathLessInt64 runs the test fast path less int64 operation.
 func TestFastPathLessInt64(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewInt64Builder(alloc)
@@ -29,6 +30,7 @@ func TestFastPathLessInt64(t *testing.T) {
 	}
 }
 
+// TestFastPathGreaterInt64 runs the test fast path greater int64 operation.
 func TestFastPathGreaterInt64(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewInt64Builder(alloc)
@@ -49,6 +51,7 @@ func TestFastPathGreaterInt64(t *testing.T) {
 	}
 }
 
+// TestFastPathInt8Equal runs the test fast path int8 equal operation.
 func TestFastPathInt8Equal(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewInt8Builder(alloc)
@@ -69,6 +72,7 @@ func TestFastPathInt8Equal(t *testing.T) {
 	}
 }
 
+// TestFastPathBoolEqual runs the test fast path bool equal operation.
 func TestFastPathBoolEqual(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewBooleanBuilder(alloc)
@@ -89,6 +93,7 @@ func TestFastPathBoolEqual(t *testing.T) {
 	}
 }
 
+// TestFastPathStringEqual runs the test fast path string equal operation.
 func TestFastPathStringEqual(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewStringBuilder(alloc)
@@ -109,6 +114,7 @@ func TestFastPathStringEqual(t *testing.T) {
 	}
 }
 
+// TestIsFastPathExpandedTypes runs the test is fast path expanded types operation.
 func TestIsFastPathExpandedTypes(t *testing.T) {
 	tests := []struct {
 		dt   arrow.DataType

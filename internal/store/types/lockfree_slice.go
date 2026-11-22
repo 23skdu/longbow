@@ -129,6 +129,7 @@ func NewLockFreeMap[K comparable, T any]() *LockFreeMap[K, T] {
 	}
 }
 
+// Get returns the .
 func (l *LockFreeMap[K, T]) Get(key K) ([]T, bool) {
 	l.mu.RLock()
 	slice, ok := l.slices[key]
@@ -140,6 +141,7 @@ func (l *LockFreeMap[K, T]) Get(key K) ([]T, bool) {
 	return slice.Read(), true
 }
 
+// Set sets the .
 func (l *LockFreeMap[K, T]) Set(key K, data []T) {
 	l.mu.RLock()
 	slice, ok := l.slices[key]
@@ -157,12 +159,14 @@ func (l *LockFreeMap[K, T]) Set(key K, data []T) {
 	slice.UpdateInPlace(data)
 }
 
+// Len runs the len operation.
 func (l *LockFreeMap[K, T]) Len() int {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return len(l.slices)
 }
 
+// Keys runs the keys operation.
 func (l *LockFreeMap[K, T]) Keys() []K {
 	l.mu.RLock()
 	defer l.mu.RUnlock()

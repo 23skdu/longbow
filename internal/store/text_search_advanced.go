@@ -164,6 +164,7 @@ func (m *AdvancedTextSearchManager) Search(ctx context.Context, req AdvancedText
 // corpusFor returns the cached, sharded corpus for dataset, rebuilding only the
 // record batches whose contents or tombstones changed.
 
+// Analytics runs the analytics operation.
 func (m *AdvancedTextSearchManager) Analytics(limit int) SearchAnalyticsSnapshot {
 	if limit <= 0 {
 		limit = 20

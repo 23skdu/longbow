@@ -242,6 +242,7 @@ type GeoPredicate struct {
 	allowed  *roaring.Bitmap
 }
 
+// IsMatch reports whether the condition holds.
 func (gp *GeoPredicate) IsMatch(id uint32) bool {
 	if gp.allowed != nil {
 		return gp.allowed.Contains(id)
@@ -255,6 +256,7 @@ func (gp *GeoPredicate) IsMatch(id uint32) bool {
 	return dist <= gp.radiusKm
 }
 
+// MatchBatch runs the match batch operation.
 func (gp *GeoPredicate) MatchBatch(ids []uint32, dst []byte) {
 	if gp.allowed != nil {
 		for i, id := range ids {
@@ -280,6 +282,7 @@ func (gi *GeoIndex) SetVectorIndexProvider(fn func() lbtypes.VectorIndexer) {
 	gi.vectorIndexFn = fn
 }
 
+// GetVectorIndex returns the vector index.
 func (gi *GeoIndex) GetVectorIndex() lbtypes.VectorIndexer {
 	if gi.vectorIndexFn == nil {
 		return nil
@@ -415,6 +418,7 @@ func (gi *GeoIndex) AddBatch(ids []uint64, vectors [][]float32, points []GeoPoin
 
 // SearchRadius finds the k-nearest neighbors within a radius.
 
+// SearchRadius runs the search radius operation.
 func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm float64, k int) ([]lbtypes.SearchResult, error) {
 	start := time.Now()
 	defer func() {

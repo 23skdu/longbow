@@ -14,6 +14,7 @@ import (
 
 // --- DefaultDoGetPipelineConfig tests ---
 
+// TestDefaultDoGetPipelineConfig runs the test default do get pipeline config operation.
 func TestDefaultDoGetPipelineConfig(t *testing.T) {
 	cfg := DefaultDoGetPipelineConfig()
 
@@ -25,6 +26,7 @@ func TestDefaultDoGetPipelineConfig(t *testing.T) {
 	}
 }
 
+// TestDefaultDoGetPipelineConfig_ReasonableDefaults runs the test default do get pipeline config_reasonable defaults operation.
 func TestDefaultDoGetPipelineConfig_ReasonableDefaults(t *testing.T) {
 	cfg := DefaultDoGetPipelineConfig()
 
@@ -41,6 +43,7 @@ func TestDefaultDoGetPipelineConfig_ReasonableDefaults(t *testing.T) {
 
 // --- shouldUsePipeline tests ---
 
+// TestShouldUsePipelineExt_NilPool runs the test should use pipeline ext_nil pool operation.
 func TestShouldUsePipelineExt_NilPool(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -62,6 +65,7 @@ func TestShouldUsePipelineExt_NilPool(t *testing.T) {
 	}
 }
 
+// TestShouldUsePipelineExt_WithPool runs the test should use pipeline ext_with pool operation.
 func TestShouldUsePipelineExt_WithPool(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -87,6 +91,7 @@ func TestShouldUsePipelineExt_WithPool(t *testing.T) {
 	}
 }
 
+// TestShouldUsePipelineExt_ZeroThreshold runs the test should use pipeline ext_zero threshold operation.
 func TestShouldUsePipelineExt_ZeroThreshold(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -106,6 +111,7 @@ func TestShouldUsePipelineExt_ZeroThreshold(t *testing.T) {
 
 // --- Pipeline Properties Tests ---
 
+// TestDoGetPipelineProperties runs the test do get pipeline properties operation.
 func TestDoGetPipelineProperties(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -150,6 +156,7 @@ func TestDoGetPipelineProperties(t *testing.T) {
 
 // --- NewDoGetPipelinePool tests ---
 
+// TestNewDoGetPipelinePool_ZeroWorkers runs the test new do get pipeline pool_zero workers operation.
 func TestNewDoGetPipelinePool_ZeroWorkers(t *testing.T) {
 	// runtime.NumCPU will be used if 0
 	pool := NewDoGetPipelinePool(0, 10)
@@ -162,6 +169,7 @@ func TestNewDoGetPipelinePool_ZeroWorkers(t *testing.T) {
 	}
 }
 
+// TestDoGetPipelinePool_GetPut runs the test do get pipeline pool_get put operation.
 func TestDoGetPipelinePool_GetPut(t *testing.T) {
 	pool := NewDoGetPipelinePool(4, 10)
 	if pool == nil {

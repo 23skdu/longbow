@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestPooledAllocator_Allocate runs the test pooled allocator_allocate operation.
 func TestPooledAllocator_Allocate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -23,6 +24,7 @@ func TestPooledAllocator_Allocate(t *testing.T) {
 	}
 }
 
+// TestPooledAllocator_Reallocate runs the test pooled allocator_reallocate operation.
 func TestPooledAllocator_Reallocate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -52,6 +54,7 @@ func TestPooledAllocator_Reallocate(t *testing.T) {
 	p.Free(buf3)
 }
 
+// TestPooledAllocator_Free runs the test pooled allocator_free operation.
 func TestPooledAllocator_Free(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -72,6 +75,7 @@ func TestPooledAllocator_Free(t *testing.T) {
 	p.Free(buf2)
 }
 
+// TestPooledAllocator_BucketIndex runs the test pooled allocator_bucket index operation.
 func TestPooledAllocator_BucketIndex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -98,6 +102,7 @@ func TestPooledAllocator_BucketIndex(t *testing.T) {
 	}
 }
 
+// TestPooledAllocator_LargeAllocation runs the test pooled allocator_large allocation operation.
 func TestPooledAllocator_LargeAllocation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -115,6 +120,7 @@ func TestPooledAllocator_LargeAllocation(t *testing.T) {
 	p.Free(buf) // Should not panic
 }
 
+// TestPooledAllocator_Concurrent runs the test pooled allocator_concurrent operation.
 func TestPooledAllocator_Concurrent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -147,6 +153,7 @@ func TestPooledAllocator_Concurrent(t *testing.T) {
 	assert.GreaterOrEqual(t, stats.ReusedBuffers, int64(numGoroutines*numAllocations))
 }
 
+// BenchmarkPooledAllocator_Allocate runs the benchmark pooled allocator_allocate operation.
 func BenchmarkPooledAllocator_Allocate(b *testing.B) {
 	p := NewPooledAllocator()
 
@@ -157,6 +164,7 @@ func BenchmarkPooledAllocator_Allocate(b *testing.B) {
 	}
 }
 
+// BenchmarkPooledAllocator_Allocate_Parallel runs the benchmark pooled allocator_allocate_parallel operation.
 func BenchmarkPooledAllocator_Allocate_Parallel(b *testing.B) {
 	p := NewPooledAllocator()
 
@@ -168,6 +176,7 @@ func BenchmarkPooledAllocator_Allocate_Parallel(b *testing.B) {
 	})
 }
 
+// BenchmarkGoAllocator_Allocate runs the benchmark go allocator_allocate operation.
 func BenchmarkGoAllocator_Allocate(b *testing.B) {
 	for b.Loop() {
 		buf := make([]byte, 4096)
@@ -175,6 +184,7 @@ func BenchmarkGoAllocator_Allocate(b *testing.B) {
 	}
 }
 
+// BenchmarkPooledAllocator_VectorSize runs the benchmark pooled allocator_vector size operation.
 func BenchmarkPooledAllocator_VectorSize(b *testing.B) {
 	p := NewPooledAllocator()
 	vectorSize := 1536 * 4 // 1536 float32s = 6144 bytes (typical embedding)

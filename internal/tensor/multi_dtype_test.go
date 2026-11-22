@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestFloat64Contraction runs the test float64 contraction operation.
 func TestFloat64Contraction(t *testing.T) {
 	// A is 2x3, B is 3x2
 	a := New(DtypeFloat64, Shape{2, 3})
@@ -44,6 +45,7 @@ func TestFloat64Contraction(t *testing.T) {
 	}
 }
 
+// TestComplexContraction runs the test complex contraction operation.
 func TestComplexContraction(t *testing.T) {
 	// 2x2 complex64 and complex128
 	a := New(DtypeComplex128, Shape{2, 2})
@@ -80,6 +82,7 @@ func TestComplexContraction(t *testing.T) {
 	}
 }
 
+// TestIntContraction runs the test int contraction operation.
 func TestIntContraction(t *testing.T) {
 	a := New(DtypeInt64, Shape{2, 2})
 	b := New(DtypeInt64, Shape{2, 2})
@@ -102,6 +105,7 @@ func TestIntContraction(t *testing.T) {
 	}
 }
 
+// TestEinsumDiagonalAndTrace runs the test einsum diagonal and trace operation.
 func TestEinsumDiagonalAndTrace(t *testing.T) {
 	// 3x3 matrix
 	m := New(DtypeFloat64, Shape{3, 3})
@@ -135,6 +139,7 @@ func TestEinsumDiagonalAndTrace(t *testing.T) {
 	}
 }
 
+// TestEinsumMultiTensorChain runs the test einsum multi tensor chain operation.
 func TestEinsumMultiTensorChain(t *testing.T) {
 	// 3 tensors: A (2x3), B (3x4), C (4x2)
 	// Compute A * B * C via "ij,jk,kl->il"

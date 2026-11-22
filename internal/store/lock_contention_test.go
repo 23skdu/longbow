@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestLockContention_InstrumentedMetrics runs the test lock contention_instrumented metrics operation.
 func TestLockContention_InstrumentedMetrics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -21,6 +22,7 @@ func TestLockContention_InstrumentedMetrics(t *testing.T) {
 	assert.NotNil(t, metrics.IndexLockWaitDuration, "IndexLockWaitDuration metric should exist")
 }
 
+// TestLockContention_AtomicOperations runs the test lock contention_atomic operations operation.
 func TestLockContention_AtomicOperations(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -57,6 +59,7 @@ func TestLockContention_AtomicOperations(t *testing.T) {
 	})
 }
 
+// TestLockContention_ConcurrentReads runs the test lock contention_concurrent reads operation.
 func TestLockContention_ConcurrentReads(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -85,6 +88,7 @@ func TestLockContention_ConcurrentReads(t *testing.T) {
 	})
 }
 
+// TestLockContention_ShardedAccess runs the test lock contention_sharded access operation.
 func TestLockContention_ShardedAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -112,6 +116,7 @@ func TestLockContention_ShardedAccess(t *testing.T) {
 	})
 }
 
+// TestLockContention_NoDeadlocks runs the test lock contention_no deadlocks operation.
 func TestLockContention_NoDeadlocks(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -146,6 +151,7 @@ func TestLockContention_NoDeadlocks(t *testing.T) {
 	})
 }
 
+// TestLockContention_ContextCancellation runs the test lock contention_context cancellation operation.
 func TestLockContention_ContextCancellation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

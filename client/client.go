@@ -246,6 +246,7 @@ type smartDoGetStream struct {
 	attempt   int
 }
 
+// Recv runs the recv operation.
 func (s *smartDoGetStream) Recv() (*flight.FlightData, error) {
 	data, err := s.stream.Recv()
 	if err != nil && s.firstRecv {
@@ -389,6 +390,7 @@ type smartDoPutStream struct {
 	firstSend bool
 }
 
+// Send runs the send operation.
 func (s *smartDoPutStream) Send(data *flight.FlightData) error {
 	if s.firstSend {
 		s.firstSend = false

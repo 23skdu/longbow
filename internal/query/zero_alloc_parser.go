@@ -9,7 +9,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Hash returns a unique string representation of a filter for caching purposes.
+// FilterHash returns a unique string representation of a filter for caching purposes.
 func FilterHash(f core.Filter) string {
 	h := f.Field + ":" + f.Operator + ":" + f.Value + ":" + f.Logic
 	if len(f.Filters) > 0 {
@@ -428,11 +428,13 @@ func ParseTicketQuerySafe(data []byte) (TicketQuery, error) {
 	return res, err
 }
 
+// ParserPoolStats represents a parser pool stats value.
 type ParserPoolStats struct {
 	Gets uint64
 	Puts uint64
 }
 
+// GetParserPoolStats returns the parser pool stats.
 func GetParserPoolStats() ParserPoolStats {
 	return ParserPoolStats{
 		Gets: atomic.LoadUint64(&poolGets),

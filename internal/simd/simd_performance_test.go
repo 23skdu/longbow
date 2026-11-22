@@ -204,6 +204,7 @@ func BenchmarkConcurrentSIMD(b *testing.B) {
 	})
 }
 
+// BenchmarkEuclideanInt16 runs the benchmark euclidean int16 operation.
 func BenchmarkEuclideanInt16(b *testing.B) {
 	dims := 128
 	a := make([]int16, dims)
@@ -220,6 +221,7 @@ func BenchmarkEuclideanInt16(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclideanUint16 runs the benchmark euclidean uint16 operation.
 func BenchmarkEuclideanUint16(b *testing.B) {
 	dims := 128
 	a := make([]uint16, dims)
@@ -236,6 +238,7 @@ func BenchmarkEuclideanUint16(b *testing.B) {
 	}
 }
 
+// BenchmarkDotInt16 runs the benchmark dot int16 operation.
 func BenchmarkDotInt16(b *testing.B) {
 	dims := 128
 	a := make([]int16, dims)
@@ -252,6 +255,7 @@ func BenchmarkDotInt16(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclideanInt64 runs the benchmark euclidean int64 operation.
 func BenchmarkEuclideanInt64(b *testing.B) {
 	dims := 128
 	a := make([]int64, dims)

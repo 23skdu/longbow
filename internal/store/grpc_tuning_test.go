@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestGRPCConfig_FlowControlPolicy runs the test grpc config_flow control policy operation.
 func TestGRPCConfig_FlowControlPolicy(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -41,6 +42,7 @@ func TestGRPCConfig_FlowControlPolicy(t *testing.T) {
 	}
 }
 
+// TestGRPCConfig_ValidationWithPolicy runs the test grpc config_validation with policy operation.
 func TestGRPCConfig_ValidationWithPolicy(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -68,6 +70,7 @@ func TestGRPCConfig_ValidationWithPolicy(t *testing.T) {
 	}
 }
 
+// FuzzGRPCConfigPolicySelection runs the fuzz grpc config policy selection operation.
 func FuzzGRPCConfigPolicySelection(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -96,6 +99,7 @@ func FuzzGRPCConfigPolicySelection(f *testing.F) {
 	})
 }
 
+// TestGRPCConfig_ManualOverride runs the test grpc config_manual override operation.
 func TestGRPCConfig_ManualOverride(t *testing.T) {
 	// If a user manually sets window sizes and then calls ApplyPolicy,
 	// the policy SHOULD override them (this is specified behavior for "ApplyPolicy").

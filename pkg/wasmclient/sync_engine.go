@@ -8,7 +8,9 @@ import (
 type ConflictStrategy string
 
 const (
-	ConflictLWW         ConflictStrategy = "lww"
+	// ConflictLWW is a conflict lww constant.
+	ConflictLWW ConflictStrategy = "lww"
+	// ConflictVectorClock is a conflict vector clock constant.
 	ConflictVectorClock ConflictStrategy = "vector_clock"
 )
 

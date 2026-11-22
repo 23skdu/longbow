@@ -19,6 +19,7 @@ func ilpBenchData(dims int) ([]float64, []float64) {
 	return va, vb
 }
 
+// BenchmarkEuclideanFloat64_AVX2_8Way runs the benchmark euclidean float64_avx2_8 way operation.
 func BenchmarkEuclideanFloat64_AVX2_8Way(b *testing.B) {
 	for _, dims := range []int{128, 384, 768, 1536} {
 		va, vb := ilpBenchData(dims)
@@ -50,6 +51,7 @@ func BenchmarkEuclideanFloat64_AVX2_8Way(b *testing.B) {
 	}
 }
 
+// BenchmarkDotFloat64_AVX2_8Way runs the benchmark dot float64_avx2_8 way operation.
 func BenchmarkDotFloat64_AVX2_8Way(b *testing.B) {
 	for _, dims := range []int{128, 384, 768, 1536} {
 		va, vb := ilpBenchData(dims)
@@ -69,6 +71,7 @@ func BenchmarkDotFloat64_AVX2_8Way(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclideanComplex128_ILP runs the benchmark euclidean complex128_ilp operation.
 func BenchmarkEuclideanComplex128_ILP(b *testing.B) {
 	for _, dims := range []int{128, 384, 768, 1536} {
 		rng := rand.New(rand.NewSource(42))

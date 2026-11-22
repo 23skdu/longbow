@@ -31,11 +31,13 @@ const defaultTemporalAsOf int64 = 4102444800000000000
 // per query.
 var TemporalAsOfNanos = defaultTemporalAsOf
 
+// ReusableSearchState represents a reusable search state value.
 type ReusableSearchState struct {
 	vector []float32
 	buf    []byte
 }
 
+// NewReusableSearchState constructs a new ReusableSearchState.
 func NewReusableSearchState(maxDim int) *ReusableSearchState {
 	return &ReusableSearchState{
 		vector: make([]float32, maxDim*2), // 2*dim for complex types
@@ -154,6 +156,7 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 	return s.buf
 }
 
+// BuildSpecialTicket runs the build special ticket operation.
 func (s *ReusableSearchState) BuildSpecialTicket(dataset string, mode string, queryIdx int, corpusSize int) []byte {
 	s.buf = s.buf[:0]
 	switch mode {

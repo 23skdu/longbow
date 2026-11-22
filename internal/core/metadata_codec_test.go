@@ -8,12 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestEncodeMetadata_NilInput runs the test encode metadata_nil input operation.
 func TestEncodeMetadata_NilInput(t *testing.T) {
 	result, err := EncodeMetadata(nil)
 	assert.NoError(t, err)
 	assert.Nil(t, result)
 }
 
+// TestEncodeMetadata_StringValue runs the test encode metadata_string value operation.
 func TestEncodeMetadata_StringValue(t *testing.T) {
 	result, err := EncodeMetadata(map[string]interface{}{"key": "val"})
 	require.NoError(t, err)
@@ -22,6 +24,7 @@ func TestEncodeMetadata_StringValue(t *testing.T) {
 	assert.Equal(t, "val", decoded["key"])
 }
 
+// TestEncodeMetadata_Int64Value runs the test encode metadata_int64 value operation.
 func TestEncodeMetadata_Int64Value(t *testing.T) {
 	result, err := EncodeMetadata(map[string]interface{}{"n": int64(42)})
 	require.NoError(t, err)
@@ -30,6 +33,7 @@ func TestEncodeMetadata_Int64Value(t *testing.T) {
 	assert.Equal(t, int64(42), decoded["n"])
 }
 
+// TestEncodeMetadata_BoolFalse runs the test encode metadata_bool false operation.
 func TestEncodeMetadata_BoolFalse(t *testing.T) {
 	result, err := EncodeMetadata(map[string]interface{}{"flag": false})
 	require.NoError(t, err)
@@ -38,6 +42,7 @@ func TestEncodeMetadata_BoolFalse(t *testing.T) {
 	assert.Equal(t, false, decoded["flag"])
 }
 
+// TestEncodeMetadata_BinaryData runs the test encode metadata_binary data operation.
 func TestEncodeMetadata_BinaryData(t *testing.T) {
 	data := []byte{0xCA, 0xFE}
 	result, err := EncodeMetadata(map[string]interface{}{"raw": data})
@@ -47,6 +52,7 @@ func TestEncodeMetadata_BinaryData(t *testing.T) {
 	assert.Equal(t, data, decoded["raw"])
 }
 
+// TestEncodeMetadata_UnknownTypeFallback runs the test encode metadata_unknown type fallback operation.
 func TestEncodeMetadata_UnknownTypeFallback(t *testing.T) {
 	type custom struct{ x int }
 	result, err := EncodeMetadata(map[string]interface{}{"c": custom{1}})
@@ -57,6 +63,7 @@ func TestEncodeMetadata_UnknownTypeFallback(t *testing.T) {
 	assert.Equal(t, "{1}", decoded["c"])
 }
 
+// TestEncodeMetadata_AllTypes runs the test encode metadata_all types operation.
 func TestEncodeMetadata_AllTypes(t *testing.T) {
 	input := map[string]interface{}{
 		"s":   "hello",
@@ -78,6 +85,7 @@ func TestEncodeMetadata_AllTypes(t *testing.T) {
 	assert.Equal(t, []byte{1, 2, 3}, decoded["raw"])
 }
 
+// TestDecodeMetadata_TypeBinary_Roundtrip runs the test decode metadata_type binary_roundtrip operation.
 func TestDecodeMetadata_TypeBinary_Roundtrip(t *testing.T) {
 	original := []byte{0xDE, 0xAD, 0xBE, 0xEF}
 	result, err := EncodeMetadata(map[string]interface{}{"d": original})
@@ -87,6 +95,7 @@ func TestDecodeMetadata_TypeBinary_Roundtrip(t *testing.T) {
 	assert.Equal(t, original, decoded["d"])
 }
 
+// TestDecodeMetadata_TypeNil_Roundtrip runs the test decode metadata_type nil_roundtrip operation.
 func TestDecodeMetadata_TypeNil_Roundtrip(t *testing.T) {
 	result, err := EncodeMetadata(map[string]interface{}{"k": nil})
 	require.NoError(t, err)
@@ -95,6 +104,7 @@ func TestDecodeMetadata_TypeNil_Roundtrip(t *testing.T) {
 	assert.Nil(t, decoded["k"])
 }
 
+// TestDecodeMetadata_UnknownType runs the test decode metadata_unknown type operation.
 func TestDecodeMetadata_UnknownType(t *testing.T) {
 	// Manually build binary with unknown typeID=99
 	// Format: numFields(uint32) + keyLen(uint16) + key + typeID(uint8) + valLen(uint32) + value
@@ -131,6 +141,7 @@ func TestDecodeMetadata_UnknownType(t *testing.T) {
 	assert.False(t, exists)
 }
 
+// TestDecodeMetadata_Empty runs the test decode metadata_empty operation.
 func TestDecodeMetadata_Empty(t *testing.T) {
 	decoded, err := DecodeMetadata([]byte{})
 	assert.NoError(t, err)

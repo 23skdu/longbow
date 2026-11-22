@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGenerateFilterBitset runs the test generate filter bitset operation.
 func TestGenerateFilterBitset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -94,6 +95,7 @@ func TestGenerateFilterBitset(t *testing.T) {
 	bitset2.Release()
 }
 
+// TestSearchWithBitmapFiltering runs the test search with bitmap filtering operation.
 func TestSearchWithBitmapFiltering(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -158,6 +160,7 @@ func TestSearchWithBitmapFiltering(t *testing.T) {
 	assert.Equal(t, 1, l.RowIdx)
 }
 
+// TestShardedSearchWithBitmapFiltering runs the test sharded search with bitmap filtering operation.
 func TestShardedSearchWithBitmapFiltering(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

@@ -21,6 +21,7 @@ type MockFlightStream struct {
 	curr    int
 }
 
+// Recv runs the recv operation.
 func (m *MockFlightStream) Recv() (*flight.FlightData, error) {
 	if m.curr >= len(m.batches) {
 		return nil, fmt.Errorf("EOF") // Real EOF is io.EOF but helper expects FlightData
@@ -36,16 +37,28 @@ func (m *MockFlightStream) Recv() (*flight.FlightData, error) {
 	return nil, nil
 }
 
+// Header runs the header operation.
 func (m *MockFlightStream) Header() (metadata.MD, error) { return nil, nil }
-func (m *MockFlightStream) Trailer() metadata.MD         { return nil }
-func (m *MockFlightStream) CloseSend() error             { return nil }
-func (m *MockFlightStream) Context() context.Context     { return context.Background() }
-func (m *MockFlightStream) SendMsg(m2 any) error         { return nil }
-func (m *MockFlightStream) RecvMsg(m2 any) error         { return nil }
+
+// Trailer runs the trailer operation.
+func (m *MockFlightStream) Trailer() metadata.MD { return nil }
+
+// CloseSend runs the close send operation.
+func (m *MockFlightStream) CloseSend() error { return nil }
+
+// Context runs the context operation.
+func (m *MockFlightStream) Context() context.Context { return context.Background() }
+
+// SendMsg runs the send msg operation.
+func (m *MockFlightStream) SendMsg(m2 any) error { return nil }
+
+// RecvMsg runs the recv msg operation.
+func (m *MockFlightStream) RecvMsg(m2 any) error { return nil }
 
 // Since mocking Flight stream is hard (requires IPC bytes), we verify sortAndSlice directly mostly,
 // and basic Aggregate flow.
 
+// TestStreamAggregator_SortAndSlice runs the test stream aggregator_sort and slice operation.
 func TestStreamAggregator_SortAndSlice(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -118,6 +131,7 @@ func TestStreamAggregator_SortAndSlice(t *testing.T) {
 	}
 }
 
+// BenchmarkStreamAggregator_Merge runs the benchmark stream aggregator_merge operation.
 func BenchmarkStreamAggregator_Merge(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
@@ -169,6 +183,7 @@ func BenchmarkStreamAggregator_Merge(b *testing.B) {
 	}
 }
 
+// TestStreamAggregator_TournamentHeap runs the test stream aggregator_tournament heap operation.
 func TestStreamAggregator_TournamentHeap(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema(

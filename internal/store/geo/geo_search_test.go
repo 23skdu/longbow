@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestHaversineDistance runs the test haversine distance operation.
 func TestHaversineDistance(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -26,6 +27,7 @@ func TestHaversineDistance(t *testing.T) {
 	assert.Less(t, dist, 4000000.0)
 }
 
+// TestEuclideanDistanceGeo runs the test euclidean distance geo operation.
 func TestEuclideanDistanceGeo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -38,6 +40,7 @@ func TestEuclideanDistanceGeo(t *testing.T) {
 	assert.Greater(t, dist, 0.0)
 }
 
+// TestQuadtree_Insert runs the test quadtree_insert operation.
 func TestQuadtree_Insert(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -60,6 +63,7 @@ func TestQuadtree_Insert(t *testing.T) {
 	assert.True(t, inserted)
 }
 
+// TestQuadtree_Contains runs the test quadtree_contains operation.
 func TestQuadtree_Contains(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -79,6 +83,7 @@ func TestQuadtree_Contains(t *testing.T) {
 	assert.False(t, q.Contains(outside))
 }
 
+// TestGeoIndex_New runs the test geo index_new operation.
 func TestGeoIndex_New(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -95,6 +100,7 @@ func TestGeoIndex_New(t *testing.T) {
 	assert.NotNil(t, idx.pointIndex.Load())
 }
 
+// TestGeoIndex_AddAndSearchRadius runs the test geo index_add and search radius operation.
 func TestGeoIndex_AddAndSearchRadius(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -127,6 +133,7 @@ func TestGeoIndex_AddAndSearchRadius(t *testing.T) {
 	assert.Len(t, results, 2)
 }
 
+// TestGeoIndex_SearchBox runs the test geo index_search box operation.
 func TestGeoIndex_SearchBox(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -154,6 +161,7 @@ func TestGeoIndex_SearchBox(t *testing.T) {
 	assert.GreaterOrEqual(t, len(results), 1)
 }
 
+// TestGeoSearchRequest_Validate runs the test geo search request_validate operation.
 func TestGeoSearchRequest_Validate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -169,6 +177,7 @@ func TestGeoSearchRequest_Validate(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestGeoSearchRequest_ValidateDefault runs the test geo search request_validate default operation.
 func TestGeoSearchRequest_ValidateDefault(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -182,6 +191,7 @@ func TestGeoSearchRequest_ValidateDefault(t *testing.T) {
 	assert.Equal(t, "radius", req.SearchType)
 }
 
+// TestGeoSearchRequest_ValidateErrors runs the test geo search request_validate errors operation.
 func TestGeoSearchRequest_ValidateErrors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -195,6 +205,7 @@ func TestGeoSearchRequest_ValidateErrors(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestGeoPoint_JSON runs the test geo point_json operation.
 func TestGeoPoint_JSON(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -214,6 +225,7 @@ func TestGeoPoint_JSON(t *testing.T) {
 	assert.Equal(t, "NYC", name)
 }
 
+// TestGeoBoundingBox_Validation runs the test geo bounding box_validation operation.
 func TestGeoBoundingBox_Validation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -229,6 +241,7 @@ func TestGeoBoundingBox_Validation(t *testing.T) {
 	assert.Equal(t, 41.0, box.MaxLat)
 }
 
+// TestQuadtree_QueryRadius runs the test quadtree_query radius operation.
 func TestQuadtree_QueryRadius(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -251,6 +264,7 @@ func TestQuadtree_QueryRadius(t *testing.T) {
 	assert.NotEmpty(t, results)
 }
 
+// TestQuadtree_QueryBox runs the test quadtree_query box operation.
 func TestQuadtree_QueryBox(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -278,6 +292,7 @@ func TestQuadtree_QueryBox(t *testing.T) {
 	assert.GreaterOrEqual(t, len(results), 1)
 }
 
+// TestGeoIndex_Concurrency runs the test geo index_concurrency operation.
 func TestGeoIndex_Concurrency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -329,6 +344,7 @@ func TestGeoIndex_Concurrency(t *testing.T) {
 	assert.Equal(t, expectedCount, gi.pointCount.Load())
 }
 
+// BenchmarkGeoIndex_SearchRadius runs the benchmark geo index_search radius operation.
 func BenchmarkGeoIndex_SearchRadius(b *testing.B) {
 	for _, indexType := range []string{GeoIndexTypeMorton, GeoIndexTypeQuadtree} {
 		b.Run(indexType, func(b *testing.B) {
@@ -357,6 +373,7 @@ func BenchmarkGeoIndex_SearchRadius(b *testing.B) {
 	}
 }
 
+// BenchmarkGeoQuadtree_QueryRadiusVsPruned runs the benchmark geo quadtree_query radius vs pruned operation.
 func BenchmarkGeoQuadtree_QueryRadiusVsPruned(b *testing.B) {
 	qt := NewQuadtree(GeoBoundingBox{MinLat: -90, MaxLat: 90, MinLon: -180, MaxLon: 180}, 16, "bench")
 	for i := 0; i < 10000; i++ {
@@ -645,6 +662,7 @@ func BenchmarkGeoIndex_SearchRadiusScale(b *testing.B) {
 	}
 }
 
+// TestGeoIndex_ResultCacheInvalidation runs the test geo index_result cache invalidation operation.
 func TestGeoIndex_ResultCacheInvalidation(t *testing.T) {
 	config := &GeoSearchConfig{
 		DistanceType: GeoDistanceHaversine,

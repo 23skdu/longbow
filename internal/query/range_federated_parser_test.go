@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestParseTicketQuerySafe_RangeAndFederated runs the test parse ticket query safe_range and federated operation.
 func TestParseTicketQuerySafe_RangeAndFederated(t *testing.T) {
 	raw := []byte(`{
 		"name": "docs",
@@ -68,6 +69,7 @@ func TestParseTicketQuerySafe_RangeAndFederated(t *testing.T) {
 	assert.Equal(t, 5*time.Second, q.TemporalSearch.Duration)
 }
 
+// FuzzParseRangeAndFederatedRequests runs the fuzz parse range and federated requests operation.
 func FuzzParseRangeAndFederatedRequests(f *testing.F) {
 	f.Add([]byte(`{"dataset":"ds","vector":[1.0,2.0],"threshold":0.5,"max_results":10}`), []byte(`{"collections":["a"],"vector":[1.0],"k":5}`))
 	f.Add([]byte(`{}`), []byte(`{}`))

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestCUDA_PinnedHostPool runs the test cuda_pinned host pool operation.
 func TestCUDA_PinnedHostPool(t *testing.T) {
 	pool := NewPinnedHostPool()
 	defer pool.Close()
@@ -41,6 +42,7 @@ func TestCUDA_PinnedHostPool(t *testing.T) {
 	pool.Put(ptr2, size)
 }
 
+// FuzzCUDA_PinnedBufferPool runs the fuzz cuda_pinned buffer pool operation.
 func FuzzCUDA_PinnedBufferPool(f *testing.F) {
 	f.Add(int64(64))
 	f.Add(int64(1024))

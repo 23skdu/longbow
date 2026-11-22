@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestAdaptiveGC_Disabled runs the test adaptive gc_disabled operation.
 func TestAdaptiveGC_Disabled(t *testing.T) {
 	config := AdaptiveGCConfig{
 		Enabled: false,
@@ -27,6 +28,7 @@ func TestAdaptiveGC_Disabled(t *testing.T) {
 	debug.SetGCPercent(100)                      // Restore to default
 }
 
+// TestAdaptiveGC_Lifecycle runs the test adaptive gc_lifecycle operation.
 func TestAdaptiveGC_Lifecycle(t *testing.T) {
 	config := AdaptiveGCConfig{
 		Enabled:        true,
@@ -51,6 +53,7 @@ func TestAdaptiveGC_Lifecycle(t *testing.T) {
 	controller.Stop()
 }
 
+// TestAdaptiveGC_HighAllocationRate runs the test adaptive gc_high allocation rate operation.
 func TestAdaptiveGC_HighAllocationRate(t *testing.T) {
 	config := AdaptiveGCConfig{
 		Enabled:        true,
@@ -74,6 +77,7 @@ func TestAdaptiveGC_HighAllocationRate(t *testing.T) {
 	assert.LessOrEqual(t, newGOGC, 200, "GOGC should not exceed max")
 }
 
+// TestAdaptiveGC_HighMemoryPressure runs the test adaptive gc_high memory pressure operation.
 func TestAdaptiveGC_HighMemoryPressure(t *testing.T) {
 	config := AdaptiveGCConfig{
 		Enabled:        true,
@@ -97,6 +101,7 @@ func TestAdaptiveGC_HighMemoryPressure(t *testing.T) {
 	assert.GreaterOrEqual(t, newGOGC, 50, "GOGC should not go below min")
 }
 
+// TestAdaptiveGC_BoundaryConditions runs the test adaptive gc_boundary conditions operation.
 func TestAdaptiveGC_BoundaryConditions(t *testing.T) {
 	config := AdaptiveGCConfig{
 		Enabled:        true,
@@ -159,6 +164,7 @@ func TestAdaptiveGC_BoundaryConditions(t *testing.T) {
 	}
 }
 
+// TestAdaptiveGC_StatsCollection runs the test adaptive gc_stats collection operation.
 func TestAdaptiveGC_StatsCollection(t *testing.T) {
 	config := AdaptiveGCConfig{
 		Enabled:        true,
@@ -187,6 +193,7 @@ func TestAdaptiveGC_StatsCollection(t *testing.T) {
 	assert.GreaterOrEqual(t, stats2.allocationRate, int64(0))
 }
 
+// TestDefaultAdaptiveGCConfig runs the test default adaptive gc config operation.
 func TestDefaultAdaptiveGCConfig(t *testing.T) {
 	cfg := DefaultAdaptiveGCConfig()
 	assert.False(t, cfg.Enabled)
@@ -195,6 +202,7 @@ func TestDefaultAdaptiveGCConfig(t *testing.T) {
 	assert.Equal(t, 1*time.Second, cfg.AdjustInterval)
 }
 
+// TestAdaptiveGC_ConfigValidation runs the test adaptive gc_config validation operation.
 func TestAdaptiveGC_ConfigValidation(t *testing.T) {
 	c := NewAdaptiveGCController(AdaptiveGCConfig{MinGOGC: -10, MaxGOGC: -5, AdjustInterval: -1})
 	assert.Equal(t, 50, c.config.MinGOGC)
@@ -206,6 +214,7 @@ func TestAdaptiveGC_ConfigValidation(t *testing.T) {
 	assert.Equal(t, 100, c2.config.MaxGOGC)
 }
 
+// TestAdaptiveGC_StartAlreadyRunning runs the test adaptive gc_start already running operation.
 func TestAdaptiveGC_StartAlreadyRunning(t *testing.T) {
 	config := AdaptiveGCConfig{
 		Enabled:        true,
@@ -219,6 +228,7 @@ func TestAdaptiveGC_StartAlreadyRunning(t *testing.T) {
 	controller.Stop()
 }
 
+// TestAdaptiveGC_CalculateGOGC_EdgeCases runs the test adaptive gc_calculate gogc_edge cases operation.
 func TestAdaptiveGC_CalculateGOGC_EdgeCases(t *testing.T) {
 	config := AdaptiveGCConfig{MinGOGC: 50, MaxGOGC: 200}
 	controller := NewAdaptiveGCController(config)
@@ -267,6 +277,7 @@ func TestAdaptiveGC_CalculateGOGC_EdgeCases(t *testing.T) {
 	}
 }
 
+// TestAdaptiveGC_MetricsUpdated runs the test adaptive gc_metrics updated operation.
 func TestAdaptiveGC_MetricsUpdated(t *testing.T) {
 	config := AdaptiveGCConfig{
 		Enabled:        true,
@@ -287,6 +298,7 @@ func TestAdaptiveGC_MetricsUpdated(t *testing.T) {
 	assert.True(t, true, "Controller ran without panic")
 }
 
+// BenchmarkAdaptiveGC_CalculateGOGC runs the benchmark adaptive gc_calculate gogc operation.
 func BenchmarkAdaptiveGC_CalculateGOGC(b *testing.B) {
 	config := AdaptiveGCConfig{
 		Enabled: true,

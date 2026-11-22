@@ -291,9 +291,13 @@ type knnHeap struct {
 	k       int
 }
 
-func (h *knnHeap) Len() int           { return len(h.entries) }
+// Len runs the len operation.
+func (h *knnHeap) Len() int { return len(h.entries) }
+
+// Less runs the less operation.
 func (h *knnHeap) Less(i, j int) bool { return h.entries[i].dist > h.entries[j].dist } // Max-heap
-func (h *knnHeap) Swap(i, j int)      { h.entries[i], h.entries[j] = h.entries[j], h.entries[i] }
+// Swap runs the swap operation.
+func (h *knnHeap) Swap(i, j int) { h.entries[i], h.entries[j] = h.entries[j], h.entries[i] }
 
 func (h *knnHeap) push(x distEntry) {
 	h.entries = append(h.entries, x)

@@ -28,6 +28,8 @@ func applyIndexDispatch(typeName string, nodeCount int) (restore func()) {
 	mathutil.SetBackend(want)
 	return func() { mathutil.SetBackend(prev) }
 }
+
+// SearchVectors runs the search vectors operation.
 func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filters []query.Filter, options any) ([]types.SearchResult, error) {
 	// Optimization: Convert filters to bitset
 	var filterExpr types.FilterExpr
@@ -63,6 +65,8 @@ func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filt
 
 	return h.SearchVectorsWithBitmap(ctx, queryVec, k, roaringFilter, searchOptions)
 }
+
+// ProcessResultsParallel runs the process results parallel operation.
 func (h *ArrowHNSW) ProcessResultsParallel(ctx context.Context, qv any, originalQuery any, candidates []types.Candidate, k int, filter any) []types.SearchResult {
 	var roaringFilter *roaring.Bitmap
 	if f, ok := filter.(*roaring.Bitmap); ok {

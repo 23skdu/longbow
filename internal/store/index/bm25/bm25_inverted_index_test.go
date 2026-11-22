@@ -10,6 +10,7 @@ import (
 // BM25InvertedIndex Tests
 // =============================================================================
 
+// TestNewBM25InvertedIndex runs the test new bm25 inverted index operation.
 func TestNewBM25InvertedIndex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -23,6 +24,7 @@ func TestNewBM25InvertedIndex(t *testing.T) {
 	}
 }
 
+// TestBM25InvertedIndexAdd runs the test bm25 inverted index add operation.
 func TestBM25InvertedIndexAdd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -48,6 +50,7 @@ func TestBM25InvertedIndexAdd(t *testing.T) {
 	}
 }
 
+// TestBM25InvertedIndexDelete runs the test bm25 inverted index delete operation.
 func TestBM25InvertedIndexDelete(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -78,6 +81,7 @@ func TestBM25InvertedIndexDelete(t *testing.T) {
 	}
 }
 
+// TestBM25InvertedIndexSearchBM25 runs the test bm25 inverted index search bm25 operation.
 func TestBM25InvertedIndexSearchBM25(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -114,6 +118,7 @@ func TestBM25InvertedIndexSearchBM25(t *testing.T) {
 	}
 }
 
+// TestBM25InvertedIndexMultiTermQuery runs the test bm25 inverted index multi term query operation.
 func TestBM25InvertedIndexMultiTermQuery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -135,6 +140,7 @@ func TestBM25InvertedIndexMultiTermQuery(t *testing.T) {
 	}
 }
 
+// TestBM25InvertedIndexIDFWeighting runs the test bm25 inverted index idf weighting operation.
 func TestBM25InvertedIndexIDFWeighting(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -176,6 +182,7 @@ func TestBM25InvertedIndexIDFWeighting(t *testing.T) {
 	}
 }
 
+// TestBM25InvertedIndexLengthNormalization runs the test bm25 inverted index length normalization operation.
 func TestBM25InvertedIndexLengthNormalization(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -198,6 +205,7 @@ func TestBM25InvertedIndexLengthNormalization(t *testing.T) {
 	}
 }
 
+// TestBM25InvertedIndexGetTermDocFreq runs the test bm25 inverted index get term doc freq operation.
 func TestBM25InvertedIndexGetTermDocFreq(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -227,6 +235,7 @@ func TestBM25InvertedIndexGetTermDocFreq(t *testing.T) {
 	}
 }
 
+// TestBM25InvertedIndexEmptyQuery runs the test bm25 inverted index empty query operation.
 func TestBM25InvertedIndexEmptyQuery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -247,6 +256,7 @@ func TestBM25InvertedIndexEmptyQuery(t *testing.T) {
 	}
 }
 
+// TestBM25InvertedIndexConcurrency runs the test bm25 inverted index concurrency operation.
 func TestBM25InvertedIndexConcurrency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -283,6 +293,7 @@ func TestBM25InvertedIndexConcurrency(t *testing.T) {
 	wg.Wait()
 }
 
+// TestBM25InvertedIndexLimit runs the test bm25 inverted index limit operation.
 func TestBM25InvertedIndexLimit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -307,6 +318,7 @@ func TestBM25InvertedIndexLimit(t *testing.T) {
 	}
 }
 
+// TestBlockMaxWANDCorrectness runs the test block max wand correctness operation.
 func TestBlockMaxWANDCorrectness(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -354,6 +366,7 @@ func TestBlockMaxWANDCorrectness(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkBM25InvertedIndexAdd runs the benchmark bm25 inverted index add operation.
 func BenchmarkBM25InvertedIndexAdd(b *testing.B) {
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -365,6 +378,7 @@ func BenchmarkBM25InvertedIndexAdd(b *testing.B) {
 	}
 }
 
+// BenchmarkBM25InvertedIndexSearchBM25 runs the benchmark bm25 inverted index search bm25 operation.
 func BenchmarkBM25InvertedIndexSearchBM25(b *testing.B) {
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -379,6 +393,7 @@ func BenchmarkBM25InvertedIndexSearchBM25(b *testing.B) {
 	}
 }
 
+// BenchmarkBM25InvertedIndexSearchBM25_SingleTerm runs the benchmark bm25 inverted index search bm25_single term operation.
 func BenchmarkBM25InvertedIndexSearchBM25_SingleTerm(b *testing.B) {
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 

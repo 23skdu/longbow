@@ -2,6 +2,7 @@ package main
 
 import "testing"
 
+// FuzzRingOperations runs the fuzz ring operations operation.
 func FuzzRingOperations(f *testing.F) {
 	f.Add(10, "node1", "key")
 	f.Add(1, "", "")

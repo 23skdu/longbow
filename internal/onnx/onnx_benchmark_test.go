@@ -10,6 +10,7 @@ import (
 	"github.com/23skdu/longbow/internal/onnx/metal"
 )
 
+// BenchmarkMetalRerankerScore runs the benchmark metal reranker score operation.
 func BenchmarkMetalRerankerScore(b *testing.B) {
 	if !metal.IsAvailable() {
 		b.Skip("Metal not available")
@@ -39,6 +40,7 @@ func BenchmarkMetalRerankerScore(b *testing.B) {
 	}
 }
 
+// BenchmarkMetalRerankerScoreParallel runs the benchmark metal reranker score parallel operation.
 func BenchmarkMetalRerankerScoreParallel(b *testing.B) {
 	if !metal.IsAvailable() {
 		b.Skip("Metal not available")
@@ -71,6 +73,7 @@ func BenchmarkMetalRerankerScoreParallel(b *testing.B) {
 	})
 }
 
+// BenchmarkMetalRerankerScoreLargeBatch runs the benchmark metal reranker score large batch operation.
 func BenchmarkMetalRerankerScoreLargeBatch(b *testing.B) {
 	if !metal.IsAvailable() {
 		b.Skip("Metal not available")
@@ -97,6 +100,7 @@ func BenchmarkMetalRerankerScoreLargeBatch(b *testing.B) {
 	}
 }
 
+// BenchmarkMetalRerankerScoreVaryingQueryLength runs the benchmark metal reranker score varying query length operation.
 func BenchmarkMetalRerankerScoreVaryingQueryLength(b *testing.B) {
 	if !metal.IsAvailable() {
 		b.Skip("Metal not available")

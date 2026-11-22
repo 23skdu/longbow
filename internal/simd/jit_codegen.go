@@ -6,35 +6,62 @@ import (
 
 // WASM OpCodes
 const (
+	// OpSIMDPrefix is a op simd prefix constant.
 	OpSIMDPrefix = 0xfd
 
-	OpV128Load         = 0x00
-	OpF32x4Add         = 0xe4
-	OpF32x4Sub         = 0xe5
-	OpF32x4Mul         = 0xe6
+	// OpV128Load is a op v128 load constant.
+	OpV128Load = 0x00
+	// OpF32x4Add is a op f32x4 add constant.
+	OpF32x4Add = 0xe4
+	// OpF32x4Sub is a op f32x4 sub constant.
+	OpF32x4Sub = 0xe5
+	// OpF32x4Mul is a op f32x4 mul constant.
+	OpF32x4Mul = 0xe6
+	// OpF32x4ExtractLane is a op f32x4 extract lane constant.
 	OpF32x4ExtractLane = 0x1f
 
-	OpBlock    = 0x02
-	OpLoop     = 0x03
-	OpBrIf     = 0x0d
-	OpBr       = 0x0c
-	OpEnd      = 0x0b
+	// OpBlock is a op block constant.
+	OpBlock = 0x02
+	// OpLoop is a op loop constant.
+	OpLoop = 0x03
+	// OpBrIf is a op br if constant.
+	OpBrIf = 0x0d
+	// OpBr is a op br constant.
+	OpBr = 0x0c
+	// OpEnd is a op end constant.
+	OpEnd = 0x0b
+	// OpLocalGet is a op local get constant.
 	OpLocalGet = 0x20
+	// OpLocalSet is a op local set constant.
 	OpLocalSet = 0x21
+	// OpLocalTee is a op local tee constant.
 	OpLocalTee = 0x22
-	OpF32Load  = 0x2a
+	// OpF32Load is a op f32 load constant.
+	OpF32Load = 0x2a
+	// OpF32Store is a op f32 store constant.
 	OpF32Store = 0x38
+	// OpI32Const is a op i32 const constant.
 	OpI32Const = 0x41
+	// OpF32Const is a op f32 const constant.
 	OpF32Const = 0x43
-	OpI32Add   = 0x6a
-	OpI32Mul   = 0x6c
-	OpI32Shl   = 0x74
-	OpI32GeU   = 0x4f
-	OpI32GtU   = 0x4b
-	OpF32Add   = 0x92
-	OpF32Sub   = 0x93
-	OpF32Mul   = 0x94
-	OpF32Sqrt  = 0x91
+	// OpI32Add is a op i32 add constant.
+	OpI32Add = 0x6a
+	// OpI32Mul is a op i32 mul constant.
+	OpI32Mul = 0x6c
+	// OpI32Shl is a op i32 shl constant.
+	OpI32Shl = 0x74
+	// OpI32GeU is a op i32 ge u constant.
+	OpI32GeU = 0x4f
+	// OpI32GtU is a op i32 gt u constant.
+	OpI32GtU = 0x4b
+	// OpF32Add is a op f32 add constant.
+	OpF32Add = 0x92
+	// OpF32Sub is a op f32 sub constant.
+	OpF32Sub = 0x93
+	// OpF32Mul is a op f32 mul constant.
+	OpF32Mul = 0x94
+	// OpF32Sqrt is a op f32 sqrt constant.
+	OpF32Sqrt = 0x91
 )
 
 type wasmGen struct {

@@ -59,6 +59,7 @@ func opTime(p GPUKernelProfile, name string) (calls int64, ms float64) {
 	return 0, 0
 }
 
+// TestKernelProfileTimesTheDistanceKernel runs the test kernel profile times the distance kernel operation.
 func TestKernelProfileTimesTheDistanceKernel(t *testing.T) {
 	idx := profiledIndex(t, 50_000, 128)
 
@@ -97,6 +98,7 @@ func TestKernelProfileTimesTheDistanceKernel(t *testing.T) {
 	t.Logf("kernel profile over 3 searches of 50k x 128:\n%s", prof.Table())
 }
 
+// TestKernelProfileIsOffByDefault runs the test kernel profile is off by default operation.
 func TestKernelProfileIsOffByDefault(t *testing.T) {
 	idx := profiledIndex(t, 20_000, 64)
 	SetKernelProfiling(false)
@@ -113,6 +115,7 @@ func TestKernelProfileIsOffByDefault(t *testing.T) {
 		"profiling was off: nothing may be timed")
 }
 
+// TestKernelProfileAccumulatesAndResets runs the test kernel profile accumulates and resets operation.
 func TestKernelProfileAccumulatesAndResets(t *testing.T) {
 	idx := profiledIndex(t, 50_000, 128)
 	query := make([]float32, 128)

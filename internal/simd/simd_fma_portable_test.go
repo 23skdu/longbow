@@ -54,6 +54,7 @@ func refCosineDistance(a, b []float32) float32 {
 // DotProductFMA Tests
 // =============================================================================
 
+// TestDotProductFMA_Basic runs the test dot product fma_basic operation.
 func TestDotProductFMA_Basic(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -72,6 +73,7 @@ func TestDotProductFMA_Basic(t *testing.T) {
 	}
 }
 
+// TestDotProductFMA_768Dim runs the test dot product fma_768 dim operation.
 func TestDotProductFMA_768Dim(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -91,6 +93,7 @@ func TestDotProductFMA_768Dim(t *testing.T) {
 	}
 }
 
+// TestDotProductFMA_1536Dim runs the test dot product fma_1536 dim operation.
 func TestDotProductFMA_1536Dim(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -110,6 +113,7 @@ func TestDotProductFMA_1536Dim(t *testing.T) {
 	}
 }
 
+// TestDotProductFMA_EmptyVector runs the test dot product fma_empty vector operation.
 func TestDotProductFMA_EmptyVector(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -120,6 +124,7 @@ func TestDotProductFMA_EmptyVector(t *testing.T) {
 	}
 }
 
+// TestDotProductFMA_LengthMismatch runs the test dot product fma_length mismatch operation.
 func TestDotProductFMA_LengthMismatch(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -134,6 +139,7 @@ func TestDotProductFMA_LengthMismatch(t *testing.T) {
 // EuclideanDistanceFMA Tests
 // =============================================================================
 
+// TestEuclideanDistanceFMA_Basic runs the test euclidean distance fma_basic operation.
 func TestEuclideanDistanceFMA_Basic(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -152,6 +158,7 @@ func TestEuclideanDistanceFMA_Basic(t *testing.T) {
 	}
 }
 
+// TestEuclideanDistanceFMA_768Dim runs the test euclidean distance fma_768 dim operation.
 func TestEuclideanDistanceFMA_768Dim(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -171,6 +178,7 @@ func TestEuclideanDistanceFMA_768Dim(t *testing.T) {
 	}
 }
 
+// TestEuclideanDistanceFMA_Identical runs the test euclidean distance fma_identical operation.
 func TestEuclideanDistanceFMA_Identical(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -187,6 +195,7 @@ func TestEuclideanDistanceFMA_Identical(t *testing.T) {
 // CosineDistanceFMA Tests
 // =============================================================================
 
+// TestCosineDistanceFMA_Basic runs the test cosine distance fma_basic operation.
 func TestCosineDistanceFMA_Basic(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -205,6 +214,7 @@ func TestCosineDistanceFMA_Basic(t *testing.T) {
 	}
 }
 
+// TestCosineDistanceFMA_Identical runs the test cosine distance fma_identical operation.
 func TestCosineDistanceFMA_Identical(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -218,6 +228,7 @@ func TestCosineDistanceFMA_Identical(t *testing.T) {
 	}
 }
 
+// TestCosineDistanceFMA_768Dim runs the test cosine distance fma_768 dim operation.
 func TestCosineDistanceFMA_768Dim(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -237,6 +248,7 @@ func TestCosineDistanceFMA_768Dim(t *testing.T) {
 	}
 }
 
+// TestCosineDistanceFMA_ZeroVector runs the test cosine distance fma_zero vector operation.
 func TestCosineDistanceFMA_ZeroVector(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -255,6 +267,7 @@ func TestCosineDistanceFMA_ZeroVector(t *testing.T) {
 // Non-aligned length tests (tail processing)
 // =============================================================================
 
+// TestFMA_NonAlignedLengths runs the test fma_non aligned lengths operation.
 func TestFMA_NonAlignedLengths(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not available")
@@ -292,6 +305,7 @@ func TestFMA_NonAlignedLengths(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkDotProductFMA_768 runs the benchmark dot product fma_768 operation.
 func BenchmarkDotProductFMA_768(b *testing.B) {
 	a := generateTestVector(768, 1)
 	v := generateTestVector(768, 2)
@@ -301,6 +315,7 @@ func BenchmarkDotProductFMA_768(b *testing.B) {
 	}
 }
 
+// BenchmarkDotProductFMA_1536 runs the benchmark dot product fma_1536 operation.
 func BenchmarkDotProductFMA_1536(b *testing.B) {
 	a := generateTestVector(1536, 1)
 	v := generateTestVector(1536, 2)
@@ -310,6 +325,7 @@ func BenchmarkDotProductFMA_1536(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclideanDistanceFMA_768 runs the benchmark euclidean distance fma_768 operation.
 func BenchmarkEuclideanDistanceFMA_768(b *testing.B) {
 	a := generateTestVector(768, 1)
 	v := generateTestVector(768, 2)
@@ -319,6 +335,7 @@ func BenchmarkEuclideanDistanceFMA_768(b *testing.B) {
 	}
 }
 
+// BenchmarkCosineDistanceFMA_768 runs the benchmark cosine distance fma_768 operation.
 func BenchmarkCosineDistanceFMA_768(b *testing.B) {
 	a := generateTestVector(768, 1)
 	v := generateTestVector(768, 2)

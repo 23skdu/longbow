@@ -33,6 +33,7 @@ type storageRequest struct {
 	err  chan error
 }
 
+// NewUringStorageBackend constructs a new UringStorageBackend.
 func NewUringStorageBackend(path string) (StorageBackend, error) {
 	// 1. Open file with standard flags.
 	// Note: We don't use O_DIRECT here yet, but we will if requested via BufferPool alignment.
@@ -68,10 +69,12 @@ func NewUringStorageBackend(path string) (StorageBackend, error) {
 	return b, nil
 }
 
+// ReadAt runs the read at operation.
 func (b *UringStorageBackend) ReadAt(p []byte, off int64) (int, error) {
 	return b.submitOp(p, off, true)
 }
 
+// WriteAt runs the write at operation.
 func (b *UringStorageBackend) WriteAt(p []byte, off int64) (int, error) {
 	return b.submitOp(p, off, false)
 }
@@ -138,6 +141,7 @@ func (b *UringStorageBackend) submitOp(p []byte, off int64, isRead bool) (int, e
 	}
 }
 
+// Readv runs the readv operation.
 func (b *UringStorageBackend) Readv(iovs [][]byte, off int64) (int, error) {
 	// Simplified vectored I/O using multiple SQEs
 	total := 0
@@ -155,6 +159,7 @@ func (b *UringStorageBackend) Readv(iovs [][]byte, off int64) (int, error) {
 	return total, nil
 }
 
+// Writev runs the writev operation.
 func (b *UringStorageBackend) Writev(iovs [][]byte, off int64) (int, error) {
 	total := 0
 	currOff := off
@@ -171,6 +176,7 @@ func (b *UringStorageBackend) Writev(iovs [][]byte, off int64) (int, error) {
 	return total, nil
 }
 
+// Sync runs the sync operation.
 func (b *UringStorageBackend) Sync() error {
 	// Standard Sync for WAL consistency
 	return b.f.Sync()
@@ -220,6 +226,7 @@ func (b *UringStorageBackend) completionLoop() {
 	}
 }
 
+// Close runs the close operation.
 func (b *UringStorageBackend) Close() error {
 	b.mu.Lock()
 	if !b.active {
@@ -239,6 +246,7 @@ func (b *UringStorageBackend) Close() error {
 	return b.f.Close()
 }
 
+// Size runs the size operation.
 func (b *UringStorageBackend) Size() (int64, error) {
 	fi, err := b.f.Stat()
 	if err != nil {
@@ -247,6 +255,7 @@ func (b *UringStorageBackend) Size() (int64, error) {
 	return fi.Size(), nil
 }
 
+// Name runs the name operation.
 func (b *UringStorageBackend) Name() string {
 	return b.path
 }

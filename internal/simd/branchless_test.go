@@ -16,6 +16,7 @@ func branchlessMatchInt64(src []int64, val int64, dst []byte) {
 	}
 }
 
+// BenchmarkMatchInt64 runs the benchmark match int64 operation.
 func BenchmarkMatchInt64(b *testing.B) {
 	size := 1000
 	src := make([]int64, size)
@@ -52,6 +53,7 @@ func BenchmarkMatchInt64(b *testing.B) {
 	})
 }
 
+// TestMatchInt64Correctness runs the test match int64 correctness operation.
 func TestMatchInt64Correctness(t *testing.T) {
 	src := []int64{0, 1, -1, 42, -9223372036854775808, 9223372036854775807}
 	dst := make([]byte, len(src))

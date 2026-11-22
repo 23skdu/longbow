@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMetalIndex_Basic runs the test metal index_basic operation.
 func TestMetalIndex_Basic(t *testing.T) {
 	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
@@ -43,6 +44,7 @@ func TestMetalIndex_Basic(t *testing.T) {
 	assert.Less(t, distances[0], float32(0.01))
 }
 
+// TestMetalIndex_LargeDataset runs the test metal index_large dataset operation.
 func TestMetalIndex_LargeDataset(t *testing.T) {
 	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
@@ -76,6 +78,7 @@ func TestMetalIndex_LargeDataset(t *testing.T) {
 	assert.Less(t, distances[0], float32(0.01))
 }
 
+// BenchmarkMetalSearch runs the benchmark metal search operation.
 func BenchmarkMetalSearch(b *testing.B) {
 	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,

@@ -13,6 +13,7 @@ func float32EqualTol(a, b float32, tolerance float32) bool {
 	return math.Abs(float64(a-b)) <= float64(tolerance)
 }
 
+// TestDimensionSpecificBlocked runs the test dimension specific blocked operation.
 func TestDimensionSpecificBlocked(t *testing.T) {
 	dims := []int{768, 1024, 1536, 2048, 3072}
 
@@ -48,6 +49,7 @@ func TestDimensionSpecificBlocked(t *testing.T) {
 	}
 }
 
+// TestDotProductBlocked_Float32 runs the test dot product blocked_float32 operation.
 func TestDotProductBlocked_Float32(t *testing.T) {
 	// Test cases for blocked SIMD (Dimensions > 1024)
 	dims := []int{1024, 1536, 2048, 3072, 4096, 4097} // 4097 to test odd trailing handling
@@ -77,6 +79,7 @@ func TestDotProductBlocked_Float32(t *testing.T) {
 	}
 }
 
+// TestEuclideanBlocked_Float32 runs the test euclidean blocked_float32 operation.
 func TestEuclideanBlocked_Float32(t *testing.T) {
 	dims := []int{1024, 1536, 2048, 3072, 4097}
 
@@ -100,7 +103,7 @@ func TestEuclideanBlocked_Float32(t *testing.T) {
 	}
 }
 
-// Benchmarks to prove optimizations
+// BenchmarkDotProduct_3072 to prove optimizations
 func BenchmarkDotProduct_3072(b *testing.B) {
 	dim := 3072
 	a := make([]float32, dim)

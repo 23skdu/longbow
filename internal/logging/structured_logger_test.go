@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// TestDefaultLoggerConfig runs the test default logger config operation.
 func TestDefaultLoggerConfig(t *testing.T) {
 	cfg := DefaultLoggerConfig()
 	if cfg.Level != InfoLevel {
@@ -29,6 +30,7 @@ func TestDefaultLoggerConfig(t *testing.T) {
 	}
 }
 
+// TestNewStructuredLogger runs the test new structured logger operation.
 func TestNewStructuredLogger(t *testing.T) {
 	l := NewStructuredLogger(DefaultLoggerConfig())
 	if l == nil {
@@ -39,6 +41,7 @@ func TestNewStructuredLogger(t *testing.T) {
 	}
 }
 
+// TestNewStructuredLoggerJSON runs the test new structured logger json operation.
 func TestNewStructuredLoggerJSON(t *testing.T) {
 	cfg := DefaultLoggerConfig()
 	cfg.EnableJSON = true
@@ -48,6 +51,7 @@ func TestNewStructuredLoggerJSON(t *testing.T) {
 	}
 }
 
+// TestGetZerologLevel runs the test get zerolog level operation.
 func TestGetZerologLevel(t *testing.T) {
 	tests := []struct {
 		input LogLevel
@@ -68,6 +72,7 @@ func TestGetZerologLevel(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_Debug runs the test structured logger_debug operation.
 func TestStructuredLogger_Debug(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -81,6 +86,7 @@ func TestStructuredLogger_Debug(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_Debug_LevelFiltered runs the test structured logger_debug_level filtered operation.
 func TestStructuredLogger_Debug_LevelFiltered(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -94,6 +100,7 @@ func TestStructuredLogger_Debug_LevelFiltered(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_Info runs the test structured logger_info operation.
 func TestStructuredLogger_Info(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -107,6 +114,7 @@ func TestStructuredLogger_Info(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_Info_WithFields runs the test structured logger_info_with fields operation.
 func TestStructuredLogger_Info_WithFields(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -123,6 +131,7 @@ func TestStructuredLogger_Info_WithFields(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_Info_WithContextFields runs the test structured logger_info_with context fields operation.
 func TestStructuredLogger_Info_WithContextFields(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -145,6 +154,7 @@ func TestStructuredLogger_Info_WithContextFields(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_Warn runs the test structured logger_warn operation.
 func TestStructuredLogger_Warn(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -158,6 +168,7 @@ func TestStructuredLogger_Warn(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_Error runs the test structured logger_error operation.
 func TestStructuredLogger_Error(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -171,6 +182,7 @@ func TestStructuredLogger_Error(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_Error_LevelFiltered runs the test structured logger_error_level filtered operation.
 func TestStructuredLogger_Error_LevelFiltered(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -184,6 +196,7 @@ func TestStructuredLogger_Error_LevelFiltered(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_WithComponent runs the test structured logger_with component operation.
 func TestStructuredLogger_WithComponent(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -197,6 +210,7 @@ func TestStructuredLogger_WithComponent(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_WithTrace runs the test structured logger_with trace operation.
 func TestStructuredLogger_WithTrace(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -214,6 +228,7 @@ func TestStructuredLogger_WithTrace(t *testing.T) {
 	}
 }
 
+// TestStructuredLogger_WithFields runs the test structured logger_with fields operation.
 func TestStructuredLogger_WithFields(t *testing.T) {
 	var buf bytes.Buffer
 	l := &StructuredLogger{
@@ -227,6 +242,7 @@ func TestStructuredLogger_WithFields(t *testing.T) {
 	}
 }
 
+// TestGetFields runs the test get fields operation.
 func TestGetFields(t *testing.T) {
 	result := getFields(
 		map[string]any{"a": 1, "b": 2},
@@ -240,6 +256,7 @@ func TestGetFields(t *testing.T) {
 	}
 }
 
+// TestGetFields_Overwrite runs the test get fields_overwrite operation.
 func TestGetFields_Overwrite(t *testing.T) {
 	result := getFields(
 		map[string]any{"key": "first"},
@@ -250,6 +267,7 @@ func TestGetFields_Overwrite(t *testing.T) {
 	}
 }
 
+// TestGetFields_Nil runs the test get fields_nil operation.
 func TestGetFields_Nil(t *testing.T) {
 	result := getFields()
 	if len(result) != 0 {
@@ -257,6 +275,7 @@ func TestGetFields_Nil(t *testing.T) {
 	}
 }
 
+// TestGlobalLogger_InitAndLog runs the test global logger_init and log operation.
 func TestGlobalLogger_InitAndLog(t *testing.T) {
 	globalLogger = nil
 	cfg := DefaultLoggerConfig()
@@ -272,6 +291,7 @@ func TestGlobalLogger_InitAndLog(t *testing.T) {
 	Error(ctx, "error from global")
 }
 
+// TestGlobalLogger_WithoutInit runs the test global logger_without init operation.
 func TestGlobalLogger_WithoutInit(t *testing.T) {
 	globalLogger = nil
 	ctx := context.Background()
@@ -281,6 +301,7 @@ func TestGlobalLogger_WithoutInit(t *testing.T) {
 	Error(ctx, "no-op")
 }
 
+// TestGlobalLogger_WithComponent runs the test global logger_with component operation.
 func TestGlobalLogger_WithComponent(t *testing.T) {
 	globalLogger = nil
 	sub := WithComponent("test-comp")
@@ -295,6 +316,7 @@ func TestGlobalLogger_WithComponent(t *testing.T) {
 	}
 }
 
+// TestGlobalLogger_WithTrace runs the test global logger_with trace operation.
 func TestGlobalLogger_WithTrace(t *testing.T) {
 	globalLogger = nil
 	sub := WithTrace("tid", "sid")
@@ -303,6 +325,7 @@ func TestGlobalLogger_WithTrace(t *testing.T) {
 	}
 }
 
+// TestGlobalLogger_WithFields runs the test global logger_with fields operation.
 func TestGlobalLogger_WithFields(t *testing.T) {
 	globalLogger = nil
 	sub := WithFields(map[string]any{"k": "v"})
@@ -311,6 +334,7 @@ func TestGlobalLogger_WithFields(t *testing.T) {
 	}
 }
 
+// TestMetricsHook_NoLevel runs the test metrics hook_no level operation.
 func TestMetricsHook_NoLevel(t *testing.T) {
 	var buf bytes.Buffer
 	logger := zerolog.New(&buf)
@@ -320,6 +344,7 @@ func TestMetricsHook_NoLevel(t *testing.T) {
 	// Should not panic; NoLevel is skipped
 }
 
+// TestMetricsHook_ErrorLevel runs the test metrics hook_error level operation.
 func TestMetricsHook_ErrorLevel(t *testing.T) {
 	var buf bytes.Buffer
 	logger := zerolog.New(&buf)
@@ -329,6 +354,7 @@ func TestMetricsHook_ErrorLevel(t *testing.T) {
 	// Should not panic
 }
 
+// TestConsoleFormat runs the test console format operation.
 func TestConsoleFormat(t *testing.T) {
 	var buf bytes.Buffer
 	logger, err := NewLogger(Config{
@@ -345,6 +371,7 @@ func TestConsoleFormat(t *testing.T) {
 	}
 }
 
+// TestInvalidFormatDefaultsToJSON runs the test invalid format defaults to json operation.
 func TestInvalidFormatDefaultsToJSON(t *testing.T) {
 	var buf bytes.Buffer
 	logger, err := NewLogger(Config{
@@ -363,6 +390,7 @@ func TestInvalidFormatDefaultsToJSON(t *testing.T) {
 	}
 }
 
+// TestNilOutputDefaultsToStdout runs the test nil output defaults to stdout operation.
 func TestNilOutputDefaultsToStdout(t *testing.T) {
 	// Should not panic when Output is nil (defaults to os.Stdout)
 	logger, err := NewLogger(Config{

@@ -28,6 +28,7 @@ var (
 		Help: "Total number of vector pool misses (new allocations)",
 	})
 
+	// VectorPoolPuts is a vector pool puts value.
 	VectorPoolPuts = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_vector_pool_puts_total",
 		Help: "Total number of vectors returned to pool",
@@ -39,11 +40,13 @@ var (
 		Help: "Total number of vector allocations for HNSW graph storage",
 	})
 
+	// HNSWVectorAllocatedBytes is a hnsw vector allocated bytes value.
 	HNSWVectorAllocatedBytes = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_hnsw_vector_allocated_bytes_total",
 		Help: "Total bytes allocated for HNSW vector storage",
 	})
 
+	// HNSWGraphNodeAllocations is a hnsw graph node allocations value.
 	HNSWGraphNodeAllocations = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_hnsw_graph_node_allocations_total",
 		Help: "Total number of HNSW graph node allocations",
@@ -62,12 +65,14 @@ var (
 		Buckets: prometheus.DefBuckets,
 	})
 
+	// HNSWPreWarmDuration is a hnsw pre warm duration value.
 	HNSWPreWarmDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "longbow_hnsw_prewarm_duration_seconds",
 		Help:    "Time taken to page-fault HNSW memory into RAM",
 		Buckets: []float64{0.001, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0},
 	})
 
+	// HNSWPreWarmTotal is a hnsw pre warm total value.
 	HNSWPreWarmTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_hnsw_prewarm_total",
 		Help: "Total number of HNSW index prewarm operations executed",
@@ -79,22 +84,26 @@ var (
 		Help: "Total number of orphaned nodes detected by repair agent",
 	}, []string{"dataset"})
 
+	// HNSWRepairOrphansRepaired is a hnsw repair orphans repaired value.
 	HNSWRepairOrphansRepaired = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "longbow_hnsw_repair_orphans_repaired_total",
 		Help: "Total number of orphaned nodes repaired by repair agent",
 	}, []string{"dataset"})
 
+	// HNSWRepairScanDuration is a hnsw repair scan duration value.
 	HNSWRepairScanDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "longbow_hnsw_repair_scan_duration_seconds",
 		Help:    "Time spent scanning for orphaned nodes",
 		Buckets: []float64{0.001, 0.01, 0.1, 1, 10, 60, 300},
 	}, []string{"dataset"})
 
+	// HNSWRepairLastScanTime is a hnsw repair last scan time value.
 	HNSWRepairLastScanTime = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "longbow_hnsw_repair_last_scan_timestamp_seconds",
 		Help: "Unix timestamp of last repair scan",
 	}, []string{"dataset"})
 
+	// HNSWInsertDurationSeconds is a hnsw insert duration seconds value.
 	HNSWInsertDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_insert_duration_seconds",
@@ -129,6 +138,7 @@ var (
 		[]string{"element_type", "metric", "outcome"},
 	)
 
+	// HNSWBulkInsertDurationSeconds is a hnsw bulk insert duration seconds value.
 	HNSWBulkInsertDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_bulk_insert_duration_seconds",
@@ -137,6 +147,7 @@ var (
 		},
 	)
 
+	// HNSWSearchDurationSeconds is a hnsw search duration seconds value.
 	HNSWSearchDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_search_duration_seconds",
@@ -185,6 +196,7 @@ var (
 		[]string{"dim"},
 	)
 
+	// HNSWBulkVectorsProcessedTotal is a hnsw bulk vectors processed total value.
 	HNSWBulkVectorsProcessedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_bulk_vectors_processed_total",
@@ -221,6 +233,7 @@ var (
 		[]string{"type"},
 	)
 
+	// HNSWNodeCount is a hnsw node count value.
 	HNSWNodeCount = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_hnsw_node_count",
@@ -247,6 +260,7 @@ var (
 		[]string{"dataset", "type"},
 	)
 
+	// HNSWResizesTotal is a hnsw resizes total value.
 	HNSWResizesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_resizes_total",
@@ -255,6 +269,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HNSWSearchPoolGetTotal is a hnsw search pool get total value.
 	HNSWSearchPoolGetTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_search_pool_get_total",
@@ -262,6 +277,7 @@ var (
 		},
 	)
 
+	// HNSWSearchPoolNewTotal is a hnsw search pool new total value.
 	HNSWSearchPoolNewTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_search_pool_new_total",
@@ -269,6 +285,7 @@ var (
 		},
 	)
 
+	// HNSWSearchPoolPutTotal is a hnsw search pool put total value.
 	HNSWSearchPoolPutTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_search_pool_put_total",
@@ -276,6 +293,7 @@ var (
 		},
 	)
 
+	// HNSWInsertPoolGetTotal is a hnsw insert pool get total value.
 	HNSWInsertPoolGetTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_insert_pool_get_total",
@@ -283,6 +301,7 @@ var (
 		},
 	)
 
+	// HNSWInsertPoolNewTotal is a hnsw insert pool new total value.
 	HNSWInsertPoolNewTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_insert_pool_new_total",
@@ -290,6 +309,7 @@ var (
 		},
 	)
 
+	// HNSWInsertPoolPutTotal is a hnsw insert pool put total value.
 	HNSWInsertPoolPutTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_insert_pool_put_total",
@@ -297,6 +317,7 @@ var (
 		},
 	)
 
+	// HNSWBitsetGrowTotal is a hnsw bitset grow total value.
 	HNSWBitsetGrowTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_bitset_grow_total",
@@ -304,6 +325,7 @@ var (
 		},
 	)
 
+	// HNSWDistanceCalculationsF16Total is a hnsw distance calculations f16 total value.
 	HNSWDistanceCalculationsF16Total = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_distance_calculations_f16_total",
@@ -476,6 +498,7 @@ var (
 		[]string{"dataset", "component"},
 	)
 
+	// HNSWSearchScratchSpaceResizesTotal is a hnsw search scratch space resizes total value.
 	HNSWSearchScratchSpaceResizesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_search_scratch_space_resizes_total",
@@ -500,6 +523,7 @@ var (
 		[]string{"dims"},
 	)
 
+	// IndexBuildDurationSeconds is a index build duration seconds value.
 	IndexBuildDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_index_build_duration_seconds",

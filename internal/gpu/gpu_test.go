@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGPUIndex_Basic runs the test gpu index_basic operation.
 func TestGPUIndex_Basic(t *testing.T) {
 	// Skip if no GPU available
 	idx, err := NewIndexWithConfig(GPUConfig{
@@ -46,6 +47,7 @@ func TestGPUIndex_Basic(t *testing.T) {
 	assert.Less(t, distances[0], float32(0.01))
 }
 
+// TestGPUIndex_InvalidDimension runs the test gpu index_invalid dimension operation.
 func TestGPUIndex_InvalidDimension(t *testing.T) {
 	_, err := NewIndexWithConfig(GPUConfig{
 		DeviceID:  0,
@@ -54,6 +56,7 @@ func TestGPUIndex_InvalidDimension(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// BenchmarkGPUSearch runs the benchmark gpu search operation.
 func BenchmarkGPUSearch(b *testing.B) {
 	idx, err := NewIndexWithConfig(GPUConfig{
 		DeviceID:  0,

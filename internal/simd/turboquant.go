@@ -25,7 +25,7 @@ type tqScratchBuf struct {
 // TurboQuantDistanceFunc calculates the distance between a query and a TQ-encoded vector.
 type TurboQuantDistanceFunc func(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error)
 
-// TurboQuantPolarTransform calculates the recursive polar transform for a vector.
+// TurboQuantPolarTransformFunc calculates the recursive polar transform for a vector.
 // src: input vector (length n, power of 2)
 // dstRadii: intermediate radii (length n/2)
 // dstAngles: extracted angles (length n/2)
@@ -272,6 +272,7 @@ func turboQuantDistanceNEONScratch(query []float32, tqData []byte, dim int, pow2
 	return float32(math.Sqrt(float64(sum))), nil
 }
 
+// TurboQuantDistanceGeneric runs the turbo quant distance generic operation.
 func TurboQuantDistanceGeneric(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
 	if len(tqData) < 4 || bitsPerAngle <= 0 || bitsPerAngle > 8 {
 		return 0, nil
@@ -326,12 +327,14 @@ func TurboQuantDistanceGeneric(query []float32, tqData []byte, dim int, pow2 int
 	return float32(math.Sqrt(float64(sum))), nil
 }
 
+// TurboQuantDistanceAVX512 runs the turbo quant distance avx512 operation.
 func TurboQuantDistanceAVX512(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
 	buf := tqScratchPool.Get().(*tqScratchBuf)
 	defer tqScratchPool.Put(buf)
 	return turboQuantDistanceWithL2Scratch(query, tqData, dim, pow2, bitsPerAngle, buf.recon, buf.indices, l2SquaredAVX512)
 }
 
+// TurboQuantDistanceAVX2 runs the turbo quant distance avx2 operation.
 func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
 	buf := tqScratchPool.Get().(*tqScratchBuf)
 	defer tqScratchPool.Put(buf)

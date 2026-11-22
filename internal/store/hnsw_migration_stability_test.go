@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMigrationStability runs the test migration stability operation.
 func TestMigrationStability(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

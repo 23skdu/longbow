@@ -14,6 +14,7 @@ type Ring struct {
 	vnodes      int               // virtual nodes per real node
 }
 
+// NewRing constructs a new Ring.
 func NewRing(vnodes int) *Ring {
 	return &Ring{
 		nodes:  make(map[uint64]string),
@@ -21,6 +22,7 @@ func NewRing(vnodes int) *Ring {
 	}
 }
 
+// AddNode runs the add node operation.
 func (r *Ring) AddNode(id string) {
 	for i := 0; i < r.vnodes; i++ {
 		h := r.hash(fmt.Sprintf("%s:%d", id, i))
@@ -32,6 +34,7 @@ func (r *Ring) AddNode(id string) {
 	})
 }
 
+// RemoveNode runs the remove node operation.
 func (r *Ring) RemoveNode(id string) {
 	newNodes := make([]uint64, 0, len(r.sortedNodes))
 	for _, h := range r.sortedNodes {
@@ -44,6 +47,7 @@ func (r *Ring) RemoveNode(id string) {
 	r.sortedNodes = newNodes
 }
 
+// GetNode returns the node.
 func (r *Ring) GetNode(key string) string {
 	if len(r.sortedNodes) == 0 {
 		return ""

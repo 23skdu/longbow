@@ -29,6 +29,7 @@ func createNumaTestBatch(t *testing.T) arrow.RecordBatch {
 	return b.NewRecordBatch()
 }
 
+// TestNUMAIndexQueues_RoutingAndStealing runs the test numa index queues_routing and stealing operation.
 func TestNUMAIndexQueues_RoutingAndStealing(t *testing.T) {
 	vs := &VectorStore{
 		indexQueue:      NewIndexJobQueueLockFree(DefaultIndexJobQueueConfig()),
@@ -110,6 +111,7 @@ func TestNUMAIndexQueues_RoutingAndStealing(t *testing.T) {
 	assert.Equal(t, 0, vs.TotalIndexQueueDepth())
 }
 
+// TestNUMAIndexQueues_FallbackToGlobal runs the test numa index queues_fallback to global operation.
 func TestNUMAIndexQueues_FallbackToGlobal(t *testing.T) {
 	vs := &VectorStore{
 		indexQueue:      NewIndexJobQueueLockFree(DefaultIndexJobQueueConfig()),
@@ -143,6 +145,7 @@ func TestNUMAIndexQueues_FallbackToGlobal(t *testing.T) {
 	assert.Equal(t, 1, vs.TotalIndexQueueDepth())
 }
 
+// TestNUMAIndexQueues_ConcurrentEnqueueDequeue runs the test numa index queues_concurrent enqueue dequeue operation.
 func TestNUMAIndexQueues_ConcurrentEnqueueDequeue(t *testing.T) {
 	vs := &VectorStore{
 		indexQueue:      NewIndexJobQueueLockFree(DefaultIndexJobQueueConfig()),

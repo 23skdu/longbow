@@ -118,6 +118,7 @@ func (h *ArrowHNSW) updateMetadataIfHigher(id uint32, level int32) {
 	})
 }
 
+// AddByLocation runs the add by location operation.
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	next := h.nextID.Add(1)
 	if next > math.MaxUint32 {
@@ -156,6 +157,7 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 	return id, nil
 }
 
+// AddByRecord runs the add by record operation.
 func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	next := h.nextID.Add(1)
 	if next > math.MaxUint32 {

@@ -23,6 +23,7 @@ type complex64Computer struct {
 	batchVecsF32 [][]float32
 }
 
+// Compute runs the compute operation.
 func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
 	var lastCID = -1
 	var lastChunk []complex64
@@ -57,6 +58,7 @@ func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
 	return nil
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []complex64
@@ -84,6 +86,7 @@ func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *complex64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	if cap(dst) < len(ids) {
 		dst = make([]float32, len(ids))
@@ -148,6 +151,7 @@ func (c *complex64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32
 	}
 }
 
+// Prefetch runs the prefetch operation.
 func (c *complex64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsComplex64ChunkFast(int(cID))
@@ -176,6 +180,7 @@ type complex128Computer struct {
 	threshold    float32
 }
 
+// Compute runs the compute operation.
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 	var lastCID = -1
 	var lastChunk []complex128
@@ -230,6 +235,7 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 	return nil
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 	// Triangle-inequality pruning: if |queryMag - storedMag| > threshold, skip
 	if c.threshold > 0 {
@@ -270,6 +276,7 @@ func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	if cap(dst) < len(ids) {
 		dst = make([]float32, len(ids))
@@ -351,6 +358,7 @@ func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 	}
 }
 
+// Prefetch runs the prefetch operation.
 func (c *complex128Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsComplex128ChunkFast(int(cID))
@@ -364,6 +372,7 @@ func (c *complex128Computer) Prefetch(id uint32) {
 	}
 }
 
+// SetThreshold sets the threshold.
 func (c *complex128Computer) SetThreshold(t float32) {
 	c.threshold = t
 }

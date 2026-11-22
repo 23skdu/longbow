@@ -9,6 +9,7 @@ import (
 // BM25Config Tests
 // =============================================================================
 
+// TestDefaultBM25Config runs the test default bm25 config operation.
 func TestDefaultBM25Config(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -24,6 +25,7 @@ func TestDefaultBM25Config(t *testing.T) {
 	}
 }
 
+// TestBM25ConfigValidation runs the test bm25 config validation operation.
 func TestBM25ConfigValidation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -60,6 +62,7 @@ func TestBM25ConfigValidation(t *testing.T) {
 // BM25Scorer Tests
 // =============================================================================
 
+// TestNewBM25Scorer runs the test new bm25 scorer operation.
 func TestNewBM25Scorer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -81,6 +84,7 @@ func TestNewBM25Scorer(t *testing.T) {
 	}
 }
 
+// TestBM25ScorerAddDocument runs the test bm25 scorer add document operation.
 func TestBM25ScorerAddDocument(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -106,6 +110,7 @@ func TestBM25ScorerAddDocument(t *testing.T) {
 	}
 }
 
+// TestBM25ScorerRemoveDocument runs the test bm25 scorer remove document operation.
 func TestBM25ScorerRemoveDocument(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -124,6 +129,7 @@ func TestBM25ScorerRemoveDocument(t *testing.T) {
 	}
 }
 
+// TestBM25ScorerIDF runs the test bm25 scorer idf operation.
 func TestBM25ScorerIDF(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -151,6 +157,7 @@ func TestBM25ScorerIDF(t *testing.T) {
 	}
 }
 
+// TestBM25ScorerScore runs the test bm25 scorer score operation.
 func TestBM25ScorerScore(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -190,6 +197,7 @@ func TestBM25ScorerScore(t *testing.T) {
 	}
 }
 
+// TestBM25ScorerScoreEdgeCases runs the test bm25 scorer score edge cases operation.
 func TestBM25ScorerScoreEdgeCases(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -220,6 +228,7 @@ func TestBM25ScorerScoreEdgeCases(t *testing.T) {
 	}
 }
 
+// TestBM25ScorerConcurrency runs the test bm25 scorer concurrency operation.
 func TestBM25ScorerConcurrency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -248,6 +257,7 @@ func TestBM25ScorerConcurrency(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkBM25Score runs the benchmark bm25 score operation.
 func BenchmarkBM25Score(b *testing.B) {
 	scorer := NewBM25Scorer(DefaultBM25Config())
 	for i := 0; i < 10000; i++ {
@@ -260,6 +270,7 @@ func BenchmarkBM25Score(b *testing.B) {
 	}
 }
 
+// BenchmarkBM25IDF runs the benchmark bm25 idf operation.
 func BenchmarkBM25IDF(b *testing.B) {
 	scorer := NewBM25Scorer(DefaultBM25Config())
 	for i := 0; i < 10000; i++ {

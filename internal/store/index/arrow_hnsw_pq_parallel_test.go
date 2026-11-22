@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_PQ_ParallelSearch runs the test arrow hnsw_pq_parallel search operation.
 func TestArrowHNSW_PQ_ParallelSearch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping PQ parallel search test in short mode")

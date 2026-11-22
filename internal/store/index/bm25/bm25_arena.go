@@ -29,6 +29,7 @@ func newSlicePostingsStore(initialCapacity int) *slicePostingsStore {
 	return &slicePostingsStore{lists: make([][]uint32, initialCapacity)}
 }
 
+// EnsureCapacity runs the ensure capacity operation.
 func (s *slicePostingsStore) EnsureCapacity(nodeID uint32) {
 	if int(nodeID) >= len(s.lists) {
 		grow := make([][]uint32, int(nodeID)+1-len(s.lists))
@@ -36,12 +37,14 @@ func (s *slicePostingsStore) EnsureCapacity(nodeID uint32) {
 	}
 }
 
+// SetNeighbors sets the neighbors.
 func (s *slicePostingsStore) SetNeighbors(id uint32, neighbors []uint32) error {
 	s.EnsureCapacity(id)
 	s.lists[id] = neighbors
 	return nil
 }
 
+// GetNeighbors returns the neighbors.
 func (s *slicePostingsStore) GetNeighbors(id uint32) ([]uint32, bool) {
 	if int(id) >= len(s.lists) || len(s.lists[id]) == 0 {
 		return nil, false

@@ -6,12 +6,16 @@ import (
 	"time"
 )
 
+// MemberStatus represents a member status value.
 type MemberStatus uint8
 
 const (
-	StatusAlive   MemberStatus = 0
+	// StatusAlive is a status alive constant.
+	StatusAlive MemberStatus = 0
+	// StatusSuspect is a status suspect constant.
 	StatusSuspect MemberStatus = 1
-	StatusDead    MemberStatus = 2
+	// StatusDead is a status dead constant.
+	StatusDead MemberStatus = 2
 )
 
 // Member represents a peer in the mesh.
@@ -227,7 +231,7 @@ func DecodeMember(src []byte) (*Member, int, error) {
 	}, offset, nil
 }
 
-// Resolution Rules (SWIM)
+// Empty Rules (SWIM)
 // - Alive overrides Suspect if Incarnation > known
 // - Suspect overrides Alive if Incarnation >= known
 // - Dead overrides all

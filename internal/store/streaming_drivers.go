@@ -121,8 +121,13 @@ type kafkaStreamHandler struct {
 	conn *StreamConnector
 }
 
-func (h *kafkaStreamHandler) Setup(sarama.ConsumerGroupSession) error   { return nil }
+// Setup sets the up.
+func (h *kafkaStreamHandler) Setup(sarama.ConsumerGroupSession) error { return nil }
+
+// Cleanup runs the cleanup operation.
 func (h *kafkaStreamHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
+
+// ConsumeClaim runs the consume claim operation.
 func (h *kafkaStreamHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	batch := make([]StreamEnvelope, 0, h.conn.cfg.BatchSize)
 	flushTimer := time.NewTimer(time.Duration(h.conn.cfg.FlushIntervalMs) * time.Millisecond)

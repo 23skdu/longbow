@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// FuzzRetryDo runs the fuzz retry do operation.
 func FuzzRetryDo(f *testing.F) {
 	f.Add(1, 10, 50, 100)
 	f.Fuzz(func(t *testing.T, retries, baseDelayMs, maxDelayMs, timeoutMs int) {

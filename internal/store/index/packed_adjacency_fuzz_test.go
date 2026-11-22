@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// FuzzPackedAdjacency runs the fuzz packed adjacency operation.
 func FuzzPackedAdjacency(f *testing.F) {
 	f.Add(uint32(10), uint32(5))
 	f.Fuzz(func(t *testing.T, count uint32, seed uint32) {

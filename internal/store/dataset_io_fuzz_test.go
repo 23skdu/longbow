@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// FuzzDatasetHeaderValidate runs the fuzz dataset header validate operation.
 func FuzzDatasetHeaderValidate(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -25,6 +26,7 @@ func FuzzDatasetHeaderValidate(f *testing.F) {
 	})
 }
 
+// FuzzDatasetIOExportImport runs the fuzz dataset io export import operation.
 func FuzzDatasetIOExportImport(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -86,6 +88,7 @@ func FuzzDatasetIOExportImport(f *testing.F) {
 	})
 }
 
+// FuzzDatasetParquetRecord runs the fuzz dataset parquet record operation.
 func FuzzDatasetParquetRecord(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

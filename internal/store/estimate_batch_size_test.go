@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestEstimateBatchSize runs the test estimate batch size operation.
 func TestEstimateBatchSize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

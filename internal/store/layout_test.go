@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestGraphData_CacheLinePadding runs the test graph data_cache line padding operation.
 func TestGraphData_CacheLinePadding(t *testing.T) {
 	tests := []struct {
 		name          string

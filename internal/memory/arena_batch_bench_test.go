@@ -24,6 +24,7 @@ func benchArenaChunks(n, chunkLen int, elemLen int) (*SlabArena, []uint64) {
 	return arena, offsets
 }
 
+// BenchmarkSlabArena_GetWithGeneration runs the benchmark slab arena_get with generation operation.
 func BenchmarkSlabArena_GetWithGeneration(b *testing.B) {
 	const chunkLen = 1024
 	arena, offsets := benchArenaChunks(4, chunkLen, 4)
@@ -41,6 +42,7 @@ func BenchmarkSlabArena_GetWithGeneration(b *testing.B) {
 	_ = sink
 }
 
+// BenchmarkSlabArena_GetWithGeneration_MaxUint64 runs the benchmark slab arena_get with generation_max uint64 operation.
 func BenchmarkSlabArena_GetWithGeneration_MaxUint64(b *testing.B) {
 	const chunkLen = 1024
 	arena, offsets := benchArenaChunks(4, chunkLen, 4)
@@ -98,8 +100,13 @@ func benchmarkSlabBatchResolve(b *testing.B, n int) {
 	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(int64(b.N)*int64(n)), "ns/vector")
 }
 
-func BenchmarkSlabArena_BatchResolve_32(b *testing.B)  { benchmarkSlabBatchResolve(b, 32) }
+// BenchmarkSlabArena_BatchResolve_32 runs the benchmark slab arena_batch resolve_32 operation.
+func BenchmarkSlabArena_BatchResolve_32(b *testing.B) { benchmarkSlabBatchResolve(b, 32) }
+
+// BenchmarkSlabArena_BatchResolve_256 runs the benchmark slab arena_batch resolve_256 operation.
 func BenchmarkSlabArena_BatchResolve_256(b *testing.B) { benchmarkSlabBatchResolve(b, 256) }
+
+// BenchmarkSlabArena_BatchResolve_1024 runs the benchmark slab arena_batch resolve_1024 operation.
 func BenchmarkSlabArena_BatchResolve_1024(b *testing.B) {
 	benchmarkSlabBatchResolve(b, 1024)
 }
@@ -126,14 +133,17 @@ func benchmarkSlabGetPerVector(b *testing.B, n int) {
 	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(int64(b.N)*int64(n)), "ns/vector")
 }
 
+// BenchmarkSlabArena_GetWithGeneration_PerVector_32 runs the benchmark slab arena_get with generation_per vector_32 operation.
 func BenchmarkSlabArena_GetWithGeneration_PerVector_32(b *testing.B) {
 	benchmarkSlabGetPerVector(b, 32)
 }
 
+// BenchmarkSlabArena_GetWithGeneration_PerVector_256 runs the benchmark slab arena_get with generation_per vector_256 operation.
 func BenchmarkSlabArena_GetWithGeneration_PerVector_256(b *testing.B) {
 	benchmarkSlabGetPerVector(b, 256)
 }
 
+// BenchmarkSlabArena_GetWithGeneration_PerVector_1024 runs the benchmark slab arena_get with generation_per vector_1024 operation.
 func BenchmarkSlabArena_GetWithGeneration_PerVector_1024(b *testing.B) {
 	benchmarkSlabGetPerVector(b, 1024)
 }
@@ -169,6 +179,7 @@ func BenchmarkTypedArena_GetWithGeneration(b *testing.B) {
 	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*1024), "ns/vector")
 }
 
+// BenchmarkTypedArena_BatchResolve runs the benchmark typed arena_batch resolve operation.
 func BenchmarkTypedArena_BatchResolve(b *testing.B) {
 	const vecElems = 128
 	arena := NewSlabArena(1 << 20)

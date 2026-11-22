@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestSinFloat32AVX2 runs the test sin float32 avx2 operation.
 func TestSinFloat32AVX2(t *testing.T) {
 	src := []float32{0, math.Pi / 6, math.Pi / 4, math.Pi / 3, math.Pi / 2, -math.Pi / 4, -math.Pi / 2, 0.1, 0.2, 0.3}
 	dstAVX2 := make([]float32, len(src))
@@ -21,6 +22,7 @@ func TestSinFloat32AVX2(t *testing.T) {
 	}
 }
 
+// TestCosFloat32AVX2 runs the test cos float32 avx2 operation.
 func TestCosFloat32AVX2(t *testing.T) {
 	src := []float32{0, math.Pi / 6, math.Pi / 4, math.Pi / 3, math.Pi / 2, -math.Pi / 4, -math.Pi / 2, 0.1, 0.2, 0.3}
 	dstAVX2 := make([]float32, len(src))
@@ -37,6 +39,7 @@ func TestCosFloat32AVX2(t *testing.T) {
 	}
 }
 
+// TestSincosFloat32AVX2 runs the test sincos float32 avx2 operation.
 func TestSincosFloat32AVX2(t *testing.T) {
 	src := []float32{0, math.Pi / 6, math.Pi / 4, math.Pi / 3, math.Pi / 2, -math.Pi / 4, -math.Pi / 2, 0.1, 0.2, 0.3}
 	sinAVX2 := make([]float32, len(src))

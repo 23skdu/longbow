@@ -17,6 +17,7 @@ func castRecordToSchemaHelper(s *VectorStore, rec arrow.RecordBatch, target *arr
 	return castRecordToSchema(s.mem, rec, target)
 }
 
+// TestCastRecordToSchema_EdgeCases runs the test cast record to schema_edge cases operation.
 func TestCastRecordToSchema_EdgeCases(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

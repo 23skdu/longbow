@@ -16,6 +16,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// Add runs the add operation.
 func (idx *CUDAIndex) Add(ids []int64, vectors []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -46,6 +47,7 @@ func (idx *CUDAIndex) Add(ids []int64, vectors []float32) error {
 	return nil
 }
 
+// Flush runs the flush operation.
 func (idx *CUDAIndex) Flush() error {
 	if err := idx.acquireGPUOp(); err != nil {
 		return fmt.Errorf("failed to acquire GPU op slot: %w", err)
@@ -147,6 +149,7 @@ func (idx *CUDAIndex) Flush() error {
 	return nil
 }
 
+// AddPQ runs the add pq operation.
 func (idx *CUDAIndex) AddPQ(ids []int64, codes []byte, m int) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()

@@ -8,6 +8,7 @@ import (
 	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
+// TestCUDAStub runs the test cuda stub operation.
 func TestCUDAStub(t *testing.T) {
 	cfg := types.GPUConfig{
 		DeviceID:  0,

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestIVFOPQIndex_HNSWCoarse runs the test ivfopq index_hnsw coarse operation.
 func TestIVFOPQIndex_HNSWCoarse(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

@@ -122,17 +122,26 @@ type streamTournamentHeap struct {
 	ascending bool
 }
 
+// Len runs the len operation.
 func (h streamTournamentHeap) Len() int { return len(h.items) }
+
+// Less runs the less operation.
 func (h streamTournamentHeap) Less(i, j int) bool {
 	if h.ascending {
 		return h.items[i].score < h.items[j].score
 	}
 	return h.items[i].score > h.items[j].score
 }
+
+// Swap runs the swap operation.
 func (h streamTournamentHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
+
+// Push runs the push operation.
 func (h *streamTournamentHeap) Push(x any) {
 	h.items = append(h.items, x.(streamHeapItem))
 }
+
+// Pop runs the pop operation.
 func (h *streamTournamentHeap) Pop() any {
 	old := h.items
 	n := len(old)
@@ -149,17 +158,26 @@ type boundedHeap struct {
 	ascending bool
 }
 
+// Len runs the len operation.
 func (h boundedHeap) Len() int { return len(h.items) }
+
+// Less runs the less operation.
 func (h boundedHeap) Less(i, j int) bool {
 	if h.ascending {
 		return h.items[i].score > h.items[j].score
 	}
 	return h.items[i].score < h.items[j].score
 }
+
+// Swap runs the swap operation.
 func (h boundedHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
+
+// Push runs the push operation.
 func (h *boundedHeap) Push(x any) {
 	h.items = append(h.items, x.(streamHeapItem))
 }
+
+// Pop runs the pop operation.
 func (h *boundedHeap) Pop() any {
 	old := h.items
 	n := len(old)

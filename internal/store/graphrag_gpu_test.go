@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestGraphRAG_GPUExpansion runs the test graph rag_gpu expansion operation.
 func TestGraphRAG_GPUExpansion(t *testing.T) {
 	// 1. Setup Mock GPU Index
 	cfg := types.GPUConfig{Dimension: 128, Enabled: true}

@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// BenchmarkPQ_1536d runs the benchmark pq_1536d operation.
 func BenchmarkPQ_1536d(b *testing.B) {
 	dim := 1536
 	m := 192 // 1536 divided by 8 is 192

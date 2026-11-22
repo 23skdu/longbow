@@ -17,6 +17,7 @@ import (
 // Test: PerPResultPoolConfig defaults and validation
 // -----------------------------------------------------------------------------
 
+// TestPerPResultPoolConfigDefaults runs the test per p result pool config defaults operation.
 func TestPerPResultPoolConfigDefaults(t *testing.T) {
 	cfg := DefaultPerPResultPoolConfig()
 
@@ -33,6 +34,7 @@ func TestPerPResultPoolConfigDefaults(t *testing.T) {
 	}
 }
 
+// TestPerPResultPoolConfigValidation runs the test per p result pool config validation operation.
 func TestPerPResultPoolConfigValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -80,6 +82,7 @@ func TestPerPResultPoolConfigValidation(t *testing.T) {
 // Test: PerPResultPool creation
 // -----------------------------------------------------------------------------
 
+// TestNewPerPResultPool runs the test new per p result pool operation.
 func TestNewPerPResultPool(t *testing.T) {
 	pool := NewPerPResultPool(nil) // nil uses defaults
 	if pool == nil {
@@ -93,6 +96,7 @@ func TestNewPerPResultPool(t *testing.T) {
 	}
 }
 
+// TestNewPerPResultPoolWithConfig runs the test new per p result pool with config operation.
 func TestNewPerPResultPoolWithConfig(t *testing.T) {
 	cfg := &PerPResultPoolConfig{
 		NumShards:   8,
@@ -111,6 +115,7 @@ func TestNewPerPResultPoolWithConfig(t *testing.T) {
 // Test: Get/Put operations for standard k values
 // -----------------------------------------------------------------------------
 
+// TestPerPResultPoolGetPut runs the test per p result pool get put operation.
 func TestPerPResultPoolGetPut(t *testing.T) {
 	pool := NewPerPResultPool(nil)
 
@@ -136,6 +141,7 @@ func TestPerPResultPoolGetPut(t *testing.T) {
 	}
 }
 
+// TestPerPResultPoolReslicing runs the test per p result pool reslicing operation.
 func TestPerPResultPoolReslicing(t *testing.T) {
 	pool := NewPerPResultPool(nil)
 
@@ -157,6 +163,7 @@ func TestPerPResultPoolReslicing(t *testing.T) {
 	pool.Put(slice)
 }
 
+// TestPerPResultPoolOversized runs the test per p result pool oversized operation.
 func TestPerPResultPoolOversized(t *testing.T) {
 	pool := NewPerPResultPool(nil)
 
@@ -173,6 +180,7 @@ func TestPerPResultPoolOversized(t *testing.T) {
 // Test: Per-P distribution - verify sharding works
 // -----------------------------------------------------------------------------
 
+// TestPerPResultPoolShardDistribution runs the test per p result pool shard distribution operation.
 func TestPerPResultPoolShardDistribution(t *testing.T) {
 	cfg := &PerPResultPoolConfig{
 		NumShards:   4,
@@ -197,6 +205,7 @@ func TestPerPResultPoolShardDistribution(t *testing.T) {
 // Test: Concurrent access safety
 // -----------------------------------------------------------------------------
 
+// TestPerPResultPoolConcurrentAccess runs the test per p result pool concurrent access operation.
 func TestPerPResultPoolConcurrentAccess(t *testing.T) {
 	pool := NewPerPResultPool(nil)
 
@@ -237,6 +246,7 @@ func TestPerPResultPoolConcurrentAccess(t *testing.T) {
 // Test: Statistics tracking
 // -----------------------------------------------------------------------------
 
+// TestPerPResultPoolStats runs the test per p result pool stats operation.
 func TestPerPResultPoolStats(t *testing.T) {
 	cfg := &PerPResultPoolConfig{
 		NumShards:   2,
@@ -263,6 +273,7 @@ func TestPerPResultPoolStats(t *testing.T) {
 	}
 }
 
+// TestPerPResultPoolHitMissTracking runs the test per p result pool hit miss tracking operation.
 func TestPerPResultPoolHitMissTracking(t *testing.T) {
 	// Force single P to ensure sync.Pool deterministic behavior
 	oldProcs := runtime.GOMAXPROCS(1)
@@ -302,6 +313,7 @@ func TestPerPResultPoolHitMissTracking(t *testing.T) {
 	pool.Put(slice)
 }
 
+// TestPerPResultPoolPerShardStats runs the test per p result pool per shard stats operation.
 func TestPerPResultPoolPerShardStats(t *testing.T) {
 	cfg := &PerPResultPoolConfig{
 		NumShards:   4,
@@ -336,6 +348,7 @@ func TestPerPResultPoolPerShardStats(t *testing.T) {
 // Test: Nil safety
 // -----------------------------------------------------------------------------
 
+// TestPerPResultPoolPutNil runs the test per p result pool put nil operation.
 func TestPerPResultPoolPutNil(t *testing.T) {
 	pool := NewPerPResultPool(nil)
 
@@ -352,6 +365,7 @@ func TestPerPResultPoolPutNil(t *testing.T) {
 // Test: Reset functionality
 // -----------------------------------------------------------------------------
 
+// TestPerPResultPoolReset runs the test per p result pool reset operation.
 func TestPerPResultPoolReset(t *testing.T) {
 	cfg := &PerPResultPoolConfig{
 		NumShards:   2,
@@ -378,6 +392,7 @@ func TestPerPResultPoolReset(t *testing.T) {
 // Benchmarks: Compare PerP pool vs original sync.Pool
 // -----------------------------------------------------------------------------
 
+// BenchmarkPerPResultPoolGet runs the benchmark per p result pool get operation.
 func BenchmarkPerPResultPoolGet(b *testing.B) {
 	pool := NewPerPResultPool(nil)
 
@@ -390,6 +405,7 @@ func BenchmarkPerPResultPoolGet(b *testing.B) {
 	})
 }
 
+// BenchmarkOriginalResultPoolGet runs the benchmark original result pool get operation.
 func BenchmarkOriginalResultPoolGet(b *testing.B) {
 	pool := newResultPool()
 
@@ -402,6 +418,7 @@ func BenchmarkOriginalResultPoolGet(b *testing.B) {
 	})
 }
 
+// BenchmarkPerPResultPoolContention runs the benchmark per p result pool contention operation.
 func BenchmarkPerPResultPoolContention(b *testing.B) {
 	// Test under high contention with many goroutines
 	pool := NewPerPResultPool(nil)
@@ -417,6 +434,7 @@ func BenchmarkPerPResultPoolContention(b *testing.B) {
 	})
 }
 
+// BenchmarkOriginalResultPoolContention runs the benchmark original result pool contention operation.
 func BenchmarkOriginalResultPoolContention(b *testing.B) {
 	// Test under high contention with many goroutines
 	pool := newResultPool()

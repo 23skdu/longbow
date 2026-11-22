@@ -102,6 +102,7 @@ func TestUint16Uint32SIMDParity(t *testing.T) {
 	}
 }
 
+// BenchmarkUint16Uint32Kernels runs the benchmark uint16 uint32 kernels operation.
 func BenchmarkUint16Uint32Kernels(b *testing.B) {
 	const dims = 384
 	a16, b16 := make([]uint16, dims), make([]uint16, dims)

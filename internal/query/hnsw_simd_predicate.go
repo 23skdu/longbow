@@ -86,6 +86,7 @@ func NewHNSWSIMDPredicate(records []arrow.RecordBatch, colName string, op simd.C
 	return p
 }
 
+// IsMatch reports whether the condition holds.
 func (p *HNSWSIMDPredicate) IsMatch(id uint32) bool {
 	batchIdx := int(id / uint32(types.ChunkSize))
 	rowIdx := int(id % uint32(types.ChunkSize))
@@ -128,6 +129,7 @@ func (p *HNSWSIMDPredicate) IsMatch(id uint32) bool {
 	return true
 }
 
+// MatchBatch runs the match batch operation.
 func (p *HNSWSIMDPredicate) MatchBatch(ids []uint32, dst []byte) {
 	n := len(ids)
 	if n == 0 {

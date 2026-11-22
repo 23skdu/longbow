@@ -23,7 +23,10 @@ type textCandidateHeap struct {
 	k     int
 }
 
+// Len runs the len operation.
 func (h *textCandidateHeap) Len() int { return len(h.items) }
+
+// Less runs the less operation.
 func (h *textCandidateHeap) Less(i, j int) bool {
 	if h.items[i].score == h.items[j].score {
 		// The root is the worst retained candidate. On a score tie keep the
@@ -32,10 +35,16 @@ func (h *textCandidateHeap) Less(i, j int) bool {
 	}
 	return h.items[i].score < h.items[j].score
 }
+
+// Swap runs the swap operation.
 func (h *textCandidateHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
+
+// Push runs the push operation.
 func (h *textCandidateHeap) Push(x interface{}) {
 	h.items = append(h.items, x.(textCandidate))
 }
+
+// Pop runs the pop operation.
 func (h *textCandidateHeap) Pop() interface{} {
 	n := len(h.items)
 	x := h.items[n-1]

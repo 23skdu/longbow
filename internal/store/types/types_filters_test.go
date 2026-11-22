@@ -14,6 +14,7 @@ func buildMockLazyMetadata(t *testing.T, data map[string]interface{}) *LazyMetad
 	return NewLazyMetadata(encoded)
 }
 
+// TestAndExpr_Evaluate runs the test and expr_evaluate operation.
 func TestAndExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"status": "active", "age": int64(30)})
 
@@ -37,6 +38,7 @@ func TestAndExpr_Evaluate(t *testing.T) {
 	assert.True(t, exprEmpty.Evaluate(meta))
 }
 
+// TestOrExpr_Evaluate runs the test or expr_evaluate operation.
 func TestOrExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"status": "active", "age": int64(30)})
 
@@ -60,6 +62,7 @@ func TestOrExpr_Evaluate(t *testing.T) {
 	assert.True(t, exprEmpty.Evaluate(meta))
 }
 
+// TestNotExpr_Evaluate runs the test not expr_evaluate operation.
 func TestNotExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"status": "active"})
 
@@ -74,6 +77,7 @@ func TestNotExpr_Evaluate(t *testing.T) {
 	assert.False(t, exprFalse.Evaluate(meta))
 }
 
+// TestEqExpr_Evaluate runs the test eq expr_evaluate operation.
 func TestEqExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"status": "active"})
 
@@ -87,6 +91,7 @@ func TestEqExpr_Evaluate(t *testing.T) {
 	assert.False(t, exprMissing.Evaluate(meta))
 }
 
+// TestGtExpr_Evaluate runs the test gt expr_evaluate operation.
 func TestGtExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{
 		"int64val":   int64(30),
@@ -100,6 +105,7 @@ func TestGtExpr_Evaluate(t *testing.T) {
 	assert.True(t, (&GtExpr{Field: "float64val", Value: float64(20.5)}).Evaluate(meta))
 }
 
+// TestGeExpr_Evaluate runs the test ge expr_evaluate operation.
 func TestGeExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"int64val": int64(30)})
 
@@ -109,6 +115,7 @@ func TestGeExpr_Evaluate(t *testing.T) {
 	assert.False(t, (&GeExpr{Field: "missing", Value: int64(20)}).Evaluate(meta))
 }
 
+// TestLtExpr_Evaluate runs the test lt expr_evaluate operation.
 func TestLtExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"int64val": int64(30)})
 
@@ -117,6 +124,7 @@ func TestLtExpr_Evaluate(t *testing.T) {
 	assert.False(t, (&LtExpr{Field: "missing", Value: int64(40)}).Evaluate(meta))
 }
 
+// TestLeExpr_Evaluate runs the test le expr_evaluate operation.
 func TestLeExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"int64val": int64(30)})
 
@@ -126,6 +134,7 @@ func TestLeExpr_Evaluate(t *testing.T) {
 	assert.False(t, (&LeExpr{Field: "missing", Value: int64(40)}).Evaluate(meta))
 }
 
+// TestContainsExpr_Evaluate runs the test contains expr_evaluate operation.
 func TestContainsExpr_Evaluate(t *testing.T) {
 	meta := buildMockLazyMetadata(t, map[string]interface{}{"role": "admin_user", "age": int64(30)})
 
@@ -135,6 +144,7 @@ func TestContainsExpr_Evaluate(t *testing.T) {
 	assert.False(t, (&ContainsExpr{Field: "missing", Value: "admin"}).Evaluate(meta))
 }
 
+// TestParseFilter runs the test parse filter operation.
 func TestParseFilter(t *testing.T) {
 	// Test empty
 	assert.Nil(t, ParseFilter(map[string]interface{}{}))
@@ -182,6 +192,7 @@ func TestParseFilter(t *testing.T) {
 	require.IsType(t, &NotExpr{}, parsedNot)
 }
 
+// TestBQEncoder_Rest runs the test bq encoder_rest operation.
 func TestBQEncoder_Rest(t *testing.T) {
 	encoder := NewBQEncoder(128)
 	require.NotNil(t, encoder)

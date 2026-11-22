@@ -152,6 +152,7 @@ func TestArrowHNSW_ConcurrentAddBatch_Int8_2Batches(t *testing.T) {
 	}
 }
 
+// TestArrowHNSW_ConcurrentAddBatch_Float16_Search runs the test arrow hnsw_concurrent add batch_float16_search operation.
 func TestArrowHNSW_ConcurrentAddBatch_Float16_Search(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	dims := 128

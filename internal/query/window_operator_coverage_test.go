@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestWindowOperator_Aggregates_Extended runs the test window operator_aggregates_extended operation.
 func TestWindowOperator_Aggregates_Extended(t *testing.T) {
 	op := NewWindowOperator()
 
@@ -51,6 +52,7 @@ func TestWindowOperator_Aggregates_Extended(t *testing.T) {
 	})
 }
 
+// TestWindowOperator_Ranking_Extended runs the test window operator_ranking_extended operation.
 func TestWindowOperator_Ranking_Extended(t *testing.T) {
 	op := NewWindowOperator()
 
@@ -97,6 +99,7 @@ func TestWindowOperator_Ranking_Extended(t *testing.T) {
 	})
 }
 
+// TestWindowOperator_InternalMethods runs the test window operator_internal methods operation.
 func TestWindowOperator_InternalMethods(t *testing.T) {
 	op := NewWindowOperator()
 

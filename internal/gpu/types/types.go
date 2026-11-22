@@ -7,16 +7,23 @@ import (
 	"time"
 )
 
+// GPUBackend represents a gpu backend value.
 type GPUBackend int
 
 const (
+	// BackendCPU is a backend cpu constant.
 	BackendCPU GPUBackend = iota
+	// BackendCUDA is a backend cuda constant.
 	BackendCUDA
+	// BackendMetal is a backend metal constant.
 	BackendMetal
+	// BackendOpenCL is a backend open cl constant.
 	BackendOpenCL
+	// BackendTPU is a backend tpu constant.
 	BackendTPU
 )
 
+// String runs the string operation.
 func (b GPUBackend) String() string {
 	switch b {
 	case BackendCPU:
@@ -32,6 +39,7 @@ func (b GPUBackend) String() string {
 	}
 }
 
+// GPUConfig represents a gpu config value.
 type GPUConfig struct {
 	Backend            GPUBackend
 	DeviceID           int32
@@ -48,6 +56,7 @@ type GPUConfig struct {
 	OpenCLVersion      string // OpenCL platform version
 }
 
+// DefaultGPUConfig returns the default GPUConfig.
 func DefaultGPUConfig() GPUConfig {
 	maxMemStr := os.Getenv("LONGBOW_MAX_MEMORY")
 	maxMem := int64(0)
@@ -73,6 +82,7 @@ func DefaultGPUConfig() GPUConfig {
 	}
 }
 
+// GPUInfo represents a gpu info value.
 type GPUInfo struct {
 	Name             string
 	Backend          GPUBackend
@@ -90,6 +100,7 @@ type GPUInfo struct {
 	MaxWorkItemDims  []int  // max work item dimensions
 }
 
+// Index represents a index value.
 type Index interface {
 	Add(ids []int64, vectors []float32) error
 	Search(vector []float32, k int) (ids []int64, distances []float32, err error)
@@ -138,6 +149,7 @@ type Index interface {
 	GetUtilization() (float32, error)
 }
 
+// DetectGPUBackend runs the detect gpu backend operation.
 func DetectGPUBackend() GPUBackend {
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
 		return BackendMetal
@@ -146,6 +158,7 @@ func DetectGPUBackend() GPUBackend {
 	return BackendCPU
 }
 
+// GetDeviceCount returns the device count.
 func GetDeviceCount() int32 {
 	backend := DetectGPUBackend()
 	switch backend {
@@ -155,6 +168,7 @@ func GetDeviceCount() int32 {
 	return 0
 }
 
+// GetGlobalGPUUtilization returns the global gpu utilization.
 func GetGlobalGPUUtilization() (float32, error) {
 	// For now, no-op or simple implementation to break cycle.
 	return 0, nil

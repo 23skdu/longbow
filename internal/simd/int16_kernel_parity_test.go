@@ -85,6 +85,7 @@ func int16Ranges() []struct {
 	}
 }
 
+// TestEuclideanInt16AVX2MatchesFloat64Reference runs the test euclidean int16 avx2 matches float64 reference operation.
 func TestEuclideanInt16AVX2MatchesFloat64Reference(t *testing.T) {
 	rng := rand.New(rand.NewSource(3)) // #nosec G404 -- deterministic
 
@@ -112,6 +113,7 @@ func TestEuclideanInt16AVX2MatchesFloat64Reference(t *testing.T) {
 	}
 }
 
+// TestEuclideanUint16AVX2MatchesFloat64Reference runs the test euclidean uint16 avx2 matches float64 reference operation.
 func TestEuclideanUint16AVX2MatchesFloat64Reference(t *testing.T) {
 	rng := rand.New(rand.NewSource(5)) // #nosec G404 -- deterministic
 

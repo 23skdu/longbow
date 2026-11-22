@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// TestDoExchange_Ingest runs the test do exchange_ingest operation.
 func TestDoExchange_Ingest(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

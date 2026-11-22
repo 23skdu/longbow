@@ -26,6 +26,7 @@ func makeTestRecord(t *testing.T, pool memory.Allocator, schema *arrow.Schema, n
 	return builder.NewRecordBatch()
 }
 
+// TestAdbcRecordReader_Empty runs the test adbc record reader_empty operation.
 func TestAdbcRecordReader_Empty(t *testing.T) {
 	schema := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int32}}, nil)
 	r := &AdbcRecordReader{schema: schema}
@@ -47,6 +48,7 @@ func TestAdbcRecordReader_Empty(t *testing.T) {
 	}
 }
 
+// TestAdbcRecordReader_Iteration runs the test adbc record reader_iteration operation.
 func TestAdbcRecordReader_Iteration(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int32}}, nil)
@@ -110,6 +112,7 @@ func TestAdbcRecordReader_Iteration(t *testing.T) {
 	}
 }
 
+// TestAdbcRecordReader_RefCount runs the test adbc record reader_ref count operation.
 func TestAdbcRecordReader_RefCount(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int32}}, nil)
@@ -135,6 +138,7 @@ func TestAdbcRecordReader_RefCount(t *testing.T) {
 	}
 }
 
+// TestAdbcRecordReader_ConcurrentRetainRelease runs the test adbc record reader_concurrent retain release operation.
 func TestAdbcRecordReader_ConcurrentRetainRelease(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int32}}, nil)
@@ -164,6 +168,7 @@ func TestAdbcRecordReader_ConcurrentRetainRelease(t *testing.T) {
 	}
 }
 
+// TestNewAdbcRecordReader_Valid runs the test new adbc record reader_valid operation.
 func TestNewAdbcRecordReader_Valid(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int32}}, nil)
@@ -204,6 +209,7 @@ func TestNewAdbcRecordReader_Valid(t *testing.T) {
 	}
 }
 
+// TestNewAdbcRecordReader_SchemaMismatch runs the test new adbc record reader_schema mismatch operation.
 func TestNewAdbcRecordReader_SchemaMismatch(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	wanted := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int32}}, nil)
@@ -228,6 +234,7 @@ func TestNewAdbcRecordReader_SchemaMismatch(t *testing.T) {
 	}
 }
 
+// TestNewAdbcRecordReader_Empty runs the test new adbc record reader_empty operation.
 func TestNewAdbcRecordReader_Empty(t *testing.T) {
 	// Constructor with no records: refCount=1, records=nil, Next() always false.
 	schema := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int32}}, nil)

@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// TestTQScratchArena_BasicOperations runs the test tq scratch arena_basic operations operation.
 func TestTQScratchArena_BasicOperations(t *testing.T) {
 	dims := 128
 	arena := NewTQScratchArena(dims)
@@ -87,6 +88,7 @@ func TestTQScratchArena_BasicOperations(t *testing.T) {
 	assert.Equal(t, int64(3), chunks) // chunk 0 (0..1023), chunk 1 (1024..2047), chunk 2 (2048..3071)
 }
 
+// TestTQScratchArena_PutBatch runs the test tq scratch arena_put batch operation.
 func TestTQScratchArena_PutBatch(t *testing.T) {
 	dims := 64
 	arena := NewTQScratchArena(dims)
@@ -112,6 +114,7 @@ func TestTQScratchArena_PutBatch(t *testing.T) {
 	}
 }
 
+// TestTQScratchArena_GetOrDecode runs the test tq scratch arena_get or decode operation.
 func TestTQScratchArena_GetOrDecode(t *testing.T) {
 	dims := 32
 	arena := NewTQScratchArena(dims)
@@ -151,6 +154,7 @@ func TestTQScratchArena_GetOrDecode(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestTQScratchArena_ConcurrentGetOrDecode runs the test tq scratch arena_concurrent get or decode operation.
 func TestTQScratchArena_ConcurrentGetOrDecode(t *testing.T) {
 	dims := 64
 	arena := NewTQScratchArena(dims)
@@ -211,6 +215,7 @@ func TestTQScratchArena_ConcurrentGetOrDecode(t *testing.T) {
 	assert.Greater(t, hits, int64(numDistinct*10))
 }
 
+// TestTQScratchArena_Release runs the test tq scratch arena_release operation.
 func TestTQScratchArena_Release(t *testing.T) {
 	dims := 32
 	arena := NewTQScratchArena(dims)
@@ -240,6 +245,7 @@ func TestTQScratchArena_Release(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestTQScratchArena_NilSafety runs the test tq scratch arena_nil safety operation.
 func TestTQScratchArena_NilSafety(t *testing.T) {
 	var nilArena *TQScratchArena
 
@@ -266,6 +272,7 @@ func TestTQScratchArena_NilSafety(t *testing.T) {
 	assert.Equal(t, int64(0), chunks)
 }
 
+// TestTQScratchArena_HNSWIndexingIntegration runs the test tq scratch arena_hnsw indexing integration operation.
 func TestTQScratchArena_HNSWIndexingIntegration(t *testing.T) {
 	dims := 128
 	bits := 4

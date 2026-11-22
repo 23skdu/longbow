@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_BQ_Persistence runs the test arrow hnsw_bq_persistence operation.
 func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

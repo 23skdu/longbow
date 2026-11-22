@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestIVFOPQIndex_Basic runs the test ivfopq index_basic operation.
 func TestIVFOPQIndex_Basic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -53,6 +54,7 @@ func TestIVFOPQIndex_Basic(t *testing.T) {
 	assert.Equal(t, uint32(0), uint32(results[0].ID))
 }
 
+// TestIVFOPQIndex_Empty runs the test ivfopq index_empty operation.
 func TestIVFOPQIndex_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -63,6 +65,7 @@ func TestIVFOPQIndex_Empty(t *testing.T) {
 	assert.Empty(t, results)
 }
 
+// FuzzIVFOPQIndexBuild runs the fuzz ivfopq index build operation.
 func FuzzIVFOPQIndexBuild(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -117,6 +120,7 @@ func FuzzIVFOPQIndexBuild(f *testing.F) {
 	})
 }
 
+// TestIVFOPQIndex_RecallK runs the test ivfopq index_recall k operation.
 func TestIVFOPQIndex_RecallK(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -164,6 +168,7 @@ func TestIVFOPQIndex_RecallK(t *testing.T) {
 	t.Logf("Recall@%d: %d/%d (%.2f%%)", k, matchCount, k, float64(matchCount)*100/float64(k))
 }
 
+// BenchmarkIVFOPQIndex_1M_3072dim runs the benchmark ivfopq index_1 m_3072dim operation.
 func BenchmarkIVFOPQIndex_1M_3072dim(b *testing.B) {
 	dim := 3072
 	n := 100000
@@ -211,6 +216,7 @@ func BenchmarkIVFOPQIndex_1M_3072dim(b *testing.B) {
 	}
 }
 
+// TestIVFOPQ_makeClusterDists runs the test ivfopq_make cluster dists operation.
 func TestIVFOPQ_makeClusterDists(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -237,6 +243,7 @@ func TestIVFOPQ_makeClusterDists(t *testing.T) {
 	}
 }
 
+// TestIVFOPQ_decodeVector runs the test ivfopq_decode vector operation.
 func TestIVFOPQ_decodeVector(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -277,6 +284,7 @@ func TestIVFOPQ_decodeVector(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestIVFOPQ_computeResidualScore runs the test ivfopq_compute residual score operation.
 func TestIVFOPQ_computeResidualScore(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

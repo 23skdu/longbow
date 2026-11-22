@@ -238,6 +238,7 @@ func (idx *ShardedHNSW) IsSharded() bool {
 	return true
 }
 
+// Shards runs the shards operation.
 func (idx *ShardedHNSW) Shards() []VectorIndex {
 	idx.shardsMu.RLock()
 	defer idx.shardsMu.RUnlock()
@@ -783,6 +784,7 @@ func (idx *ShardedHNSW) ReleaseMonolithicChunk(cID int) error {
 	return nil
 }
 
+// RelocateToOffHeap runs the relocate to off heap operation.
 func (s *hnswShard) RelocateToOffHeap() error {
 	return s.index.RelocateToOffHeap()
 }

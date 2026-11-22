@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestStore_DropDataset_FastPath runs the test store_drop dataset_fast path operation.
 func TestStore_DropDataset_FastPath(t *testing.T) {
 	// 1. Setup Store
 	s := createDropTestStore()

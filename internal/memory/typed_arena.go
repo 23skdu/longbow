@@ -23,10 +23,12 @@ func NewTypedArena[T any](arena *SlabArena) *TypedArena[T] {
 	return ta
 }
 
+// Free runs the free operation.
 func (ta *TypedArena[T]) Free() {
 	ta.Release()
 }
 
+// Retain runs the retain operation.
 func (ta *TypedArena[T]) Retain() {
 	a := ta.arena.Load()
 	if a != nil {
@@ -34,6 +36,7 @@ func (ta *TypedArena[T]) Retain() {
 	}
 }
 
+// Release runs the release operation.
 func (ta *TypedArena[T]) Release() {
 	// Do NOT nil out the arena pointer here. The Slab has its own
 	// ref-count (SlabArena.refs); it stays alive as long as any
@@ -49,6 +52,7 @@ func (ta *TypedArena[T]) Release() {
 	}
 }
 
+// Slab runs the slab operation.
 func (ta *TypedArena[T]) Slab() *SlabArena {
 	return ta.arena.Load()
 }
@@ -138,6 +142,7 @@ func (ta *TypedArena[T]) Compact(liveRefs []SliceRef) (*CompactionStats, error) 
 	return stats, nil
 }
 
+// AllocSlice runs the alloc slice operation.
 func (ta *TypedArena[T]) AllocSlice(count int) (SliceRef, error) {
 	var zero T
 	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115

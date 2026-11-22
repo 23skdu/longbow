@@ -53,7 +53,7 @@ var (
 		[]string{"dataset"},
 	)
 
-	// IndexJobsDroppedTotal
+	// IndexJobsDroppedTotal counts index jobs dropped due to queue overflow.
 	IndexJobsDroppedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_index_jobs_dropped_total",
@@ -389,6 +389,7 @@ var (
 
 	// Multi-GPU metrics
 
+	// MultiGPUQueryDurationSeconds is a multi gpu query duration seconds value.
 	MultiGPUQueryDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_multi_gpu_query_duration_seconds",
@@ -398,6 +399,7 @@ var (
 		[]string{"strategy"},
 	)
 
+	// MultiGPUTotalDevices is a multi gpu total devices value.
 	MultiGPUTotalDevices = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_multi_gpu_total_devices",
@@ -405,6 +407,7 @@ var (
 		},
 	)
 
+	// MultiGPUQueriesTotal is a multi gpu queries total value.
 	MultiGPUQueriesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_multi_gpu_queries_total",
@@ -413,6 +416,7 @@ var (
 		[]string{"strategy", "status"},
 	)
 
+	// MultiGPUFallbackTotal is a multi gpu fallback total value.
 	MultiGPUFallbackTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_multi_gpu_fallback_total",
@@ -421,6 +425,7 @@ var (
 		[]string{"reason"},
 	)
 
+	// MultiGPUReplicateDurationSeconds is a multi gpu replicate duration seconds value.
 	MultiGPUReplicateDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_multi_gpu_replicate_duration_seconds",
@@ -429,6 +434,7 @@ var (
 		},
 	)
 
+	// MultiGPUReplicateOperationsTotal is a multi gpu replicate operations total value.
 	MultiGPUReplicateOperationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_multi_gpu_replicate_operations_total",
@@ -437,6 +443,7 @@ var (
 		[]string{"status"},
 	)
 
+	// MultiGPUReplicateVectorsProcessed is a multi gpu replicate vectors processed value.
 	MultiGPUReplicateVectorsProcessed = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_multi_gpu_replicate_vectors_processed_total",
@@ -444,6 +451,7 @@ var (
 		},
 	)
 
+	// MultiGPUDeviceQueries is a multi gpu device queries value.
 	MultiGPUDeviceQueries = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_multi_gpu_device_queries",
@@ -452,6 +460,7 @@ var (
 		[]string{"device"},
 	)
 
+	// MultiGPUDeviceErrors is a multi gpu device errors value.
 	MultiGPUDeviceErrors = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_multi_gpu_device_errors",
@@ -462,6 +471,7 @@ var (
 
 	// GPU HNSW Build metrics
 
+	// GPUHNSWBuildDurationSeconds is a gpuhnsw build duration seconds value.
 	GPUHNSWBuildDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_gpu_hnsw_build_duration_seconds",
@@ -470,6 +480,7 @@ var (
 		},
 	)
 
+	// GPUHNSWBuildOperationsTotal is a gpuhnsw build operations total value.
 	GPUHNSWBuildOperationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_gpu_hnsw_build_operations_total",
@@ -478,6 +489,7 @@ var (
 		[]string{"status"},
 	)
 
+	// GPUHNSWBuildVectorsProcessed is a gpuhnsw build vectors processed value.
 	GPUHNSWBuildVectorsProcessed = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_gpu_hnsw_build_vectors_processed_total",
@@ -485,6 +497,7 @@ var (
 		},
 	)
 
+	// GPUHNSWBuildBatchDurationSeconds is a gpuhnsw build batch duration seconds value.
 	GPUHNSWBuildBatchDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_gpu_hnsw_build_batch_duration_seconds",
@@ -493,6 +506,7 @@ var (
 		},
 	)
 
+	// GPUHNSWBuildBatchSize is a gpuhnsw build batch size value.
 	GPUHNSWBuildBatchSize = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_gpu_hnsw_build_batch_size",
@@ -500,6 +514,7 @@ var (
 		},
 	)
 
+	// GPUHNSWBuildFallbackTotal is a gpuhnsw build fallback total value.
 	GPUHNSWBuildFallbackTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_gpu_hnsw_build_fallback_total",
@@ -508,7 +523,7 @@ var (
 		[]string{"reason"},
 	)
 
-	// ResultPoolHitsTotal
+	// ResultPoolHitsTotal counts result object pool hits by k size.
 	ResultPoolHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_result_pool_hits_total",
@@ -517,7 +532,7 @@ var (
 		[]string{"k_size"},
 	)
 
-	// ResultPoolMissesTotal
+	// ResultPoolMissesTotal counts result object pool misses by k size.
 	ResultPoolMissesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_result_pool_misses_total",
@@ -550,6 +565,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HnswShardingMigrationsTotal is a hnsw sharding migrations total value.
 	HnswShardingMigrationsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_sharding_migrations_total",
@@ -557,6 +573,7 @@ var (
 		},
 	)
 
+	// HnswNodesVisited is a hnsw nodes visited value.
 	HnswNodesVisited = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_nodes_visited",
@@ -566,6 +583,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HnswDistanceCalculations is a hnsw distance calculations value.
 	HnswDistanceCalculations = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_distance_calculations_total",
@@ -573,6 +591,7 @@ var (
 		},
 	)
 
+	// HNSWPQEnabled is a hnswpq enabled value.
 	HNSWPQEnabled = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_hnsw_pq_enabled",
@@ -581,6 +600,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HNSWPQTrainingDuration is a hnswpq training duration value.
 	HNSWPQTrainingDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_pq_training_duration_seconds",
@@ -590,6 +610,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HNSWPQTrainingTriggered is a hnswpq training triggered value.
 	HNSWPQTrainingTriggered = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_pq_training_triggered_total",
@@ -598,6 +619,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HNSWPQCompressedBytesTotal is a hnswpq compressed bytes total value.
 	HNSWPQCompressedBytesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_pq_compressed_bytes_total",
@@ -606,6 +628,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HNSWNodesSkippedTotal is a hnsw nodes skipped total value.
 	HNSWNodesSkippedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_nodes_skipped_total",
@@ -614,6 +637,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// ShardedHnswShardSize is a sharded hnsw shard size value.
 	ShardedHnswShardSize = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_sharded_hnsw_shard_size",
@@ -631,6 +655,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// ShardedHnswLoadFactor is a sharded hnsw load factor value.
 	ShardedHnswLoadFactor = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_sharded_hnsw_load_factor",
@@ -639,7 +664,7 @@ var (
 		[]string{"dataset", "shard"},
 	)
 
-	// Graph Traversal Metrics
+	// GraphTraversalDurationSeconds Traversal Metrics
 	GraphTraversalDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_graph_traversal_duration_seconds",
@@ -647,6 +672,7 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 	)
+	// GraphClusteringDurationSeconds is a graph clustering duration seconds value.
 	GraphClusteringDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_graph_clustering_duration_seconds",
@@ -654,6 +680,7 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 	)
+	// GraphCommunitiesTotal is a graph communities total value.
 	GraphCommunitiesTotal = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_graph_communities_total",
@@ -661,25 +688,28 @@ var (
 		},
 	)
 
-	// HNSW Graph Sync
+	// HNSWGraphSyncExportsTotal Graph Sync
 	HNSWGraphSyncExportsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_graph_sync_exports_total",
 			Help: "Total number of graph sync exports",
 		},
 	)
+	// HNSWGraphSyncImportsTotal is a hnsw graph sync imports total value.
 	HNSWGraphSyncImportsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_graph_sync_imports_total",
 			Help: "Total number of graph sync imports",
 		},
 	)
+	// HNSWGraphSyncDeltasTotal is a hnsw graph sync deltas total value.
 	HNSWGraphSyncDeltasTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_graph_sync_deltas_total",
 			Help: "Total number of graph sync deltas generated",
 		},
 	)
+	// HNSWGraphSyncDeltaAppliesTotal is a hnsw graph sync delta applies total value.
 	HNSWGraphSyncDeltaAppliesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_graph_sync_delta_applies_total",
@@ -687,6 +717,7 @@ var (
 		},
 	)
 
+	// HnswEpochTransitions is a hnsw epoch transitions value.
 	HnswEpochTransitions = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_epoch_transitions_total",
@@ -694,6 +725,7 @@ var (
 		},
 	)
 
+	// HnswParallelSearchSplits is a hnsw parallel search splits value.
 	HnswParallelSearchSplits = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_parallel_search_splits_total",
@@ -702,7 +734,7 @@ var (
 		[]string{"dataset"},
 	)
 
-	// Adaptive Chunk Sizing Metrics
+	// HnswAdaptiveChunkSize Chunk Sizing Metrics
 	HnswAdaptiveChunkSize = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_adaptive_chunk_size",
@@ -712,6 +744,7 @@ var (
 		[]string{"dataset", "method"}, // method: "parallel", "serial"
 	)
 
+	// HnswParallelSearchWorkerCount is a hnsw parallel search worker count value.
 	HnswParallelSearchWorkerCount = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_parallel_search_worker_count",
@@ -721,6 +754,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HnswParallelSearchEfficiency is a hnsw parallel search efficiency value.
 	HnswParallelSearchEfficiency = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_parallel_search_efficiency",
@@ -730,6 +764,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// HnswSerialFallbackTotal is a hnsw serial fallback total value.
 	HnswSerialFallbackTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_serial_fallback_total",
@@ -744,30 +779,35 @@ var (
 // =============================================================================
 
 var (
+	// ArenaAllocBytesTotal is a arena alloc bytes total value.
 	ArenaAllocBytesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_arena_alloc_bytes_total",
 			Help: "Total bytes allocated from search arenas",
 		},
 	)
+	// ArenaOverflowTotal is a arena overflow total value.
 	ArenaOverflowTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_arena_overflow_total",
 			Help: "Total arena capacity overflow events requiring heap fallback",
 		},
 	)
+	// ArenaResetsTotal is a arena resets total value.
 	ArenaResetsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_arena_resets_total",
 			Help: "Total arena reset operations",
 		},
 	)
+	// ArenaPoolGets is a arena pool gets value.
 	ArenaPoolGets = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_arena_pool_gets_total",
 			Help: "Total arena acquisitions from global pool",
 		},
 	)
+	// ArenaPoolPuts is a arena pool puts value.
 	ArenaPoolPuts = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_arena_pool_puts_total",
@@ -775,31 +815,35 @@ var (
 		},
 	)
 
-	// Memory Backpressure Metrics
+	// MemoryPressureLevel Backpressure Metrics
 	MemoryPressureLevel = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_memory_pressure_level",
 			Help: "Current memory pressure level (0-100)",
 		},
 	)
+	// MemoryHeapInUse is a memory heap in use value.
 	MemoryHeapInUse = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_memory_heap_in_use_bytes",
 			Help: "Current heap memory in use",
 		},
 	)
+	// MemoryBackpressureRejectsTotal is a memory backpressure rejects total value.
 	MemoryBackpressureRejectsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_memory_backpressure_rejects_total",
 			Help: "Total number of requests rejected due to memory backpressure",
 		},
 	)
+	// MemoryBackpressureAcquiresTotal is a memory backpressure acquires total value.
 	MemoryBackpressureAcquiresTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_memory_backpressure_acquires_total",
 			Help: "Total number of memory permits acquired",
 		},
 	)
+	// MemoryBackpressureReleasesTotal is a memory backpressure releases total value.
 	MemoryBackpressureReleasesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_memory_backpressure_releases_total",
@@ -839,18 +883,21 @@ var (
 		[]string{"reason"},
 	)
 
+	// RecordAccessTotal is a record access total value.
 	RecordAccessTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_record_access_total",
 			Help: "Total number of record accesses (LRU tracking)",
 		},
 	)
+	// RecordMetadataEntries is a record metadata entries value.
 	RecordMetadataEntries = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_record_metadata_entries",
 			Help: "Number of entries in record eviction metadata map",
 		},
 	)
+	// TombstonesTotal is a tombstones total value.
 	TombstonesTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_tombstones_total",
@@ -880,6 +927,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// FastPathUsageTotal is a fast path usage total value.
 	FastPathUsageTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_fast_path_usage_total",
@@ -888,6 +936,7 @@ var (
 		[]string{"path"},
 	)
 
+	// BloomLookupsTotal is a bloom lookups total value.
 	BloomLookupsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_bloom_lookups_total",
@@ -896,6 +945,7 @@ var (
 		[]string{"result"},
 	)
 
+	// BloomHitsTotal is a bloom hits total value.
 	BloomHitsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bloom_hits_total",
@@ -903,6 +953,7 @@ var (
 		},
 	)
 
+	// BloomMissesTotal is a bloom misses total value.
 	BloomMissesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bloom_misses_total",
@@ -910,6 +961,7 @@ var (
 		},
 	)
 
+	// BloomFalsePositivesTotal is a bloom false positives total value.
 	BloomFalsePositivesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bloom_false_positives_total",

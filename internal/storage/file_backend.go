@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// FileSnapshotBackend represents a file snapshot backend value.
 type FileSnapshotBackend struct {
 	baseDir string
 }
@@ -18,6 +19,7 @@ func sanitizeSnapshotName(name string) string {
 	return filepath.Clean(strings.ReplaceAll(name, "..", ""))
 }
 
+// NewFileSnapshotBackend constructs a new FileSnapshotBackend.
 func NewFileSnapshotBackend(baseDir string) (SnapshotBackend, error) {
 	baseDir = filepath.Clean(baseDir)
 	if err := os.MkdirAll(baseDir, 0700); err != nil { // #nosec G301
@@ -26,11 +28,13 @@ func NewFileSnapshotBackend(baseDir string) (SnapshotBackend, error) {
 	return &FileSnapshotBackend{baseDir: baseDir}, nil
 }
 
+// WriteSnapshot runs the write snapshot operation.
 func (b *FileSnapshotBackend) WriteSnapshot(ctx context.Context, name string, data []byte) error {
 	path := filepath.Join(b.baseDir, sanitizeSnapshotName(name)+".parquet")
 	return os.WriteFile(path, data, 0600) // #nosec G306
 }
 
+// ReadSnapshot runs the read snapshot operation.
 func (b *FileSnapshotBackend) ReadSnapshot(ctx context.Context, name string) (io.ReadCloser, error) {
 	path := filepath.Join(b.baseDir, sanitizeSnapshotName(name)+".parquet")
 	f, err := os.Open(filepath.Clean(path)) // #nosec G304
@@ -43,6 +47,7 @@ func (b *FileSnapshotBackend) ReadSnapshot(ctx context.Context, name string) (io
 	return f, nil
 }
 
+// ListSnapshots runs the list snapshots operation.
 func (b *FileSnapshotBackend) ListSnapshots(ctx context.Context) ([]string, error) {
 	files, err := os.ReadDir(b.baseDir)
 	if err != nil {
@@ -57,15 +62,18 @@ func (b *FileSnapshotBackend) ListSnapshots(ctx context.Context) ([]string, erro
 	return names, nil
 }
 
+// DeleteSnapshot runs the delete snapshot operation.
 func (b *FileSnapshotBackend) DeleteSnapshot(ctx context.Context, name string) error {
 	path := filepath.Join(b.baseDir, sanitizeSnapshotName(name)+".parquet")
 	return os.Remove(filepath.Clean(path))
 }
 
+// WriteSnapshotAsync runs the write snapshot async operation.
 func (b *FileSnapshotBackend) WriteSnapshotAsync(name string, data []byte) {
 	_ = b.WriteSnapshot(context.Background(), name, data)
 }
 
+// WriteSnapshotFile runs the write snapshot file operation.
 func (b *FileSnapshotBackend) WriteSnapshotFile(ctx context.Context, name, ext string, r io.Reader) error {
 	path := filepath.Join(b.baseDir, sanitizeSnapshotName(name)+ext)
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil { // #nosec G301
@@ -80,6 +88,7 @@ func (b *FileSnapshotBackend) WriteSnapshotFile(ctx context.Context, name, ext s
 	return err
 }
 
+// ReadSnapshotFile runs the read snapshot file operation.
 func (b *FileSnapshotBackend) ReadSnapshotFile(ctx context.Context, name, ext string) (io.ReadCloser, error) {
 	path := filepath.Join(b.baseDir, sanitizeSnapshotName(name)+ext)
 	f, err := os.Open(filepath.Clean(path)) // #nosec G304
@@ -92,7 +101,14 @@ func (b *FileSnapshotBackend) ReadSnapshotFile(ctx context.Context, name, ext st
 	return f, nil
 }
 
-func (b *FileSnapshotBackend) Bucket() string                    { return "" }
-func (b *FileSnapshotBackend) Prefix() string                    { return b.baseDir }
+// Bucket runs the bucket operation.
+func (b *FileSnapshotBackend) Bucket() string { return "" }
+
+// Prefix runs the prefix operation.
+func (b *FileSnapshotBackend) Prefix() string { return b.baseDir }
+
+// GetHTTPTransport returns the http transport.
 func (b *FileSnapshotBackend) GetHTTPTransport() *http.Transport { return nil }
-func (b *FileSnapshotBackend) GetHTTPClient() *http.Client       { return nil }
+
+// GetHTTPClient returns the http client.
+func (b *FileSnapshotBackend) GetHTTPClient() *http.Client { return nil }

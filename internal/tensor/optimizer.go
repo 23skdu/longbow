@@ -6,16 +6,26 @@ import "fmt"
 type RewriteRule int
 
 const (
-	RuleNone                 RewriteRule = iota
-	RuleMulByZero                        // A * 0 -> 0
-	RuleAddZero                          // A + 0 -> A
-	RuleDoubleNeg                        // -(-A) -> A
-	RuleTransposeOfTranspose             // T(T(A)) -> A
-	RuleReshapeOfReshape                 // R(R(A)) -> A (if shapes allow)
-	RuleExpOfLog                         // exp(log(A)) -> A (domain permitting)
-	RuleLogOfExp                         // log(exp(A)) -> A
-	RuleConstantFolding                  // Op(Const, Const) -> Const
-	RuleCSE                              // Common Subexpression Elimination
+	// RuleNone is a rule none constant.
+	RuleNone RewriteRule = iota
+	// RuleMulByZero is a rule mul by zero constant.
+	RuleMulByZero // A * 0 -> 0
+	// RuleAddZero is a rule add zero constant.
+	RuleAddZero // A + 0 -> A
+	// RuleDoubleNeg is a rule double neg constant.
+	RuleDoubleNeg // -(-A) -> A
+	// RuleTransposeOfTranspose is a rule transpose of transpose constant.
+	RuleTransposeOfTranspose // T(T(A)) -> A
+	// RuleReshapeOfReshape is a rule reshape of reshape constant.
+	RuleReshapeOfReshape // R(R(A)) -> A (if shapes allow)
+	// RuleExpOfLog is a rule exp of log constant.
+	RuleExpOfLog // exp(log(A)) -> A (domain permitting)
+	// RuleLogOfExp is a rule log of exp constant.
+	RuleLogOfExp // log(exp(A)) -> A
+	// RuleConstantFolding is a rule constant folding constant.
+	RuleConstantFolding // Op(Const, Const) -> Const
+	// RuleCSE is a rule cse constant.
+	RuleCSE // Common Subexpression Elimination
 )
 
 // Optimizer rewrites a tensor IR graph for efficiency.
@@ -23,6 +33,7 @@ type Optimizer struct {
 	Rules []RewriteRule
 }
 
+// NewOptimizer constructs a new Optimizer.
 func NewOptimizer() *Optimizer {
 	return &Optimizer{
 		Rules: []RewriteRule{

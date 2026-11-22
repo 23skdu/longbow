@@ -19,6 +19,7 @@ import (
 	"github.com/23skdu/longbow/internal/tracing"
 )
 
+// DoPut runs the do put operation.
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	_, span := tracing.CreateSpan(stream.Context(), "DoPut")
 	if span != nil {

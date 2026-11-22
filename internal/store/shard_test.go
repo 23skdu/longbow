@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestShardedMap_BasicOperations runs the test sharded map_basic operations operation.
 func TestShardedMap_BasicOperations(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -33,6 +34,7 @@ func TestShardedMap_BasicOperations(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestShardedMap_GetOrCreate runs the test sharded map_get or create operation.
 func TestShardedMap_GetOrCreate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -56,6 +58,7 @@ func TestShardedMap_GetOrCreate(t *testing.T) {
 	assert.Equal(t, ds1, ds2)
 }
 
+// TestShardedMap_Len runs the test sharded map_len operation.
 func TestShardedMap_Len(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -69,6 +72,7 @@ func TestShardedMap_Len(t *testing.T) {
 	assert.Equal(t, 100, sm.Len())
 }
 
+// TestShardedMap_Keys runs the test sharded map_keys operation.
 func TestShardedMap_Keys(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -90,6 +94,7 @@ func TestShardedMap_Keys(t *testing.T) {
 	}
 }
 
+// TestShardedMap_Range runs the test sharded map_range operation.
 func TestShardedMap_Range(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -115,6 +120,7 @@ func TestShardedMap_Range(t *testing.T) {
 	assert.Equal(t, 5, count)
 }
 
+// TestShardedMap_ConcurrentAccess runs the test sharded map_concurrent access operation.
 func TestShardedMap_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -141,6 +147,7 @@ func TestShardedMap_ConcurrentAccess(t *testing.T) {
 	assert.Equal(t, numGoroutines*iterations, sm.Len())
 }
 
+// TestShardedMap_ConcurrentReadWrite runs the test sharded map_concurrent read write operation.
 func TestShardedMap_ConcurrentReadWrite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -179,6 +186,7 @@ func TestShardedMap_ConcurrentReadWrite(t *testing.T) {
 	assert.True(t, sm.Len() >= 100)
 }
 
+// TestShardedMap_Distribution runs the test sharded map_distribution operation.
 func TestShardedMap_Distribution(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

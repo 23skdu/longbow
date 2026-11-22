@@ -84,6 +84,7 @@ func requireNotContains(items []string, want string) {
 	}
 }
 
+// TestStartupNamespacePoliciesSurviveRestart runs the test startup namespace policies survive restart operation.
 func TestStartupNamespacePoliciesSurviveRestart(t *testing.T) {
 	dataDir, err := os.MkdirTemp("", "longbow-startup-ns-*")
 	require.NoError(t, err)

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSlabPool_BasicOperations runs the test slab pool_basic operations operation.
 func TestSlabPool_BasicOperations(t *testing.T) {
 	pool := newSlabPool(4 * 1024 * 1024) // 4MB slabs
 
@@ -31,6 +32,7 @@ func TestSlabPool_BasicOperations(t *testing.T) {
 	pool.Put(slab2)
 }
 
+// TestSlabPool_MaxPooledLimit runs the test slab pool_max pooled limit operation.
 func TestSlabPool_MaxPooledLimit(t *testing.T) {
 	pool := newSlabPool(4 * 1024 * 1024)
 	pool.maxPooled = 10 // Set low limit for testing
@@ -51,6 +53,7 @@ func TestSlabPool_MaxPooledLimit(t *testing.T) {
 	assert.Equal(t, int64(0), pool.ActiveCount())
 }
 
+// TestSlabPool_ReleaseUnused runs the test slab pool_release unused operation.
 func TestSlabPool_ReleaseUnused(t *testing.T) {
 	pool := newSlabPool(4 * 1024 * 1024)
 	pool.maxPooled = 100
@@ -84,6 +87,7 @@ func TestSlabPool_ReleaseUnused(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 }
 
+// TestSlabPool_ConcurrentAccess runs the test slab pool_concurrent access operation.
 func TestSlabPool_ConcurrentAccess(t *testing.T) {
 	pool := newSlabPool(4 * 1024 * 1024)
 
@@ -113,6 +117,7 @@ func TestSlabPool_ConcurrentAccess(t *testing.T) {
 	assert.Equal(t, int64(0), pool.ActiveCount())
 }
 
+// TestGetSlab_StandardSizes runs the test get slab_standard sizes operation.
 func TestGetSlab_StandardSizes(t *testing.T) {
 	tests := []struct {
 		name string
@@ -140,6 +145,7 @@ func TestGetSlab_StandardSizes(t *testing.T) {
 	}
 }
 
+// TestGetSlab_NonStandardSize runs the test get slab_non standard size operation.
 func TestGetSlab_NonStandardSize(t *testing.T) {
 	// Non-standard size should be rounded up to the next standard pool size (8MB)
 	// but the returned slice should have len == requested size.
@@ -152,6 +158,7 @@ func TestGetSlab_NonStandardSize(t *testing.T) {
 	PutSlab(slab)
 }
 
+// BenchmarkSlabPool_GetPut runs the benchmark slab pool_get put operation.
 func BenchmarkSlabPool_GetPut(b *testing.B) {
 	pool := newSlabPool(4 * 1024 * 1024)
 
@@ -161,6 +168,7 @@ func BenchmarkSlabPool_GetPut(b *testing.B) {
 	}
 }
 
+// BenchmarkSlabPool_Parallel runs the benchmark slab pool_parallel operation.
 func BenchmarkSlabPool_Parallel(b *testing.B) {
 	pool := newSlabPool(4 * 1024 * 1024)
 
@@ -173,6 +181,7 @@ func BenchmarkSlabPool_Parallel(b *testing.B) {
 	})
 }
 
+// TestSlabPool_Autoscale runs the test slab pool_autoscale operation.
 func TestSlabPool_Autoscale(t *testing.T) {
 	pool := newSlabPool(4 * 1024 * 1024)
 	assert.Equal(t, int64(100), pool.maxPooled)
@@ -197,6 +206,7 @@ func TestSlabPool_Autoscale(t *testing.T) {
 	assert.Equal(t, int64(100), pool.maxPooled)
 }
 
+// TestSlabPool_ReslicingProtection runs the test slab pool_reslicing protection operation.
 func TestSlabPool_ReslicingProtection(t *testing.T) {
 	pool := newSlabPool(4 * 1024 * 1024)
 

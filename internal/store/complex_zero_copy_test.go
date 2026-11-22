@@ -115,6 +115,7 @@ func TestArrowHNSW_Complex128_ZeroCopy(t *testing.T) {
 	assert.True(t, math.Abs(float64(results[0].Dist)) < 1e-5)
 }
 
+// TestArrowHNSW_Complex_FlattenedQuery runs the test arrow hnsw_complex_flattened query operation.
 func TestArrowHNSW_Complex_FlattenedQuery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -146,6 +147,7 @@ func TestArrowHNSW_Complex_FlattenedQuery(t *testing.T) {
 	require.InDelta(t, 0.0, results[0].Dist, 1e-5)
 }
 
+// TestArrowHNSW_Complex_Float64Query runs the test arrow hnsw_complex_float64 query operation.
 func TestArrowHNSW_Complex_Float64Query(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

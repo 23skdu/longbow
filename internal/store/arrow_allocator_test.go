@@ -12,6 +12,7 @@ import (
 // Test: ZeroCopyBuffer - Direct byte slice access without allocation
 // =============================================================================
 
+// TestZeroCopyBufferArrowHNSWConfig_Defaults runs the test zero copy buffer arrow hnsw config_defaults operation.
 func TestZeroCopyBufferArrowHNSWConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -29,6 +30,7 @@ func TestZeroCopyBufferArrowHNSWConfig_Defaults(t *testing.T) {
 	}
 }
 
+// TestZeroCopyBufferArrowHNSWConfig_Validate runs the test zero copy buffer arrow hnsw config_validate operation.
 func TestZeroCopyBufferArrowHNSWConfig_Validate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -58,6 +60,7 @@ func TestZeroCopyBufferArrowHNSWConfig_Validate(t *testing.T) {
 // Test: DirectBufferReader - Read Arrow buffers without copying
 // =============================================================================
 
+// TestDirectBufferReader_Create runs the test direct buffer reader_create operation.
 func TestDirectBufferReader_Create(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -73,6 +76,7 @@ func TestDirectBufferReader_Create(t *testing.T) {
 	}
 }
 
+// TestDirectBufferReader_GetBufferReference runs the test direct buffer reader_get buffer reference operation.
 func TestDirectBufferReader_GetBufferReference(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -96,6 +100,7 @@ func TestDirectBufferReader_GetBufferReference(t *testing.T) {
 	}
 }
 
+// TestDirectBufferReader_CreateArrayDataZeroCopy runs the test direct buffer reader_create array data zero copy operation.
 func TestDirectBufferReader_CreateArrayDataZeroCopy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -133,6 +138,7 @@ func TestDirectBufferReader_CreateArrayDataZeroCopy(t *testing.T) {
 // Test: AllocatorAwareCache - Cache that returns direct buffer references
 // =============================================================================
 
+// TestAllocatorAwareCache_Create runs the test allocator aware cache_create operation.
 func TestAllocatorAwareCache_Create(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -145,6 +151,7 @@ func TestAllocatorAwareCache_Create(t *testing.T) {
 	}
 }
 
+// TestAllocatorAwareCache_PutGet_ZeroCopy runs the test allocator aware cache_put get_zero copy operation.
 func TestAllocatorAwareCache_PutGet_ZeroCopy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -188,6 +195,7 @@ func TestAllocatorAwareCache_PutGet_ZeroCopy(t *testing.T) {
 	cachedRec.Release()
 }
 
+// TestAllocatorAwareCache_GetBufferDirect runs the test allocator aware cache_get buffer direct operation.
 func TestAllocatorAwareCache_GetBufferDirect(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -226,6 +234,7 @@ func TestAllocatorAwareCache_GetBufferDirect(t *testing.T) {
 // Test: FlightReaderBufferRetainer - Retain flight.Reader internal buffers
 // =============================================================================
 
+// TestFlightReaderBufferRetainer_Create runs the test flight reader buffer retainer_create operation.
 func TestFlightReaderBufferRetainer_Create(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -240,6 +249,7 @@ func TestFlightReaderBufferRetainer_Create(t *testing.T) {
 	}
 }
 
+// TestFlightReaderBufferRetainer_RetainBuffer runs the test flight reader buffer retainer_retain buffer operation.
 func TestFlightReaderBufferRetainer_RetainBuffer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -260,6 +270,7 @@ func TestFlightReaderBufferRetainer_RetainBuffer(t *testing.T) {
 	}
 }
 
+// TestFlightReaderBufferRetainer_ReleaseBuffer runs the test flight reader buffer retainer_release buffer operation.
 func TestFlightReaderBufferRetainer_ReleaseBuffer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -282,6 +293,7 @@ func TestFlightReaderBufferRetainer_ReleaseBuffer(t *testing.T) {
 	}
 }
 
+// TestFlightReaderBufferRetainer_Stats runs the test flight reader buffer retainer_stats operation.
 func TestFlightReaderBufferRetainer_Stats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -314,6 +326,7 @@ func TestFlightReaderBufferRetainer_Stats(t *testing.T) {
 // Test: PooledAllocator integration with VectorStore
 // =============================================================================
 
+// TestPooledAllocator_AsDefault runs the test pooled allocator_as default operation.
 func TestPooledAllocator_AsDefault(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -334,6 +347,7 @@ func TestPooledAllocator_AsDefault(t *testing.T) {
 	_ = pAlloc.Stats()
 }
 
+// TestPooledAllocator_BufferReuse runs the test pooled allocator_buffer reuse operation.
 func TestPooledAllocator_BufferReuse(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -362,6 +376,7 @@ func TestPooledAllocator_BufferReuse(t *testing.T) {
 // Benchmarks: Zero-copy vs Copy operations
 // =============================================================================
 
+// BenchmarkBufferCopy runs the benchmark buffer copy operation.
 func BenchmarkBufferCopy(b *testing.B) {
 	src := make([]byte, 1024*1024) // 1MB
 	for i := range src {
@@ -378,6 +393,7 @@ func BenchmarkBufferCopy(b *testing.B) {
 	}
 }
 
+// BenchmarkBufferZeroCopy runs the benchmark buffer zero copy operation.
 func BenchmarkBufferZeroCopy(b *testing.B) {
 	src := make([]byte, 1024*1024) // 1MB
 	for i := range src {
@@ -394,6 +410,7 @@ func BenchmarkBufferZeroCopy(b *testing.B) {
 	}
 }
 
+// BenchmarkPooledAllocator runs the benchmark pooled allocator operation.
 func BenchmarkPooledAllocator(b *testing.B) {
 	pAlloc := NewPooledAllocator()
 
@@ -406,6 +423,7 @@ func BenchmarkPooledAllocator(b *testing.B) {
 	}
 }
 
+// BenchmarkGoAllocator runs the benchmark go allocator operation.
 func BenchmarkGoAllocator(b *testing.B) {
 	alloc := memory.NewGoAllocator()
 
@@ -418,6 +436,7 @@ func BenchmarkGoAllocator(b *testing.B) {
 	}
 }
 
+// BenchmarkDirectBufferReader_CreateArray runs the benchmark direct buffer reader_create array operation.
 func BenchmarkDirectBufferReader_CreateArray(b *testing.B) {
 	alloc := memory.NewGoAllocator()
 	reader := NewDirectBufferReader(alloc)

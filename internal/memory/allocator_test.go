@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestArenaAllocator runs the test arena allocator operation.
 func TestArenaAllocator(t *testing.T) {
 	alloc := NewArenaAllocator()
 	defer alloc.Release()
@@ -43,6 +44,7 @@ func TestArenaAllocator(t *testing.T) {
 	assert.Equal(t, DefaultArenaChunkSize*2, len(hugeBuf))
 }
 
+// TestArenaReuse runs the test arena reuse operation.
 func TestArenaReuse(t *testing.T) {
 	alloc := NewArenaAllocator()
 
@@ -59,6 +61,7 @@ func TestArenaReuse(t *testing.T) {
 	assert.Equal(t, int64(512), alloc.Allocated())
 }
 
+// TestArenaAllocator_HugeReuse runs the test arena allocator_huge reuse operation.
 func TestArenaAllocator_HugeReuse(t *testing.T) {
 	alloc := NewArenaAllocator()
 

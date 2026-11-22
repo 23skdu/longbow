@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestStructuredError_Error runs the test structured error_error operation.
 func TestStructuredError_Error(t *testing.T) {
 	// Test error without cause
 	err := New(ErrorTypeValidation, "test_op", "test message")
@@ -21,6 +22,7 @@ func TestStructuredError_Error(t *testing.T) {
 	assert.Equal(t, cause, err.Unwrap())
 }
 
+// TestStructuredError_WithContext runs the test structured error_with context operation.
 func TestStructuredError_WithContext(t *testing.T) {
 	err := New(ErrorTypeValidation, "test_op", "test message")
 	err = err.WithContext("user_id", 123).WithContext("dataset", "test_dataset")
@@ -29,6 +31,7 @@ func TestStructuredError_WithContext(t *testing.T) {
 	assert.Equal(t, "test_dataset", err.Context["dataset"])
 }
 
+// TestErrorConstructors runs the test error constructors operation.
 func TestErrorConstructors(t *testing.T) {
 	// Test New* constructors
 	assert.Equal(t, ErrorTypeValidation, NewValidationError("op", "msg").Type)
@@ -39,6 +42,7 @@ func TestErrorConstructors(t *testing.T) {
 	assert.Equal(t, ErrorTypeTimeout, NewTimeoutError("op", "msg").Type)
 }
 
+// TestErrorWrapping runs the test error wrapping operation.
 func TestErrorWrapping(t *testing.T) {
 	originalErr := errors.New("original error")
 
@@ -53,6 +57,7 @@ func TestErrorWrapping(t *testing.T) {
 	assert.Nil(t, Wrap(nil, ErrorTypeStorage, "op", "msg"))
 }
 
+// TestErrorTypeString runs the test error type string operation.
 func TestErrorTypeString(t *testing.T) {
 	assert.Equal(t, "validation", string(ErrorTypeValidation))
 	assert.Equal(t, "storage", string(ErrorTypeStorage))
@@ -62,12 +67,14 @@ func TestErrorTypeString(t *testing.T) {
 	assert.Equal(t, "timeout", string(ErrorTypeTimeout))
 }
 
+// TestStackTraceCapture runs the test stack trace capture operation.
 func TestStackTraceCapture(t *testing.T) {
 	err := New(ErrorTypeValidation, "test", "message")
 	// Should have captured some stack frames
 	assert.Greater(t, len(err.Stack), 0)
 }
 
+// TestWrapErrorConvenienceFunctions runs the test wrap error convenience functions operation.
 func TestWrapErrorConvenienceFunctions(t *testing.T) {
 	cause := errors.New("underlying error")
 
@@ -92,6 +99,7 @@ func TestWrapErrorConvenienceFunctions(t *testing.T) {
 	assert.Equal(t, cause, wrapped.Unwrap())
 }
 
+// TestWithContextNilContext runs the test with context nil context operation.
 func TestWithContextNilContext(t *testing.T) {
 	err := &StructuredError{
 		Type:      ErrorTypeValidation,

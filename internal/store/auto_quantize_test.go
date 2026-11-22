@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestShouldAutoQuantize_Thresholds runs the test should auto quantize_thresholds operation.
 func TestShouldAutoQuantize_Thresholds(t *testing.T) {
 	constrainedRAM := int64(16) * 1024 * 1024 * 1024 // 16 GB RAM
 	generousRAM := int64(128) * 1024 * 1024 * 1024   // 128 GB RAM
@@ -30,6 +31,7 @@ func TestShouldAutoQuantize_Thresholds(t *testing.T) {
 	assert.False(t, ShouldAutoQuantize(500000, 128, types.VectorTypeBQ, constrainedRAM, 500000))
 }
 
+// TestAutoQuantize_EnvFlags runs the test auto quantize_env flags operation.
 func TestAutoQuantize_EnvFlags(t *testing.T) {
 	defer os.Unsetenv("LONGBOW_AUTO_QUANTIZE")
 	defer os.Unsetenv("LONGBOW_AUTO_QUANTIZE_THRESHOLD")
@@ -45,6 +47,7 @@ func TestAutoQuantize_EnvFlags(t *testing.T) {
 	assert.Equal(t, 8, cfg.AutoQuantizeBits)
 }
 
+// TestAutoQuantize_TuneDatasetIntegration runs the test auto quantize_tune dataset integration operation.
 func TestAutoQuantize_TuneDatasetIntegration(t *testing.T) {
 	defer os.Unsetenv("LONGBOW_AUTO_QUANTIZE")
 	_ = os.Setenv("LONGBOW_AUTO_QUANTIZE", "1")
@@ -70,6 +73,7 @@ func TestAutoQuantize_TuneDatasetIntegration(t *testing.T) {
 	assert.True(t, ShouldAutoQuantize(500000, 128, types.VectorTypeFloat32, 16*1024*1024*1024, 500000))
 }
 
+// FuzzAutoQuantizeEvaluation runs the fuzz auto quantize evaluation operation.
 func FuzzAutoQuantizeEvaluation(f *testing.F) {
 	f.Add(int64(10000), 128, int(types.VectorTypeFloat32), int64(16*1024*1024*1024), int64(500000))
 	f.Add(int64(500000), 384, int(types.VectorTypeFloat64), int64(24*1024*1024*1024), int64(500000))

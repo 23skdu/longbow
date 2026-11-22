@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// TestS3ConnectionPoolConfig tests connection pool configuration
+// TestS3ConnectionPoolConfig_Defaults tests connection pool configuration
 func TestS3ConnectionPoolConfig_Defaults(t *testing.T) {
 	cfg := &S3BackendConfig{
 		Endpoint:        "http://localhost:9000",

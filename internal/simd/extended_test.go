@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestExtendedDistances runs the test extended distances operation.
 func TestExtendedDistances(t *testing.T) {
 	a := []float32{1.0, 2.0, 3.0}
 	b := []float32{4.0, 0.0, 6.0}
@@ -72,6 +73,7 @@ func TestExtendedDistances(t *testing.T) {
 	})
 }
 
+// TestArgMaxMin runs the test arg max min operation.
 func TestArgMaxMin(t *testing.T) {
 	src := []float32{1.0, 5.0, 2.0, 10.0, -1.0}
 

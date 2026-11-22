@@ -172,6 +172,7 @@ func TestMortonGrid_ParityWithQuadtree(t *testing.T) {
 	}
 }
 
+// TestMortonGrid_Contains runs the test morton grid_contains operation.
 func TestMortonGrid_Contains(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -191,6 +192,7 @@ func TestMortonGrid_Contains(t *testing.T) {
 	assert.False(t, g.Contains(GeoPoint{Lat: math.NaN(), Lon: -74.5}))
 }
 
+// TestMortonGrid_InsertRejectsOutsideBounds runs the test morton grid_insert rejects outside bounds operation.
 func TestMortonGrid_InsertRejectsOutsideBounds(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -229,6 +231,7 @@ func TestMortonGrid_InsertRejectsOutsideBounds(t *testing.T) {
 	assert.Equal(t, len(corners), g.Len())
 }
 
+// TestMortonGrid_EmptyGrid runs the test morton grid_empty grid operation.
 func TestMortonGrid_EmptyGrid(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -243,6 +246,7 @@ func TestMortonGrid_EmptyGrid(t *testing.T) {
 	assert.Empty(t, results)
 }
 
+// TestMortonGrid_SinglePoint runs the test morton grid_single point operation.
 func TestMortonGrid_SinglePoint(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -263,6 +267,7 @@ func TestMortonGrid_SinglePoint(t *testing.T) {
 	assertSameIDs(t, "exact", quadtree.QueryBox(exact), g.QueryBox(exact))
 }
 
+// TestMortonGrid_AllPointsInOneCell runs the test morton grid_all points in one cell operation.
 func TestMortonGrid_AllPointsInOneCell(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -349,6 +354,7 @@ func TestMortonGrid_CellBoundaries(t *testing.T) {
 	}
 }
 
+// TestMortonGrid_ExtremeCoordinates runs the test morton grid_extreme coordinates operation.
 func TestMortonGrid_ExtremeCoordinates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -405,6 +411,7 @@ func TestMortonGrid_ExtremeCoordinates(t *testing.T) {
 	}
 }
 
+// TestMortonGrid_DuplicatePoints runs the test morton grid_duplicate points operation.
 func TestMortonGrid_DuplicatePoints(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -437,6 +444,7 @@ func TestMortonGrid_DuplicatePoints(t *testing.T) {
 	assert.Len(t, global, 4)
 }
 
+// TestMortonGrid_InvalidQuery runs the test morton grid_invalid query operation.
 func TestMortonGrid_InvalidQuery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -513,6 +521,7 @@ func TestMortonGrid_InsertAllocations(t *testing.T) {
 	})
 }
 
+// TestMortonGrid_ConcurrentInsertsAndQueries runs the test morton grid_concurrent inserts and queries operation.
 func TestMortonGrid_ConcurrentInsertsAndQueries(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -598,6 +607,7 @@ func TestGeoIndex_MortonConcurrency(t *testing.T) {
 	assert.Equal(t, int64(numInserters*vectorsPerInserter), gi.pointCount.Load())
 }
 
+// TestGeoIndex_IndexTypeSelection runs the test geo index_index type selection operation.
 func TestGeoIndex_IndexTypeSelection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -634,6 +644,7 @@ func TestGeoIndex_IndexTypeSelection(t *testing.T) {
 	}
 }
 
+// TestMortonEncodeDecode runs the test morton encode decode operation.
 func TestMortonEncodeDecode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -696,12 +707,14 @@ func benchmarkGeoInsert(b *testing.B, newIndex func(points int) GeoPointIndex) {
 	}
 }
 
+// BenchmarkMortonGrid_Insert runs the benchmark morton grid_insert operation.
 func BenchmarkMortonGrid_Insert(b *testing.B) {
 	benchmarkGeoInsert(b, func(points int) GeoPointIndex {
 		return NewMortonGrid(geoWorldBounds(), points, "bench")
 	})
 }
 
+// BenchmarkQuadtree_Insert runs the benchmark quadtree_insert operation.
 func BenchmarkQuadtree_Insert(b *testing.B) {
 	benchmarkGeoInsert(b, func(_ int) GeoPointIndex {
 		return NewQuadtree(geoWorldBounds(), 64, "bench")
@@ -728,12 +741,14 @@ func benchmarkGeoInsertBatch(b *testing.B, batch int, newIndex func(points int) 
 	}
 }
 
+// BenchmarkMortonGrid_InsertBatch runs the benchmark morton grid_insert batch operation.
 func BenchmarkMortonGrid_InsertBatch(b *testing.B) {
 	benchmarkGeoInsertBatch(b, 8, func(points int) GeoPointIndex {
 		return NewMortonGrid(geoWorldBounds(), points, "bench")
 	})
 }
 
+// BenchmarkQuadtree_InsertBatch runs the benchmark quadtree_insert batch operation.
 func BenchmarkQuadtree_InsertBatch(b *testing.B) {
 	benchmarkGeoInsertBatch(b, 8, func(_ int) GeoPointIndex {
 		return NewQuadtree(geoWorldBounds(), 8, "bench")
@@ -771,6 +786,7 @@ func benchmarkGeoQueryBox(b *testing.B, newIndex func(bounds GeoBoundingBox, poi
 	}
 }
 
+// BenchmarkMortonGrid_QueryBox runs the benchmark morton grid_query box operation.
 func BenchmarkMortonGrid_QueryBox(b *testing.B) {
 	b.Run("selective", func(b *testing.B) {
 		benchmarkGeoQueryBox(b, func(bounds GeoBoundingBox, points int) GeoPointIndex {
@@ -784,6 +800,7 @@ func BenchmarkMortonGrid_QueryBox(b *testing.B) {
 	})
 }
 
+// BenchmarkQuadtree_QueryBox runs the benchmark quadtree_query box operation.
 func BenchmarkQuadtree_QueryBox(b *testing.B) {
 	b.Run("selective", func(b *testing.B) {
 		benchmarkGeoQueryBox(b, func(bounds GeoBoundingBox, _ int) GeoPointIndex {

@@ -19,6 +19,7 @@ type entry struct {
 	value []byte
 }
 
+// NewLRUCache constructs a new LRUCache.
 func NewLRUCache(maxBytes int64) *LRUCache {
 	return &LRUCache{
 		maxBytes:  maxBytes,
@@ -27,6 +28,7 @@ func NewLRUCache(maxBytes int64) *LRUCache {
 	}
 }
 
+// Put runs the put operation.
 func (c *LRUCache) Put(key string, value []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -52,6 +54,7 @@ func (c *LRUCache) Put(key string, value []byte) {
 	}
 }
 
+// Get returns the .
 func (c *LRUCache) Get(key string) ([]byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

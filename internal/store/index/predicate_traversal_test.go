@@ -29,8 +29,10 @@ import (
 // against an index whose ids are dense.
 type modPredicate struct{ mod, want uint32 }
 
+// IsMatch reports whether the condition holds.
 func (p modPredicate) IsMatch(id uint32) bool { return id%p.mod == p.want }
 
+// MatchBatch runs the match batch operation.
 func (p modPredicate) MatchBatch(ids []uint32, dst []byte) {
 	for i, id := range ids {
 		if id%p.mod == p.want {
@@ -44,8 +46,10 @@ func (p modPredicate) MatchBatch(ids []uint32, dst []byte) {
 // soleIDPredicate admits exactly one id, the extreme of selectivity.
 type soleIDPredicate struct{ only uint32 }
 
+// IsMatch reports whether the condition holds.
 func (p soleIDPredicate) IsMatch(id uint32) bool { return id == p.only }
 
+// MatchBatch runs the match batch operation.
 func (p soleIDPredicate) MatchBatch(ids []uint32, dst []byte) {
 	for i, id := range ids {
 		if id == p.only {

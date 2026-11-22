@@ -193,6 +193,7 @@ func TestAccumulatorIndependence(t *testing.T) {
 // Benchmarks: Batch vs Single Loop
 // =============================================================================
 
+// BenchmarkCosineBatch_Unrolled4x_128dim_100vec runs the benchmark cosine batch_unrolled4x_128dim_100vec operation.
 func BenchmarkCosineBatch_Unrolled4x_128dim_100vec(b *testing.B) {
 	dim := 128
 	nVec := 100
@@ -217,6 +218,7 @@ func BenchmarkCosineBatch_Unrolled4x_128dim_100vec(b *testing.B) {
 	}
 }
 
+// BenchmarkDotBatch_Unrolled4x_128dim_100vec runs the benchmark dot batch_unrolled4x_128dim_100vec operation.
 func BenchmarkDotBatch_Unrolled4x_128dim_100vec(b *testing.B) {
 	dim := 128
 	nVec := 100
@@ -241,7 +243,7 @@ func BenchmarkDotBatch_Unrolled4x_128dim_100vec(b *testing.B) {
 	}
 }
 
-// Compare batch vs sequential single-vector calls
+// BenchmarkCosine_Sequential_128dim_100vec batch vs sequential single-vector calls
 func BenchmarkCosine_Sequential_128dim_100vec(b *testing.B) {
 	dim := 128
 	nVec := 100
@@ -265,6 +267,7 @@ func BenchmarkCosine_Sequential_128dim_100vec(b *testing.B) {
 	}
 }
 
+// BenchmarkDot_Sequential_128dim_100vec runs the benchmark dot_sequential_128dim_100vec operation.
 func BenchmarkDot_Sequential_128dim_100vec(b *testing.B) {
 	dim := 128
 	nVec := 100

@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// RetryPolicy represents a retry policy value.
 type RetryPolicy struct {
 	MaxAttempts   int
 	InitialDelay  time.Duration
@@ -20,6 +21,7 @@ type RetryPolicy struct {
 	OnRetry       func(attempt int, err error)
 }
 
+// DefaultRetryPolicy returns the default RetryPolicy.
 func DefaultRetryPolicy() *RetryPolicy {
 	return &RetryPolicy{
 		MaxAttempts:   3,
@@ -32,6 +34,7 @@ func DefaultRetryPolicy() *RetryPolicy {
 	}
 }
 
+// DefaultRetryableFunc returns the default RetryableFunc.
 func DefaultRetryableFunc(err error) bool {
 	if err == nil {
 		return false
@@ -80,6 +83,7 @@ func findSubstring(s, substr string) bool {
 	return false
 }
 
+// Retry runs the retry operation.
 func Retry[T any](ctx context.Context, policy *RetryPolicy, fn func() (T, error)) (T, error) {
 	var result T
 	var lastErr error
@@ -139,6 +143,7 @@ func calculateDelay(policy *RetryPolicy, attempt int) time.Duration {
 	return time.Duration(delay)
 }
 
+// RetryConfig represents a retry config value.
 type RetryConfig struct {
 	Network     *RetryPolicy
 	Storage     *RetryPolicy
@@ -146,6 +151,7 @@ type RetryConfig struct {
 	Replication *RetryPolicy
 }
 
+// NewRetryConfig constructs a new RetryConfig.
 func NewRetryConfig() *RetryConfig {
 	return &RetryConfig{
 		Network: &RetryPolicy{
@@ -183,30 +189,37 @@ func NewRetryConfig() *RetryConfig {
 	}
 }
 
+// RetryableError represents a retryable error value.
 type RetryableError struct {
 	Err error
 }
 
+// Error runs the error operation.
 func (e *RetryableError) Error() string {
 	return e.Err.Error()
 }
 
+// Unwrap runs the unwrap operation.
 func (e *RetryableError) Unwrap() error {
 	return e.Err
 }
 
+// NonRetryableError represents a non retryable error value.
 type NonRetryableError struct {
 	Err error
 }
 
+// Error runs the error operation.
 func (e *NonRetryableError) Error() string {
 	return e.Err.Error()
 }
 
+// Unwrap runs the unwrap operation.
 func (e *NonRetryableError) Unwrap() error {
 	return e.Err
 }
 
+// AdaptiveRetryPolicy represents a adaptive retry policy value.
 type AdaptiveRetryPolicy struct {
 	*RetryPolicy
 	mu               sync.RWMutex
@@ -216,6 +229,7 @@ type AdaptiveRetryPolicy struct {
 	adjustmentPeriod time.Duration
 }
 
+// NewAdaptiveRetryPolicy constructs a new AdaptiveRetryPolicy.
 func NewAdaptiveRetryPolicy(base *RetryPolicy) *AdaptiveRetryPolicy {
 	if base == nil {
 		base = DefaultRetryPolicy()
@@ -228,6 +242,7 @@ func NewAdaptiveRetryPolicy(base *RetryPolicy) *AdaptiveRetryPolicy {
 	}
 }
 
+// RecordSuccess runs the record success operation.
 func (a *AdaptiveRetryPolicy) RecordSuccess() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -235,6 +250,7 @@ func (a *AdaptiveRetryPolicy) RecordSuccess() {
 	a.tryAdjust()
 }
 
+// RecordFailure runs the record failure operation.
 func (a *AdaptiveRetryPolicy) RecordFailure() {
 	a.mu.Lock()
 	defer a.mu.Unlock()

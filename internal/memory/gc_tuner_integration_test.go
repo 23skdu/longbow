@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestGCTuner_ArenaAwareTuning runs the test gc tuner_arena aware tuning operation.
 func TestGCTuner_ArenaAwareTuning(t *testing.T) {
 	// Setup: Create a tuner with aggressive mode enabled
 	limit := int64(50 * 1024 * 1024) // 50MB limit

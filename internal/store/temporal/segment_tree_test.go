@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestSegmentTree_Basic runs the test segment tree_basic operation.
 func TestSegmentTree_Basic(t *testing.T) {
 	st := NewSegmentTree(0, 100)
 
@@ -40,6 +41,7 @@ func TestSegmentTree_Basic(t *testing.T) {
 	assert.True(t, bm.Contains(4))
 }
 
+// TestSegmentTree_Remove runs the test segment tree_remove operation.
 func TestSegmentTree_Remove(t *testing.T) {
 	st := NewSegmentTree(0, 100)
 
@@ -60,6 +62,7 @@ func TestSegmentTree_Remove(t *testing.T) {
 	st.Remove(0, 5, 999)
 }
 
+// TestSegmentTree_QueryEmpty runs the test segment tree_query empty operation.
 func TestSegmentTree_QueryEmpty(t *testing.T) {
 	st := NewSegmentTree(0, 100)
 
@@ -70,6 +73,7 @@ func TestSegmentTree_QueryEmpty(t *testing.T) {
 	assert.True(t, bm.IsEmpty())
 }
 
+// TestSegmentTree_LargeRange runs the test segment tree_large range operation.
 func TestSegmentTree_LargeRange(t *testing.T) {
 	st := NewSegmentTree(0, math.MaxInt64)
 
@@ -88,6 +92,7 @@ func TestSegmentTree_LargeRange(t *testing.T) {
 	assert.True(t, bm.Contains(2))
 }
 
+// TestSegmentTree_Concurrency runs the test segment tree_concurrency operation.
 func TestSegmentTree_Concurrency(t *testing.T) {
 	st := NewSegmentTree(0, 1000)
 	var wg sync.WaitGroup
@@ -106,6 +111,7 @@ func TestSegmentTree_Concurrency(t *testing.T) {
 	wg.Wait()
 }
 
+// TestSegmentTree_QueryRangeNilNode runs the test segment tree_query range nil node operation.
 func TestSegmentTree_QueryRangeNilNode(t *testing.T) {
 	st := NewSegmentTree(0, 100)
 	st.Insert(10, 20, 1) // left branch
@@ -115,6 +121,7 @@ func TestSegmentTree_QueryRangeNilNode(t *testing.T) {
 	assert.True(t, bm.IsEmpty())
 }
 
+// TestSegmentTree_QueryRangeEmptyNode runs the test segment tree_query range empty node operation.
 func TestSegmentTree_QueryRangeEmptyNode(t *testing.T) {
 	st := NewSegmentTree(0, 100)
 	st.Insert(10, 20, 1)

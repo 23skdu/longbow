@@ -49,6 +49,7 @@ func makeScaleTestRecord(mem memory.Allocator, dims, numVectors int) arrow.Recor
 	return array.NewRecordBatch(schema, []arrow.Array{idBuilder.NewArray(), listBuilder.NewArray()}, int64(numVectors))
 }
 
+// TestArrowHNSW_LargeBatchIngestion_30k runs the test arrow hnsw_large batch ingestion_30k operation.
 func TestArrowHNSW_LargeBatchIngestion_30k(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping large batch ingestion test in short mode")

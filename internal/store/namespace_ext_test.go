@@ -6,6 +6,7 @@ import (
 
 // Extension tests for Namespace coverage gaps
 
+// TestNamespace_AddDataset runs the test namespace_add dataset operation.
 func TestNamespace_AddDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -32,6 +33,7 @@ func TestNamespace_AddDataset(t *testing.T) {
 	}
 }
 
+// TestNamespace_RemoveDataset runs the test namespace_remove dataset operation.
 func TestNamespace_RemoveDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -52,6 +54,7 @@ func TestNamespace_RemoveDataset(t *testing.T) {
 	}
 }
 
+// TestNamespace_HasDataset runs the test namespace_has dataset operation.
 func TestNamespace_HasDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -73,6 +76,7 @@ func TestNamespace_HasDataset(t *testing.T) {
 	}
 }
 
+// TestBuildNamespacedPath runs the test build namespaced path operation.
 func TestBuildNamespacedPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -97,6 +101,7 @@ func TestBuildNamespacedPath(t *testing.T) {
 	}
 }
 
+// TestNamespace_ConcurrentAccess runs the test namespace_concurrent access operation.
 func TestNamespace_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

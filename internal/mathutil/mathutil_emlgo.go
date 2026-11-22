@@ -29,7 +29,7 @@ var currentBackend int32 = int32(BackendEML)
 // This reduces memory pressure from emlgo's float64 SIMD kernels at large scale.
 var float64Excluded int32
 
-// SetFloat64Exclusion enables or disables emlgo for float64 batch operations.
+// SetFloat64Excluded enables or disables emlgo for float64 batch operations.
 // When excluded, float64 batch ops fall back to standard math loops, reducing
 // binary memory footprint from emlgo assembly at large vector counts.
 func SetFloat64Excluded(excluded bool) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// FuzzParseCLIFlags runs the fuzz parse cli flags operation.
 func FuzzParseCLIFlags(f *testing.F) {
 	seeds := []string{
 		"--max-memory 1073741824",

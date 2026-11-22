@@ -19,9 +19,12 @@ import (
 type OIDCProviderKind string
 
 const (
+	// OIDCProviderGeneric is a oidc provider generic constant.
 	OIDCProviderGeneric OIDCProviderKind = "generic"
-	OIDCProviderAWS     OIDCProviderKind = "aws"
-	OIDCProviderGoogle  OIDCProviderKind = "google"
+	// OIDCProviderAWS is a oidc provider aws constant.
+	OIDCProviderAWS OIDCProviderKind = "aws"
+	// OIDCProviderGoogle is a oidc provider google constant.
+	OIDCProviderGoogle OIDCProviderKind = "google"
 )
 
 // OIDCIssuerConfig describes a trusted OIDC issuer used for federation.

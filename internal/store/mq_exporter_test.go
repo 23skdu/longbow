@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMQConfig_Defaults runs the test mq config_defaults operation.
 func TestMQConfig_Defaults(t *testing.T) {
 	config := MQConfig{
 		Brokers: "localhost:9092",
@@ -21,11 +22,13 @@ func TestMQConfig_Defaults(t *testing.T) {
 	assert.Equal(t, MQTypeKafka, config.Type)
 }
 
+// TestMQType_Constants runs the test mq type_constants operation.
 func TestMQType_Constants(t *testing.T) {
 	assert.Equal(t, MQType("kafka"), MQTypeKafka)
 	assert.Equal(t, MQType("pulsar"), MQTypePulsar)
 }
 
+// TestNewMessageQueueExporter_MissingBrokers runs the test new message queue exporter_missing brokers operation.
 func TestNewMessageQueueExporter_MissingBrokers(t *testing.T) {
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -42,6 +45,7 @@ func TestNewMessageQueueExporter_MissingBrokers(t *testing.T) {
 	assert.Contains(t, err.Error(), "brokers is required")
 }
 
+// TestNewMessageQueueExporter_MissingTopic runs the test new message queue exporter_missing topic operation.
 func TestNewMessageQueueExporter_MissingTopic(t *testing.T) {
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -58,6 +62,7 @@ func TestNewMessageQueueExporter_MissingTopic(t *testing.T) {
 	assert.Contains(t, err.Error(), "topic is required")
 }
 
+// TestNewMessageQueueExporter_InvalidType runs the test new message queue exporter_invalid type operation.
 func TestNewMessageQueueExporter_InvalidType(t *testing.T) {
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -74,6 +79,7 @@ func TestNewMessageQueueExporter_InvalidType(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported message queue type")
 }
 
+// TestMQMetrics_InitialState runs the test mq metrics_initial state operation.
 func TestMQMetrics_InitialState(t *testing.T) {
 	metrics := MQMetrics{}
 
@@ -83,6 +89,7 @@ func TestMQMetrics_InitialState(t *testing.T) {
 	assert.Equal(t, int64(0), metrics.BatchesProduced.Load())
 }
 
+// TestMQMetrics_Add runs the test mq metrics_add operation.
 func TestMQMetrics_Add(t *testing.T) {
 	metrics := MQMetrics{}
 
@@ -97,6 +104,7 @@ func TestMQMetrics_Add(t *testing.T) {
 	assert.Equal(t, int64(1), metrics.BatchesProduced.Load())
 }
 
+// TestMessageQueueExporter_GetConfig runs the test message queue exporter_get config operation.
 func TestMessageQueueExporter_GetConfig(t *testing.T) {
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -120,6 +128,7 @@ func TestMessageQueueExporter_GetConfig(t *testing.T) {
 	assert.Equal(t, config, gotConfig)
 }
 
+// TestMessageQueueExporter_SetConfig runs the test message queue exporter_set config operation.
 func TestMessageQueueExporter_SetConfig(t *testing.T) {
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -149,6 +158,7 @@ func TestMessageQueueExporter_SetConfig(t *testing.T) {
 	assert.Equal(t, 200, exporter.config.BatchSize)
 }
 
+// TestMessageQueueExporter_SetConfig_ChangeType runs the test message queue exporter_set config_change type operation.
 func TestMessageQueueExporter_SetConfig_ChangeType(t *testing.T) {
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -177,6 +187,7 @@ func TestMessageQueueExporter_SetConfig_ChangeType(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot change message queue type")
 }
 
+// TestMessageQueueExporter_IsRunning runs the test message queue exporter_is running operation.
 func TestMessageQueueExporter_IsRunning(t *testing.T) {
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -194,6 +205,7 @@ func TestMessageQueueExporter_IsRunning(t *testing.T) {
 	assert.False(t, exporter.IsRunning())
 }
 
+// TestMessageQueueExporter_compressionFromString runs the test message queue exporter_compression from string operation.
 func TestMessageQueueExporter_compressionFromString(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -223,6 +235,7 @@ func TestMessageQueueExporter_compressionFromString(t *testing.T) {
 	}
 }
 
+// TestMessageQueueExporter_BatchDefaults runs the test message queue exporter_batch defaults operation.
 func TestMessageQueueExporter_BatchDefaults(t *testing.T) {
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -251,6 +264,7 @@ func TestMessageQueueExporter_BatchDefaults(t *testing.T) {
 	assert.Equal(t, 100, exporter.config.BatchTimeoutMs)
 }
 
+// TestMQExporter_BufferManagement runs the test mq exporter_buffer management operation.
 func TestMQExporter_BufferManagement(t *testing.T) {
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()

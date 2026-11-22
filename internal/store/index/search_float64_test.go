@@ -14,6 +14,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// TestFloat64_PrefetchMultiLine runs the test float64_prefetch multi line operation.
 func TestFloat64_PrefetchMultiLine(t *testing.T) {
 	dims := 128
 	numVecs := 200
@@ -90,6 +91,7 @@ func TestFloat64_PrefetchMultiLine(t *testing.T) {
 	comp.Prefetch(99999)
 }
 
+// TestInt64_Uint64_PrefetchMultiLine runs the test int64_uint64_prefetch multi line operation.
 func TestInt64_Uint64_PrefetchMultiLine(t *testing.T) {
 	dims := 128
 	numVecs := 100
@@ -141,6 +143,7 @@ func TestInt64_Uint64_PrefetchMultiLine(t *testing.T) {
 	compU64.Prefetch(88888)
 }
 
+// TestFloat64_ComputeBatchCacheBlocked runs the test float64_compute batch cache blocked operation.
 func TestFloat64_ComputeBatchCacheBlocked(t *testing.T) {
 	dims := 128
 	numVecs := 250 // > 64 to exercise multiple blocks
@@ -207,6 +210,7 @@ func TestFloat64_ComputeBatchCacheBlocked(t *testing.T) {
 	}
 }
 
+// TestFloat64_SearchLayerAndNavigation runs the test float64_search layer and navigation operation.
 func TestFloat64_SearchLayerAndNavigation(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	dims := 128
@@ -289,6 +293,7 @@ func TestFloat64_SearchLayerAndNavigation(t *testing.T) {
 	}
 }
 
+// BenchmarkFloat64_ComputeBatch_CacheBlocked runs the benchmark float64_compute batch_cache blocked operation.
 func BenchmarkFloat64_ComputeBatch_CacheBlocked(b *testing.B) {
 	dims := 128
 	batchSizes := []int{16, 64, 128, 256}
@@ -346,6 +351,7 @@ func BenchmarkFloat64_ComputeBatch_CacheBlocked(b *testing.B) {
 	}
 }
 
+// BenchmarkFloat64_HNSWSearch runs the benchmark float64_hnsw search operation.
 func BenchmarkFloat64_HNSWSearch(b *testing.B) {
 	pool := memory.NewGoAllocator()
 	dims := 128

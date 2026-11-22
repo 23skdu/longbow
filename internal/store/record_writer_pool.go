@@ -207,8 +207,10 @@ type pooledFlightPayloadWriter struct {
 	pool *IPCBufferPool
 }
 
+// Start runs the start operation.
 func (p *pooledFlightPayloadWriter) Start() error { return nil }
 
+// WritePayload runs the write payload operation.
 func (p *pooledFlightPayloadWriter) WritePayload(payload ipc.Payload) error {
 	m := payload.Meta()
 	defer m.Release()
@@ -226,6 +228,7 @@ func (p *pooledFlightPayloadWriter) WritePayload(payload ipc.Payload) error {
 	return err
 }
 
+// Close runs the close operation.
 func (p *pooledFlightPayloadWriter) Close() error {
 	p.pool.Put(p.buf)
 	p.buf = nil

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestDequantizeL2 runs the test dequantize l2 operation.
 func TestDequantizeL2(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 
@@ -60,6 +61,7 @@ func TestDequantizeL2(t *testing.T) {
 	}
 }
 
+// BenchmarkDequantizeL2 runs the benchmark dequantize l2 operation.
 func BenchmarkDequantizeL2(b *testing.B) {
 	dim := 128
 	q := make([]float32, dim)

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestRateLimiter_Basic runs the test rate limiter_basic operation.
 func TestRateLimiter_Basic(t *testing.T) {
 	// Limit to 100 bytes per second
 	limit := int64(100)
@@ -28,6 +29,7 @@ func TestRateLimiter_Basic(t *testing.T) {
 	assert.WithinDuration(t, start, time.Now(), 10*time.Millisecond)
 }
 
+// TestRateLimiter_Throttling runs the test rate limiter_throttling operation.
 func TestRateLimiter_Throttling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping throttling test in short mode")
@@ -51,6 +53,7 @@ func TestRateLimiter_Throttling(t *testing.T) {
 	assert.GreaterOrEqual(t, elapsed.Milliseconds(), int64(450), "should throttle for at least 0.45s")
 }
 
+// TestRateLimiter_Disabled runs the test rate limiter_disabled operation.
 func TestRateLimiter_Disabled(t *testing.T) {
 	rl := NewRateLimiter(0)
 	ctx := context.Background()

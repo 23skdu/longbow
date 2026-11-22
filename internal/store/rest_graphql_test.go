@@ -35,6 +35,7 @@ func doJSONReq(t *testing.T, client *http.Client, method, url, apiKey string, bo
 	return resp.StatusCode, out
 }
 
+// TestRESTAPI_EndToEndCRUDAndSearch runs the test restapi_end to end crud and search operation.
 func TestRESTAPI_EndToEndCRUDAndSearch(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -144,6 +145,7 @@ func TestRESTAPI_EndToEndCRUDAndSearch(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 }
 
+// TestRESTAPI_HTTPAuthMiddlewareEnforcement runs the test restapi_http auth middleware enforcement operation.
 func TestRESTAPI_HTTPAuthMiddlewareEnforcement(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -212,6 +214,7 @@ func TestRESTAPI_HTTPAuthMiddlewareEnforcement(t *testing.T) {
 	require.Equal(t, http.StatusCreated, code)
 }
 
+// TestGraphQL_QueriesMutationsIntrospection runs the test graph ql_queries mutations introspection operation.
 func TestGraphQL_QueriesMutationsIntrospection(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -283,6 +286,7 @@ func TestGraphQL_QueriesMutationsIntrospection(t *testing.T) {
 	require.Contains(t, string(stream.results[0].Body), `"status":"ok"`)
 }
 
+// TestRESTAndGraphQLExtendedRoadmapEndpoints runs the test rest and graph ql extended roadmap endpoints operation.
 func TestRESTAndGraphQLExtendedRoadmapEndpoints(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -374,6 +378,7 @@ func TestRESTAndGraphQLExtendedRoadmapEndpoints(t *testing.T) {
 	require.Nil(t, gqlExt["errors"])
 }
 
+// FuzzGraphQLParser runs the fuzz graph ql parser operation.
 func FuzzGraphQLParser(f *testing.F) {
 	f.Add(`{ health { status } }`)
 	f.Add(`query Q($k: Int = 5) { search(dataset: "ds", vector: [1.0, 0.5], k: $k) { id score } }`)
@@ -396,6 +401,7 @@ func FuzzGraphQLParser(f *testing.F) {
 	})
 }
 
+// FuzzRESTPayloads runs the fuzz rest payloads operation.
 func FuzzRESTPayloads(f *testing.F) {
 	f.Add("/api/v1/health", `GET`, `{}`)
 	f.Add("/api/v1/datasets/fuzzds/search", `POST`, `{"vector":[1,0],"k":2}`)

@@ -240,10 +240,16 @@ func benchmarkComputeBatchInt8Legacy(b *testing.B) {
 	_ = sink
 }
 
+// BenchmarkComputeBatch_Float32_LegacyLoop runs the benchmark compute batch_float32_legacy loop operation.
 func BenchmarkComputeBatch_Float32_LegacyLoop(b *testing.B) { benchmarkComputeBatchFloat32Legacy(b) }
-func BenchmarkComputeBatch_Float64_LegacyLoop(b *testing.B) { benchmarkComputeBatchFloat64Legacy(b) }
-func BenchmarkComputeBatch_Int8_LegacyLoop(b *testing.B)    { benchmarkComputeBatchInt8Legacy(b) }
 
+// BenchmarkComputeBatch_Float64_LegacyLoop runs the benchmark compute batch_float64_legacy loop operation.
+func BenchmarkComputeBatch_Float64_LegacyLoop(b *testing.B) { benchmarkComputeBatchFloat64Legacy(b) }
+
+// BenchmarkComputeBatch_Int8_LegacyLoop runs the benchmark compute batch_int8_legacy loop operation.
+func BenchmarkComputeBatch_Int8_LegacyLoop(b *testing.B) { benchmarkComputeBatchInt8Legacy(b) }
+
+// BenchmarkComputeBatch_Float32_SingleLookup runs the benchmark compute batch_float32_single lookup operation.
 func BenchmarkComputeBatch_Float32_SingleLookup(b *testing.B) {
 	g := newBatchBenchGraphData(b, types.VectorTypeFloat32)
 	c := &float32Computer{
@@ -270,6 +276,7 @@ func BenchmarkComputeBatch_Float32_SingleLookup(b *testing.B) {
 	_ = sink
 }
 
+// BenchmarkComputeBatch_Float32_BatchSnapshot runs the benchmark compute batch_float32_batch snapshot operation.
 func BenchmarkComputeBatch_Float32_BatchSnapshot(b *testing.B) {
 	g := newBatchBenchGraphData(b, types.VectorTypeFloat32)
 	c := &float32Computer{
@@ -295,6 +302,7 @@ func BenchmarkComputeBatch_Float32_BatchSnapshot(b *testing.B) {
 	_ = sink
 }
 
+// BenchmarkComputeBatch_Float64_SingleLookup runs the benchmark compute batch_float64_single lookup operation.
 func BenchmarkComputeBatch_Float64_SingleLookup(b *testing.B) {
 	g := newBatchBenchGraphData(b, types.VectorTypeFloat64)
 	c := &float64Computer{
@@ -321,6 +329,7 @@ func BenchmarkComputeBatch_Float64_SingleLookup(b *testing.B) {
 	_ = sink
 }
 
+// BenchmarkComputeBatch_Float64_BatchSnapshot runs the benchmark compute batch_float64_batch snapshot operation.
 func BenchmarkComputeBatch_Float64_BatchSnapshot(b *testing.B) {
 	g := newBatchBenchGraphData(b, types.VectorTypeFloat64)
 	c := &float64Computer{
@@ -346,6 +355,7 @@ func BenchmarkComputeBatch_Float64_BatchSnapshot(b *testing.B) {
 	_ = sink
 }
 
+// BenchmarkComputeBatch_Int8_SingleLookup runs the benchmark compute batch_int8_single lookup operation.
 func BenchmarkComputeBatch_Int8_SingleLookup(b *testing.B) {
 	g := newBatchBenchGraphData(b, types.VectorTypeInt8)
 	q, qI8 := batchBenchInt8Query()
@@ -374,6 +384,7 @@ func BenchmarkComputeBatch_Int8_SingleLookup(b *testing.B) {
 	_ = sink
 }
 
+// BenchmarkComputeBatch_Int8_BatchSnapshot runs the benchmark compute batch_int8_batch snapshot operation.
 func BenchmarkComputeBatch_Int8_BatchSnapshot(b *testing.B) {
 	g := newBatchBenchGraphData(b, types.VectorTypeInt8)
 	q, qI8 := batchBenchInt8Query()

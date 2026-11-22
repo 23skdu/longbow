@@ -32,6 +32,7 @@ func authenticatedContext() context.Context {
 	return metadata.AppendToOutgoingContext(context.Background(), "x-api-key", testAdminAPIKey)
 }
 
+// TestMain runs the test main operation.
 func TestMain(m *testing.M) {
 	os.Exit(testMain(m))
 }

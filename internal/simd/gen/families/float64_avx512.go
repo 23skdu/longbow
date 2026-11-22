@@ -6,6 +6,7 @@ import (
 	"github.com/mmcloughlin/avo/reg"
 )
 
+// ImplementEuclideanFloat64AVX512 runs the implement euclidean float64 avx512 operation.
 func ImplementEuclideanFloat64AVX512() {
 	TEXT("euclideanFloat64AVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
 	a := Load(Param("a"), GP64())
@@ -73,6 +74,7 @@ func ImplementEuclideanFloat64AVX512() {
 	RET()
 }
 
+// ImplementDotFloat64AVX512 runs the implement dot float64 avx512 operation.
 func ImplementDotFloat64AVX512() {
 	TEXT("dotFloat64AVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
 	a := Load(Param("a"), GP64())
@@ -137,6 +139,7 @@ func ImplementDotFloat64AVX512() {
 	RET()
 }
 
+// ImplementL2SquaredFloat64AVX512 runs the implement l2 squared float64 avx512 operation.
 func ImplementL2SquaredFloat64AVX512() {
 	TEXT("l2SquaredFloat64AVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
 	a := Load(Param("a"), GP64())
@@ -203,6 +206,7 @@ func ImplementL2SquaredFloat64AVX512() {
 	RET()
 }
 
+// ImplementCosineFloat64AVX512 runs the implement cosine float64 avx512 operation.
 func ImplementCosineFloat64AVX512() {
 	TEXT("cosineFloat64AVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) (dot, normA, normB float32)")
 	a := Load(Param("a"), GP64())

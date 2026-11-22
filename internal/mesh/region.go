@@ -24,6 +24,7 @@ type Router struct {
 	dirty   bool    // Tree needs rebuild
 }
 
+// NewRouter constructs a new Router.
 func NewRouter() *Router {
 	return &Router{
 		regions: make([]Region, 0),

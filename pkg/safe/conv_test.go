@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestUint32ToInt32 runs the test uint32 to int32 operation.
 func TestUint32ToInt32(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -33,6 +34,7 @@ func TestUint32ToInt32(t *testing.T) {
 	}
 }
 
+// TestIntToInt32 runs the test int to int32 operation.
 func TestIntToInt32(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -76,6 +78,7 @@ func TestIntToInt32(t *testing.T) {
 	}
 }
 
+// TestUint32ToInt runs the test uint32 to int operation.
 func TestUint32ToInt(t *testing.T) {
 	assert.Equal(t, 0, Uint32ToInt(0))
 	assert.Equal(t, 42, Uint32ToInt(42))
@@ -83,6 +86,7 @@ func TestUint32ToInt(t *testing.T) {
 	assert.Equal(t, int(maxU32), Uint32ToInt(maxU32))
 }
 
+// TestInt64ToUint32 runs the test int64 to uint32 operation.
 func TestInt64ToUint32(t *testing.T) {
 	tests := []struct {
 		name    string

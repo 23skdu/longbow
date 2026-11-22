@@ -5,6 +5,7 @@ import (
 	"unsafe"
 )
 
+// TestCPUIndex_AddAndSearch runs the test cpu index_add and search operation.
 func TestCPUIndex_AddAndSearch(t *testing.T) {
 	cfg := DefaultGPUConfig()
 	cfg.Dimension = 3
@@ -53,6 +54,7 @@ func TestCPUIndex_AddAndSearch(t *testing.T) {
 	}
 }
 
+// TestCPUIndex_Empty runs the test cpu index_empty operation.
 func TestCPUIndex_Empty(t *testing.T) {
 	cfg := DefaultGPUConfig()
 	cfg.Dimension = 3
@@ -79,6 +81,7 @@ func TestCPUIndex_Empty(t *testing.T) {
 	}
 }
 
+// TestCPUIndex_Backend runs the test cpu index_backend operation.
 func TestCPUIndex_Backend(t *testing.T) {
 	cfg := DefaultGPUConfig()
 
@@ -94,6 +97,7 @@ func TestCPUIndex_Backend(t *testing.T) {
 	}
 }
 
+// TestCPUIndex_DeviceInfo runs the test cpu index_device info operation.
 func TestCPUIndex_DeviceInfo(t *testing.T) {
 	cfg := DefaultGPUConfig()
 
@@ -117,6 +121,7 @@ func TestCPUIndex_DeviceInfo(t *testing.T) {
 	}
 }
 
+// TestCPUIndex_SearchFloat16 runs the test cpu index_search float16 operation.
 func TestCPUIndex_SearchFloat16(t *testing.T) {
 	cfg := DefaultGPUConfig()
 	cfg.Dimension = 3
@@ -164,6 +169,7 @@ func TestCPUIndex_SearchFloat16(t *testing.T) {
 	_ = distances // Acknowledge distances returned
 }
 
+// TestCPUIndex_SearchComplex64 runs the test cpu index_search complex64 operation.
 func TestCPUIndex_SearchComplex64(t *testing.T) {
 	cfg := DefaultGPUConfig()
 	cfg.Dimension = 4 // complex64 = 2 x float32
@@ -210,6 +216,7 @@ func TestCPUIndex_SearchComplex64(t *testing.T) {
 	_ = distances // Acknowledge distances returned
 }
 
+// TestCPUIndex_SearchComplex128 runs the test cpu index_search complex128 operation.
 func TestCPUIndex_SearchComplex128(t *testing.T) {
 	cfg := DefaultGPUConfig()
 	cfg.Dimension = 4 // complex128 = 2 x float64, stored as 2 x float32

@@ -39,6 +39,7 @@ func buildNavGrid(cols, rows int) *types.GraphData {
 	return g
 }
 
+// BenchmarkGraphNavigator_FindPath runs the benchmark graph navigator_find path operation.
 func BenchmarkGraphNavigator_FindPath(b *testing.B) {
 	const cols, rows = 32, 32
 	gd := buildNavGrid(cols, rows)
@@ -61,6 +62,7 @@ func BenchmarkGraphNavigator_FindPath(b *testing.B) {
 	}
 }
 
+// BenchmarkGraphNavigator_FindPathCached runs the benchmark graph navigator_find path cached operation.
 func BenchmarkGraphNavigator_FindPathCached(b *testing.B) {
 	const cols, rows = 32, 32
 	gd := buildNavGrid(cols, rows)
@@ -88,6 +90,7 @@ func BenchmarkGraphNavigator_FindPathCached(b *testing.B) {
 	}
 }
 
+// TestGraphNavigator_GetNeighborsBufScratch runs the test graph navigator_get neighbors buf scratch operation.
 func TestGraphNavigator_GetNeighborsBufScratch(t *testing.T) {
 	g := buildNavGrid(8, 8)
 	nav := NewGraphNavigator("test", func() *types.GraphData { return g },

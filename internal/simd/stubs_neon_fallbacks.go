@@ -162,17 +162,28 @@ var _ = func() {
 	}
 }
 
+// UnpackTQ2NEON runs the unpack tq2 neon operation.
 func UnpackTQ2NEON(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ2Generic(src, dst, scale, bias)
 }
+
+// UnpackTQ4NEON runs the unpack tq4 neon operation.
 func UnpackTQ4NEON(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ4Generic(src, dst, scale, bias)
 }
+
+// UnpackTQ8NEON runs the unpack tq8 neon operation.
 func UnpackTQ8NEON(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ8Generic(src, dst, scale, bias)
 }
+
+// PackTQ2NEON runs the pack tq2 neon operation.
 func PackTQ2NEON(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
+
+// PackTQ4NEON runs the pack tq4 neon operation.
 func PackTQ4NEON(src []float32, dst []byte) { PackTQ4Generic(src, dst) }
+
+// PackTQ8NEON runs the pack tq8 neon operation.
 func PackTQ8NEON(src []float32, dst []byte) { PackTQ8Generic(src, dst) }
 
 func l2SquaredBatchNEON(query []float32, vectors [][]float32, results []float32) error {

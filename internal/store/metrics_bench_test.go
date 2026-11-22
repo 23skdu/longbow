@@ -23,6 +23,7 @@ func init() {
 	// but good for completeness if we were running a real registry.
 }
 
+// BenchmarkMetrics_WithLabelValues runs the benchmark metrics_with label values operation.
 func BenchmarkMetrics_WithLabelValues(b *testing.B) {
 	// Simulate the "Hot Path" behaviour: calling WithLabelValues every time
 	b.ReportAllocs()
@@ -32,6 +33,7 @@ func BenchmarkMetrics_WithLabelValues(b *testing.B) {
 	}
 }
 
+// BenchmarkMetrics_CachedHandle runs the benchmark metrics_cached handle operation.
 func BenchmarkMetrics_CachedHandle(b *testing.B) {
 	// Simulate the optimized behaviour: looking up once, then reusing
 	handle := benchVec.WithLabelValues("val1", "val2")
@@ -43,6 +45,7 @@ func BenchmarkMetrics_CachedHandle(b *testing.B) {
 	}
 }
 
+// BenchmarkMetrics_Curried runs the benchmark metrics_curried operation.
 func BenchmarkMetrics_Curried(b *testing.B) {
 	// Simulate currying
 	curried := benchVec.MustCurryWith(prometheus.Labels{"label1": "val1"})

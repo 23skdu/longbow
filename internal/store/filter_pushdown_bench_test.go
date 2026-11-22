@@ -8,6 +8,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// BenchmarkFilterPushdown_Vs_PostFilter runs the benchmark filter pushdown_vs_post filter operation.
 func BenchmarkFilterPushdown_Vs_PostFilter(b *testing.B) {
 	mem := memory.NewGoAllocator()
 
@@ -53,6 +54,7 @@ func BenchmarkFilterPushdown_Vs_PostFilter(b *testing.B) {
 	})
 }
 
+// BenchmarkCompositeFilter_And runs the benchmark composite filter_and operation.
 func BenchmarkCompositeFilter_And(b *testing.B) {
 	mem := memory.NewGoAllocator()
 

@@ -202,6 +202,7 @@ func UnpackFloat32sToBytes(floats []float32, size int) []byte {
 	return res
 }
 
+// ExportState runs the export state operation.
 func (e *PQEncoder) ExportState() ([]byte, error) {
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(e); err != nil {
@@ -210,6 +211,7 @@ func (e *PQEncoder) ExportState() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// ImportState runs the import state operation.
 func (e *PQEncoder) ImportState(data []byte) error {
 	return gob.NewDecoder(bytes.NewReader(data)).Decode(e)
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestLowMemConfig runs the test low mem config operation.
 func TestLowMemConfig(t *testing.T) {
 	// 1. Test without LONGBOW_LOW_MEM
 	os.Unsetenv("LONGBOW_LOW_MEM")

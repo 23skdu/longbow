@@ -6,6 +6,7 @@ import (
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
+// TestGraphData_ArenaNeighbors runs the test graph data_arena neighbors operation.
 func TestGraphData_ArenaNeighbors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -52,6 +53,7 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 	}
 }
 
+// TestGraphData_ArenaGrowth runs the test graph data_arena growth operation.
 func TestGraphData_ArenaGrowth(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -72,6 +74,7 @@ func TestGraphData_ArenaGrowth(t *testing.T) {
 	}
 }
 
+// TestGraphData_PreAllocate runs the test graph data_pre allocate operation.
 func TestGraphData_PreAllocate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -204,6 +207,7 @@ func TestGraphData_PreAllocate(t *testing.T) {
 	}
 }
 
+// TestGraphData_PreAllocate_SQ8 runs the test graph data_pre allocate_sq8 operation.
 func TestGraphData_PreAllocate_SQ8(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -222,6 +226,7 @@ func TestGraphData_PreAllocate_SQ8(t *testing.T) {
 	}
 }
 
+// TestGraphData_PreAllocate_PQ runs the test graph data_pre allocate_pq operation.
 func TestGraphData_PreAllocate_PQ(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -240,6 +245,7 @@ func TestGraphData_PreAllocate_PQ(t *testing.T) {
 	}
 }
 
+// TestGraphData_PreAllocate_BQ runs the test graph data_pre allocate_bq operation.
 func TestGraphData_PreAllocate_BQ(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -257,6 +263,7 @@ func TestGraphData_PreAllocate_BQ(t *testing.T) {
 	}
 }
 
+// TestGraphData_PreAllocate_ZeroCapacity runs the test graph data_pre allocate_zero capacity operation.
 func TestGraphData_PreAllocate_ZeroCapacity(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -274,6 +281,7 @@ func TestGraphData_PreAllocate_ZeroCapacity(t *testing.T) {
 	}
 }
 
+// TestGraphData_NewGraphData_AutoPreAllocate runs the test graph data_new graph data_auto pre allocate operation.
 func TestGraphData_NewGraphData_AutoPreAllocate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

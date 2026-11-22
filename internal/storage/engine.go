@@ -171,10 +171,12 @@ type SnapshotItem struct {
 	Cleanup func()
 }
 
+// SnapshotSource represents a snapshot source value.
 type SnapshotSource interface {
 	Iterate(func(SnapshotItem) error) error
 }
 
+// Snapshot runs the snapshot operation.
 func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	start := time.Now()
 
@@ -569,10 +571,12 @@ func (e *StorageEngine) Close() error {
 	return nil
 }
 
+// SetSnapshotBackend sets the snapshot backend.
 func (e *StorageEngine) SetSnapshotBackend(backend SnapshotBackend) {
 	e.snapshotBackend = backend
 }
 
+// GetSnapshotBackend returns the snapshot backend.
 func (e *StorageEngine) GetSnapshotBackend() SnapshotBackend {
 	return e.snapshotBackend
 }
@@ -612,20 +616,24 @@ func (e *StorageEngine) GetAllocator() memory.Allocator {
 	return e.mem
 }
 
+// WriteWAL runs the write wal operation.
 func (e *StorageEngine) WriteWAL(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {
 	return e.WriteToWAL(name, rec, seq, ts)
 }
 
+// CreateSnapshot runs the create snapshot operation.
 func (e *StorageEngine) CreateSnapshot(item *SnapshotItem) error {
 	tempDir := filepath.Join(e.dataPath, snapshotDirName+"_tmp")
 	_ = os.MkdirAll(tempDir, 0750) // nosec G301
 	return e.writeSnapshotItem(item, tempDir)
 }
 
+// FlushWAL runs the flush wal operation.
 func (e *StorageEngine) FlushWAL() error {
 	return e.SyncWAL()
 }
 
+// TruncateWAL runs the truncate wal operation.
 func (e *StorageEngine) TruncateWAL(seq uint64) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()

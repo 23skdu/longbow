@@ -19,6 +19,7 @@ type MDNSProvider struct {
 	mu     sync.Mutex
 }
 
+// NewMDNSProvider constructs a new MDNSProvider.
 func NewMDNSProvider(service string) *MDNSProvider {
 	// Ensure service format is correct (e.g., _service._tcp)
 	if !strings.HasPrefix(service, "_") {
@@ -34,6 +35,7 @@ func NewMDNSProvider(service string) *MDNSProvider {
 	}
 }
 
+// FindPeers runs the find peers operation.
 func (m *MDNSProvider) FindPeers(ctx context.Context) ([]string, error) {
 	resolver, err := zeroconf.NewResolver(nil)
 	if err != nil {
@@ -73,6 +75,7 @@ func (m *MDNSProvider) FindPeers(ctx context.Context) ([]string, error) {
 	return peers, nil
 }
 
+// Register runs the register operation.
 func (m *MDNSProvider) Register(ctx context.Context, id string, port int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

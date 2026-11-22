@@ -13,6 +13,7 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 )
 
+// TPUIndex is an experimental TPU-backed implementation of the vector index interface.
 type TPUIndex struct {
 	mu      sync.RWMutex
 	cfg     types.GPUConfig
@@ -36,6 +37,7 @@ func (i *TPUIndex) recordOperation(op string, start time.Time, err error) {
 	metrics.TPUOperationLatency.WithLabelValues(op).Observe(time.Since(start).Seconds())
 }
 
+// NewTPUIndexImpl creates and initializes an experimental TPU-backed index.
 func NewTPUIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	backend, err := NewTPUBackend(cfg.DeviceID)
 	if err != nil {
@@ -52,6 +54,7 @@ func NewTPUIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	}, nil
 }
 
+// Add stores vectors for the supplied IDs in the index.
 func (i *TPUIndex) Add(ids []int64, vectors []float32) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -70,6 +73,7 @@ func (i *TPUIndex) Add(ids []int64, vectors []float32) error {
 	return nil
 }
 
+// Search returns the k nearest IDs and distances for the query vector.
 func (i *TPUIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -149,6 +153,7 @@ func (i *TPUIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
 	return resIDs, resDists, nil
 }
 
+// SearchBatch runs Search for each query vector.
 func (i *TPUIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	resIDs := make([][]int64, len(vectors))
 	resDists := make([][]float32, len(vectors))
@@ -165,22 +170,27 @@ func (i *TPUIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float
 	return resIDs, resDists, nil
 }
 
+// AddPQ stores product-quantized codes; the experimental stub does not implement it.
 func (i *TPUIndex) AddPQ(ids []int64, codes []byte, m int) error {
 	return fmt.Errorf("AddPQ not implemented for TPUIndex (experimental stub)")
 }
 
+// SearchPQ searches product-quantized codes; the experimental stub does not implement it.
 func (i *TPUIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
 	return nil, nil, fmt.Errorf("SearchPQ not implemented for TPUIndex (emulated)")
 }
 
+// TrainPQ trains product-quantization codebooks; the experimental stub does not implement it.
 func (i *TPUIndex) TrainPQ(vectors []float32, m int, k int) error {
 	return fmt.Errorf("TrainPQ not implemented for TPUIndex (emulated)")
 }
 
+// EncodePQ encodes vectors into product-quantization codes; the experimental stub does not implement it.
 func (i *TPUIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	return nil, fmt.Errorf("EncodePQ not implemented for TPUIndex (emulated)")
 }
 
+// Close releases index resources and rejects further operations.
 func (i *TPUIndex) Close() error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -189,14 +199,17 @@ func (i *TPUIndex) Close() error {
 	return nil
 }
 
+// Backend returns the accelerator backend used by the index.
 func (i *TPUIndex) Backend() types.GPUBackend {
 	return types.BackendTPU
 }
 
+// DeviceID returns the TPU device identifier.
 func (i *TPUIndex) DeviceID() int32 {
 	return i.cfg.DeviceID
 }
 
+// GetDeviceInfo reports TPU device metadata.
 func (i *TPUIndex) GetDeviceInfo() (*types.GPUInfo, error) {
 	info, err := i.backend.GetDeviceInfo()
 	if err == nil {
@@ -205,6 +218,7 @@ func (i *TPUIndex) GetDeviceInfo() (*types.GPUInfo, error) {
 	return info, err
 }
 
+// GetMemoryInfo reports total, free, and used TPU memory.
 func (i *TPUIndex) GetMemoryInfo() (total, free, used int64, err error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -212,10 +226,12 @@ func (i *TPUIndex) GetMemoryInfo() (total, free, used int64, err error) {
 	return i.backend.hbm.total, i.backend.hbm.total - usedMem, usedMem, nil
 }
 
+// GetUtilization reports current TPU utilization.
 func (i *TPUIndex) GetUtilization() (float32, error) {
 	return 0, nil
 }
 
+// SearchFloat16 searches using float16-encoded vectors via the stub conversion path.
 func (i *TPUIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	start := time.Now()
 	var err error
@@ -235,6 +251,7 @@ func (i *TPUIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, er
 	return i.Search(f32Vector, k)
 }
 
+// SearchInt8 searches using int8-encoded vectors via the stub conversion path.
 func (i *TPUIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
 	start := time.Now()
 	var err error
@@ -250,6 +267,7 @@ func (i *TPUIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) 
 	return i.Search(f32Vector, k)
 }
 
+// SearchUint8 searches using uint8-encoded vectors via the stub conversion path.
 func (i *TPUIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
 	start := time.Now()
 	var err error
@@ -265,6 +283,7 @@ func (i *TPUIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error
 	return i.Search(f32Vector, k)
 }
 
+// SearchInt16 searches using int16-encoded vectors via the stub conversion path.
 func (i *TPUIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
 	start := time.Now()
 	var err error
@@ -280,6 +299,7 @@ func (i *TPUIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error
 	return i.Search(f32Vector, k)
 }
 
+// SearchUint16 searches using uint16-encoded vectors via the stub conversion path.
 func (i *TPUIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
 	start := time.Now()
 	var err error
@@ -295,6 +315,7 @@ func (i *TPUIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, err
 	return i.Search(f32Vector, k)
 }
 
+// SearchComplex64 searches using packed complex64 vectors via the stub conversion path.
 func (i *TPUIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
 	start := time.Now()
 	var err error
@@ -309,6 +330,7 @@ func (i *TPUIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, 
 	return i.SearchFloat16(vector, k)
 }
 
+// SearchComplex128 searches using packed complex128 vectors via the stub conversion path.
 func (i *TPUIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
 	start := time.Now()
 	var err error
@@ -323,6 +345,7 @@ func (i *TPUIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32
 	return i.Search(vector, k)
 }
 
+// AddTurboQuant stores TurboQuant codes for the supplied IDs.
 func (i *TPUIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -342,6 +365,7 @@ func (i *TPUIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) e
 	return nil
 }
 
+// SearchTurboQuant searches stored TurboQuant codes for the nearest IDs.
 func (i *TPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -390,6 +414,7 @@ func (i *TPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) (
 	return resIDs, resDists, nil
 }
 
+// AssignToClusters assigns each vector to its nearest centroid index.
 func (i *TPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -430,6 +455,7 @@ func (i *TPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]u
 	return assignments, nil
 }
 
+// UpdateGraph replaces the graph adjacency data used by graph searches.
 func (i *TPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -452,6 +478,7 @@ func (i *TPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []f
 	return nil
 }
 
+// GraphExpand expands seed nodes through the stored graph and returns scores.
 func (i *TPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -505,6 +532,7 @@ func (i *TPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint
 	return outIDs, outScores, nil
 }
 
+// SearchBatchDistances returns the distance from query to each candidate vector.
 func (i *TPUIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -530,6 +558,7 @@ func (i *TPUIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) 
 	return distances, nil
 }
 
+// HaversineSearch computes great-circle distances from a center point.
 func (i *TPUIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	start := time.Now()
 	var err error
@@ -565,6 +594,7 @@ func (i *TPUIndex) HaversineSearch(centerLat, centerLon float32, points []float3
 	return distances, nil
 }
 
+// NormBatch computes L2 norms for a batch of vectors.
 func (i *TPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	start := time.Now()
 	var err error
@@ -590,6 +620,7 @@ func (i *TPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	return norms, nil
 }
 
+// PruneNeighbors keeps the closest candidates up to maxNeighbors.
 func (i *TPUIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
 	start := time.Now()
 	var err error
@@ -628,6 +659,7 @@ func (i *TPUIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float3
 	return res, nil
 }
 
+// Clear removes all stored vectors and TurboQuant codes.
 func (i *TPUIndex) Clear() error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -636,6 +668,7 @@ func (i *TPUIndex) Clear() error {
 	return nil
 }
 
+// SearchGreedy walks the graph from an entry point to a local minimum.
 func (i *TPUIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -685,10 +718,12 @@ func (i *TPUIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist fl
 	return currID, currDist, nil
 }
 
+// Sync flushes pending index state; the stub is always synchronized.
 func (i *TPUIndex) Sync() error {
 	return nil
 }
 
+// Reset clears the index and restores its initial state.
 func (i *TPUIndex) Reset() error {
 	return i.Clear()
 }

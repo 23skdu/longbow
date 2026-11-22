@@ -273,35 +273,60 @@ func BrayCurtisDistanceFloat32AVX2(a, b []float32) (float32, error) {
 	return BrayCurtisDistanceFloat32(a, b)
 }
 
+// UnpackTQ2AVX2 runs the unpack tq2 avx2 operation.
 func UnpackTQ2AVX2(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ2Generic(src, dst, scale, bias)
 }
+
+// UnpackTQ4AVX2 runs the unpack tq4 avx2 operation.
 func UnpackTQ4AVX2(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ4Generic(src, dst, scale, bias)
 }
+
+// UnpackTQ8AVX2 runs the unpack tq8 avx2 operation.
 func UnpackTQ8AVX2(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ8Generic(src, dst, scale, bias)
 }
+
+// PackTQ2AVX2 runs the pack tq2 avx2 operation.
 func PackTQ2AVX2(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
+
+// PackTQ4AVX2 runs the pack tq4 avx2 operation.
 func PackTQ4AVX2(src []float32, dst []byte) { PackTQ4Generic(src, dst) }
+
+// PackTQ8AVX2 runs the pack tq8 avx2 operation.
 func PackTQ8AVX2(src []float32, dst []byte) { PackTQ8Generic(src, dst) }
 
+// UnpackTQ2AVX512 runs the unpack tq2 avx512 operation.
 func UnpackTQ2AVX512(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ2Generic(src, dst, scale, bias)
 }
+
+// UnpackTQ4AVX512 runs the unpack tq4 avx512 operation.
 func UnpackTQ4AVX512(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ4Generic(src, dst, scale, bias)
 }
+
+// UnpackTQ8AVX512 runs the unpack tq8 avx512 operation.
 func UnpackTQ8AVX512(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ8Generic(src, dst, scale, bias)
 }
+
+// PackTQ2AVX512 runs the pack tq2 avx512 operation.
 func PackTQ2AVX512(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
+
+// PackTQ4AVX512 runs the pack tq4 avx512 operation.
 func PackTQ4AVX512(src []float32, dst []byte) { PackTQ4Generic(src, dst) }
+
+// PackTQ8AVX512 runs the pack tq8 avx512 operation.
 func PackTQ8AVX512(src []float32, dst []byte) { PackTQ8Generic(src, dst) }
 
+// UnpackTQ2AVX512VBMI runs the unpack tq2 avx512 vbmi operation.
 func UnpackTQ2AVX512VBMI(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ2Generic(src, dst, scale, bias)
 }
+
+// PackTQ2AVX512VBMI runs the pack tq2 avx512 vbmi operation.
 func PackTQ2AVX512VBMI(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
 
 func euclideanF16AVX2(a, b []float16.Num) (float32, error)   { return euclideanF16Unrolled4x(a, b) }

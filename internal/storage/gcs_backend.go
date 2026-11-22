@@ -52,16 +52,24 @@ func NewGCSBackend(ctx context.Context, cfg *GCSBackendConfig) (SnapshotBackend,
 	}, nil
 }
 
+// Bucket runs the bucket operation.
 func (b *GCSBackend) Bucket() string { return b.bucket }
+
+// Prefix runs the prefix operation.
 func (b *GCSBackend) Prefix() string { return b.prefix }
 
+// GetHTTPTransport returns the http transport.
 func (b *GCSBackend) GetHTTPTransport() *http.Transport { return nil }
-func (b *GCSBackend) GetHTTPClient() *http.Client       { return nil }
 
+// GetHTTPClient returns the http client.
+func (b *GCSBackend) GetHTTPClient() *http.Client { return nil }
+
+// WriteSnapshot runs the write snapshot operation.
 func (b *GCSBackend) WriteSnapshot(ctx context.Context, name string, data []byte) error {
 	return b.WriteSnapshotFile(ctx, name, ".parquet", bytes.NewReader(data))
 }
 
+// WriteSnapshotFile runs the write snapshot file operation.
 func (b *GCSBackend) WriteSnapshotFile(ctx context.Context, name, ext string, r io.Reader) error {
 	key := buildGCSKeyWithExt(b.prefix, name, ext)
 	obj := b.client.Bucket(b.bucket).Object(key)
@@ -75,10 +83,12 @@ func (b *GCSBackend) WriteSnapshotFile(ctx context.Context, name, ext string, r 
 	return w.Close()
 }
 
+// ReadSnapshot runs the read snapshot operation.
 func (b *GCSBackend) ReadSnapshot(ctx context.Context, name string) (io.ReadCloser, error) {
 	return b.ReadSnapshotFile(ctx, name, ".parquet")
 }
 
+// ReadSnapshotFile runs the read snapshot file operation.
 func (b *GCSBackend) ReadSnapshotFile(ctx context.Context, name, ext string) (io.ReadCloser, error) {
 	key := buildGCSKeyWithExt(b.prefix, name, ext)
 	r, err := b.client.Bucket(b.bucket).Object(key).NewReader(ctx)
@@ -91,6 +101,7 @@ func (b *GCSBackend) ReadSnapshotFile(ctx context.Context, name, ext string) (io
 	return r, nil
 }
 
+// ListSnapshots runs the list snapshots operation.
 func (b *GCSBackend) ListSnapshots(ctx context.Context) ([]string, error) {
 	prefix := path.Join(b.prefix, "snapshots") + "/"
 	if b.prefix == "" {
@@ -117,6 +128,7 @@ func (b *GCSBackend) ListSnapshots(ctx context.Context) ([]string, error) {
 	return collections, nil
 }
 
+// DeleteSnapshot runs the delete snapshot operation.
 func (b *GCSBackend) DeleteSnapshot(ctx context.Context, name string) error {
 	key := buildGCSKeyWithExt(b.prefix, name, ".parquet")
 	err := b.client.Bucket(b.bucket).Object(key).Delete(ctx)
@@ -126,6 +138,7 @@ func (b *GCSBackend) DeleteSnapshot(ctx context.Context, name string) error {
 	return nil
 }
 
+// WriteSnapshotAsync runs the write snapshot async operation.
 func (b *GCSBackend) WriteSnapshotAsync(name string, data []byte) {
 	_ = b.WriteSnapshot(context.Background(), name, data)
 }

@@ -756,6 +756,7 @@ type bitmapFilterDataset struct {
 	filter *roaring.Bitmap
 }
 
+// GenerateFilterBitset runs the generate filter bitset operation.
 func (d *bitmapFilterDataset) GenerateFilterBitset([]query.Filter, types.FilterExpr) (*types.Bitset, error) {
 	return types.NewBitsetFromRoaring(d.filter.Clone()), nil
 }

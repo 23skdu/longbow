@@ -36,6 +36,7 @@ func createUpsertTestRecord(allocator memory.Allocator, startID int, count int) 
 	return b.NewRecordBatch()
 }
 
+// TestStore_Upsert runs the test store_upsert operation.
 func TestStore_Upsert(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

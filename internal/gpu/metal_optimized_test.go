@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMetalIndexOptimized_Basic runs the test metal index optimized_basic operation.
 func TestMetalIndexOptimized_Basic(t *testing.T) {
 	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
@@ -45,6 +46,7 @@ func TestMetalIndexOptimized_Basic(t *testing.T) {
 	assert.Less(t, distances[0], float32(0.01))
 }
 
+// TestMetalIndexOptimized_SearchCorrectness runs the test metal index optimized_search correctness operation.
 func TestMetalIndexOptimized_SearchCorrectness(t *testing.T) {
 	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
@@ -84,6 +86,7 @@ func TestMetalIndexOptimized_SearchCorrectness(t *testing.T) {
 	assert.InDelta(t, 0.0, distances[0], 0.001)
 }
 
+// TestMetalIndexOptimized_Dimensions runs the test metal index optimized_dimensions operation.
 func TestMetalIndexOptimized_Dimensions(t *testing.T) {
 	testDims := []int{64, 128, 256, 384, 768}
 
@@ -121,6 +124,7 @@ func TestMetalIndexOptimized_Dimensions(t *testing.T) {
 	}
 }
 
+// TestMetalIndexOptimized_Close runs the test metal index optimized_close operation.
 func TestMetalIndexOptimized_Close(t *testing.T) {
 	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
@@ -144,6 +148,7 @@ func TestMetalIndexOptimized_Close(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestMetalIndexOptimized_MetricTypes runs the test metal index optimized_metric types operation.
 func TestMetalIndexOptimized_MetricTypes(t *testing.T) {
 	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
@@ -171,6 +176,7 @@ func TestMetalIndexOptimized_MetricTypes(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// BenchmarkMetalOptimizedSearch runs the benchmark metal optimized search operation.
 func BenchmarkMetalOptimizedSearch(b *testing.B) {
 	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
@@ -203,6 +209,7 @@ func BenchmarkMetalOptimizedSearch(b *testing.B) {
 	}
 }
 
+// BenchmarkMetalOptimizedAdd runs the benchmark metal optimized add operation.
 func BenchmarkMetalOptimizedAdd(b *testing.B) {
 	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,

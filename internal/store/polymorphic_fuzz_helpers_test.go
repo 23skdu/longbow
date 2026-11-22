@@ -11,9 +11,13 @@ import (
 
 // Polymorphic types for fuzzing
 const (
+	// FuzzTypeFloat32 is a fuzz type float32 constant.
 	FuzzTypeFloat32 = iota
+	// FuzzTypeFloat16 is a fuzz type float16 constant.
 	FuzzTypeFloat16
+	// FuzzTypeComplex64 is a fuzz type complex64 constant.
 	FuzzTypeComplex64
+	// FuzzTypeComplex128 is a fuzz type complex128 constant.
 	FuzzTypeComplex128
 )
 

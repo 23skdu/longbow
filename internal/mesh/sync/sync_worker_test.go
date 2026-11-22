@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// TestSyncWorker_Replication runs the test sync worker_replication operation.
 func TestSyncWorker_Replication(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

@@ -10,6 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// TestSearch_EmptyIndex runs the test search_empty index operation.
 func TestSearch_EmptyIndex(t *testing.T) {
 	dataset := &MockDataset{Name: "test"}
 	cfg := types.DefaultArrowHNSWConfig()
@@ -27,6 +28,7 @@ func TestSearch_EmptyIndex(t *testing.T) {
 	}
 }
 
+// TestSearch_InvalidK runs the test search_invalid k operation.
 func TestSearch_InvalidK(t *testing.T) {
 	dataset := &MockDataset{Name: "test"}
 	cfg := types.DefaultArrowHNSWConfig()
@@ -53,6 +55,7 @@ func TestSearch_InvalidK(t *testing.T) {
 	}
 }
 
+// TestArrowSearchContext_Pooling runs the test arrow search context_pooling operation.
 func TestArrowSearchContext_Pooling(t *testing.T) {
 	pool := NewArrowSearchContextPool()
 
@@ -85,6 +88,7 @@ func TestArrowSearchContext_Pooling(t *testing.T) {
 	}
 }
 
+// BenchmarkSearch_SmallIndex runs the benchmark search_small index operation.
 func BenchmarkSearch_SmallIndex(b *testing.B) {
 	// Setup 1000 vectors
 	n := 1000
@@ -154,6 +158,7 @@ func makeBenchmarkMockDataset(n, dim int) (*MockDataset, error) {
 	}, nil
 }
 
+// BenchmarkSearch_LargeIndex runs the benchmark search_large index operation.
 func BenchmarkSearch_LargeIndex(b *testing.B) {
 	// Setup 10,000 vectors
 	n := 10000

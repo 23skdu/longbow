@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestPQPersistence runs the test pq persistence operation.
 func TestPQPersistence(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

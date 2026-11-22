@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestLockFreeHNSW_Concurrency runs the test lock free hnsw_concurrency operation.
 func TestLockFreeHNSW_Concurrency(t *testing.T) {
 	h := NewLockFreeHNSW()
 
@@ -74,6 +75,7 @@ func TestLockFreeHNSW_Concurrency(t *testing.T) {
 	})
 }
 
+// TestLockFreeHNSW_Recall runs the test lock free hnsw_recall operation.
 func TestLockFreeHNSW_Recall(t *testing.T) {
 	h := NewLockFreeHNSW()
 	dims := 8

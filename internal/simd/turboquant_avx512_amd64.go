@@ -6,20 +6,27 @@ import "unsafe" // #nosec G103
 
 // AVX-512 specialized implementations
 
-// AVX-512 stubs
+// UnpackTQ2AVX512 stubs
 func UnpackTQ2AVX512(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ2AVX2(src, dst, scale, bias)
 }
+
+// UnpackTQ4AVX512 runs the unpack tq4 avx512 operation.
 func UnpackTQ4AVX512(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ4AVX2(src, dst, scale, bias)
 }
+
+// UnpackTQ8AVX512 runs the unpack tq8 avx512 operation.
 func UnpackTQ8AVX512(src []byte, dst []float32, scale, bias float32) {
 	UnpackTQ8AVX2(src, dst, scale, bias)
 }
+
+// PackTQ2AVX512 runs the pack tq2 avx512 operation.
 func PackTQ2AVX512(src []float32, dst []byte) {
 	PackTQ2Generic(src, dst)
 }
 
+// PackTQ4AVX512 runs the pack tq4 avx512 operation.
 func PackTQ4AVX512(src []float32, dst []byte) {
 	if len(src) == 0 {
 		return
@@ -31,6 +38,7 @@ func PackTQ4AVX512(src []float32, dst []byte) {
 	packTQ4AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 }
 
+// PackTQ8AVX512 runs the pack tq8 avx512 operation.
 func PackTQ8AVX512(src []float32, dst []byte) {
 	if len(src) == 0 {
 		return

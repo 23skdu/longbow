@@ -60,7 +60,7 @@ func (e *OPQEncoder) TrainOPQ(vectors [][]float32, iterations int) error {
 
 	// 2. Iterative optimization
 	for iter := 0; iter < iterations; iter++ {
-		// A. Rotate vectors using current RotationMatrix: X_rot = X * R^T
+		// Xrot Rotate vectors using current RotationMatrix: X_rot = X * R^T
 		// Note: R is DxD, X is NxD. X * R^T gives NxD.
 		var Xrot mat.Dense
 		Xrot.Mul(X, e.RotationMatrix.T())
@@ -95,7 +95,7 @@ func (e *OPQEncoder) TrainOPQ(vectors [][]float32, iterations int) error {
 		}
 		Yrot := mat.NewDense(n, d, yRotData)
 
-		// Compute M = X^T * Yrot (D x D)
+		// M M = X^T * Yrot (D x D)
 		var M mat.Dense
 		M.Mul(X.T(), Yrot)
 
@@ -104,6 +104,8 @@ func (e *OPQEncoder) TrainOPQ(vectors [][]float32, iterations int) error {
 		if ok := svd.Factorize(&M, mat.SVDFull); !ok {
 			return errors.New("SVD factorization failed")
 		}
+		// V is a v value.
+		// U is a u value.
 		var U, V mat.Dense
 		svd.UTo(&U)
 		svd.VTo(&V)
@@ -204,6 +206,7 @@ type opqState struct {
 	Rotation []byte
 }
 
+// ExportState runs the export state operation.
 func (e *OPQEncoder) ExportState() ([]byte, error) {
 	pqData, err := e.PQEncoder.ExportState()
 	if err != nil {
@@ -221,6 +224,7 @@ func (e *OPQEncoder) ExportState() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// ImportState runs the import state operation.
 func (e *OPQEncoder) ImportState(data []byte) error {
 	var state opqState
 	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&state); err != nil {

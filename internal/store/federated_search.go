@@ -178,7 +178,7 @@ func (fqr *FederatedQueryRouter) RegisterCollection(name string, searcher Vector
 	return fqr.registry.RegisterCollection(info)
 }
 
-// UpsertCollection registers or refreshes a collection searcher and metadata idempotently.
+// SearcherCount registers or refreshes a collection searcher and metadata idempotently.
 // SearcherCount returns the number of registered collections.
 func (fqr *FederatedQueryRouter) SearcherCount() int {
 	fqr.mu.RLock()
@@ -186,6 +186,7 @@ func (fqr *FederatedQueryRouter) SearcherCount() int {
 	return len(fqr.searchers)
 }
 
+// UpsertCollection runs the upsert collection operation.
 func (fqr *FederatedQueryRouter) UpsertCollection(name string, searcher VectorSearcher, info *CollectionInfo) {
 	fqr.mu.Lock()
 	defer fqr.mu.Unlock()

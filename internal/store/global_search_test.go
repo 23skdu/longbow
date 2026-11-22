@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestGlobalSearchCoordinator_Merge runs the test global search coordinator_merge operation.
 func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -38,6 +39,7 @@ func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 	assert.Equal(t, uint64(1), uint64(res[0].ID))
 }
 
+// TestGlobalSearchCoordinator_NoPeers runs the test global search coordinator_no peers operation.
 func TestGlobalSearchCoordinator_NoPeers(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -52,6 +54,7 @@ func TestGlobalSearchCoordinator_NoPeers(t *testing.T) {
 	assert.Len(t, res, 0)
 }
 
+// TestGlobalSearch_HybridMerge runs the test global search_hybrid merge operation.
 func TestGlobalSearch_HybridMerge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

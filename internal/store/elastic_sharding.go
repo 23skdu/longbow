@@ -21,10 +21,14 @@ import (
 type ShardState string
 
 const (
-	ShardStateActive    ShardState = "active"
+	// ShardStateActive is a shard state active constant.
+	ShardStateActive ShardState = "active"
+	// ShardStateSplitting is a shard state splitting constant.
 	ShardStateSplitting ShardState = "splitting"
-	ShardStateMerging   ShardState = "merging"
-	ShardStateDraining  ShardState = "draining"
+	// ShardStateMerging is a shard state merging constant.
+	ShardStateMerging ShardState = "merging"
+	// ShardStateDraining is a shard state draining constant.
+	ShardStateDraining ShardState = "draining"
 )
 
 // ClusterNodeHealth represents discovery & heartbeat status for a storage node.
@@ -192,7 +196,7 @@ func (c *ElasticShardingController) RouteKey(dataset, key string) (ShardDescript
 	return ShardDescriptor{}, false
 }
 
-// AssignVectorCount increments vector & QPS stats on the owning shard of a key.
+// RecordKeyPlacement increments vector & QPS stats on the owning shard of a key.
 func (c *ElasticShardingController) RecordKeyPlacement(dataset, key string, bytes int64) (ShardDescriptor, error) {
 	token := hashKeyToken(key)
 	c.mu.Lock()

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestAdaptiveRequantization_Trigger runs the test adaptive requantization_trigger operation.
 func TestAdaptiveRequantization_Trigger(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

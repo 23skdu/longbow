@@ -24,6 +24,7 @@ func testResults() []lbtypes.SearchResult {
 	return []lbtypes.SearchResult{{ID: 1, Distance: 0.5}}
 }
 
+// TestCacheCountsHitsAndMisses runs the test cache counts hits and misses operation.
 func TestCacheCountsHitsAndMisses(t *testing.T) {
 	c := NewTemporalResultCache(10)
 	c.SetDatasetLabel("cache_hits_misses")
@@ -47,7 +48,7 @@ func TestCacheCountsHitsAndMisses(t *testing.T) {
 	}
 }
 
-// The whole reason the counters were split. An expired entry and a full LRU both
+// TestExpiryAndCapacityEvictionAreCountedSeparately whole reason the counters were split. An expired entry and a full LRU both
 // produce a miss, but one is fixed by a longer TTL and the other by a bigger cache.
 func TestExpiryAndCapacityEvictionAreCountedSeparately(t *testing.T) {
 	c := NewTemporalResultCache(2)
@@ -83,6 +84,7 @@ func TestExpiryAndCapacityEvictionAreCountedSeparately(t *testing.T) {
 	}
 }
 
+// TestStatsReportsResidentEntries runs the test stats reports resident entries operation.
 func TestStatsReportsResidentEntries(t *testing.T) {
 	c := NewTemporalResultCache(10)
 	c.SetDatasetLabel("cache_entries")
@@ -97,7 +99,7 @@ func TestStatsReportsResidentEntries(t *testing.T) {
 	}
 }
 
-// An unlabelled cache must not vanish from the scrape; it reports under a
+// TestUnlabelledCacheReportsUnderUnknown unlabelled cache must not vanish from the scrape; it reports under a
 // reserved label rather than being silently dropped.
 func TestUnlabelledCacheReportsUnderUnknown(t *testing.T) {
 	before := testutil.ToFloat64(metrics.TemporalCacheHitsTotal.WithLabelValues("unknown"))
@@ -110,6 +112,7 @@ func TestUnlabelledCacheReportsUnderUnknown(t *testing.T) {
 	}
 }
 
+// TestPrometheusCountersCarryTheDatasetLabel runs the test prometheus counters carry the dataset label operation.
 func TestPrometheusCountersCarryTheDatasetLabel(t *testing.T) {
 	c := NewTemporalResultCache(1)
 	c.SetDatasetLabel("labelled_ds")
@@ -130,7 +133,7 @@ func TestPrometheusCountersCarryTheDatasetLabel(t *testing.T) {
 	}
 }
 
-// The metric that motivated R11a must actually move. The pre-existing
+// TestCountersAreWiredNotMerelyDeclared metric that motivated R11a must actually move. The pre-existing
 // longbow_temporal_tree_cache_hit_ratio was registered, on a dashboard, and never
 // set - it reported 0 forever. Pin that the new counters are wired, not declared.
 func TestCountersAreWiredNotMerelyDeclared(t *testing.T) {
@@ -147,7 +150,7 @@ func TestCountersAreWiredNotMerelyDeclared(t *testing.T) {
 	}
 }
 
-// Changing the label mid-flight routes subsequent counts to the new series rather
+// TestRelabellingRoutesSubsequentCountsToANewSeries the label mid-flight routes subsequent counts to the new series rather
 // than rewriting history on the old one.
 func TestRelabellingRoutesSubsequentCountsToANewSeries(t *testing.T) {
 	c := NewTemporalResultCache(10)
@@ -166,7 +169,7 @@ func TestRelabellingRoutesSubsequentCountsToANewSeries(t *testing.T) {
 	}
 }
 
-// Concurrency: counters must be exact under contention, not approximate.
+// TestCountersAreExactUnderConcurrentAccess counters must be exact under contention, not approximate.
 func TestCountersAreExactUnderConcurrentAccess(t *testing.T) {
 	c := NewTemporalResultCache(64)
 	c.SetDatasetLabel("concurrent_ds")

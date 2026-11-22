@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestNewCircuitBreaker runs the test new circuit breaker operation.
 func TestNewCircuitBreaker(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{Name: "test"})
 	assert.Equal(t, "test", cb.Name())
@@ -17,6 +18,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 	assert.NotNil(t, cb)
 }
 
+// TestCircuitBreakerDefaults runs the test circuit breaker defaults operation.
 func TestCircuitBreakerDefaults(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{Name: "defaults"})
 	assert.Equal(t, uint32(1), cb.maxRequests)
@@ -25,6 +27,7 @@ func TestCircuitBreakerDefaults(t *testing.T) {
 	assert.NotNil(t, cb.readyToTrip)
 }
 
+// TestCircuitBreakerDefaultReadyToTrip runs the test circuit breaker default ready to trip operation.
 func TestCircuitBreakerDefaultReadyToTrip(t *testing.T) {
 	assert.True(t, DefaultReadyToTrip(CircuitBreakerMetrics{ConsecutiveFailures: 6}))
 	assert.False(t, DefaultReadyToTrip(CircuitBreakerMetrics{ConsecutiveFailures: 5}))
@@ -32,6 +35,7 @@ func TestCircuitBreakerDefaultReadyToTrip(t *testing.T) {
 	assert.False(t, DefaultReadyToTrip(CircuitBreakerMetrics{Failures: 6, Requests: 10}))
 }
 
+// TestCircuitBreakerExecuteSuccess runs the test circuit breaker execute success operation.
 func TestCircuitBreakerExecuteSuccess(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{Name: "success"})
 	result, err := cb.Execute(context.Background(), func() (any, error) {
@@ -42,6 +46,7 @@ func TestCircuitBreakerExecuteSuccess(t *testing.T) {
 	assert.Equal(t, StateClosed, cb.State())
 }
 
+// TestCircuitBreakerExecuteFailure runs the test circuit breaker execute failure operation.
 func TestCircuitBreakerExecuteFailure(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{
 		Name:        "failure",
@@ -64,6 +69,7 @@ func TestCircuitBreakerExecuteFailure(t *testing.T) {
 	assert.Equal(t, StateOpen, cb.State())
 }
 
+// TestCircuitBreakerOpenState runs the test circuit breaker open state operation.
 func TestCircuitBreakerOpenState(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{
 		Name:        "open-test",
@@ -89,6 +95,7 @@ func TestCircuitBreakerOpenState(t *testing.T) {
 	assert.Contains(t, err.Error(), "circuit breaker")
 }
 
+// TestCircuitBreakerHalfOpenToClosed runs the test circuit breaker half open to closed operation.
 func TestCircuitBreakerHalfOpenToClosed(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{
 		Name:        "half-open",
@@ -114,6 +121,7 @@ func TestCircuitBreakerHalfOpenToClosed(t *testing.T) {
 	assert.Equal(t, StateClosed, cb.State())
 }
 
+// TestCircuitBreakerHalfOpenToOpen runs the test circuit breaker half open to open operation.
 func TestCircuitBreakerHalfOpenToOpen(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{
 		Name:        "half-open-fail",
@@ -140,6 +148,7 @@ func TestCircuitBreakerHalfOpenToOpen(t *testing.T) {
 	assert.Equal(t, StateOpen, cb.State())
 }
 
+// TestCircuitBreakerReset runs the test circuit breaker reset operation.
 func TestCircuitBreakerReset(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{
 		Name:        "reset-test",
@@ -159,6 +168,7 @@ func TestCircuitBreakerReset(t *testing.T) {
 	assert.Equal(t, uint64(0), cb.Metrics().Failures)
 }
 
+// TestCircuitBreakerMetrics runs the test circuit breaker metrics operation.
 func TestCircuitBreakerMetrics(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{Name: "metrics-test"})
 
@@ -175,6 +185,7 @@ func TestCircuitBreakerMetrics(t *testing.T) {
 	assert.Equal(t, uint64(1), metrics.Failures)
 }
 
+// TestExecuteWithCircuitBreaker runs the test execute with circuit breaker operation.
 func TestExecuteWithCircuitBreaker(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{Name: "generic"})
 	result, err := ExecuteWithCircuitBreaker(cb, context.Background(), func() (string, error) {
@@ -184,6 +195,7 @@ func TestExecuteWithCircuitBreaker(t *testing.T) {
 	assert.Equal(t, "hello", result)
 }
 
+// TestExecuteWithCircuitBreakerErrorPath runs the test execute with circuit breaker error path operation.
 func TestExecuteWithCircuitBreakerErrorPath(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{
 		Name:        "open-for-generic",
@@ -204,6 +216,7 @@ func TestExecuteWithCircuitBreakerErrorPath(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestCircuitBreakerOnStateChange runs the test circuit breaker on state change operation.
 func TestCircuitBreakerOnStateChange(t *testing.T) {
 	var mu sync.Mutex
 	var changed []string
@@ -229,6 +242,7 @@ func TestCircuitBreakerOnStateChange(t *testing.T) {
 	mu.Unlock()
 }
 
+// TestCircuitBreakerGroup runs the test circuit breaker group operation.
 func TestCircuitBreakerGroup(t *testing.T) {
 	cbg := NewCircuitBreakerGroup(CircuitBreakerSettings{Name: "group"})
 	assert.NotNil(t, cbg)
@@ -243,6 +257,7 @@ func TestCircuitBreakerGroup(t *testing.T) {
 	assert.NotSame(t, breaker, breaker2)
 }
 
+// TestCircuitBreakerGroupExecute runs the test circuit breaker group execute operation.
 func TestCircuitBreakerGroupExecute(t *testing.T) {
 	cbg := NewCircuitBreakerGroup(CircuitBreakerSettings{Name: "group-exec"})
 	result, err := cbg.Execute(context.Background(), "test", func() (any, error) {
@@ -252,6 +267,7 @@ func TestCircuitBreakerGroupExecute(t *testing.T) {
 	assert.Equal(t, "result", result)
 }
 
+// TestExecuteWithCircuitBreakerGroup runs the test execute with circuit breaker group operation.
 func TestExecuteWithCircuitBreakerGroup(t *testing.T) {
 	cbg := NewCircuitBreakerGroup(CircuitBreakerSettings{Name: "group-gen"})
 	result, err := ExecuteWithCircuitBreakerGroup(cbg, context.Background(), "svc", func() (string, error) {
@@ -261,6 +277,7 @@ func TestExecuteWithCircuitBreakerGroup(t *testing.T) {
 	assert.Equal(t, "data", result)
 }
 
+// TestCircuitBreakerGroupGetAllMetrics runs the test circuit breaker group get all metrics operation.
 func TestCircuitBreakerGroupGetAllMetrics(t *testing.T) {
 	cbg := NewCircuitBreakerGroup(CircuitBreakerSettings{Name: "group-metrics"})
 	cbg.GetBreaker("a")
@@ -272,6 +289,7 @@ func TestCircuitBreakerGroupGetAllMetrics(t *testing.T) {
 	assert.Contains(t, metrics, "b")
 }
 
+// TestCircuitBreakerGroupResetAll runs the test circuit breaker group reset all operation.
 func TestCircuitBreakerGroupResetAll(t *testing.T) {
 	cbg := NewCircuitBreakerGroup(CircuitBreakerSettings{Name: "group-reset"})
 	breaker := cbg.GetBreaker("x")
@@ -284,6 +302,7 @@ func TestCircuitBreakerGroupResetAll(t *testing.T) {
 	assert.Equal(t, uint64(0), breaker.Metrics().Failures)
 }
 
+// TestCircuitBreakerGroupRemoveBreaker runs the test circuit breaker group remove breaker operation.
 func TestCircuitBreakerGroupRemoveBreaker(t *testing.T) {
 	cbg := NewCircuitBreakerGroup(CircuitBreakerSettings{Name: "group-remove"})
 	cbg.GetBreaker("temp")
@@ -292,6 +311,7 @@ func TestCircuitBreakerGroupRemoveBreaker(t *testing.T) {
 	assert.NotContains(t, metrics, "temp")
 }
 
+// TestCircuitStateValues runs the test circuit state values operation.
 func TestCircuitStateValues(t *testing.T) {
 	assert.Equal(t, CircuitState(0), StateClosed)
 	assert.Equal(t, CircuitState(1), StateHalfOpen)

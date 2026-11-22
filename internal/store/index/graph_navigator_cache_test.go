@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGraphNavigator_Caching runs the test graph navigator_caching operation.
 func TestGraphNavigator_Caching(t *testing.T) {
 	g := createTestGraph(t)
 	// 0 -> 1 -> 2

@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// TimeoutConfig represents a timeout config value.
 type TimeoutConfig struct {
 	DefaultTimeout     time.Duration
 	NetworkTimeout     time.Duration
@@ -16,6 +17,7 @@ type TimeoutConfig struct {
 	GracePeriod        time.Duration
 }
 
+// DefaultTimeoutConfig returns the default TimeoutConfig.
 func DefaultTimeoutConfig() *TimeoutConfig {
 	return &TimeoutConfig{
 		DefaultTimeout:     30 * time.Second,
@@ -27,11 +29,13 @@ func DefaultTimeoutConfig() *TimeoutConfig {
 	}
 }
 
+// TimeoutManager represents a timeout manager value.
 type TimeoutManager struct {
 	config *TimeoutConfig
 	mu     sync.RWMutex
 }
 
+// NewTimeoutManager constructs a new TimeoutManager.
 func NewTimeoutManager(config *TimeoutConfig) *TimeoutManager {
 	if config == nil {
 		config = DefaultTimeoutConfig()
@@ -41,6 +45,7 @@ func NewTimeoutManager(config *TimeoutConfig) *TimeoutManager {
 	}
 }
 
+// GetTimeout returns the timeout.
 func (tm *TimeoutManager) GetTimeout(operationType string) time.Duration {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
@@ -59,11 +64,13 @@ func (tm *TimeoutManager) GetTimeout(operationType string) time.Duration {
 	}
 }
 
+// WithTimeout runs the with timeout operation.
 func (tm *TimeoutManager) WithTimeout(ctx context.Context, operationType string, fn func(context.Context) error) error {
 	timeout := tm.GetTimeout(operationType)
 	return tm.WithCustomTimeout(ctx, timeout, fn)
 }
 
+// WithCustomTimeout runs the with custom timeout operation.
 func (tm *TimeoutManager) WithCustomTimeout(ctx context.Context, timeout time.Duration, fn func(context.Context) error) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -82,17 +89,20 @@ func (tm *TimeoutManager) WithCustomTimeout(ctx context.Context, timeout time.Du
 	}
 }
 
+// WithTimeoutGraceful runs the with timeout graceful operation.
 func (tm *TimeoutManager) WithTimeoutGraceful(ctx context.Context, operationType string, fn func(context.Context) error) error {
 	timeout := tm.GetTimeout(operationType) + tm.config.GracePeriod
 	return tm.WithCustomTimeout(ctx, timeout, fn)
 }
 
+// UpdateConfig runs the update config operation.
 func (tm *TimeoutManager) UpdateConfig(config *TimeoutConfig) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	tm.config = config
 }
 
+// AdaptiveTimeout represents a adaptive timeout value.
 type AdaptiveTimeout struct {
 	baseTimeout  time.Duration
 	minTimeout   time.Duration
@@ -102,6 +112,7 @@ type AdaptiveTimeout struct {
 	mu           sync.RWMutex
 }
 
+// NewAdaptiveTimeout constructs a new AdaptiveTimeout.
 func NewAdaptiveTimeout(base, minTimeout, maxTimeout time.Duration) *AdaptiveTimeout {
 	return &AdaptiveTimeout{
 		baseTimeout:  base,
@@ -112,6 +123,7 @@ func NewAdaptiveTimeout(base, minTimeout, maxTimeout time.Duration) *AdaptiveTim
 	}
 }
 
+// GetTimeout returns the timeout.
 func (at *AdaptiveTimeout) GetTimeout() time.Duration {
 	at.mu.RLock()
 	defer at.mu.RUnlock()
@@ -133,6 +145,7 @@ func (at *AdaptiveTimeout) GetTimeout() time.Duration {
 	return newTimeout
 }
 
+// RecordDuration runs the record duration operation.
 func (at *AdaptiveTimeout) RecordDuration(d time.Duration) {
 	at.mu.Lock()
 	defer at.mu.Unlock()
@@ -167,12 +180,14 @@ func (at *AdaptiveTimeout) percentile(p float64) time.Duration {
 	return sorted[index]
 }
 
+// TimeoutGroup represents a timeout group value.
 type TimeoutGroup struct {
 	managers map[string]*TimeoutManager
 	adaptive map[string]*AdaptiveTimeout
 	mu       sync.RWMutex
 }
 
+// NewTimeoutGroup constructs a new TimeoutGroup.
 func NewTimeoutGroup() *TimeoutGroup {
 	return &TimeoutGroup{
 		managers: make(map[string]*TimeoutManager),
@@ -180,6 +195,7 @@ func NewTimeoutGroup() *TimeoutGroup {
 	}
 }
 
+// GetManager returns the manager.
 func (tg *TimeoutGroup) GetManager(name string) *TimeoutManager {
 	tg.mu.RLock()
 	manager, exists := tg.managers[name]
@@ -202,6 +218,7 @@ func (tg *TimeoutGroup) GetManager(name string) *TimeoutManager {
 	return manager
 }
 
+// GetAdaptiveTimeout returns the adaptive timeout.
 func (tg *TimeoutGroup) GetAdaptiveTimeout(name string, base, minTimeout, maxTimeout time.Duration) *AdaptiveTimeout {
 	tg.mu.RLock()
 	timeout, exists := tg.adaptive[name]
@@ -224,11 +241,13 @@ func (tg *TimeoutGroup) GetAdaptiveTimeout(name string, base, minTimeout, maxTim
 	return timeout
 }
 
+// WithTimeout runs the with timeout operation.
 func (tg *TimeoutGroup) WithTimeout(ctx context.Context, managerName, operationType string, fn func(context.Context) error) error {
 	manager := tg.GetManager(managerName)
 	return manager.WithTimeout(ctx, operationType, fn)
 }
 
+// WithAdaptiveTimeout runs the with adaptive timeout operation.
 func (tg *TimeoutGroup) WithAdaptiveTimeout(ctx context.Context, timeoutName string, fn func(context.Context) error) error {
 	timeout := tg.GetAdaptiveTimeout(timeoutName, 30*time.Second, 5*time.Second, 120*time.Second)
 
@@ -259,12 +278,14 @@ func (tg *TimeoutGroup) WithAdaptiveTimeout(ctx context.Context, timeoutName str
 	return err
 }
 
+// RemoveManager runs the remove manager operation.
 func (tg *TimeoutGroup) RemoveManager(name string) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	delete(tg.managers, name)
 }
 
+// RemoveAdaptiveTimeout runs the remove adaptive timeout operation.
 func (tg *TimeoutGroup) RemoveAdaptiveTimeout(name string) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()

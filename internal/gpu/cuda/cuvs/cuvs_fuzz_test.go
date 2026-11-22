@@ -33,6 +33,7 @@ const (
 	stubMethodErr = "cuVS index not supported on this platform"
 )
 
+// FuzzCUVSStubContract runs the fuzz cuvs stub contract operation.
 func FuzzCUVSStubContract(f *testing.F) {
 	f.Add("bert-base", 128, encodeFuzzFloat32s([]float32{0.1, 0.2, 0.3}), 5)
 	f.Add("", -1, []byte{}, 0)                              // invalid dim and empty query

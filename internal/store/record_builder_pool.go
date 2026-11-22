@@ -51,19 +51,21 @@ func (p *RecordBuilderPool) Put(b *array.RecordBuilder) {
 
 // Global Response Pools for common schemas
 var (
-	// SearchResponseSchema: [id (string), score (float32)]
+	// SearchResponseSchema [id (string), score (float32)]
 	SearchResponseSchema = arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.BinaryTypes.String},
 		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
 	}, nil)
 
-	// SearchWithVectorResponseSchema: [id (string), score (float32), vector (binary)]
+	// SearchWithVectorResponseSchema [id (string), score (float32), vector (binary)]
 	SearchWithVectorResponseSchema = arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.BinaryTypes.String},
 		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
 		{Name: "vector", Type: arrow.BinaryTypes.Binary},
 	}, nil)
 
-	SearchResponsePool           = NewRecordBuilderPool(SearchResponseSchema)
+	// SearchResponsePool is a search response pool value.
+	SearchResponsePool = NewRecordBuilderPool(SearchResponseSchema)
+	// SearchWithVectorResponsePool is a search with vector response pool value.
 	SearchWithVectorResponsePool = NewRecordBuilderPool(SearchWithVectorResponseSchema)
 )

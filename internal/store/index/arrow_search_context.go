@@ -14,16 +14,23 @@ import (
 // CandidateHeap implements a max-heap of Candidates for search results
 type CandidateHeap []types.Candidate
 
-func (h *CandidateHeap) Len() int           { return len(*h) }
+// Len runs the len operation.
+func (h *CandidateHeap) Len() int { return len(*h) }
+
+// Less runs the less operation.
 func (h *CandidateHeap) Less(i, j int) bool { return (*h)[i].Dist < (*h)[j].Dist }
+
+// Swap runs the swap operation.
 func (h *CandidateHeap) Swap(i, j int) {
 	(*h)[i], (*h)[j] = (*h)[j], (*h)[i]
 }
 
+// Push runs the push operation.
 func (h *CandidateHeap) Push(x any) {
 	*h = append(*h, x.(types.Candidate))
 }
 
+// Pop runs the pop operation.
 func (h *CandidateHeap) Pop() any {
 	old := *h
 	n := len(old)

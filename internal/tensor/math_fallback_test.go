@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestSinGo runs the test sin go operation.
 func TestSinGo(t *testing.T) {
 	v, err := sinGo(0)
 	assertNoErr(t, err)
@@ -18,6 +19,7 @@ func TestSinGo(t *testing.T) {
 	}
 }
 
+// TestCosGo runs the test cos go operation.
 func TestCosGo(t *testing.T) {
 	v, err := cosGo(0)
 	assertNoErr(t, err)
@@ -31,6 +33,7 @@ func TestCosGo(t *testing.T) {
 	}
 }
 
+// TestLogGo runs the test log go operation.
 func TestLogGo(t *testing.T) {
 	v, err := logGo(1)
 	assertNoErr(t, err)
@@ -48,6 +51,7 @@ func TestLogGo(t *testing.T) {
 	}
 }
 
+// TestPowGo runs the test pow go operation.
 func TestPowGo(t *testing.T) {
 	v, err := powGo(2, 0)
 	assertNoErr(t, err)
@@ -75,6 +79,7 @@ func TestPowGo(t *testing.T) {
 	}
 }
 
+// TestSincosTaylorRangeReduction runs the test sincos taylor range reduction operation.
 func TestSincosTaylorRangeReduction(t *testing.T) {
 	s, c := sincosTaylor(10) // > pi, forces range reduction
 	if s < -1.1 || s > 1.1 {
@@ -92,6 +97,7 @@ func TestSincosTaylorRangeReduction(t *testing.T) {
 	}
 }
 
+// TestSqrtGo runs the test sqrt go operation.
 func TestSqrtGo(t *testing.T) {
 	v, err := sqrtGo(0)
 	assertNoErr(t, err)
@@ -109,6 +115,7 @@ func TestSqrtGo(t *testing.T) {
 	}
 }
 
+// TestExpGoEdgeCase runs the test exp go edge case operation.
 func TestExpGoEdgeCase(t *testing.T) {
 	v, err := expGo(0)
 	assertNoErr(t, err)

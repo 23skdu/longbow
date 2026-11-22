@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestObservability_GranularMetrics runs the test observability_granular metrics operation.
 func TestObservability_GranularMetrics(t *testing.T) {
 	metrics.GlobalHotpathSampler.AlwaysSample = true
 	defer func() { metrics.GlobalHotpathSampler.AlwaysSample = false }()
@@ -106,6 +107,7 @@ func TestObservability_GranularMetrics(t *testing.T) {
 	assert.Equal(t, 1, testutil.CollectAndCount(metrics.HNSWBulkInsertLatencyByType), "Should record bulk insert latency")
 }
 
+// TestHNSW_ObservabilityMetrics runs the test hnsw_observability metrics operation.
 func TestHNSW_ObservabilityMetrics(t *testing.T) {
 	metrics.GlobalHotpathSampler.AlwaysSample = true
 	defer func() { metrics.GlobalHotpathSampler.AlwaysSample = false }()

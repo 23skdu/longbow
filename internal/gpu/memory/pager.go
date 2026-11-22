@@ -14,9 +14,13 @@ import (
 type PageState int32
 
 const (
-	PageEvicted       PageState = 0
-	PageReserved      PageState = 1 // CPU buffer allocated, not yet on GPU
-	PageResident      PageState = 2 // On GPU, clean
+	// PageEvicted is a page evicted constant.
+	PageEvicted PageState = 0
+	// PageReserved is a page reserved constant.
+	PageReserved PageState = 1 // CPU buffer allocated, not yet on GPU
+	// PageResident is a page resident constant.
+	PageResident PageState = 2 // On GPU, clean
+	// PageResidentDirty is a page resident dirty constant.
 	PageResidentDirty PageState = 3 // On GPU, modified since last load
 )
 

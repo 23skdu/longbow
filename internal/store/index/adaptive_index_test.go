@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestAdaptiveIndex runs the test adaptive index operation.
 func TestAdaptiveIndex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -93,6 +94,7 @@ func TestAdaptiveIndex(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestAdaptiveIndexDisabled runs the test adaptive index disabled operation.
 func TestAdaptiveIndexDisabled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

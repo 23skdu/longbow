@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCloudControlPlane_LifecycleScaleAndSLA runs the test cloud control plane_lifecycle scale and sla operation.
 func TestCloudControlPlane_LifecycleScaleAndSLA(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -62,6 +63,7 @@ func TestCloudControlPlane_LifecycleScaleAndSLA(t *testing.T) {
 	require.False(t, ok)
 }
 
+// TestCloudControlPlane_MultiRegionHTTPReplicationAndFailover runs the test cloud control plane_multi region http replication and failover operation.
 func TestCloudControlPlane_MultiRegionHTTPReplicationAndFailover(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	primaryStore := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -142,6 +144,7 @@ func TestCloudControlPlane_MultiRegionHTTPReplicationAndFailover(t *testing.T) {
 	require.Equal(t, "replica", promoted.Regions["us-east-1"].Role)
 }
 
+// TestCloudControlPlane_DoActionDispatch runs the test cloud control plane_do action dispatch operation.
 func TestCloudControlPlane_DoActionDispatch(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -186,6 +189,7 @@ func TestCloudControlPlane_DoActionDispatch(t *testing.T) {
 	require.Contains(t, string(slaOut), `"compliant":true`)
 }
 
+// FuzzCloudControlPlaneRequest runs the fuzz cloud control plane request operation.
 func FuzzCloudControlPlaneRequest(f *testing.F) {
 	f.Add("cls-fuzz", "us-east-1", "enterprise", int32(3), "ds1", "vec1", float32(0.25))
 	f.Add("", "", "serverless", int32(0), "ds2", "", float32(1.0))

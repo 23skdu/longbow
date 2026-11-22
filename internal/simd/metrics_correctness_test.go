@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestMetricsCorrectness runs the test metrics correctness operation.
 func TestMetricsCorrectness(t *testing.T) {
 	// Matrix of types and expected results for a simple case
 	// Vector A: [1, 2], Vector B: [2, 1]

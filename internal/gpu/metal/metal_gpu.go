@@ -56,6 +56,7 @@ func resetMetalContextFromEmbedded() error {
 	return ResetGlobalContext(libData)
 }
 
+// Init runs the init operation.
 func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
 	if err := initMetalContextFromEmbedded(); err != nil {
 		return err
@@ -144,6 +145,7 @@ func (m *MetalIndex) Heal() error {
 	return nil
 }
 
+// MetalIndex represents a metal index value.
 type MetalIndex struct {
 	handle     *C.MetalIndexHandle
 	dim        int
@@ -426,6 +428,7 @@ func (idx *MetalIndex) Backend() gputypes.GPUBackend {
 	return gputypes.BackendMetal
 }
 
+// DeviceID runs the device id operation.
 func (idx *MetalIndex) DeviceID() int32 {
 	return idx.deviceInfo.DeviceID
 }

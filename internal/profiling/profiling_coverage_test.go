@@ -14,12 +14,14 @@ func makeTestLogger() zerolog.Logger {
 	return zerolog.New(bytes.NewBuffer(nil))
 }
 
+// TestNewMemoryLeakDetector runs the test new memory leak detector operation.
 func TestNewMemoryLeakDetector(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
 	require.NotNil(t, mld)
 }
 
+// TestMemoryLeakDetector_SetAlertCallback runs the test memory leak detector_set alert callback operation.
 func TestMemoryLeakDetector_SetAlertCallback(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
@@ -31,6 +33,7 @@ func TestMemoryLeakDetector_SetAlertCallback(t *testing.T) {
 	_ = called
 }
 
+// TestMemoryLeakDetector_CaptureBaseline runs the test memory leak detector_capture baseline operation.
 func TestMemoryLeakDetector_CaptureBaseline(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
@@ -40,6 +43,7 @@ func TestMemoryLeakDetector_CaptureBaseline(t *testing.T) {
 	})
 }
 
+// TestMemoryLeakDetector_StartStop runs the test memory leak detector_start stop operation.
 func TestMemoryLeakDetector_StartStop(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 10, 50*time.Millisecond)
@@ -52,6 +56,7 @@ func TestMemoryLeakDetector_StartStop(t *testing.T) {
 	mld.Stop()
 }
 
+// TestMemoryLeakDetector_StartTwice runs the test memory leak detector_start twice operation.
 func TestMemoryLeakDetector_StartTwice(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 10, 50*time.Millisecond)
@@ -60,6 +65,7 @@ func TestMemoryLeakDetector_StartTwice(t *testing.T) {
 	mld.Stop()
 }
 
+// TestMemoryLeakDetector_GetCurrentStats runs the test memory leak detector_get current stats operation.
 func TestMemoryLeakDetector_GetCurrentStats(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
@@ -70,6 +76,7 @@ func TestMemoryLeakDetector_GetCurrentStats(t *testing.T) {
 	_ = goroutines
 }
 
+// TestMemoryLeakDetector_WriteHeapProfile runs the test memory leak detector_write heap profile operation.
 func TestMemoryLeakDetector_WriteHeapProfile(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
@@ -78,6 +85,7 @@ func TestMemoryLeakDetector_WriteHeapProfile(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestMemoryLeakDetector_WriteGoroutineProfile runs the test memory leak detector_write goroutine profile operation.
 func TestMemoryLeakDetector_WriteGoroutineProfile(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
@@ -86,6 +94,7 @@ func TestMemoryLeakDetector_WriteGoroutineProfile(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestMemoryLeakDetector_WriteThreadCreateProfile runs the test memory leak detector_write thread create profile operation.
 func TestMemoryLeakDetector_WriteThreadCreateProfile(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
@@ -94,6 +103,7 @@ func TestMemoryLeakDetector_WriteThreadCreateProfile(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestMemoryLeakDetector_WriteBlockProfile runs the test memory leak detector_write block profile operation.
 func TestMemoryLeakDetector_WriteBlockProfile(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
@@ -102,6 +112,7 @@ func TestMemoryLeakDetector_WriteBlockProfile(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestMemoryLeakDetector_WriteMutexProfile runs the test memory leak detector_write mutex profile operation.
 func TestMemoryLeakDetector_WriteMutexProfile(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
@@ -110,6 +121,7 @@ func TestMemoryLeakDetector_WriteMutexProfile(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestMemoryLeakDetector_GetSnapshots_Empty runs the test memory leak detector_get snapshots_empty operation.
 func TestMemoryLeakDetector_GetSnapshots_Empty(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
@@ -117,6 +129,7 @@ func TestMemoryLeakDetector_GetSnapshots_Empty(t *testing.T) {
 	assert.Empty(t, snaps)
 }
 
+// TestMemoryLeakDetector_GetSnapshots_AfterBaseline runs the test memory leak detector_get snapshots_after baseline operation.
 func TestMemoryLeakDetector_GetSnapshots_AfterBaseline(t *testing.T) {
 	logger := makeTestLogger()
 	mld := NewMemoryLeakDetector(logger, 100, 100*time.Millisecond)
@@ -125,6 +138,7 @@ func TestMemoryLeakDetector_GetSnapshots_AfterBaseline(t *testing.T) {
 	assert.Len(t, snaps, 1)
 }
 
+// TestDefaultLeakDetectorConfig runs the test default leak detector config operation.
 func TestDefaultLeakDetectorConfig(t *testing.T) {
 	cfg := DefaultLeakDetectorConfig()
 	require.NotNil(t, cfg)
@@ -132,12 +146,14 @@ func TestDefaultLeakDetectorConfig(t *testing.T) {
 	assert.Greater(t, cfg.CheckInterval, time.Duration(0))
 }
 
+// TestNewLeakDetectorManager runs the test new leak detector manager operation.
 func TestNewLeakDetectorManager(t *testing.T) {
 	logger := makeTestLogger()
 	mgr := NewLeakDetectorManager(logger, DefaultLeakDetectorConfig())
 	require.NotNil(t, mgr)
 }
 
+// TestLeakDetectorManager_StartStop runs the test leak detector manager_start stop operation.
 func TestLeakDetectorManager_StartStop(t *testing.T) {
 	logger := makeTestLogger()
 	cfg := DefaultLeakDetectorConfig()
@@ -148,6 +164,7 @@ func TestLeakDetectorManager_StartStop(t *testing.T) {
 	mgr.Stop()
 }
 
+// TestLeakDetectorManager_CaptureProfiles runs the test leak detector manager_capture profiles operation.
 func TestLeakDetectorManager_CaptureProfiles(t *testing.T) {
 	logger := makeTestLogger()
 	mgr := NewLeakDetectorManager(logger, DefaultLeakDetectorConfig())
@@ -156,6 +173,7 @@ func TestLeakDetectorManager_CaptureProfiles(t *testing.T) {
 	})
 }
 
+// TestLeakDetectorManager_GetStats runs the test leak detector manager_get stats operation.
 func TestLeakDetectorManager_GetStats(t *testing.T) {
 	logger := makeTestLogger()
 	mgr := NewLeakDetectorManager(logger, DefaultLeakDetectorConfig())

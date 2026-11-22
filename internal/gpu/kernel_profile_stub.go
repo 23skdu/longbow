@@ -12,6 +12,7 @@ import "fmt"
 // KernelOpTime is one named GPU operation's share of the device's time, and
 // KernelProfile the whole table.
 type (
+	// KernelOpTime represents a kernel op time value.
 	KernelOpTime struct {
 		Name     string  `json:"name"`
 		Calls    int64   `json:"calls"`
@@ -19,6 +20,7 @@ type (
 		SharePct float64 `json:"share_pct"`
 	}
 
+	// KernelProfile represents a kernel profile value.
 	KernelProfile struct {
 		Ops           []KernelOpTime `json:"ops"`
 		TotalMS       float64        `json:"total_ms"`

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestTPUBackend_Initialize runs the test tpu backend_initialize operation.
 func TestTPUBackend_Initialize(t *testing.T) {
 	backend, err := NewTPUBackend(0)
 	require.NoError(t, err)
@@ -17,6 +18,7 @@ func TestTPUBackend_Initialize(t *testing.T) {
 	require.True(t, backend.initialized)
 }
 
+// TestTPUBackend_DeviceInfo runs the test tpu backend_device info operation.
 func TestTPUBackend_DeviceInfo(t *testing.T) {
 	backend, _ := NewTPUBackend(0)
 	info, err := backend.GetDeviceInfo()
@@ -25,6 +27,7 @@ func TestTPUBackend_DeviceInfo(t *testing.T) {
 	require.Contains(t, info.Name, "Ironwood")
 }
 
+// TestTPUIndex_GetMemoryInfo runs the test tpu index_get memory info operation.
 func TestTPUIndex_GetMemoryInfo(t *testing.T) {
 	cfg := types.GPUConfig{DeviceID: 0, Dimension: 128}
 	idx, err := NewTPUIndexImpl(cfg)
@@ -37,12 +40,14 @@ func TestTPUIndex_GetMemoryInfo(t *testing.T) {
 	require.Equal(t, int64(0), used)
 }
 
+// TestTPU_EnqueueStub runs the test tpu_enqueue stub operation.
 func TestTPU_EnqueueStub(t *testing.T) {
 	data := make([]float32, 1024)
 	err := tpuEnqueueBatch(0, data)
 	require.NoError(t, err)
 }
 
+// TestTPUIndex_Functional runs the test tpu index_functional operation.
 func TestTPUIndex_Functional(t *testing.T) {
 	cfg := types.GPUConfig{DeviceID: 0, Dimension: 4}
 	idx, err := NewTPUIndexImpl(cfg)
@@ -68,6 +73,7 @@ func TestTPUIndex_Functional(t *testing.T) {
 	require.True(t, dists[0] < dists[1])
 }
 
+// TestTPUIndex_FeatureGaps runs the test tpu index_feature gaps operation.
 func TestTPUIndex_FeatureGaps(t *testing.T) {
 	cfg := types.GPUConfig{DeviceID: 0, Dimension: 8}
 	idx, err := NewTPUIndexImpl(cfg)

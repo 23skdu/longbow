@@ -1,9 +1,12 @@
 package core
 
 const (
-	SourceDense  uint8 = 0
+	// SourceDense is a source dense constant.
+	SourceDense uint8 = 0
+	// SourceSparse is a source sparse constant.
 	SourceSparse uint8 = 1
-	SourceFused  uint8 = 2
+	// SourceFused is a source fused constant.
+	SourceFused uint8 = 2
 )
 
 // SearchResult represents a single flight search result
@@ -37,10 +40,12 @@ type ResultSliceIterator struct {
 	pos     int
 }
 
+// NewResultSliceIterator constructs a new ResultSliceIterator.
 func NewResultSliceIterator(results []SearchResult) *ResultSliceIterator {
 	return &ResultSliceIterator{results: results}
 }
 
+// Next runs the next operation.
 func (it *ResultSliceIterator) Next() (SearchResult, bool) {
 	if it.pos >= len(it.results) {
 		return SearchResult{}, false
@@ -50,6 +55,7 @@ func (it *ResultSliceIterator) Next() (SearchResult, bool) {
 	return res, true
 }
 
+// Close runs the close operation.
 func (it *ResultSliceIterator) Close() error {
 	it.results = nil
 	return nil

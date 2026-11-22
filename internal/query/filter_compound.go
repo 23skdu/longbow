@@ -10,8 +10,10 @@ type compoundFilterOp struct {
 	children []filterOp
 }
 
+// Compound runs the compound operation.
 func (c *compoundFilterOp) Compound() bool { return true }
 
+// Match runs the match operation.
 func (c *compoundFilterOp) Match(rowIdx int) bool {
 	switch c.logic {
 	case "AND":
@@ -38,6 +40,7 @@ func (c *compoundFilterOp) Match(rowIdx int) bool {
 	}
 }
 
+// MatchBitmap runs the match bitmap operation.
 func (c *compoundFilterOp) MatchBitmap(dst []byte) {
 	if len(dst) == 0 {
 		return
@@ -76,6 +79,7 @@ func (c *compoundFilterOp) MatchBitmap(dst []byte) {
 	}
 }
 
+// FilterBatch runs the filter batch operation.
 func (c *compoundFilterOp) FilterBatch(indices []int) []int {
 	if len(indices) == 0 {
 		return nil
@@ -138,11 +142,13 @@ func (c *compoundFilterOp) FilterBatch(indices []int) []int {
 	}
 }
 
+// Bind runs the bind operation.
 func (c *compoundFilterOp) Bind(col arrow.Array) error {
 	// Re-binding compound op is usually handled via Reset(rec)
 	return nil
 }
 
+// Reset runs the reset operation.
 func (c *compoundFilterOp) Reset(rec arrow.RecordBatch) error {
 	for _, child := range c.children {
 		if err := child.Reset(rec); err != nil {
@@ -152,6 +158,7 @@ func (c *compoundFilterOp) Reset(rec arrow.RecordBatch) error {
 	return nil
 }
 
+// MatchValue runs the match value operation.
 func (c *compoundFilterOp) MatchValue(val interface{}) bool {
 	switch c.logic {
 	case "AND":

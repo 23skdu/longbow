@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestFastWalshHadamardTransform32NEON runs the test fast walsh hadamard transform32 neon operation.
 func TestFastWalshHadamardTransform32NEON(t *testing.T) {
 	if !features.HasNEON {
 		t.Skip("NEON not available")
@@ -42,6 +43,7 @@ func TestFastWalshHadamardTransform32NEON(t *testing.T) {
 	}
 }
 
+// TestRandomRotationNEON runs the test random rotation neon operation.
 func TestRandomRotationNEON(t *testing.T) {
 	if !features.HasNEON {
 		t.Skip("NEON not available")
@@ -70,6 +72,7 @@ func TestRandomRotationNEON(t *testing.T) {
 	}
 }
 
+// TestL2SquaredNEON runs the test l2 squared neon operation.
 func TestL2SquaredNEON(t *testing.T) {
 	if !features.HasNEON {
 		t.Skip("NEON not available")
@@ -84,6 +87,7 @@ func TestL2SquaredNEON(t *testing.T) {
 	assert.Equal(t, float32(64.0), res)
 }
 
+// BenchmarkFWHT_NEON_512 runs the benchmark fwht_neon_512 operation.
 func BenchmarkFWHT_NEON_512(b *testing.B) {
 	if !features.HasNEON {
 		b.Skip("NEON not available")
@@ -98,6 +102,7 @@ func BenchmarkFWHT_NEON_512(b *testing.B) {
 	}
 }
 
+// BenchmarkFWHT_Generic_512 runs the benchmark fwht_generic_512 operation.
 func BenchmarkFWHT_Generic_512(b *testing.B) {
 	n := 512
 	a := make([]float32, n)

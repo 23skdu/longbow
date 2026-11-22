@@ -15,6 +15,7 @@ var (
 		[]string{"namespace"},
 	)
 
+	// NamespaceLatency is a namespace latency value.
 	NamespaceLatency = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_namespace_query_latency_seconds",
@@ -24,6 +25,7 @@ var (
 		[]string{"namespace"},
 	)
 
+	// NamespaceStorageBytes is a namespace storage bytes value.
 	NamespaceStorageBytes = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_namespace_storage_bytes",
@@ -32,6 +34,7 @@ var (
 		[]string{"namespace"},
 	)
 
+	// NamespaceVectorCount is a namespace vector count value.
 	NamespaceVectorCount = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_namespace_vector_count",
@@ -40,6 +43,7 @@ var (
 		[]string{"namespace"},
 	)
 
+	// NamespaceIngestRate is a namespace ingest rate value.
 	NamespaceIngestRate = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_namespace_ingest_rate_vectors_per_sec",
@@ -48,6 +52,7 @@ var (
 		[]string{"namespace"},
 	)
 
+	// NamespaceQuotaLimit is a namespace quota limit value.
 	NamespaceQuotaLimit = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_namespace_quota_limit",
@@ -56,6 +61,7 @@ var (
 		[]string{"namespace", "quota_type"}, // "vectors", "storage", "dimensions"
 	)
 
+	// NamespaceQuotaUsed is a namespace quota used value.
 	NamespaceQuotaUsed = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_namespace_quota_used",
@@ -64,6 +70,7 @@ var (
 		[]string{"namespace", "quota_type"}, // "vectors", "storage", "dimensions"
 	)
 
+	// NamespaceRateLimitHits is a namespace rate limit hits value.
 	NamespaceRateLimitHits = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_namespace_rate_limit_hits_total",
@@ -72,6 +79,7 @@ var (
 		[]string{"namespace"},
 	)
 
+	// NamespaceCacheHits is a namespace cache hits value.
 	NamespaceCacheHits = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_namespace_cache_hits_total",
@@ -80,6 +88,7 @@ var (
 		[]string{"namespace"},
 	)
 
+	// NamespaceCacheMisses is a namespace cache misses value.
 	NamespaceCacheMisses = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_namespace_cache_misses_total",

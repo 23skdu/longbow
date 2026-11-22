@@ -16,6 +16,7 @@ type TensorStreamHandler struct {
 	server *RDMAServer
 }
 
+// NewTensorStreamHandler constructs a new TensorStreamHandler.
 func NewTensorStreamHandler(server *RDMAServer) *TensorStreamHandler {
 	return &TensorStreamHandler{server: server}
 }

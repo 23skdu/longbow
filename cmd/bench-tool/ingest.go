@@ -23,6 +23,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// StreamUploader represents a stream uploader value.
 type StreamUploader struct {
 	sc     *client.SmartClient
 	stream flight.FlightService_DoPutClient
@@ -53,10 +54,12 @@ func newStreamUploader(sc *client.SmartClient, dataset string, schema *arrow.Sch
 	}, nil
 }
 
+// Write runs the write operation.
 func (u *StreamUploader) Write(record arrow.RecordBatch) error {
 	return u.writer.Write(record)
 }
 
+// Close runs the close operation.
 func (u *StreamUploader) Close() error {
 	defer u.cancel()
 	if err := u.writer.Close(); err != nil {

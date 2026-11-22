@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGraphData_FastPathAccessors runs the test graph data_fast path accessors operation.
 func TestGraphData_FastPathAccessors(t *testing.T) {
 	dims := 128
 	g := NewGraphData(10, dims, false, false, -1, false, false, false, VectorTypeFloat32, false, false, false, 8, "test-fast", nil, false)
@@ -25,6 +26,7 @@ func TestGraphData_FastPathAccessors(t *testing.T) {
 	assert.Equal(t, chunkOrig, chunkFastGen, "fast with gen should return same data")
 }
 
+// TestGraphData_FastPathNeighborsCountsVersions runs the test graph data_fast path neighbors counts versions operation.
 func TestGraphData_FastPathNeighborsCountsVersions(t *testing.T) {
 	dims := 128
 	g := NewGraphData(10, dims, false, false, -1, false, false, false, VectorTypeFloat32, false, false, false, 8, "test-ncv", nil, false)
@@ -46,6 +48,7 @@ func TestGraphData_FastPathNeighborsCountsVersions(t *testing.T) {
 	assert.Equal(t, verOrig, verFast, "versions fast path parity")
 }
 
+// TestGraphData_FastPathInt8Types runs the test graph data_fast path int8 types operation.
 func TestGraphData_FastPathInt8Types(t *testing.T) {
 	dims := 128
 	g := NewGraphData(10, dims, false, false, -1, true, false, false, VectorTypeInt8, false, false, false, 8, "test-int8", nil, false)
@@ -59,6 +62,7 @@ func TestGraphData_FastPathInt8Types(t *testing.T) {
 	assert.Equal(t, orig, fast, "int8 fast path parity")
 }
 
+// TestGraphData_FastPathInt16Types runs the test graph data_fast path int16 types operation.
 func TestGraphData_FastPathInt16Types(t *testing.T) {
 	dims := 128
 	g := NewGraphData(10, dims, false, false, -1, false, false, false, VectorTypeInt16, false, false, false, 8, "test-int16", nil, false)
@@ -72,6 +76,7 @@ func TestGraphData_FastPathInt16Types(t *testing.T) {
 	assert.Equal(t, orig, fast, "int16 fast path parity")
 }
 
+// TestGraphData_GenerationIsolation runs the test graph data_generation isolation operation.
 func TestGraphData_GenerationIsolation(t *testing.T) {
 	dims := 128
 	g := NewGraphData(10, dims, false, false, -1, false, false, false, VectorTypeFloat32, false, false, false, 8, "test-gen", nil, false)
@@ -90,6 +95,7 @@ func TestGraphData_GenerationIsolation(t *testing.T) {
 	assert.NotNil(t, data, "newly allocated chunk should be visible even at gen 0")
 }
 
+// TestGraphData_GetVectorPQWithGen runs the test graph data_get vector pq with gen operation.
 func TestGraphData_GetVectorPQWithGen(t *testing.T) {
 	dims := 128
 	g := NewGraphData(10, dims, false, false, -1, false, false, false, VectorTypeFloat32, false, false, false, 8, "test-pqgen", nil, false)
@@ -103,6 +109,7 @@ func TestGraphData_GetVectorPQWithGen(t *testing.T) {
 	assert.Nil(t, code, "should return nil when PQ is not enabled")
 }
 
+// TestGraphData_FastPathConcurrentReadWrite runs the test graph data_fast path concurrent read write operation.
 func TestGraphData_FastPathConcurrentReadWrite(t *testing.T) {
 	dims := 128
 	g := NewGraphData(100, dims, false, false, -1, false, false, false, VectorTypeFloat32, false, false, false, 8, "test-conc", nil, false)

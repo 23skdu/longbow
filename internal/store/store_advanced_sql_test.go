@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// TestAdvancedSQL_E2E runs the test advanced sql_e2 e operation.
 func TestAdvancedSQL_E2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

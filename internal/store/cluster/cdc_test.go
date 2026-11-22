@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCDCEventType_String runs the test cdc event type_string operation.
 func TestCDCEventType_String(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -35,6 +36,7 @@ func TestCDCEventType_String(t *testing.T) {
 	}
 }
 
+// TestCDCFilter runs the test cdc filter operation.
 func TestCDCFilter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -48,6 +50,7 @@ func TestCDCFilter(t *testing.T) {
 	assert.Contains(t, filter.Columns, "vector")
 }
 
+// TestCDCSubscription_PauseResume runs the test cdc subscription_pause resume operation.
 func TestCDCSubscription_PauseResume(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -65,6 +68,7 @@ func TestCDCSubscription_PauseResume(t *testing.T) {
 	assert.False(t, sub.IsPaused())
 }
 
+// TestCDCSubscription_Close runs the test cdc subscription_close operation.
 func TestCDCSubscription_Close(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -86,6 +90,7 @@ func TestCDCSubscription_Close(t *testing.T) {
 	}
 }
 
+// TestCDCSubscription_Close_Idempotent runs the test cdc subscription_close_idempotent operation.
 func TestCDCSubscription_Close_Idempotent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -103,6 +108,7 @@ func TestCDCSubscription_Close_Idempotent(t *testing.T) {
 	assert.True(t, sub.IsClosed())
 }
 
+// TestCDCConfig_Defaults runs the test cdc config_defaults operation.
 func TestCDCConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -125,6 +131,7 @@ func TestCDCConfig_Defaults(t *testing.T) {
 	assert.True(t, cdc.config.EventTypeFilterEnabled)
 }
 
+// TestNewChangeDataCapture runs the test new change data capture operation.
 func TestNewChangeDataCapture(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -142,6 +149,7 @@ func TestNewChangeDataCapture(t *testing.T) {
 	assert.True(t, cdc.config.EnableArrow)
 }
 
+// TestChangeDataCapture_Subscribe runs the test change data capture_subscribe operation.
 func TestChangeDataCapture_Subscribe(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -170,6 +178,7 @@ func TestChangeDataCapture_Subscribe(t *testing.T) {
 	assert.Equal(t, sub.Ch, subs[0])
 }
 
+// TestChangeDataCapture_Subscribe_EmptyDataset runs the test change data capture_subscribe_empty dataset operation.
 func TestChangeDataCapture_Subscribe_EmptyDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -183,6 +192,7 @@ func TestChangeDataCapture_Subscribe_EmptyDataset(t *testing.T) {
 	assert.Contains(t, err.Error(), "dataset name required")
 }
 
+// TestChangeDataCapture_Subscribe_Disabled runs the test change data capture_subscribe_disabled operation.
 func TestChangeDataCapture_Subscribe_Disabled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -197,6 +207,7 @@ func TestChangeDataCapture_Subscribe_Disabled(t *testing.T) {
 	assert.Contains(t, err.Error(), "CDC is disabled")
 }
 
+// TestChangeDataCapture_Unsubscribe runs the test change data capture_unsubscribe operation.
 func TestChangeDataCapture_Unsubscribe(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -217,6 +228,7 @@ func TestChangeDataCapture_Unsubscribe(t *testing.T) {
 	assert.Len(t, subs, 0)
 }
 
+// TestChangeDataCapture_Unsubscribe_NotFound runs the test change data capture_unsubscribe_not found operation.
 func TestChangeDataCapture_Unsubscribe_NotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -230,6 +242,7 @@ func TestChangeDataCapture_Unsubscribe_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
+// TestChangeDataCapture_GetSubscription runs the test change data capture_get subscription operation.
 func TestChangeDataCapture_GetSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -249,6 +262,7 @@ func TestChangeDataCapture_GetSubscription(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestChangeDataCapture_GetSubscriptionByDataset runs the test change data capture_get subscription by dataset operation.
 func TestChangeDataCapture_GetSubscriptionByDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -268,6 +282,7 @@ func TestChangeDataCapture_GetSubscriptionByDataset(t *testing.T) {
 	assert.Len(t, subs, 2)
 }
 
+// TestChangeDataCapture_ListSubscriptions runs the test change data capture_list subscriptions operation.
 func TestChangeDataCapture_ListSubscriptions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -285,6 +300,7 @@ func TestChangeDataCapture_ListSubscriptions(t *testing.T) {
 	assert.Len(t, subs, 2)
 }
 
+// TestChangeDataCapture_HandleCDCBatch_Disabled runs the test change data capture_handle cdc batch_disabled operation.
 func TestChangeDataCapture_HandleCDCBatch_Disabled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -309,6 +325,7 @@ func TestChangeDataCapture_HandleCDCBatch_Disabled(t *testing.T) {
 	cdc.HandleCDCBatch("test-dataset", []arrow.RecordBatch{record})
 }
 
+// TestChangeDataCapture_HandleCDCBatch_NoSubscribers runs the test change data capture_handle cdc batch_no subscribers operation.
 func TestChangeDataCapture_HandleCDCBatch_NoSubscribers(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -332,6 +349,7 @@ func TestChangeDataCapture_HandleCDCBatch_NoSubscribers(t *testing.T) {
 	cdc.HandleCDCBatch("test-dataset", []arrow.RecordBatch{record})
 }
 
+// TestChangeDataCapture_HandleCDCBatch runs the test change data capture_handle cdc batch operation.
 func TestChangeDataCapture_HandleCDCBatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -370,6 +388,7 @@ func TestChangeDataCapture_HandleCDCBatch(t *testing.T) {
 	assert.Equal(t, int64(3), received)
 }
 
+// TestChangeDataCapture_HandleCDCBatch_PausedSubscription runs the test change data capture_handle cdc batch_paused subscription operation.
 func TestChangeDataCapture_HandleCDCBatch_PausedSubscription(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -404,6 +423,7 @@ func TestChangeDataCapture_HandleCDCBatch_PausedSubscription(t *testing.T) {
 	}
 }
 
+// TestChangeDataCapture_HandleCDCBatch_ColumnFilter runs the test change data capture_handle cdc batch_column filter operation.
 func TestChangeDataCapture_HandleCDCBatch_ColumnFilter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -439,6 +459,7 @@ func TestChangeDataCapture_HandleCDCBatch_ColumnFilter(t *testing.T) {
 	}
 }
 
+// TestChangeDataCapture_HandleCDCBatch_ColumnFilter_Disabled runs the test change data capture_handle cdc batch_column filter_disabled operation.
 func TestChangeDataCapture_HandleCDCBatch_ColumnFilter_Disabled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -475,6 +496,7 @@ func TestChangeDataCapture_HandleCDCBatch_ColumnFilter_Disabled(t *testing.T) {
 	}
 }
 
+// TestChangeDataCapture_matchesFilter runs the test change data capture_matches filter operation.
 func TestChangeDataCapture_matchesFilter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -529,6 +551,7 @@ func TestChangeDataCapture_matchesFilter(t *testing.T) {
 	})
 }
 
+// TestChangeDataCapture_matchesColumnsFilter runs the test change data capture_matches columns filter operation.
 func TestChangeDataCapture_matchesColumnsFilter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -548,6 +571,7 @@ func TestChangeDataCapture_matchesColumnsFilter(t *testing.T) {
 	assert.False(t, cdc.matchesColumnsFilter([]string{"id", "nonexistent"}, schema))
 }
 
+// TestChangeDataCapture_matchesEventTypeFilter runs the test change data capture_matches event type filter operation.
 func TestChangeDataCapture_matchesEventTypeFilter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -562,6 +586,7 @@ func TestChangeDataCapture_matchesEventTypeFilter(t *testing.T) {
 	assert.False(t, cdc.matchesEventTypeFilter([]CDCEventType{}))
 }
 
+// TestChangeDataCapture_extractPrimaryKeys runs the test change data capture_extract primary keys operation.
 func TestChangeDataCapture_extractPrimaryKeys(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -586,6 +611,7 @@ func TestChangeDataCapture_extractPrimaryKeys(t *testing.T) {
 	assert.Contains(t, pkCols, "_id")
 }
 
+// TestChangeDataCapture_EventToJSON runs the test change data capture_event to json operation.
 func TestChangeDataCapture_EventToJSON(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -626,6 +652,7 @@ func TestChangeDataCapture_EventToJSON(t *testing.T) {
 	assert.Equal(t, "test-dataset", result["dataset"])
 }
 
+// TestChangeDataCapture_EventToJSON_Disabled runs the test change data capture_event to json_disabled operation.
 func TestChangeDataCapture_EventToJSON_Disabled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -655,6 +682,7 @@ func TestChangeDataCapture_EventToJSON_Disabled(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestChangeDataCapture_SetConfig runs the test change data capture_set config operation.
 func TestChangeDataCapture_SetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -681,6 +709,7 @@ func TestChangeDataCapture_SetConfig(t *testing.T) {
 	assert.Equal(t, newConfig, cdc.GetConfig())
 }
 
+// TestChangeDataCapture_GetMetrics runs the test change data capture_get metrics operation.
 func TestChangeDataCapture_GetMetrics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -698,6 +727,7 @@ func TestChangeDataCapture_GetMetrics(t *testing.T) {
 	assert.Equal(t, int64(0), full)
 }
 
+// TestChangeDataCapture_IsEnabled runs the test change data capture_is enabled operation.
 func TestChangeDataCapture_IsEnabled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -715,6 +745,7 @@ func TestChangeDataCapture_IsEnabled(t *testing.T) {
 	assert.True(t, cdc.IsEnabled())
 }
 
+// TestChangeDataCapture_EnableDisable runs the test change data capture_enable disable operation.
 func TestChangeDataCapture_EnableDisable(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -730,6 +761,7 @@ func TestChangeDataCapture_EnableDisable(t *testing.T) {
 	assert.True(t, cdc.IsEnabled())
 }
 
+// TestGetValueAt runs the test get value at operation.
 func TestGetValueAt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -781,6 +813,7 @@ func TestGetValueAt(t *testing.T) {
 	})
 }
 
+// TestChangeDataCapture_HandleCDCBatch_DropOnFull runs the test change data capture_handle cdc batch_drop on full operation.
 func TestChangeDataCapture_HandleCDCBatch_DropOnFull(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -819,6 +852,7 @@ func TestChangeDataCapture_HandleCDCBatch_DropOnFull(t *testing.T) {
 	assert.Equal(t, int64(1), full)
 }
 
+// TestChangeDataCapture_HandleCDCBatch_AsyncDispatch runs the test change data capture_handle cdc batch_async dispatch operation.
 func TestChangeDataCapture_HandleCDCBatch_AsyncDispatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -852,6 +886,7 @@ func TestChangeDataCapture_HandleCDCBatch_AsyncDispatch(t *testing.T) {
 	assert.Equal(t, int64(1), received)
 }
 
+// TestChangeDataCapture_MultipleBatches runs the test change data capture_multiple batches operation.
 func TestChangeDataCapture_MultipleBatches(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -888,6 +923,7 @@ func TestChangeDataCapture_MultipleBatches(t *testing.T) {
 	assert.Equal(t, int64(3), received)
 }
 
+// TestChangeDataCapture_CloseSubscription_UpdatesMetrics runs the test change data capture_close subscription_updates metrics operation.
 func TestChangeDataCapture_CloseSubscription_UpdatesMetrics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -910,6 +946,7 @@ func TestChangeDataCapture_CloseSubscription_UpdatesMetrics(t *testing.T) {
 	assert.Equal(t, int64(0), afterSubs)
 }
 
+// TestCDCMetrics_Reset runs the test cdc metrics_reset operation.
 func TestCDCMetrics_Reset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -928,12 +965,14 @@ func TestCDCMetrics_Reset(t *testing.T) {
 	assert.Equal(t, int64(0), sent)
 }
 
+// MockCDCStore represents a mock cdc store value.
 type MockCDCStore struct {
 	mu sync.RWMutex
 
 	cdcSubscribers map[string][]chan arrow.RecordBatch
 }
 
+// RegisterCDCSubscriber runs the register cdc subscriber operation.
 func (m *MockCDCStore) RegisterCDCSubscriber(dataset string, ch chan arrow.RecordBatch) {
 	if m.cdcSubscribers == nil {
 		m.cdcSubscribers = make(map[string][]chan arrow.RecordBatch)
@@ -941,6 +980,7 @@ func (m *MockCDCStore) RegisterCDCSubscriber(dataset string, ch chan arrow.Recor
 	m.cdcSubscribers[dataset] = append(m.cdcSubscribers[dataset], ch)
 }
 
+// UnregisterCDCSubscriber runs the unregister cdc subscriber operation.
 func (m *MockCDCStore) UnregisterCDCSubscriber(dataset string, ch chan arrow.RecordBatch) {
 	if m.cdcSubscribers == nil {
 		return

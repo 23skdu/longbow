@@ -7,6 +7,7 @@ import (
 	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
+// GPUMemPool represents a gpu mem pool value.
 type GPUMemPool struct {
 	backend     types.GPUBackend
 	deviceID    int32

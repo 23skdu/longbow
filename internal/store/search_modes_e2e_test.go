@@ -28,6 +28,7 @@ func newCapturingDoGetStream(ctx context.Context) *capturingDoGetStream {
 	return &capturingDoGetStream{MockDoGetStream: NewMockDoGetStream(ctx)}
 }
 
+// Send runs the send operation.
 func (c *capturingDoGetStream) Send(data *flight.FlightData) error {
 	c.frames = append(c.frames, data)
 	return c.MockDoGetStream.Send(data)
@@ -133,6 +134,7 @@ func waitDatasetIndexed(t *testing.T, vs *VectorStore, dataset string, want int)
 	}, 5*time.Second, 25*time.Millisecond)
 }
 
+// TestSearchModes_PureSparseAndHybridFilters runs the test search modes_pure sparse and hybrid filters operation.
 func TestSearchModes_PureSparseAndHybridFilters(t *testing.T) {
 	vs, mem := newSearchModesTestStore(t)
 	baseTs := time.Now().UnixNano()
@@ -173,6 +175,7 @@ func TestSearchModes_PureSparseAndHybridFilters(t *testing.T) {
 	assert.Equal(t, VectorID(2), hybRes[0].ID)
 }
 
+// TestSearchModes_RangeAndFederatedAndHTTP runs the test search modes_range and federated and http operation.
 func TestSearchModes_RangeAndFederatedAndHTTP(t *testing.T) {
 	vs, mem := newSearchModesTestStore(t)
 	baseTs := time.Now().UnixNano()
@@ -310,6 +313,7 @@ func TestSearchModes_RangeAndFederatedAndHTTP(t *testing.T) {
 	assert.NotEmpty(t, gqlData["f"])
 }
 
+// TestSearchModes_All21Modalities runs the test search modes_all21 modalities operation.
 func TestSearchModes_All21Modalities(t *testing.T) {
 	vs, mem := newSearchModesTestStore(t)
 	baseTs := time.Now().UnixNano()

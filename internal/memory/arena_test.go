@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSlabArena_Alloc_Basic runs the test slab arena_alloc_basic operation.
 func TestSlabArena_Alloc_Basic(t *testing.T) {
 	// Arena with 1KB slabs
 	arena := NewSlabArena(1024)
@@ -37,6 +38,7 @@ func TestSlabArena_Alloc_Basic(t *testing.T) {
 	assert.Equal(t, byte(0xCD), slice1Again[39])
 }
 
+// TestSlabArena_Alloc_Growth runs the test slab arena_alloc_growth operation.
 func TestSlabArena_Alloc_Growth(t *testing.T) {
 	// Small slabs: 128 bytes
 	arena := NewSlabArena(128)
@@ -71,6 +73,8 @@ func TestSlabArena_Alloc_Growth(t *testing.T) {
 	// off1 should be ~1 (if 0 burnt). off3 should be >= 128.
 	assert.GreaterOrEqual(t, int(off3), 128)
 }
+
+// TestSlabArena_Alloc_TooLarge runs the test slab arena_alloc_too large operation.
 func TestSlabArena_Alloc_TooLarge(t *testing.T) {
 	arena := NewSlabArena(1024)
 
@@ -90,6 +94,7 @@ func TestSlabArena_Alloc_TooLarge(t *testing.T) {
 	assert.Equal(t, byte(0x55), sliceAgain[1999])
 }
 
+// TestRef_Encoding runs the test ref_encoding operation.
 func TestRef_Encoding(t *testing.T) {
 	// Test manual construction/checking
 	var r SliceRef
@@ -101,6 +106,7 @@ func TestRef_Encoding(t *testing.T) {
 	assert.False(t, r.IsNil())
 }
 
+// TestSlabArena_FastPath runs the test slab arena_fast path operation.
 func TestSlabArena_FastPath(t *testing.T) {
 	arena := NewSlabArena(1024)
 
@@ -118,6 +124,7 @@ func TestSlabArena_FastPath(t *testing.T) {
 	}
 }
 
+// TestSlabArena_FastPathConcurrent runs the test slab arena_fast path concurrent operation.
 func TestSlabArena_FastPathConcurrent(t *testing.T) {
 	arena := NewSlabArena(4096)
 
@@ -146,6 +153,7 @@ func TestSlabArena_FastPathConcurrent(t *testing.T) {
 	wg.Wait()
 }
 
+// TestSlabArena_FastPathFallback runs the test slab arena_fast path fallback operation.
 func TestSlabArena_FastPathFallback(t *testing.T) {
 	arena := NewSlabArena(128)
 
@@ -163,6 +171,7 @@ func TestSlabArena_FastPathFallback(t *testing.T) {
 	}
 }
 
+// BenchmarkSlabArena_FastPath runs the benchmark slab arena_fast path operation.
 func BenchmarkSlabArena_FastPath(b *testing.B) {
 	arena := NewSlabArena(4096)
 	b.ReportAllocs()
@@ -172,6 +181,7 @@ func BenchmarkSlabArena_FastPath(b *testing.B) {
 	}
 }
 
+// BenchmarkSlabArena_FastPathConcurrent runs the benchmark slab arena_fast path concurrent operation.
 func BenchmarkSlabArena_FastPathConcurrent(b *testing.B) {
 	arena := NewSlabArena(4096)
 
@@ -185,6 +195,7 @@ func BenchmarkSlabArena_FastPathConcurrent(b *testing.B) {
 	})
 }
 
+// BenchmarkSlabArena_SlowPath runs the benchmark slab arena_slow path operation.
 func BenchmarkSlabArena_SlowPath(b *testing.B) {
 	arena := NewSlabArena(4096)
 	b.ReportAllocs()
@@ -194,6 +205,7 @@ func BenchmarkSlabArena_SlowPath(b *testing.B) {
 	}
 }
 
+// BenchmarkSlabArena_Comparison runs the benchmark slab arena_comparison operation.
 func BenchmarkSlabArena_Comparison(b *testing.B) {
 	b.Run("FastPath_32B", func(b *testing.B) {
 		b.ResetTimer()
@@ -218,6 +230,7 @@ func BenchmarkSlabArena_Comparison(b *testing.B) {
 	})
 }
 
+// FuzzSlabArenaFastPath runs the fuzz slab arena fast path operation.
 func FuzzSlabArenaFastPath(f *testing.F) {
 	f.Add(uint32(1024), uint32(100))
 	f.Add(uint32(4096), uint32(500))
@@ -259,6 +272,7 @@ func FuzzSlabArenaFastPath(f *testing.F) {
 	})
 }
 
+// FuzzSlabArenaFastPathConcurrent runs the fuzz slab arena fast path concurrent operation.
 func FuzzSlabArenaFastPathConcurrent(f *testing.F) {
 	f.Add(uint32(4096), uint32(10), uint32(100))
 	f.Add(uint32(8192), uint32(20), uint32(200))
@@ -299,6 +313,7 @@ func FuzzSlabArenaFastPathConcurrent(f *testing.F) {
 	})
 }
 
+// TestSlabArena_FastPathLimit runs the test slab arena_fast path limit operation.
 func TestSlabArena_FastPathLimit(t *testing.T) {
 	// SlabArena with 1MB slabs
 	arena := NewSlabArena(1024 * 1024)
@@ -318,6 +333,7 @@ func TestSlabArena_FastPathLimit(t *testing.T) {
 	}
 }
 
+// TestArenaFastPathDimensions runs the test arena fast path dimensions operation.
 func TestArenaFastPathDimensions(t *testing.T) {
 	// SlabArena with 10MB slabs to hold all allocations
 	arena := NewSlabArena(10 * 1024 * 1024)
@@ -377,6 +393,7 @@ func TestArenaFastPathDimensions(t *testing.T) {
 	assert.Equal(t, initialSlowPath, finalSlowPath, "metrics.ArenaSlowPathTotal should not have incremented (slow path should be bypassed)")
 }
 
+// TestSlabArena_MultiSlab_DirectParentResolution runs the test slab arena_multi slab_direct parent resolution operation.
 func TestSlabArena_MultiSlab_DirectParentResolution(t *testing.T) {
 	// Arena with 1024-byte slabs (minimum slabCap enforced by NewSlabArena)
 	slabCap := 1024

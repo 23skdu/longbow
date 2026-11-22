@@ -557,6 +557,7 @@ func (idx *IVFHNSWCompositeIndex) ApplyDelta(d *types.DeltaSync) error {
 	return nil
 }
 
+// SetDataProvider sets the data provider.
 func (idx *IVFHNSWCompositeIndex) SetDataProvider(p types.IndexDataProvider) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()

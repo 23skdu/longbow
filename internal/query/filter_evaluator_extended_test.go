@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFilterEvaluator_VariousTypes runs the test filter evaluator_various types operation.
 func TestFilterEvaluator_VariousTypes(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(

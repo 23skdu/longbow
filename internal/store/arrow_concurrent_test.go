@@ -47,6 +47,7 @@ func TestConcurrentSearch(t *testing.T) {
 	wg.Wait()
 }
 
+// TestConcurrentSearchAndInsert runs the test concurrent search and insert operation.
 func TestConcurrentSearchAndInsert(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

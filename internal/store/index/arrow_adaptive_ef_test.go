@@ -6,6 +6,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// TestGetAdaptiveEf runs the test get adaptive ef operation.
 func TestGetAdaptiveEf(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -121,6 +122,7 @@ func TestGetAdaptiveEf(t *testing.T) {
 	}
 }
 
+// TestAdaptiveEfLinearRamp runs the test adaptive ef linear ramp operation.
 func TestAdaptiveEfLinearRamp(t *testing.T) {
 	config := types.ArrowHNSWConfig{
 		EfConstruction:      400,
@@ -152,6 +154,7 @@ func TestAdaptiveEfLinearRamp(t *testing.T) {
 	}
 }
 
+// TestAdaptiveEfMinimumBounds runs the test adaptive ef minimum bounds operation.
 func TestAdaptiveEfMinimumBounds(t *testing.T) {
 	// Test that minimum ef is at least 50 even if calculated value is lower
 	config := types.ArrowHNSWConfig{
@@ -174,6 +177,7 @@ func TestAdaptiveEfMinimumBounds(t *testing.T) {
 	}
 }
 
+// TestSetEfConstruction runs the test set ef construction operation.
 func TestSetEfConstruction(t *testing.T) {
 	config := types.ArrowHNSWConfig{
 		EfConstruction: 400,

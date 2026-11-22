@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowIOUringBackendCreation runs the test arrow io uring backend creation operation.
 func TestArrowIOUringBackendCreation(t *testing.T) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
@@ -27,6 +28,7 @@ func TestArrowIOUringBackendCreation(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestArrowIOUringBackendWrite runs the test arrow io uring backend write operation.
 func TestArrowIOUringBackendWrite(t *testing.T) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
@@ -55,6 +57,7 @@ func TestArrowIOUringBackendWrite(t *testing.T) {
 	assert.Equal(t, data, content)
 }
 
+// TestArrowIOUringBackendMultipleWrites runs the test arrow io uring backend multiple writes operation.
 func TestArrowIOUringBackendMultipleWrites(t *testing.T) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
@@ -92,6 +95,7 @@ func TestArrowIOUringBackendMultipleWrites(t *testing.T) {
 	assert.Equal(t, expected, content)
 }
 
+// TestArrowIOUringBackendLargeWrite runs the test arrow io uring backend large write operation.
 func TestArrowIOUringBackendLargeWrite(t *testing.T) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
@@ -124,6 +128,7 @@ func TestArrowIOUringBackendLargeWrite(t *testing.T) {
 	assert.Equal(t, data, content)
 }
 
+// TestArrowIOUringBackendName runs the test arrow io uring backend name operation.
 func TestArrowIOUringBackendName(t *testing.T) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
@@ -140,6 +145,7 @@ func TestArrowIOUringBackendName(t *testing.T) {
 	assert.Equal(t, tmpfile.Name(), backend.Name())
 }
 
+// TestArrowIOUringBackendFile runs the test arrow io uring backend file operation.
 func TestArrowIOUringBackendFile(t *testing.T) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
@@ -156,6 +162,7 @@ func TestArrowIOUringBackendFile(t *testing.T) {
 	assert.NotNil(t, backend.File())
 }
 
+// TestArrowIOUringBackendConcurrency runs the test arrow io uring backend concurrency operation.
 func TestArrowIOUringBackendConcurrency(t *testing.T) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
@@ -191,6 +198,7 @@ func TestArrowIOUringBackendConcurrency(t *testing.T) {
 
 // Benchmarks
 
+// BenchmarkArrowIOUringBackendWrite runs the benchmark arrow io uring backend write operation.
 func BenchmarkArrowIOUringBackendWrite(b *testing.B) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "iouring-bench-")
@@ -219,6 +227,7 @@ func BenchmarkArrowIOUringBackendWrite(b *testing.B) {
 	_ = backend.Sync()
 }
 
+// BenchmarkArrowIOUringBackendWriteParallel runs the benchmark arrow io uring backend write parallel operation.
 func BenchmarkArrowIOUringBackendWriteParallel(b *testing.B) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "iouring-bench-")
@@ -249,6 +258,7 @@ func BenchmarkArrowIOUringBackendWriteParallel(b *testing.B) {
 	_ = backend.Sync()
 }
 
+// BenchmarkArrowIOUringBackendSync runs the benchmark arrow io uring backend sync operation.
 func BenchmarkArrowIOUringBackendSync(b *testing.B) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "iouring-bench-")
@@ -277,6 +287,7 @@ func BenchmarkArrowIOUringBackendSync(b *testing.B) {
 
 // Comparison with FSBackend
 
+// BenchmarkFSBackendWrite runs the benchmark fs backend write operation.
 func BenchmarkFSBackendWrite(b *testing.B) {
 	// Create temp file
 	tmpfile, err := os.CreateTemp("", "fs-bench-")

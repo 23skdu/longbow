@@ -56,6 +56,7 @@ type CPUIndex struct {
 	graphWeights   []float32
 }
 
+// NewCPUIndex constructs a new CPUIndex.
 func NewCPUIndex(cfg GPUConfig) (*CPUIndex, error) {
 	idx := &CPUIndex{
 		vectors:   make(map[int64][]float32),
@@ -71,6 +72,7 @@ func NewCPUIndex(cfg GPUConfig) (*CPUIndex, error) {
 	return idx, nil
 }
 
+// Add runs the add operation.
 func (i *CPUIndex) Add(ids []int64, vectors []float32) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -113,6 +115,7 @@ func (i *CPUIndex) Add(ids []int64, vectors []float32) error {
 	return nil
 }
 
+// Search runs the search operation.
 func (i *CPUIndex) Search(vector []float32, k int) (ids []int64, distances []float32, err error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -163,19 +166,23 @@ func euclideanDistance(a, b []float32) float32 {
 	return sum
 }
 
+// Close runs the close operation.
 func (i *CPUIndex) Close() error {
 	i.vectors = nil
 	return nil
 }
 
+// Backend runs the backend operation.
 func (i *CPUIndex) Backend() GPUBackend {
 	return BackendCPU
 }
 
+// DeviceID runs the device id operation.
 func (i *CPUIndex) DeviceID() int32 {
 	return i.deviceID
 }
 
+// GetDeviceInfo returns the device info.
 func (i *CPUIndex) GetDeviceInfo() (*GPUInfo, error) {
 	return &GPUInfo{
 		Backend:  BackendCPU,
@@ -184,6 +191,7 @@ func (i *CPUIndex) GetDeviceInfo() (*GPUInfo, error) {
 	}, nil
 }
 
+// GetMemoryInfo returns the memory info.
 func (i *CPUIndex) GetMemoryInfo() (total, free, used int64, err error) {
 	var totalMem int64
 	for _, vec := range i.vectors {
@@ -192,10 +200,12 @@ func (i *CPUIndex) GetMemoryInfo() (total, free, used int64, err error) {
 	return totalMem, 0, totalMem, nil
 }
 
+// GetUtilization returns the utilization.
 func (i *CPUIndex) GetUtilization() (float32, error) {
 	return 0, nil
 }
 
+// SearchBatch runs the search batch operation.
 func (i *CPUIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	if len(vectors) == 0 {
 		return nil, nil, nil
@@ -216,6 +226,7 @@ func (i *CPUIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float
 	return results, distances, nil
 }
 
+// AddPQ runs the add pq operation.
 func (i *CPUIndex) AddPQ(ids []int64, codes []byte, m int) error {
 	if len(ids) == 0 {
 		return nil
@@ -227,6 +238,7 @@ func (i *CPUIndex) AddPQ(ids []int64, codes []byte, m int) error {
 	return nil
 }
 
+// SearchPQ runs the search pq operation.
 func (i *CPUIndex) SearchPQ(lookupTable []float32, m int, k int) (ids []int64, distances []float32, err error) {
 	if len(i.pqCodes) == 0 {
 		return []int64{}, []float32{}, nil
@@ -283,6 +295,7 @@ func (i *CPUIndex) SearchPQ(lookupTable []float32, m int, k int) (ids []int64, d
 	return ids, distances, nil
 }
 
+// SearchInt8 runs the search int8 operation.
 func (i *CPUIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
 	f32 := make([]float32, len(vector))
 	for idx, v := range vector {
@@ -291,6 +304,7 @@ func (i *CPUIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) 
 	return i.Search(f32, k)
 }
 
+// SearchUint8 runs the search uint8 operation.
 func (i *CPUIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
 	f32 := make([]float32, len(vector))
 	for idx, v := range vector {
@@ -299,6 +313,7 @@ func (i *CPUIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error
 	return i.Search(f32, k)
 }
 
+// SearchInt16 runs the search int16 operation.
 func (i *CPUIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
 	f32 := make([]float32, len(vector))
 	for idx, v := range vector {
@@ -307,6 +322,7 @@ func (i *CPUIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error
 	return i.Search(f32, k)
 }
 
+// SearchUint16 runs the search uint16 operation.
 func (i *CPUIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
 	f32 := make([]float32, len(vector))
 	for idx, v := range vector {
@@ -315,6 +331,7 @@ func (i *CPUIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, err
 	return i.Search(f32, k)
 }
 
+// SearchFloat16 runs the search float16 operation.
 func (i *CPUIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	// Convert float16 (uint16) to float32
 	f32 := make([]float32, len(vector))
@@ -324,6 +341,7 @@ func (i *CPUIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, er
 	return i.Search(f32, k)
 }
 
+// SearchComplex64 runs the search complex64 operation.
 func (i *CPUIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
 	// complex64 is 2 x float32, stored as uint16 pairs (for GPU compatibility)
 	f32 := make([]float32, len(vector))
@@ -333,11 +351,13 @@ func (i *CPUIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, 
 	return i.Search(f32, k)
 }
 
+// SearchComplex128 runs the search complex128 operation.
 func (i *CPUIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
 	// complex128 is 2 x float64, but stored as float32 pairs in our format
 	return i.Search(vector, k)
 }
 
+// TrainPQ runs the train pq operation.
 func (i *CPUIndex) TrainPQ(vectors []float32, m int, k int) error {
 	encoder, err := pq.NewPQEncoder(i.dimension, m, k)
 	if err != nil {
@@ -355,6 +375,7 @@ func (i *CPUIndex) TrainPQ(vectors []float32, m int, k int) error {
 	return nil
 }
 
+// EncodePQ runs the encode pq operation.
 func (i *CPUIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	if i.pqEncoder == nil {
 		return nil, fmt.Errorf("PQ encoder not trained")
@@ -372,6 +393,7 @@ func (i *CPUIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	return codes, nil
 }
 
+// AddTurboQuant runs the add turbo quant operation.
 func (i *CPUIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
 	if len(ids) == 0 {
 		return nil
@@ -383,6 +405,7 @@ func (i *CPUIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) e
 	return nil
 }
 
+// SearchTurboQuant runs the search turbo quant operation.
 func (i *CPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -428,6 +451,7 @@ func (i *CPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) (
 	return ids, distances, nil
 }
 
+// AssignToClusters runs the assign to clusters operation.
 func (i *CPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
 	if len(centroids) == 0 || len(vectors) == 0 {
 		return nil, nil
@@ -457,6 +481,7 @@ func (i *CPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]u
 	return assignments, nil
 }
 
+// UpdateGraph runs the update graph operation.
 func (i *CPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -475,6 +500,7 @@ func (i *CPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []f
 	return nil
 }
 
+// GraphExpand runs the graph expand operation.
 func (i *CPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -525,6 +551,7 @@ func (i *CPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint
 	return outIDs, outScores, nil
 }
 
+// SearchBatchDistances runs the search batch distances operation.
 func (i *CPUIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -541,6 +568,7 @@ func (i *CPUIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) 
 	return distances, nil
 }
 
+// HaversineSearch runs the haversine search operation.
 func (i *CPUIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	count := len(points) / 2
 	results := make([]float32, count)
@@ -566,6 +594,7 @@ func (i *CPUIndex) HaversineSearch(centerLat, centerLon float32, points []float3
 	return results, nil
 }
 
+// NormBatch runs the norm batch operation.
 func (i *CPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	count := len(vectors) / dims
 	results := make([]float32, count)
@@ -582,6 +611,7 @@ func (i *CPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	return results, nil
 }
 
+// Clear runs the clear operation.
 func (i *CPUIndex) Clear() error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -591,14 +621,17 @@ func (i *CPUIndex) Clear() error {
 	return nil
 }
 
+// Sync runs the sync operation.
 func (i *CPUIndex) Sync() error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (i *CPUIndex) Reset() error {
 	return i.Clear()
 }
 
+// PruneNeighbors runs the prune neighbors operation.
 func (i *CPUIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -631,6 +664,7 @@ func (i *CPUIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float3
 	return selectedIds, nil
 }
 
+// SearchGreedy runs the search greedy operation.
 func (i *CPUIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()

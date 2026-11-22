@@ -39,9 +39,12 @@ import (
 type MediaModality string
 
 const (
+	// ModalityImage is a modality image constant.
 	ModalityImage MediaModality = "image"
+	// ModalityAudio is a modality audio constant.
 	ModalityAudio MediaModality = "audio"
-	ModalityText  MediaModality = "text"
+	// ModalityText is a modality text constant.
+	ModalityText MediaModality = "text"
 )
 
 // MultiModalItem represents one multi-modal record for embedding and Arrow storage.

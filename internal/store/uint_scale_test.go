@@ -80,6 +80,7 @@ func buildUintScaleIndex(tb testing.TB, n int) (*ArrowHNSW, []uint16) {
 	return idx, q
 }
 
+// TestUintDispatchScalability runs the test uint dispatch scalability operation.
 func TestUintDispatchScalability(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping uint scalability test in short mode")

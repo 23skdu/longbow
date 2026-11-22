@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	// Latency metrics
+	// IoUringSubmitLatency metrics
 	IoUringSubmitLatency = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_iouring_submit_latency_seconds",
@@ -18,6 +18,7 @@ var (
 		[]string{"operation"}, // nop, read, write, fsync, vectored
 	)
 
+	// IoUringCompleteLatency is a io uring complete latency value.
 	IoUringCompleteLatency = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_iouring_complete_latency_seconds",
@@ -27,7 +28,7 @@ var (
 		[]string{"operation"},
 	)
 
-	// Queue depth metrics
+	// IoUringSQDepth depth metrics
 	IoUringSQDepth = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_iouring_sq_depth",
@@ -35,6 +36,7 @@ var (
 		},
 	)
 
+	// IoUringCQDepth is a io uring cq depth value.
 	IoUringCQDepth = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_iouring_cq_depth",
@@ -42,6 +44,7 @@ var (
 		},
 	)
 
+	// IoUringSQCapacity is a io uring sq capacity value.
 	IoUringSQCapacity = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_iouring_sq_capacity",
@@ -49,6 +52,7 @@ var (
 		},
 	)
 
+	// IoUringCQCapacity is a io uring cq capacity value.
 	IoUringCQCapacity = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_iouring_cq_capacity",
@@ -56,7 +60,7 @@ var (
 		},
 	)
 
-	// Operation counters
+	// IoUringOpsSubmitted counters
 	IoUringOpsSubmitted = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_iouring_ops_submitted_total",
@@ -65,6 +69,7 @@ var (
 		[]string{"operation"}, // read, write, fsync, vectored, nop
 	)
 
+	// IoUringOpsCompleted is a io uring ops completed value.
 	IoUringOpsCompleted = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_iouring_ops_completed_total",
@@ -73,6 +78,7 @@ var (
 		[]string{"operation", "status"}, // status: success, error
 	)
 
+	// IoUringErrors is a io uring errors value.
 	IoUringErrors = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_iouring_errors_total",
@@ -81,7 +87,7 @@ var (
 		[]string{"type"}, // submit_failed, complete_failed, sq_full, cq_overflow
 	)
 
-	// Throughput metrics
+	// IoUringBytesRead metrics
 	IoUringBytesRead = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_iouring_bytes_read_total",
@@ -89,6 +95,7 @@ var (
 		},
 	)
 
+	// IoUringBytesWritten is a io uring bytes written value.
 	IoUringBytesWritten = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_iouring_bytes_written_total",
@@ -96,7 +103,7 @@ var (
 		},
 	)
 
-	// Buffer pool metrics
+	// IoUringBufferPoolTotal pool metrics
 	IoUringBufferPoolTotal = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_iouring_buffer_pool_total",
@@ -104,6 +111,7 @@ var (
 		},
 	)
 
+	// IoUringBufferPoolAvailable is a io uring buffer pool available value.
 	IoUringBufferPoolAvailable = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_iouring_buffer_pool_available",
@@ -111,6 +119,7 @@ var (
 		},
 	)
 
+	// IoUringBufferPoolAllocated is a io uring buffer pool allocated value.
 	IoUringBufferPoolAllocated = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_iouring_buffer_pool_allocated",
@@ -118,6 +127,7 @@ var (
 		},
 	)
 
+	// IoUringBufferPoolHits is a io uring buffer pool hits value.
 	IoUringBufferPoolHits = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_iouring_buffer_pool_hits_total",
@@ -125,6 +135,7 @@ var (
 		},
 	)
 
+	// IoUringBufferPoolMisses is a io uring buffer pool misses value.
 	IoUringBufferPoolMisses = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_iouring_buffer_pool_misses_total",
@@ -132,7 +143,7 @@ var (
 		},
 	)
 
-	// Ring state metrics
+	// IoUringRingActive state metrics
 	IoUringRingActive = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_iouring_ring_active",
@@ -140,7 +151,7 @@ var (
 		},
 	)
 
-	// Vectored I/O metrics
+	// IoUringVectoredChunks I/O metrics
 	IoUringVectoredChunks = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_iouring_vectored_chunks",
@@ -149,7 +160,7 @@ var (
 		},
 	)
 
-	// Arrow-specific metrics
+	// IoUringArrowRecordsWritten metrics
 	IoUringArrowRecordsWritten = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_iouring_arrow_records_written_total",
@@ -157,6 +168,7 @@ var (
 		},
 	)
 
+	// IoUringArrowRecordsRead is a io uring arrow records read value.
 	IoUringArrowRecordsRead = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_iouring_arrow_records_read_total",
@@ -164,6 +176,7 @@ var (
 		},
 	)
 
+	// IoUringArrowSerializationLatency is a io uring arrow serialization latency value.
 	IoUringArrowSerializationLatency = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_iouring_arrow_serialization_latency_seconds",
@@ -224,12 +237,12 @@ func (m *BufferPoolMetrics) Update() {
 	IoUringBufferPoolAllocated.Set(float64(allocated))
 }
 
-// RecordHit records a buffer pool hit
+// RecordBufferPoolHit records a buffer pool hit
 func RecordBufferPoolHit() {
 	IoUringBufferPoolHits.Inc()
 }
 
-// RecordMiss records a buffer pool miss
+// RecordBufferPoolMiss records a buffer pool miss
 func RecordBufferPoolMiss() {
 	IoUringBufferPoolMisses.Inc()
 }

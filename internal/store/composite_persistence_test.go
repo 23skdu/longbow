@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCompositeIndexPersistence runs the test composite index persistence operation.
 func TestCompositeIndexPersistence(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

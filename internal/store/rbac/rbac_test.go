@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestRBACManager_Lifecycle runs the test rbac manager_lifecycle operation.
 func TestRBACManager_Lifecycle(t *testing.T) {
 	manager := NewRBACManager()
 
@@ -75,6 +76,7 @@ func TestRBACManager_Lifecycle(t *testing.T) {
 	require.False(t, ok)
 }
 
+// TestRBACManager_Expiration runs the test rbac manager_expiration operation.
 func TestRBACManager_Expiration(t *testing.T) {
 	manager := NewRBACManager()
 	apiKey, rawKey, _ := manager.CreateAPIKeyWithOptions(APIKeyOptions{
@@ -94,6 +96,7 @@ func TestRBACManager_Expiration(t *testing.T) {
 	require.False(t, ok)
 }
 
+// TestRole_HasPermission runs the test role_has permission operation.
 func TestRole_HasPermission(t *testing.T) {
 	require.True(t, RoleAdmin.HasPermission(PermAdmin))
 	require.True(t, RoleAdmin.HasPermission(PermRead))
@@ -102,6 +105,7 @@ func TestRole_HasPermission(t *testing.T) {
 	require.True(t, RoleIngest.HasPermission(PermRead))
 }
 
+// TestNamespacePolicyRejectsWildcardPermissions runs the test namespace policy rejects wildcard permissions operation.
 func TestNamespacePolicyRejectsWildcardPermissions(t *testing.T) {
 	policy := NamespacePolicy{
 		Namespace:         "team-a",
@@ -110,6 +114,7 @@ func TestNamespacePolicyRejectsWildcardPermissions(t *testing.T) {
 	require.Error(t, policy.Validate())
 }
 
+// TestRBACManager_ValidateNamespaceKeyIDs runs the test rbac manager_validate namespace key i ds operation.
 func TestRBACManager_ValidateNamespaceKeyIDs(t *testing.T) {
 	manager := NewRBACManager()
 	key, _, err := manager.CreateAPIKeyWithOptions(APIKeyOptions{
@@ -130,6 +135,7 @@ func TestRBACManager_ValidateNamespaceKeyIDs(t *testing.T) {
 	require.ErrorContains(t, manager.ValidateNamespaceKeyIDs(valid), "unknown reader_key_ids")
 }
 
+// TestRBACManager_RegisterAPIKeyWithSecret runs the test rbac manager_register api key with secret operation.
 func TestRBACManager_RegisterAPIKeyWithSecret(t *testing.T) {
 	mgr := NewRBACManager()
 	const secret = "bootstrap-admin-secret-0123456789"

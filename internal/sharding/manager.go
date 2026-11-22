@@ -253,6 +253,7 @@ func (rm *RingManager) removeIndexBoundaries(member *mesh.Member) {
 	}
 }
 
+// RouteGeo runs the route geo operation.
 func (rm *RingManager) RouteGeo(dataset string, lat, lon float64, radiusKm float64) []string {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
@@ -268,6 +269,7 @@ func (rm *RingManager) RouteGeo(dataset string, lat, lon float64, radiusKm float
 	return router.Route([]float32{float32(lat), float32(lon)}, 1000)
 }
 
+// RouteTemporal runs the route temporal operation.
 func (rm *RingManager) RouteTemporal(dataset string, startTime, endTime int64) []string {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()

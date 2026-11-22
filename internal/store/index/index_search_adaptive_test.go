@@ -92,6 +92,7 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 	}
 }
 
+// TestAdaptiveHNSW_AdjustsM runs the test adaptive hnsw_adjusts m operation.
 func TestAdaptiveHNSW_AdjustsM(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

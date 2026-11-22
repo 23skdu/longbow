@@ -206,6 +206,7 @@ func (idx *MetalIndexOptimized) startSyncTicker(cfg types.GPUConfig) {
 	}()
 }
 
+// Flush runs the flush operation.
 func (idx *MetalIndexOptimized) Flush() error {
 	idx.batchMu.Lock()
 	defer idx.batchMu.Unlock()
@@ -304,6 +305,7 @@ func (idx *MetalIndexOptimized) Flush() error {
 	return nil
 }
 
+// Add runs the add operation.
 func (idx *MetalIndexOptimized) Add(ids []int64, vectors []float32) error {
 	idx.mu.RLock()
 	closed := idx.closed
@@ -462,6 +464,7 @@ func (idx *MetalIndexOptimized) Search(vector []float32, k int) ([]int64, []floa
 	return ids, distances, nil
 }
 
+// SearchBatch runs the search batch operation.
 func (idx *MetalIndexOptimized) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	if len(vectors) == 0 {
 		return nil, nil, nil

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestZeroAllocTicketParser_AdvancedSQL runs the test zero alloc ticket parser_advanced sql operation.
 func TestZeroAllocTicketParser_AdvancedSQL(t *testing.T) {
 	nopLogger := zerolog.Nop()
 	parser := NewZeroAllocTicketParser(&nopLogger)

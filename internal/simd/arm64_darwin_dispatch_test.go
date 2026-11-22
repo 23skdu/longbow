@@ -11,6 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// TestARM64DarwinSIMDDispatch_AllDTypesAndDims runs the test arm64 darwin simd dispatch_all d types and dims operation.
 func TestARM64DarwinSIMDDispatch_AllDTypesAndDims(t *testing.T) {
 	if impl := GetImplementation(); impl != "neon" && impl != "sve2" {
 		t.Fatalf("expected ARM64 Darwin SIMD implementation neon or sve2, got %q", impl)

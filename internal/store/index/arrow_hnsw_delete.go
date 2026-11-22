@@ -7,6 +7,7 @@ import (
 	"github.com/RoaringBitmap/roaring/v2"
 )
 
+// Delete runs the delete operation.
 func (h *ArrowHNSW) Delete(id uint32) error {
 	h.deletedMu.Lock()
 	defer h.deletedMu.Unlock()
@@ -18,6 +19,7 @@ func (h *ArrowHNSW) Delete(id uint32) error {
 	return nil
 }
 
+// DeleteBatch runs the delete batch operation.
 func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 	for _, id := range ids {
 		if err := h.Delete(id); err != nil {
@@ -27,6 +29,7 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 	return nil
 }
 
+// CleanupTombstones runs the cleanup tombstones operation.
 func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
 	h.dataset.RLockData()
 

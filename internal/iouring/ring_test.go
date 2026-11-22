@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestNewRing runs the test new ring operation.
 func TestNewRing(t *testing.T) {
 	ring, err := NewRing(64, 0)
 	require.NoError(t, err)
@@ -23,6 +24,7 @@ func TestNewRing(t *testing.T) {
 	assert.True(t, ring.cqEntriesCached > 0)
 }
 
+// TestNewRingInvalidEntries runs the test new ring invalid entries operation.
 func TestNewRingInvalidEntries(t *testing.T) {
 	// Zero entries
 	ring, err := NewRing(0, 0)
@@ -35,6 +37,7 @@ func TestNewRingInvalidEntries(t *testing.T) {
 	assert.Nil(t, ring)
 }
 
+// TestRingClose runs the test ring close operation.
 func TestRingClose(t *testing.T) {
 	ring, err := NewRing(64, 0)
 	require.NoError(t, err)
@@ -44,6 +47,7 @@ func TestRingClose(t *testing.T) {
 	assert.Equal(t, int64(-1), ring.fd.Load())
 }
 
+// TestRingCloseMultiple runs the test ring close multiple operation.
 func TestRingCloseMultiple(t *testing.T) {
 	ring, err := NewRing(64, 0)
 	require.NoError(t, err)
@@ -56,6 +60,7 @@ func TestRingCloseMultiple(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestMmapRings runs the test mmap rings operation.
 func TestMmapRings(t *testing.T) {
 	ring, err := NewRing(64, 0)
 	require.NoError(t, err)
@@ -84,6 +89,7 @@ func TestMmapRings(t *testing.T) {
 	assert.Equal(t, int(ring.params.SqEntries), len(ring.sqes))
 }
 
+// TestSubmitAndComplete runs the test submit and complete operation.
 func TestSubmitAndComplete(t *testing.T) {
 	ring, err := NewRing(64, 0)
 	require.NoError(t, err)
@@ -133,6 +139,7 @@ func TestSubmitAndComplete(t *testing.T) {
 	assert.Equal(t, data, content)
 }
 
+// TestSubmitRead runs the test submit read operation.
 func TestSubmitRead(t *testing.T) {
 	ring, err := NewRing(64, 0)
 	require.NoError(t, err)
@@ -172,6 +179,7 @@ func TestSubmitRead(t *testing.T) {
 	assert.Equal(t, writeData, readBuf)
 }
 
+// TestSubmitWrite runs the test submit write operation.
 func TestSubmitWrite(t *testing.T) {
 	ring, err := NewRing(64, 0)
 	require.NoError(t, err)
@@ -202,6 +210,7 @@ func TestSubmitWrite(t *testing.T) {
 	assert.Equal(t, data, content)
 }
 
+// TestSubmitFsync runs the test submit fsync operation.
 func TestSubmitFsync(t *testing.T) {
 	ring, err := NewRing(64, 0)
 	require.NoError(t, err)
@@ -231,6 +240,7 @@ func TestSubmitFsync(t *testing.T) {
 	assert.Equal(t, int32(0), cqe.Res) // fsync returns 0 on success
 }
 
+// TestSqSpaceLeft runs the test sq space left operation.
 func TestSqSpaceLeft(t *testing.T) {
 	ring, err := NewRing(4, 0) // Small ring for testing
 	require.NoError(t, err)
@@ -252,6 +262,7 @@ func TestSqSpaceLeft(t *testing.T) {
 	assert.Equal(t, uint32(1), ring.SqReady())
 }
 
+// TestSubmitFullQueue runs the test submit full queue operation.
 func TestSubmitFullQueue(t *testing.T) {
 	ring, err := NewRing(2, 0) // Very small ring
 	require.NoError(t, err)
@@ -276,6 +287,7 @@ func TestSubmitFullQueue(t *testing.T) {
 	assert.Equal(t, ErrRingFull, err)
 }
 
+// TestCqReady runs the test cq ready operation.
 func TestCqReady(t *testing.T) {
 	ring, err := NewRing(64, 0)
 	require.NoError(t, err)
@@ -310,6 +322,7 @@ func TestCqReady(t *testing.T) {
 	assert.Equal(t, uint32(1), ring.CqReady())
 }
 
+// TestNextPowerOf2 runs the test next power of2 operation.
 func TestNextPowerOf2(t *testing.T) {
 	tests := []struct {
 		input    uint32
@@ -336,6 +349,7 @@ func TestNextPowerOf2(t *testing.T) {
 	}
 }
 
+// TestRingFinalizer runs the test ring finalizer operation.
 func TestRingFinalizer(t *testing.T) {
 	// This test ensures the finalizer doesn't panic
 	ring, err := NewRing(64, 0)
@@ -348,6 +362,7 @@ func TestRingFinalizer(t *testing.T) {
 
 // Benchmarks
 
+// BenchmarkSubmit runs the benchmark submit operation.
 func BenchmarkSubmit(b *testing.B) {
 	ring, err := NewRing(4096, 0)
 	require.NoError(b, err)
@@ -372,6 +387,7 @@ func BenchmarkSubmit(b *testing.B) {
 	}
 }
 
+// BenchmarkSubmitAndFlush runs the benchmark submit and flush operation.
 func BenchmarkSubmitAndFlush(b *testing.B) {
 	ring, err := NewRing(4096, 0)
 	require.NoError(b, err)

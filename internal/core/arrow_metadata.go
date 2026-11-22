@@ -14,10 +14,12 @@ import (
 // [values: binary data]
 // This allows O(log N) or O(N) lookup without full decoding.
 
+// ArrowMetadata represents a arrow metadata value.
 type ArrowMetadata struct {
 	data []byte
 }
 
+// NewArrowMetadata constructs a new ArrowMetadata.
 func NewArrowMetadata(data []byte) ArrowMetadata {
 	return ArrowMetadata{data: data}
 }

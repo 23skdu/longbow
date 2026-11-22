@@ -50,6 +50,7 @@ type numeric interface {
 		~float32 | ~float64
 }
 
+// TestSimdParity_FloatingPoint runs the test simd parity_floating point operation.
 func TestSimdParity_FloatingPoint(t *testing.T) {
 	rand.Seed(42) //nolint:staticcheck
 	dims := []int{1, 3, 4, 7, 8, 15, 16, 31, 32, 128, 512}
@@ -204,6 +205,7 @@ func TestSimdParity_FloatingPoint(t *testing.T) {
 	})
 }
 
+// TestSimdParity_Integer runs the test simd parity_integer operation.
 func TestSimdParity_Integer(t *testing.T) {
 	rand.Seed(42) //nolint:staticcheck
 	dims := []int{4, 8, 16, 31, 128}

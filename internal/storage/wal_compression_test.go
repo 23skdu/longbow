@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestWALBatcher_Compression_Direct runs the test wal batcher_compression_direct operation.
 func TestWALBatcher_Compression_Direct(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := &WALBatcherConfig{

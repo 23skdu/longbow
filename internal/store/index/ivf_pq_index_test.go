@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestIVFPQIndex_NewAndConfig runs the test ivfpq index_new and config operation.
 func TestIVFPQIndex_NewAndConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -63,6 +64,7 @@ func TestIVFPQIndex_NewAndConfig(t *testing.T) {
 	}
 }
 
+// TestIVFPQIndex_TrainAndAdd runs the test ivfpq index_train and add operation.
 func TestIVFPQIndex_TrainAndAdd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -109,6 +111,7 @@ func TestIVFPQIndex_TrainAndAdd(t *testing.T) {
 	assert.Equal(t, uint32(dim), idx.GetDimension())
 }
 
+// TestIVFPQIndex_Search runs the test ivfpq index_search operation.
 func TestIVFPQIndex_Search(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -166,6 +169,7 @@ func TestIVFPQIndex_Search(t *testing.T) {
 		"Top result should have low distance to cluster 0 query")
 }
 
+// TestIVFPQIndex_SearchWithK runs the test ivfpq index_search with k operation.
 func TestIVFPQIndex_SearchWithK(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -208,6 +212,7 @@ func TestIVFPQIndex_SearchWithK(t *testing.T) {
 	}
 }
 
+// TestIVFPQIndex_MemoryUsage runs the test ivfpq index_memory usage operation.
 func TestIVFPQIndex_MemoryUsage(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -245,6 +250,7 @@ func TestIVFPQIndex_MemoryUsage(t *testing.T) {
 	assert.Less(t, memUsage, alsoExpected+int64(1024*1024), "memory should be reasonable")
 }
 
+// TestIVFPQIndex_EmptyIndexSearch runs the test ivfpq index_empty index search operation.
 func TestIVFPQIndex_EmptyIndexSearch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -269,6 +275,7 @@ func TestIVFPQIndex_EmptyIndexSearch(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestIVFPQIndex_DimensionMismatch runs the test ivfpq index_dimension mismatch operation.
 func TestIVFPQIndex_DimensionMismatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -300,6 +307,7 @@ func TestIVFPQIndex_DimensionMismatch(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestIVFPQIndex_SearchQueryInCluster runs the test ivfpq index_search query in cluster operation.
 func TestIVFPQIndex_SearchQueryInCluster(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -347,6 +355,7 @@ func TestIVFPQIndex_SearchQueryInCluster(t *testing.T) {
 		"Top result should be very close to query")
 }
 
+// TestIVFPQIndex_SearchWithFilter runs the test ivfpq index_search with filter operation.
 func TestIVFPQIndex_SearchWithFilter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -424,6 +433,7 @@ func TestIVFPQIndex_SearchWithFilter(t *testing.T) {
 	})
 }
 
+// BenchmarkIVFPQIndex_Search runs the benchmark ivfpq index_search operation.
 func BenchmarkIVFPQIndex_Search(b *testing.B) {
 	dim := 128
 	numVectors := 10000
@@ -465,6 +475,7 @@ func BenchmarkIVFPQIndex_Search(b *testing.B) {
 	}
 }
 
+// BenchmarkIVFPQIndex_MemoryReduction runs the benchmark ivfpq index_memory reduction operation.
 func BenchmarkIVFPQIndex_MemoryReduction(b *testing.B) {
 	dim := 128
 	numVectors := 10000
@@ -509,6 +520,7 @@ func BenchmarkIVFPQIndex_MemoryReduction(b *testing.B) {
 	b.Logf("Reduction (excluding full vectors): %.2fx", float64(originalMemory)/float64(pqCodeMemory))
 }
 
+// TestIVFPQIndex_Sharded runs the test ivfpq index_sharded operation.
 func TestIVFPQIndex_Sharded(t *testing.T) {
 	dim := 128
 	cfg := DefaultIVFPQConfig()

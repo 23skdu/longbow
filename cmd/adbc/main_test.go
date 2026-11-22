@@ -6,10 +6,12 @@ import (
 	"testing"
 )
 
+// TestMainSmoke runs the test main smoke operation.
 func TestMainSmoke(t *testing.T) {
 	main()
 }
 
+// TestIsSupportedADBCVersion runs the test is supported adbc version operation.
 func TestIsSupportedADBCVersion(t *testing.T) {
 	tests := []struct {
 		version  int

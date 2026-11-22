@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCUDAIndex_FilteredSearch runs the test cuda index_filtered search operation.
 func TestCUDAIndex_FilteredSearch(t *testing.T) {
 	dim := 128
 	count := 1000

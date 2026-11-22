@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestFeatureNormalizer runs the test feature normalizer operation.
 func TestFeatureNormalizer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -33,6 +34,7 @@ func TestFeatureNormalizer(t *testing.T) {
 	assert.InDelta(t, 0.5, normMid[0], 0.01)
 }
 
+// TestExtractFeatureVector_Extended runs the test extract feature vector_extended operation.
 func TestExtractFeatureVector_Extended(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -62,6 +64,7 @@ func TestExtractFeatureVector_Extended(t *testing.T) {
 	assert.InDelta(t, 4.0, vec[12], 0.01) // 1536 / 384 = 4.0
 }
 
+// TestEmbeddingModelDimRatio_Extended runs the test embedding model dim ratio_extended operation.
 func TestEmbeddingModelDimRatio_Extended(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

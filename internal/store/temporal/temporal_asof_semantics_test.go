@@ -36,7 +36,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The zero query vector is load-bearing: records are ranked by distance to the
+// TestSearchAsOfRanksByDistanceToOrigin zero query vector is load-bearing: records are ranked by distance to the
 // origin, so the smallest-norm visible record must come first.
 func TestSearchAsOfRanksByDistanceToOrigin(t *testing.T) {
 	if testing.Short() {
@@ -63,7 +63,7 @@ func TestSearchAsOfRanksByDistanceToOrigin(t *testing.T) {
 		"expected the smallest-norm record first")
 }
 
-// Records that did not exist yet must be invisible, which is the entire point of
+// TestSearchAsOfExcludesRecordsAddedAfterTheTimestamp that did not exist yet must be invisible, which is the entire point of
 // the timestamp argument.
 func TestSearchAsOfExcludesRecordsAddedAfterTheTimestamp(t *testing.T) {
 	if testing.Short() {
@@ -85,7 +85,7 @@ func TestSearchAsOfExcludesRecordsAddedAfterTheTimestamp(t *testing.T) {
 	assert.NotEmpty(t, results)
 }
 
-// k bounds the enumeration, so a larger k cannot return fewer records than a
+// TestSearchAsOfIsMonotonicInK bounds the enumeration, so a larger k cannot return fewer records than a
 // smaller one for the same timestamp.
 func TestSearchAsOfIsMonotonicInK(t *testing.T) {
 	if testing.Short() {
@@ -107,7 +107,7 @@ func TestSearchAsOfIsMonotonicInK(t *testing.T) {
 		"a larger k must not return fewer records")
 }
 
-// This is the property the roadmap caveat rests on: as-of search does not take a
+// TestAsOfRequestCarriesNoQueryVector is the property the roadmap caveat rests on: as-of search does not take a
 // query vector, so it cannot be measuring relevance the way every other mode does.
 // The reflection check is the real guard - if TemporalSearchRequest ever grows a
 // vector field, this fails and forces the semantics to be revisited rather than

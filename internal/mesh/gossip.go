@@ -15,12 +15,17 @@ import (
 )
 
 const (
+	// ProtocolPeriod is a protocol period constant.
 	ProtocolPeriod = 200 * time.Millisecond
-	AckTimeout     = 100 * time.Millisecond
-	IndirectK      = 3
-	MaxPacketSize  = 1400
+	// AckTimeout is a ack timeout constant.
+	AckTimeout = 100 * time.Millisecond
+	// IndirectK is a indirect k constant.
+	IndirectK = 3
+	// MaxPacketSize is a max packet size constant.
+	MaxPacketSize = 1400
 )
 
+// Gossip represents a gossip value.
 type Gossip struct {
 	Config GossipConfig
 
@@ -46,6 +51,7 @@ type updateItem struct {
 	SendCount int
 }
 
+// GossipConfig represents a gossip config value.
 type GossipConfig struct {
 	ID            string
 	Addr          string // Bind Addr
@@ -69,6 +75,7 @@ type EventDelegate interface {
 	NotifyUpdate(member *Member)
 }
 
+// NewGossip constructs a new Gossip.
 func NewGossip(cfg *GossipConfig) *Gossip {
 	if cfg.ProtocolPeriod == 0 {
 		cfg.ProtocolPeriod = ProtocolPeriod
@@ -90,6 +97,7 @@ func NewGossip(cfg *GossipConfig) *Gossip {
 	}
 }
 
+// Start runs the start operation.
 func (g *Gossip) Start() error {
 	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", g.Config.Port))
 	if err != nil {
@@ -152,6 +160,7 @@ func (g *Gossip) Start() error {
 	return nil
 }
 
+// Stop runs the stop operation.
 func (g *Gossip) Stop() {
 	g.stopOnce.Do(func() {
 		close(g.closeCh)
@@ -161,6 +170,7 @@ func (g *Gossip) Stop() {
 	})
 }
 
+// Join runs the join operation.
 func (g *Gossip) Join(peerAddr string) error {
 	// Bootstrap: Send a Ping to the known peer
 	// In a real implementation, we'd have a specific Join message to get full state sync.
@@ -851,6 +861,7 @@ func (g *Gossip) GetMemberByAddr(addr string) (*Member, bool) {
 	return nil, false
 }
 
+// GetDiscoveryStatus returns the discovery status.
 func (g *Gossip) GetDiscoveryStatus() (provider string, peers []string) {
 	if g.discoveryProvider == nil {
 		return "none", nil

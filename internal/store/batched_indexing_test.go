@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestBatchedIndexing runs the test batched indexing operation.
 func TestBatchedIndexing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

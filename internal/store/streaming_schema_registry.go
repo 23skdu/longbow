@@ -21,8 +21,11 @@ const ConfluentWireMagic byte = 0x00
 type StreamSourceType string
 
 const (
-	StreamSourceKafka  StreamSourceType = "kafka"
+	// StreamSourceKafka is a stream source kafka constant.
+	StreamSourceKafka StreamSourceType = "kafka"
+	// StreamSourcePulsar is a stream source pulsar constant.
 	StreamSourcePulsar StreamSourceType = "pulsar"
+	// StreamSourceMemory is a stream source memory constant.
 	StreamSourceMemory StreamSourceType = "memory"
 )
 
@@ -71,7 +74,7 @@ type DLQEntry struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// StreamConnectorConfig configures a bidirectional streaming ingestion + optional CDC export pipeline.
+// SchemaRegistryClient configures a bidirectional streaming ingestion + optional CDC export pipeline.
 type SchemaRegistryClient struct {
 	mu         sync.RWMutex
 	baseURL    string
@@ -233,7 +236,7 @@ func (r *SchemaRegistryClient) ResolveSchema(ctx context.Context, schemaID uint3
 	return resolved, true, nil
 }
 
-// ValidateEvent checks an event against the resolved schema rules.
+// ValidateStreamEvent checks an event against the resolved schema rules.
 func ValidateStreamEvent(schema RegisteredStreamSchema, ev *StreamVectorEvent) error {
 	if ev.ID == "" {
 		return errors.New("streaming event missing required field: id")

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestStore_IPCEmptyRecords runs the test store_ipc empty records operation.
 func TestStore_IPCEmptyRecords(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -44,6 +45,7 @@ func TestStore_IPCEmptyRecords(t *testing.T) {
 	assert.NoError(t, err, "Record with zero rows should be handled gracefully")
 }
 
+// TestStore_IPCReliability runs the test store_ipc reliability operation.
 func TestStore_IPCReliability(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

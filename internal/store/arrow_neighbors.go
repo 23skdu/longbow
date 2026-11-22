@@ -14,6 +14,7 @@ type ErrNeighborSelectionLengthMismatch struct {
 	IDsLen       int
 }
 
+// Error runs the error operation.
 func (e *ErrNeighborSelectionLengthMismatch) Error() string {
 	return fmt.Sprintf("neighbor selection length mismatch: dists=%d ids=%d", e.DistancesLen, e.IDsLen)
 }

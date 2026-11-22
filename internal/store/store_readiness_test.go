@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// TestCheckReadiness_ResourceExhausted runs the test check readiness_resource exhausted operation.
 func TestCheckReadiness_ResourceExhausted(t *testing.T) {
 	// Test the status translation logic for admission blocks
 	testCases := []struct {
@@ -81,6 +82,7 @@ func TestCheckReadiness_ResourceExhausted(t *testing.T) {
 	}
 }
 
+// FuzzCheckReadiness_StatusParsing runs the fuzz check readiness_status parsing operation.
 func FuzzCheckReadiness_StatusParsing(f *testing.F) {
 	f.Add("READY", "all good", false)
 	f.Add("RESOURCE_EXHAUSTED", "admission blocked: memory usage 127% exceeds limit 90%", true)

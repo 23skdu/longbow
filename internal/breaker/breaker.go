@@ -9,8 +9,11 @@ import (
 type State int
 
 const (
+	// StateClosed is a state closed constant.
 	StateClosed State = iota
+	// StateOpen is a state open constant.
 	StateOpen
+	// StateHalfOpen is a state half open constant.
 	StateHalfOpen
 )
 
@@ -229,10 +232,12 @@ func (cb *CircuitBreaker) Execute(req func() (any, error)) (any, error) {
 // ErrOpenState is returned when the CircuitBreaker is open
 var ErrOpenState = &Error{Msg: "circuit breaker is open"}
 
+// Error represents a error value.
 type Error struct {
 	Msg string
 }
 
+// Error runs the error operation.
 func (e *Error) Error() string {
 	return e.Msg
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestCosineDistanceFloat64 runs the test cosine distance float64 operation.
 func TestCosineDistanceFloat64(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -78,6 +79,7 @@ func TestCosineDistanceFloat64(t *testing.T) {
 	}
 }
 
+// TestCosineDistanceFloat64_LengthMismatch runs the test cosine distance float64_length mismatch operation.
 func TestCosineDistanceFloat64_LengthMismatch(t *testing.T) {
 	a := []float64{1.0, 2.0}
 	b := []float64{1.0, 2.0, 3.0}
@@ -87,6 +89,7 @@ func TestCosineDistanceFloat64_LengthMismatch(t *testing.T) {
 	}
 }
 
+// TestCosineDistanceFloat64_Empty runs the test cosine distance float64_empty operation.
 func TestCosineDistanceFloat64_Empty(t *testing.T) {
 	a := []float64{}
 	b := []float64{}

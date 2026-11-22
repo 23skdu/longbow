@@ -6,6 +6,7 @@ import (
 	io_prometheus_client "github.com/prometheus/client_model/go"
 )
 
+// TestMemoryObservabilityMetrics runs the test memory observability metrics operation.
 func TestMemoryObservabilityMetrics(t *testing.T) {
 	// Test SlabActiveArenas
 	SlabActiveArenas.WithLabelValues("1048576").Set(42)

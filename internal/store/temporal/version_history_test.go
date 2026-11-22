@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestVersionHistory_New runs the test version history_new operation.
 func TestVersionHistory_New(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -25,6 +26,7 @@ func TestVersionHistory_New(t *testing.T) {
 	assert.Equal(t, 10, vh.maxVersions)
 }
 
+// TestVersionHistory_Add runs the test version history_add operation.
 func TestVersionHistory_Add(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -40,6 +42,7 @@ func TestVersionHistory_Add(t *testing.T) {
 	assert.Equal(t, 1, history[0].Version)
 }
 
+// TestVersionHistory_GetLatestVersion runs the test version history_get latest version operation.
 func TestVersionHistory_GetLatestVersion(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -55,6 +58,7 @@ func TestVersionHistory_GetLatestVersion(t *testing.T) {
 	assert.Equal(t, 2, latest.Version)
 }
 
+// TestVersionHistory_GetVersionAt runs the test version history_get version at operation.
 func TestVersionHistory_GetVersionAt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -71,6 +75,7 @@ func TestVersionHistory_GetVersionAt(t *testing.T) {
 	assert.Equal(t, []float32{2.0}, version.Vector)
 }
 
+// TestVersionHistory_Prune runs the test version history_prune operation.
 func TestVersionHistory_Prune(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -89,6 +94,7 @@ func TestVersionHistory_Prune(t *testing.T) {
 	assert.Len(t, history, 1)
 }
 
+// TestVersionHistory_MaxVersions runs the test version history_max versions operation.
 func TestVersionHistory_MaxVersions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -109,6 +115,7 @@ func TestVersionHistory_MaxVersions(t *testing.T) {
 	assert.Equal(t, 5, history[2].Version)
 }
 
+// TestVersionHistory_GetVersionsAtBatch runs the test version history_get versions at batch operation.
 func TestVersionHistory_GetVersionsAtBatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -155,6 +162,7 @@ func newLegacyVersionHistory(maxVersions int) *legacyVersionHistory {
 	}
 }
 
+// Add runs the add operation.
 func (l *legacyVersionHistory) Add(id uint64, vector []float32, norm float32, timestamp int64, metadata []byte) {
 	existing := l.history[id]
 	newVersion := 1
@@ -178,6 +186,7 @@ func (l *legacyVersionHistory) Add(id uint64, vector []float32, norm float32, ti
 	}
 }
 
+// GetVersion returns the version.
 func (l *legacyVersionHistory) GetVersion(id uint64, version int) (*VersionedVector, error) {
 	versions, ok := l.history[id]
 	if !ok || len(versions) == 0 {
@@ -193,6 +202,7 @@ func (l *legacyVersionHistory) GetVersion(id uint64, version int) (*VersionedVec
 	return nil, fmt.Errorf("version %d not found for vector %d", version, id)
 }
 
+// GetVersionAt returns the version at.
 func (l *legacyVersionHistory) GetVersionAt(id uint64, timestamp int64) (*VersionedVector, error) {
 	versions, ok := l.history[id]
 	if !ok || len(versions) == 0 {
@@ -226,10 +236,12 @@ func legacyBatch(history map[uint64][]VersionedVector, ids []uint64, timestamp i
 	}
 }
 
+// GetVersionsAtBatch returns the versions at batch.
 func (l *legacyVersionHistory) GetVersionsAtBatch(ids []uint64, timestamp int64, out map[uint64]VersionedVector) {
 	legacyBatch(l.history, ids, timestamp, out)
 }
 
+// GetHistory returns the history.
 func (l *legacyVersionHistory) GetHistory(id uint64) []VersionedVector {
 	versions, ok := l.history[id]
 	if !ok {
@@ -241,6 +253,7 @@ func (l *legacyVersionHistory) GetHistory(id uint64) []VersionedVector {
 	return result
 }
 
+// GetLatestVersion returns the latest version.
 func (l *legacyVersionHistory) GetLatestVersion(id uint64) (*VersionedVector, error) {
 	versions, ok := l.history[id]
 	if !ok || len(versions) == 0 {
@@ -250,6 +263,7 @@ func (l *legacyVersionHistory) GetLatestVersion(id uint64) (*VersionedVector, er
 	return &versions[len(versions)-1], nil
 }
 
+// Prune runs the prune operation.
 func (l *legacyVersionHistory) Prune(ctx context.Context, beforeTimestamp int64) int {
 	pruned := 0
 	for id, versions := range l.history {
@@ -271,8 +285,10 @@ func (l *legacyVersionHistory) Prune(ctx context.Context, beforeTimestamp int64)
 	return pruned
 }
 
+// Size runs the size operation.
 func (l *legacyVersionHistory) Size() int { return len(l.history) }
 
+// TotalVersions runs the total versions operation.
 func (l *legacyVersionHistory) TotalVersions() int {
 	total := 0
 	for _, versions := range l.history {
@@ -336,6 +352,7 @@ func parityTimestamps(extra ...int64) []int64 {
 	return append(stamps, extra...)
 }
 
+// TestVersionHistory_ActiveAtTimestampIsUpperBound runs the test version history_active at timestamp is upper bound operation.
 func TestVersionHistory_ActiveAtTimestampIsUpperBound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -378,6 +395,7 @@ func TestVersionHistory_ActiveAtTimestampIsUpperBound(t *testing.T) {
 	assert.Equal(t, 2, out[7].Version)
 }
 
+// TestVersionHistory_DuplicateTimestampsTakeLastInserted runs the test version history_duplicate timestamps take last inserted operation.
 func TestVersionHistory_DuplicateTimestampsTakeLastInserted(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -401,6 +419,7 @@ func TestVersionHistory_DuplicateTimestampsTakeLastInserted(t *testing.T) {
 	requireBatchParity(t, vh, legacy, []uint64{1, 0, 1 << 40}, parityTimestamps(ts, 5, 9, 6), "duplicate timestamps")
 }
 
+// TestVersionHistory_ParityCorners runs the test version history_parity corners operation.
 func TestVersionHistory_ParityCorners(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -470,6 +489,7 @@ func TestVersionHistory_ParityCorners(t *testing.T) {
 	}
 }
 
+// TestVersionHistory_ParityRandomizedInserts runs the test version history_parity randomized inserts operation.
 func TestVersionHistory_ParityRandomizedInserts(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -515,6 +535,7 @@ func TestVersionHistory_ParityRandomizedInserts(t *testing.T) {
 	}
 }
 
+// TestVersionHistory_ParityPrune runs the test version history_parity prune operation.
 func TestVersionHistory_ParityPrune(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -546,6 +567,7 @@ func TestVersionHistory_ParityPrune(t *testing.T) {
 	}
 }
 
+// TestVersionHistory_ParityIndexMatchesEntities runs the test version history_parity index matches entities operation.
 func TestVersionHistory_ParityIndexMatchesEntities(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -605,6 +627,7 @@ func TestVersionHistory_ParityIndexMatchesEntities(t *testing.T) {
 	}
 }
 
+// TestVersionHistory_IndexDenseColumn runs the test version history_index dense column operation.
 func TestVersionHistory_IndexDenseColumn(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -658,6 +681,7 @@ func TestVersionHistory_IndexDenseColumn(t *testing.T) {
 	})
 }
 
+// TestVersionHistory_ErrorsPreserved runs the test version history_errors preserved operation.
 func TestVersionHistory_ErrorsPreserved(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -686,6 +710,7 @@ func TestVersionHistory_ErrorsPreserved(t *testing.T) {
 	assert.Equal(t, 0, pruned.TotalVersions())
 }
 
+// TestVersionHistory_ConcurrentReadsAndWrites runs the test version history_concurrent reads and writes operation.
 func TestVersionHistory_ConcurrentReadsAndWrites(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -787,6 +812,7 @@ func legacyBatchHistory(versions []VersionedVector, timestamp int64) (VersionedV
 	return VersionedVector{}, false
 }
 
+// TestUpperBoundScalar runs the test upper bound scalar operation.
 func TestUpperBoundScalar(t *testing.T) {
 	rng := rand.New(rand.NewSource(3)) // #nosec G404 -- deterministic search fixture
 	for _, n := range []int{0, 1, 2, 3, 4, 5, 7, 8, 15, 16, 31, 32, 100, 1000} {
@@ -828,6 +854,7 @@ func sortSearch(n int, f func(int) bool) int {
 	return i
 }
 
+// BenchmarkVersionHistory_GetVersionsAtBatch runs the benchmark version history_get versions at batch operation.
 func BenchmarkVersionHistory_GetVersionsAtBatch(b *testing.B) {
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 	now := time.Now().UnixNano()
@@ -927,6 +954,7 @@ func (f *versionHistoryBench) report(b *testing.B) {
 var versionHistoryBenchIDCounts = []int{1000, 10000, 100000}
 var versionHistoryBenchVersions = []int{1, 10, 100}
 
+// BenchmarkVersionHistory_GetVersionsAtBatchMatrix runs the benchmark version history_get versions at batch matrix operation.
 func BenchmarkVersionHistory_GetVersionsAtBatchMatrix(b *testing.B) {
 	for _, nIDs := range versionHistoryBenchIDCounts {
 		for _, versions := range versionHistoryBenchVersions {

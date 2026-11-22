@@ -10,6 +10,8 @@ import (
 )
 
 // RetryPolicy defines the interface for backoff strategies.
+//
+//nolint:revive // The name is retained for source compatibility.
 type RetryPolicy interface {
 	// Backoff returns the duration to wait before the next attempt.
 	// attempt is 0-indexed.
@@ -32,6 +34,7 @@ type ExponentialBackoff struct {
 	Jitter float64
 }
 
+// Backoff returns the delay before the next attempt, capped at MaxDelay.
 func (b *ExponentialBackoff) Backoff(attempt int) time.Duration {
 	if attempt < 0 {
 		return 0
@@ -55,14 +58,17 @@ func (b *ExponentialBackoff) Backoff(attempt int) time.Duration {
 	return delay
 }
 
+// MaxRetries returns the number of retries after the first attempt.
 func (b *ExponentialBackoff) MaxRetries() int {
 	return b.Retries
 }
 
+// Timeout returns the timeout for a single attempt.
 func (b *ExponentialBackoff) Timeout() time.Duration {
 	return b.AttemptTimeout
 }
 
+// IsRetryable reports whether an error should trigger a retry.
 func (b *ExponentialBackoff) IsRetryable(err error) bool {
 	if err == nil {
 		return false

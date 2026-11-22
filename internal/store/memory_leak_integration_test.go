@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMemoryLeak_CreateDropDataset runs the test memory leak_create drop dataset operation.
 func TestMemoryLeak_CreateDropDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -148,6 +149,7 @@ func runDatasetCycle(ctx context.Context, t *testing.T, s *VectorStore, name str
 	logger.Debug().Int64("before_drop", beforeDrop).Int64("after_drop", afterDrop).Int64("drop_delta", afterDrop-beforeDrop).Int64("expected_delta", -dsSize).Msg("After DropDataset")
 }
 
+// TestMemoryLeak_GoroutineCount runs the test memory leak_goroutine count operation.
 func TestMemoryLeak_GoroutineCount(t *testing.T) {
 	// Simple test to ensure goroutines return to baseline
 	baseline := runtime.NumGoroutine()

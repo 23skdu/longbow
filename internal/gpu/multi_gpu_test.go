@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// TestMultiGPUStrategy_String runs the test multi gpu strategy_string operation.
 func TestMultiGPUStrategy_String(t *testing.T) {
 	tests := []struct {
 		strategy MultiGPUStrategy
@@ -27,6 +28,7 @@ func TestMultiGPUStrategy_String(t *testing.T) {
 	}
 }
 
+// TestDefaultMultiGPUConfig runs the test default multi gpu config operation.
 func TestDefaultMultiGPUConfig(t *testing.T) {
 	config := DefaultMultiGPUConfig()
 
@@ -38,6 +40,7 @@ func TestDefaultMultiGPUConfig(t *testing.T) {
 	}
 }
 
+// TestDetectAvailableDevices runs the test detect available devices operation.
 func TestDetectAvailableDevices(t *testing.T) {
 	devices, err := DetectAvailableDevices()
 
@@ -57,6 +60,7 @@ func TestDetectAvailableDevices(t *testing.T) {
 	}
 }
 
+// TestNewMultiGPUManager_NoDevices runs the test new multi gpu manager_no devices operation.
 func TestNewMultiGPUManager_NoDevices(t *testing.T) {
 	logger := zerolog.Nop()
 	config := MultiGPUConfig{
@@ -70,6 +74,7 @@ func TestNewMultiGPUManager_NoDevices(t *testing.T) {
 	}
 }
 
+// TestNewMultiGPUManager_InvalidDevice runs the test new multi gpu manager_invalid device operation.
 func TestNewMultiGPUManager_InvalidDevice(t *testing.T) {
 	logger := zerolog.Nop()
 	config := MultiGPUConfig{
@@ -83,6 +88,7 @@ func TestNewMultiGPUManager_InvalidDevice(t *testing.T) {
 	}
 }
 
+// TestNewMultiGPUManager_ValidDevice runs the test new multi gpu manager_valid device operation.
 func TestNewMultiGPUManager_ValidDevice(t *testing.T) {
 	logger := zerolog.Nop()
 
@@ -108,6 +114,7 @@ func TestNewMultiGPUManager_ValidDevice(t *testing.T) {
 	}
 }
 
+// TestMultiGPUManager_SelectDevice_RoundRobin runs the test multi gpu manager_select device_round robin operation.
 func TestMultiGPUManager_SelectDevice_RoundRobin(t *testing.T) {
 	logger := zerolog.Nop()
 
@@ -137,6 +144,7 @@ func TestMultiGPUManager_SelectDevice_RoundRobin(t *testing.T) {
 	}
 }
 
+// TestMultiGPUManager_GetStats runs the test multi gpu manager_get stats operation.
 func TestMultiGPUManager_GetStats(t *testing.T) {
 	logger := zerolog.Nop()
 
@@ -171,6 +179,7 @@ func TestMultiGPUManager_GetStats(t *testing.T) {
 	}
 }
 
+// TestMultiGPUManager_Close runs the test multi gpu manager_close operation.
 func TestMultiGPUManager_Close(t *testing.T) {
 	logger := zerolog.Nop()
 

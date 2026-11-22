@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestDetectNUMATopology runs the test detect numa topology operation.
 func TestDetectNUMATopology(t *testing.T) {
 	topo, err := DetectNUMATopology()
 	require.NoError(t, err)
@@ -22,6 +23,7 @@ func TestDetectNUMATopology(t *testing.T) {
 	t.Logf("Detected NUMA topology: %s", topo.String())
 }
 
+// TestNUMATopologyString runs the test numa topology string operation.
 func TestNUMATopologyString(t *testing.T) {
 	topo := &NUMATopology{
 		NumNodes: 2,

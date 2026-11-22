@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFileSnapshotBackend runs the test file snapshot backend operation.
 func TestFileSnapshotBackend(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test_file_backend_*")
 	require.NoError(t, err)

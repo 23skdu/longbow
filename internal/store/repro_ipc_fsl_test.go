@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCastRecordToSchema_MissingFSL runs the test cast record to schema_missing fsl operation.
 func TestCastRecordToSchema_MissingFSL(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

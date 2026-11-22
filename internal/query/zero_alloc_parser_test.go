@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestZeroAllocTicketParser_Parse runs the test zero alloc ticket parser_parse operation.
 func TestZeroAllocTicketParser_Parse(t *testing.T) {
 	nopLogger := zerolog.Nop()
 	parser := NewZeroAllocTicketParser(&nopLogger)
@@ -143,6 +144,7 @@ func TestZeroAllocTicketParser_Parse(t *testing.T) {
 	})
 }
 
+// TestParseTicketQuerySafe runs the test parse ticket query safe operation.
 func TestParseTicketQuerySafe(t *testing.T) {
 	data := []byte(`{"name": "pooled", "limit": 10}`)
 
@@ -157,6 +159,7 @@ func TestParseTicketQuerySafe(t *testing.T) {
 	assert.True(t, stats.Gets > 0)
 }
 
+// BenchmarkZeroAllocParser runs the benchmark zero alloc parser operation.
 func BenchmarkZeroAllocParser(b *testing.B) {
 	data := []byte(`{"name": "users", "limit": 50, "filters": [{"field": "country", "operator": "==", "value": "US"}]}`)
 	nopLogger := zerolog.Nop()

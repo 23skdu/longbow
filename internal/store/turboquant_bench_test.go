@@ -13,6 +13,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// BenchmarkTurboQuantSearch runs the benchmark turbo quant search operation.
 func BenchmarkTurboQuantSearch(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dim := 384

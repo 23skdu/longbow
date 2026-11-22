@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCompactableArena_BasicOperations runs the test compactable arena_basic operations operation.
 func TestCompactableArena_BasicOperations(t *testing.T) {
 	arena := NewCompactableArena[uint32](4 * 1024 * 1024) // 4MB slabs
 
@@ -35,6 +36,7 @@ func TestCompactableArena_BasicOperations(t *testing.T) {
 	assert.Equal(t, uint32(398), data2[199])
 }
 
+// TestCompactableArena_Compaction runs the test compactable arena_compaction operation.
 func TestCompactableArena_Compaction(t *testing.T) {
 	arena := NewCompactableArena[uint32](1 * 1024 * 1024) // 1MB slabs
 
@@ -82,6 +84,7 @@ func TestCompactableArena_Compaction(t *testing.T) {
 	assert.Less(t, finalSize, initialSize)
 }
 
+// TestCompactableArena_DataIntegrity runs the test compactable arena_data integrity operation.
 func TestCompactableArena_DataIntegrity(t *testing.T) {
 	arena := NewCompactableArena[uint64](2 * 1024 * 1024)
 
@@ -121,6 +124,7 @@ func TestCompactableArena_DataIntegrity(t *testing.T) {
 	// For this test, we just verify the compaction completed successfully
 }
 
+// TestCompactableArena_EmptyCompaction runs the test compactable arena_empty compaction operation.
 func TestCompactableArena_EmptyCompaction(t *testing.T) {
 	arena := NewCompactableArena[float32](1 * 1024 * 1024)
 
@@ -135,6 +139,7 @@ func TestCompactableArena_EmptyCompaction(t *testing.T) {
 	require.Equal(t, int64(0), stats.LiveDataCopied)
 }
 
+// TestCompactableArena_ConcurrentReads runs the test compactable arena_concurrent reads operation.
 func TestCompactableArena_ConcurrentReads(t *testing.T) {
 	arena := NewCompactableArena[int32](4 * 1024 * 1024)
 
@@ -165,6 +170,7 @@ func TestCompactableArena_ConcurrentReads(t *testing.T) {
 	}
 }
 
+// BenchmarkCompactableArena_Alloc runs the benchmark compactable arena_alloc operation.
 func BenchmarkCompactableArena_Alloc(b *testing.B) {
 	arena := NewCompactableArena[uint32](4 * 1024 * 1024)
 
@@ -173,6 +179,7 @@ func BenchmarkCompactableArena_Alloc(b *testing.B) {
 	}
 }
 
+// BenchmarkCompactableArena_Get runs the benchmark compactable arena_get operation.
 func BenchmarkCompactableArena_Get(b *testing.B) {
 	arena := NewCompactableArena[uint32](4 * 1024 * 1024)
 	ref, _ := arena.AllocSlice(1000)
@@ -182,6 +189,7 @@ func BenchmarkCompactableArena_Get(b *testing.B) {
 	}
 }
 
+// TestTypedArena_Compact runs the test typed arena_compact operation.
 func TestTypedArena_Compact(t *testing.T) {
 	arena := NewTypedArena[uint32](NewSlabArena(1 * 1024 * 1024))
 
@@ -221,6 +229,7 @@ func TestTypedArena_Compact(t *testing.T) {
 	assert.Less(t, finalSize, initialSize)
 }
 
+// TestTypedArena_CompactConcurrent runs the test typed arena_compact concurrent operation.
 func TestTypedArena_CompactConcurrent(t *testing.T) {
 	arena := NewTypedArena[uint32](NewSlabArena(4 * 1024 * 1024))
 

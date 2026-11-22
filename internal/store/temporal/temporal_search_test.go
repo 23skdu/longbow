@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestTemporalTree_Insert runs the test temporal tree_insert operation.
 func TestTemporalTree_Insert(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -24,6 +25,7 @@ func TestTemporalTree_Insert(t *testing.T) {
 	assert.Equal(t, 2, tt.Len())
 }
 
+// TestTemporalTree_GetRange runs the test temporal tree_get range operation.
 func TestTemporalTree_GetRange(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -41,6 +43,7 @@ func TestTemporalTree_GetRange(t *testing.T) {
 	assert.GreaterOrEqual(t, len(results), 1)
 }
 
+// TestTemporalTree_GetRangeReversed runs the test temporal tree_get range reversed operation.
 func TestTemporalTree_GetRangeReversed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -58,6 +61,7 @@ func TestTemporalTree_GetRangeReversed(t *testing.T) {
 	assert.GreaterOrEqual(t, len(results), 1)
 }
 
+// TestTemporalTree_GetBefore runs the test temporal tree_get before operation.
 func TestTemporalTree_GetBefore(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -75,6 +79,7 @@ func TestTemporalTree_GetBefore(t *testing.T) {
 	assert.Equal(t, 1, len(results))
 }
 
+// TestTemporalTree_GetLatest runs the test temporal tree_get latest operation.
 func TestTemporalTree_GetLatest(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -92,6 +97,7 @@ func TestTemporalTree_GetLatest(t *testing.T) {
 	assert.Equal(t, 2, len(results))
 }
 
+// TestTemporalIndex_New runs the test temporal index_new operation.
 func TestTemporalIndex_New(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -103,6 +109,7 @@ func TestTemporalIndex_New(t *testing.T) {
 	assert.NotNil(t, ti.temporalTree.Load())
 }
 
+// TestTemporalIndex_Add runs the test temporal index_add operation.
 func TestTemporalIndex_Add(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -113,6 +120,7 @@ func TestTemporalIndex_Add(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestTemporalIndex_AddDimensionMismatch runs the test temporal index_add dimension mismatch operation.
 func TestTemporalIndex_AddDimensionMismatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -124,6 +132,7 @@ func TestTemporalIndex_AddDimensionMismatch(t *testing.T) {
 	assert.Contains(t, err.Error(), "dimension mismatch")
 }
 
+// TestTemporalIndex_Delete runs the test temporal index_delete operation.
 func TestTemporalIndex_Delete(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -137,6 +146,7 @@ func TestTemporalIndex_Delete(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestTemporalIndex_Update runs the test temporal index_update operation.
 func TestTemporalIndex_Update(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -154,6 +164,7 @@ func TestTemporalIndex_Update(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestTemporalIndex_SearchAsOf runs the test temporal index_search as of operation.
 func TestTemporalIndex_SearchAsOf(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -169,6 +180,7 @@ func TestTemporalIndex_SearchAsOf(t *testing.T) {
 	assert.GreaterOrEqual(t, len(results), 1)
 }
 
+// TestTemporalIndex_SearchRange runs the test temporal index_search range operation.
 func TestTemporalIndex_SearchRange(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -185,6 +197,7 @@ func TestTemporalIndex_SearchRange(t *testing.T) {
 	assert.GreaterOrEqual(t, len(results), 1)
 }
 
+// TestTemporalIndex_SearchSlidingWindow runs the test temporal index_search sliding window operation.
 func TestTemporalIndex_SearchSlidingWindow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -201,6 +214,7 @@ func TestTemporalIndex_SearchSlidingWindow(t *testing.T) {
 	assert.GreaterOrEqual(t, len(results), 1)
 }
 
+// TestTemporalVector_Structure runs the test temporal vector_structure operation.
 func TestTemporalVector_Structure(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -219,6 +233,7 @@ func TestTemporalVector_Structure(t *testing.T) {
 	assert.False(t, vec.Tombstone)
 }
 
+// TestTemporalIndex_DeleteNotFound runs the test temporal index_delete not found operation.
 func TestTemporalIndex_DeleteNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -229,6 +244,7 @@ func TestTemporalIndex_DeleteNotFound(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestTemporalIndex_UpdateNotFound runs the test temporal index_update not found operation.
 func TestTemporalIndex_UpdateNotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

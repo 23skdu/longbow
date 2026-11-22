@@ -20,6 +20,7 @@ type UringBackend struct {
 	path   string
 }
 
+// NewUringBackend constructs a new UringBackend.
 func NewUringBackend(path string) (WALBackend, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -47,6 +48,7 @@ func NewUringBackend(path string) (WALBackend, error) {
 	}, nil
 }
 
+// Write runs the write operation.
 func (b *UringBackend) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -83,6 +85,7 @@ func (b *UringBackend) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+// Sync runs the sync operation.
 func (b *UringBackend) Sync() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -102,6 +105,7 @@ func (b *UringBackend) Sync() error {
 	return nil
 }
 
+// Close runs the close operation.
 func (b *UringBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -118,10 +122,12 @@ func (b *UringBackend) Close() error {
 	return err
 }
 
+// Name runs the name operation.
 func (b *UringBackend) Name() string {
 	return b.path
 }
 
+// File runs the file operation.
 func (b *UringBackend) File() *os.File {
 	return b.f
 }

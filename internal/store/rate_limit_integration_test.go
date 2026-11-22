@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestCompaction_RateLimit runs the test compaction_rate limit operation.
 func TestCompaction_RateLimit(t *testing.T) {
 	cfg := DefaultCompactionConfig()
 	cfg.RateLimitBytesPerSec = 1024

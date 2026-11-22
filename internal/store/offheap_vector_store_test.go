@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestMemVectorStore_OffHeap runs the test mem vector store_off heap operation.
 func TestMemVectorStore_OffHeap(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -70,6 +71,7 @@ func TestMemVectorStore_OffHeap(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestMemVectorStore_DeleteBatch runs the test mem vector store_delete batch operation.
 func TestMemVectorStore_DeleteBatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -105,6 +107,7 @@ func TestMemVectorStore_DeleteBatch(t *testing.T) {
 	assert.Equal(t, 3, deleted)
 }
 
+// TestMemVectorStore_OffHeapMismatch runs the test mem vector store_off heap mismatch operation.
 func TestMemVectorStore_OffHeapMismatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -124,6 +127,7 @@ func TestMemVectorStore_OffHeapMismatch(t *testing.T) {
 	assert.Contains(t, err.Error(), "dimension mismatch")
 }
 
+// FuzzOffHeapVectorStore runs the fuzz off heap vector store operation.
 func FuzzOffHeapVectorStore(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

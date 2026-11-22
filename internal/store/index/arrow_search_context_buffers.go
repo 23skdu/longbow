@@ -8,6 +8,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// GetChunkF32 returns the chunk f32.
 func (ctx *ArrowSearchContext) GetChunkF32(data *types.GraphData, cID int, maxGen uint64) []float32 {
 	if cID < 0 || data == nil {
 		return nil

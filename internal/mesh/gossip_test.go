@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestPacket_EncodeDecode runs the test packet_encode decode operation.
 func TestPacket_EncodeDecode(t *testing.T) {
 	p := &Packet{
 		Type:       PacketPing,
@@ -28,6 +29,7 @@ func TestPacket_EncodeDecode(t *testing.T) {
 	assert.Equal(t, p.Payload, decoded.Payload)
 }
 
+// TestGossip_BasicConnectivity runs the test gossip_basic connectivity operation.
 func TestGossip_BasicConnectivity(t *testing.T) {
 	// Node 1
 	g1 := NewGossip(&GossipConfig{

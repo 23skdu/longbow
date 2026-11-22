@@ -16,6 +16,7 @@ func getMetricValue(g prometheus.Gauge) float64 {
 	return m.GetGauge().GetValue()
 }
 
+// TestMemVectorStore_WithArena runs the test mem vector store_with arena operation.
 func TestMemVectorStore_WithArena(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

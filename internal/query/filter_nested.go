@@ -161,8 +161,10 @@ type nestedFilterOp struct {
 	outerCol   arrow.Array
 }
 
+// Compound runs the compound operation.
 func (n *nestedFilterOp) Compound() bool { return false }
 
+// Match runs the match operation.
 func (n *nestedFilterOp) Match(rowIdx int) bool {
 	if n.outerCol == nil {
 		return false
@@ -200,6 +202,7 @@ func (n *nestedFilterOp) matchAnyInList(rowIdx int, parts []string) bool {
 	return false
 }
 
+// MatchBitmap runs the match bitmap operation.
 func (n *nestedFilterOp) MatchBitmap(dst []byte) {
 	for i := range dst {
 		if n.Match(i) {
@@ -210,6 +213,7 @@ func (n *nestedFilterOp) MatchBitmap(dst []byte) {
 	}
 }
 
+// FilterBatch runs the filter batch operation.
 func (n *nestedFilterOp) FilterBatch(indices []int) []int {
 	result := make([]int, 0, len(indices))
 	for _, idx := range indices {
@@ -220,11 +224,13 @@ func (n *nestedFilterOp) FilterBatch(indices []int) []int {
 	return result
 }
 
+// Bind runs the bind operation.
 func (n *nestedFilterOp) Bind(col arrow.Array) error {
 	n.outerCol = col
 	return nil
 }
 
+// Reset runs the reset operation.
 func (n *nestedFilterOp) Reset(rec arrow.RecordBatch) error {
 	// Re-resolve nested field for new record batch
 	indices, col, _, err := resolveFilterColumnEx(*rec.Schema(), rec, n.fieldPath)
@@ -239,6 +245,7 @@ func (n *nestedFilterOp) Reset(rec arrow.RecordBatch) error {
 	return n.op.Reset(rec)
 }
 
+// MatchValue runs the match value operation.
 func (n *nestedFilterOp) MatchValue(val interface{}) bool {
 	return n.op.MatchValue(val)
 }
@@ -276,8 +283,10 @@ type subqueryFilterOp struct {
 	op       string
 }
 
+// Compound runs the compound operation.
 func (s *subqueryFilterOp) Compound() bool { return false }
 
+// Match runs the match operation.
 func (s *subqueryFilterOp) Match(rowIdx int) bool {
 	if s.col.IsNull(rowIdx) {
 		return false
@@ -294,6 +303,7 @@ func (s *subqueryFilterOp) Match(rowIdx int) bool {
 	return match
 }
 
+// MatchBitmap runs the match bitmap operation.
 func (s *subqueryFilterOp) MatchBitmap(dst []byte) {
 	for i := range dst {
 		if s.Match(i) {
@@ -304,6 +314,7 @@ func (s *subqueryFilterOp) MatchBitmap(dst []byte) {
 	}
 }
 
+// FilterBatch runs the filter batch operation.
 func (s *subqueryFilterOp) FilterBatch(indices []int) []int {
 	result := make([]int, 0, len(indices))
 	for _, idx := range indices {
@@ -314,11 +325,13 @@ func (s *subqueryFilterOp) FilterBatch(indices []int) []int {
 	return result
 }
 
+// Bind runs the bind operation.
 func (s *subqueryFilterOp) Bind(col arrow.Array) error {
 	s.col = col
 	return nil
 }
 
+// Reset runs the reset operation.
 func (s *subqueryFilterOp) Reset(rec arrow.RecordBatch) error {
 	_, col, _, err := resolveFilterColumnEx(*rec.Schema(), rec, s.field)
 	if err != nil {
@@ -331,6 +344,7 @@ func (s *subqueryFilterOp) Reset(rec arrow.RecordBatch) error {
 	return nil
 }
 
+// MatchValue runs the match value operation.
 func (s *subqueryFilterOp) MatchValue(val interface{}) bool {
 	_, match := s.valueSet[val]
 	if s.op == "not in" {

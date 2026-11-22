@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHNSW_UnsafeAccess runs the test hnsw_unsafe access operation.
 func TestHNSW_UnsafeAccess(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vectors := [][]float32{{1.0, 2.0}, {3.0, 4.0}}

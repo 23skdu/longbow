@@ -15,14 +15,17 @@ import (
 	"github.com/23skdu/longbow/internal/pq"
 )
 
+// Backend runs the backend operation.
 func (idx *MetalIndexOptimized) Backend() types.GPUBackend {
 	return types.BackendMetal
 }
 
+// DeviceID runs the device id operation.
 func (idx *MetalIndexOptimized) DeviceID() int32 {
 	return 0
 }
 
+// GetDeviceInfo returns the device info.
 func (idx *MetalIndexOptimized) GetDeviceInfo() (*types.GPUInfo, error) {
 	return &types.GPUInfo{
 		Backend:  types.BackendMetal,
@@ -31,10 +34,12 @@ func (idx *MetalIndexOptimized) GetDeviceInfo() (*types.GPUInfo, error) {
 	}, nil
 }
 
+// GetMemoryInfo returns the memory info.
 func (idx *MetalIndexOptimized) GetMemoryInfo() (int64, int64, int64, error) {
 	return 0, 0, 0, nil
 }
 
+// AddPQ runs the add pq operation.
 func (idx *MetalIndexOptimized) AddPQ(ids []int64, codes []byte, m int) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -55,6 +60,7 @@ func (idx *MetalIndexOptimized) AddPQ(ids []int64, codes []byte, m int) error {
 	return nil
 }
 
+// SearchPQ runs the search pq operation.
 func (idx *MetalIndexOptimized) SearchPQ(lookupTable []float32, m, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -74,6 +80,7 @@ func (idx *MetalIndexOptimized) SearchPQ(lookupTable []float32, m, k int) ([]int
 	return resIDs, resDists, nil
 }
 
+// TrainPQ runs the train pq operation.
 func (idx *MetalIndexOptimized) TrainPQ(vectors []float32, m, k int) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -97,6 +104,7 @@ func (idx *MetalIndexOptimized) TrainPQ(vectors []float32, m, k int) error {
 	return nil
 }
 
+// EncodePQ runs the encode pq operation.
 func (idx *MetalIndexOptimized) EncodePQ(vectors []float32) ([]byte, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -118,14 +126,17 @@ func (idx *MetalIndexOptimized) EncodePQ(vectors []float32) ([]byte, error) {
 	return codes, nil
 }
 
+// GetUtilization returns the utilization.
 func (idx *MetalIndexOptimized) GetUtilization() (float32, error) {
 	return 50.0, nil
 }
 
+// Sync runs the sync operation.
 func (idx *MetalIndexOptimized) Sync() error {
 	return nil
 }
 
+// Clear runs the clear operation.
 func (idx *MetalIndexOptimized) Clear() error {
 	idx.batchMu.Lock()
 	idx.batchIDs = idx.batchIDs[:0]
@@ -154,6 +165,7 @@ func (idx *MetalIndexOptimized) Clear() error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (idx *MetalIndexOptimized) Reset() error {
 	return idx.Clear()
 }

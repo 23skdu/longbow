@@ -261,7 +261,7 @@ func TestZeroDimsIsTrusted(t *testing.T) {
 	}
 }
 
-// TestNaNAndInfAreRejected: a kernel returning NaN would poison neighbour
+// TestNaNAndInfAreRejected a kernel returning NaN would poison neighbour
 // ordering, and it cannot be caught by an equality test alone.
 func TestNaNAndInfAreRejected(t *testing.T) {
 	for name, k := range map[string]simd.DistanceKernel[float32]{
@@ -276,7 +276,7 @@ func TestNaNAndInfAreRejected(t *testing.T) {
 	}
 }
 
-// TestNilReferenceIsTrusted: with no scalar reference to compare against, rejecting
+// TestNilReferenceIsTrusted with no scalar reference to compare against, rejecting
 // the kernel would be a guess.
 func TestNilReferenceIsTrusted(t *testing.T) {
 	if !kernelMatchesReference(simd.EuclideanDistance, simd.MetricEuclidean,

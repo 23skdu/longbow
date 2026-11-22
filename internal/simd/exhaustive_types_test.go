@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestSIMD_ExhaustiveTypes runs the test simd_exhaustive types operation.
 func TestSIMD_ExhaustiveTypes(t *testing.T) {
 	// Call every public function in distance_functions.go to reach >90% coverage
 	f64 := []float64{1, 2, 3}

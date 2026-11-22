@@ -14,6 +14,7 @@ import (
 
 // --- Config Tests ---
 
+// TestShardedRWMutexConfigDefaults runs the test sharded rw mutex config defaults operation.
 func TestShardedRWMutexConfigDefaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -28,6 +29,7 @@ func TestShardedRWMutexConfigDefaults(t *testing.T) {
 	}
 }
 
+// TestShardedRWMutexConfigValidation runs the test sharded rw mutex config validation operation.
 func TestShardedRWMutexConfigValidation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -56,6 +58,7 @@ func TestShardedRWMutexConfigValidation(t *testing.T) {
 
 // --- Creation Tests ---
 
+// TestNewShardedRWMutex runs the test new sharded rw mutex operation.
 func TestNewShardedRWMutex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -71,6 +74,7 @@ func TestNewShardedRWMutex(t *testing.T) {
 	}
 }
 
+// TestNewShardedRWMutexDefault runs the test new sharded rw mutex default operation.
 func TestNewShardedRWMutexDefault(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -87,6 +91,7 @@ func TestNewShardedRWMutexDefault(t *testing.T) {
 
 // --- Shard Routing Tests ---
 
+// TestShardedRWMutexShardSelection runs the test sharded rw mutex shard selection operation.
 func TestShardedRWMutexShardSelection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -109,6 +114,7 @@ func TestShardedRWMutexShardSelection(t *testing.T) {
 	}
 }
 
+// TestShardedRWMutexDistribution runs the test sharded rw mutex distribution operation.
 func TestShardedRWMutexDistribution(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -132,6 +138,7 @@ func TestShardedRWMutexDistribution(t *testing.T) {
 
 // --- Lock/Unlock Tests ---
 
+// TestShardedRWMutexLockUnlock runs the test sharded rw mutex lock unlock operation.
 func TestShardedRWMutexLockUnlock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -147,6 +154,7 @@ func TestShardedRWMutexLockUnlock(t *testing.T) {
 	sm.Unlock(100)
 }
 
+// TestShardedRWMutexRLockRUnlock runs the test sharded rw mutex r lock r unlock operation.
 func TestShardedRWMutexRLockRUnlock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -164,6 +172,7 @@ func TestShardedRWMutexRLockRUnlock(t *testing.T) {
 	sm.RUnlock(100)
 }
 
+// TestShardedRWMutexDifferentShardsConcurrent runs the test sharded rw mutex different shards concurrent operation.
 func TestShardedRWMutexDifferentShardsConcurrent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -200,6 +209,7 @@ func TestShardedRWMutexDifferentShardsConcurrent(t *testing.T) {
 
 // --- Concurrent Safety Tests ---
 
+// TestShardedRWMutexConcurrentWrites runs the test sharded rw mutex concurrent writes operation.
 func TestShardedRWMutexConcurrentWrites(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -229,6 +239,7 @@ func TestShardedRWMutexConcurrentWrites(t *testing.T) {
 	}
 }
 
+// TestShardedRWMutexConcurrentReadsWrites runs the test sharded rw mutex concurrent reads writes operation.
 func TestShardedRWMutexConcurrentReadsWrites(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -270,6 +281,7 @@ func TestShardedRWMutexConcurrentReadsWrites(t *testing.T) {
 
 // --- Statistics Tests ---
 
+// TestShardedRWMutexStats runs the test sharded rw mutex stats operation.
 func TestShardedRWMutexStats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -298,6 +310,7 @@ func TestShardedRWMutexStats(t *testing.T) {
 
 var shardResult int
 
+// BenchmarkShardFor runs the benchmark shard for operation.
 func BenchmarkShardFor(b *testing.B) {
 	sm := NewShardedRWMutexDefault()
 	b.ResetTimer()
@@ -308,6 +321,7 @@ func BenchmarkShardFor(b *testing.B) {
 	}
 }
 
+// BenchmarkShardedRWMutexLock runs the benchmark sharded rw mutex lock operation.
 func BenchmarkShardedRWMutexLock(b *testing.B) {
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: runtime.NumCPU()})
 
@@ -322,6 +336,7 @@ func BenchmarkShardedRWMutexLock(b *testing.B) {
 	})
 }
 
+// BenchmarkShardedRWMutexRLock runs the benchmark sharded rw mutex r lock operation.
 func BenchmarkShardedRWMutexRLock(b *testing.B) {
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: runtime.NumCPU()})
 
@@ -336,6 +351,7 @@ func BenchmarkShardedRWMutexRLock(b *testing.B) {
 	})
 }
 
+// BenchmarkShardedVsSingleMutex runs the benchmark sharded vs single mutex operation.
 func BenchmarkShardedVsSingleMutex(b *testing.B) {
 	// Compare sharded vs single mutex under contention
 	b.Run("SingleMutex", func(b *testing.B) {

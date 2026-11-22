@@ -2,6 +2,7 @@ package simd
 
 import "testing"
 
+// BenchmarkTQPolarReconstructLevel runs the benchmark tq polar reconstruct level operation.
 func BenchmarkTQPolarReconstructLevel(b *testing.B) {
 	const levelSize = 256
 	recon := make([]float32, levelSize*2)

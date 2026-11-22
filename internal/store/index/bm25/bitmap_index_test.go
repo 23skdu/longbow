@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestBitmapIndex_AddAndFilter runs the test bitmap index_add and filter operation.
 func TestBitmapIndex_AddAndFilter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -63,6 +64,7 @@ func TestBitmapIndex_AddAndFilter(t *testing.T) {
 	})
 }
 
+// TestBitmapIndex_Remove runs the test bitmap index_remove operation.
 func TestBitmapIndex_Remove(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -81,6 +83,7 @@ func TestBitmapIndex_Remove(t *testing.T) {
 	assert.False(t, bm.Contains(1))
 }
 
+// FuzzBitmapIndex runs the fuzz bitmap index operation.
 func FuzzBitmapIndex(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -109,7 +112,7 @@ func FuzzBitmapIndex(f *testing.F) {
 	})
 }
 
-// Benchmarking the happy path
+// BenchmarkBitmapIndex_Filter the happy path
 func BenchmarkBitmapIndex_Filter(b *testing.B) {
 	idx := NewBitmapIndex()
 	// Setup: 10k docs, 50% cat=A, 50% cat=B. 50% tag=X, 50% tag=Y.

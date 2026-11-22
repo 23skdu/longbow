@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// AddTurboQuant runs the add turbo quant operation.
 func (idx *CUDAIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -78,6 +79,7 @@ func (idx *CUDAIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int
 	return nil
 }
 
+// SearchTurboQuant runs the search turbo quant operation.
 func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	if err := idx.acquireGPUOp(); err != nil {
 		return nil, nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
@@ -256,6 +258,7 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 	return resultIDs, resultDistances, nil
 }
 
+// SearchGreedy runs the search greedy operation.
 func (idx *CUDAIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

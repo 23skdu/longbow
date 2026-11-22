@@ -11,6 +11,7 @@ import (
 	"github.com/23skdu/longbow/internal/iouring"
 )
 
+// ReadResult represents a read result value.
 type ReadResult struct {
 	N   int
 	Err error
@@ -36,6 +37,7 @@ type UringReader struct {
 	stopChan chan struct{}
 }
 
+// NewUringReader constructs a new UringReader.
 func NewUringReader(path string) (*UringReader, error) {
 	f, err := os.Open(path) // #nosec G304 - path from direct caller
 	if err != nil {
@@ -173,6 +175,7 @@ func (r *UringReader) completionLoop() {
 	}
 }
 
+// Close runs the close operation.
 func (r *UringReader) Close() error {
 	r.mu.Lock()
 	if !r.active {

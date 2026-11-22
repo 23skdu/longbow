@@ -38,6 +38,7 @@ type NotFoundError struct {
 	Name string
 }
 
+// Error runs the error operation.
 func (e *NotFoundError) Error() string {
 	return fmt.Sprintf("snapshot not found: %s", e.Name)
 }

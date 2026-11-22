@@ -10,6 +10,7 @@ import (
 	"unsafe"
 )
 
+// TestInt8AVX512Parity runs the test int8 avx512 parity operation.
 func TestInt8AVX512Parity(t *testing.T) {
 	sizes := []int{1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 256, 384, 512, 768, 1024}
 	rng := rand.New(rand.NewSource(42))
@@ -64,6 +65,7 @@ func TestInt8AVX512Parity(t *testing.T) {
 	}
 }
 
+// TestUint8AVX512Parity runs the test uint8 avx512 parity operation.
 func TestUint8AVX512Parity(t *testing.T) {
 	sizes := []int{1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 256, 384, 512, 768, 1024}
 	rng := rand.New(rand.NewSource(1337))
@@ -136,6 +138,7 @@ func TestUint8AVX512Parity(t *testing.T) {
 	}
 }
 
+// TestCosineInt8AndUint8AVX512Parity runs the test cosine int8 and uint8 avx512 parity operation.
 func TestCosineInt8AndUint8AVX512Parity(t *testing.T) {
 	sizes := []int{8, 16, 32, 64, 128, 384, 768}
 	rng := rand.New(rand.NewSource(99))

@@ -5,6 +5,7 @@ import (
 	"unsafe"
 )
 
+// TestMockIndex_SearchFloat16 runs the test mock index_search float16 operation.
 func TestMockIndex_SearchFloat16(t *testing.T) {
 	cfg := DefaultGPUConfig()
 	cfg.Dimension = 3
@@ -49,6 +50,7 @@ func TestMockIndex_SearchFloat16(t *testing.T) {
 	_ = distances // Acknowledge distances returned
 }
 
+// TestMockIndex_SearchComplex64 runs the test mock index_search complex64 operation.
 func TestMockIndex_SearchComplex64(t *testing.T) {
 	cfg := DefaultGPUConfig()
 	cfg.Dimension = 4 // complex64 = 2 x float32
@@ -92,6 +94,7 @@ func TestMockIndex_SearchComplex64(t *testing.T) {
 	_ = distances // Acknowledge distances returned
 }
 
+// TestMockIndex_SearchComplex128 runs the test mock index_search complex128 operation.
 func TestMockIndex_SearchComplex128(t *testing.T) {
 	cfg := DefaultGPUConfig()
 	cfg.Dimension = 4 // complex128 = 2 x float64, stored as 2 x float32

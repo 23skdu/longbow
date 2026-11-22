@@ -28,6 +28,7 @@ var (
 		[]string{"instruction_set"}, // "AVX2", "AVX512", "NEON"
 	)
 
+	// SimdOperationsTotal is a simd operations total value.
 	SimdOperationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_simd_operations_total",
@@ -80,13 +81,14 @@ var (
 		Help: "Type of SIMD implementation statically dispatched (0=Generic, 1=NEON, 2=AVX2, 3=AVX512)",
 	})
 
-	// Adaptive streaming metrics
+	// DoGetChunkSizeHistogram streaming metrics
 	DoGetChunkSizeHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "longbow_do_get_chunk_size_bytes",
 		Help:    "Distribution of chunk sizes returned by DoGet operations",
 		Buckets: prometheus.ExponentialBuckets(1024, 2, 10), // 1KB to ~1MB
 	})
 
+	// DoGetAdaptiveChunksTotal is a do get adaptive chunks total value.
 	DoGetAdaptiveChunksTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_do_get_adaptive_chunks_total",
 		Help: "Total number of adaptive chunks created during DoGet operations",

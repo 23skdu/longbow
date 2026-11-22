@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestRouter_Route runs the test router_route operation.
 func TestRouter_Route(t *testing.T) {
 	router := NewRouter()
 

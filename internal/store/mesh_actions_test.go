@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMeshActions runs the test mesh actions operation.
 func TestMeshActions(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -79,11 +80,13 @@ type mockDoActionServer struct {
 	results []*flight.Result
 }
 
+// Send runs the send operation.
 func (m *mockDoActionServer) Send(res *flight.Result) error {
 	m.results = append(m.results, res)
 	return nil
 }
 
+// Context runs the context operation.
 func (m *mockDoActionServer) Context() context.Context {
 	return context.Background()
 }

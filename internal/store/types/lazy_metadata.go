@@ -16,10 +16,12 @@ type LazyMetadata struct {
 	err     error
 }
 
+// NewLazyMetadata constructs a new LazyMetadata.
 func NewLazyMetadata(data []byte) *LazyMetadata {
 	return &LazyMetadata{data: data}
 }
 
+// Get returns the .
 func (l *LazyMetadata) Get() (map[string]interface{}, error) {
 	l.once.Do(func() {
 		l.decoded, l.err = core.DecodeMetadata(l.data)
@@ -27,6 +29,7 @@ func (l *LazyMetadata) Get() (map[string]interface{}, error) {
 	return l.decoded, l.err
 }
 
+// GetField returns the field.
 func (l *LazyMetadata) GetField(field string) (interface{}, bool) {
 	// Optimization: Use zero-alloc decoder first
 	meta := core.NewArrowMetadata(l.data)

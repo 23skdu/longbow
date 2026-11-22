@@ -26,6 +26,7 @@ func makeCandidate(id core.VectorID, dist float32, title, content string) Search
 	}
 }
 
+// TestAdvancedRerankersCacheRewriterAndEval runs the test advanced rerankers cache rewriter and eval operation.
 func TestAdvancedRerankersCacheRewriterAndEval(t *testing.T) {
 	ctx := context.Background()
 
@@ -128,6 +129,7 @@ func TestAdvancedRerankersCacheRewriterAndEval(t *testing.T) {
 	require.Equal(t, 1.0, metricsRes.MeanRecall)
 }
 
+// FuzzQueryRewriterAndRerank runs the fuzz query rewriter and rerank operation.
 func FuzzQueryRewriterAndRerank(f *testing.F) {
 	f.Add("fast db auth and vector search", "synonyms")
 	f.Add("q1; q2?", "multi_query")

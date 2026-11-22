@@ -14,18 +14,23 @@ type mockMLModel struct {
 	err    error
 }
 
+// Embed runs the embed operation.
 func (m *mockMLModel) Embed(ctx context.Context, texts []string) ([][]float32, error) {
 	return nil, nil
 }
 
+// Score runs the score operation.
 func (m *mockMLModel) Score(ctx context.Context, query string, documents []string) ([]float32, error) {
 	return m.scores, m.err
 }
 
+// Dimension runs the dimension operation.
 func (m *mockMLModel) Dimension() int { return 0 }
 
+// Close runs the close operation.
 func (m *mockMLModel) Close() error { return nil }
 
+// TestONNXReranker runs the test onnx reranker operation.
 func TestONNXReranker(t *testing.T) {
 	mock := &mockMLModel{
 		scores: []float32{0.9, 0.1, 0.5},

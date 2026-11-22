@@ -19,6 +19,7 @@ import (
 func TestSlabPool_ActiveArenasMetricDelta(t *testing.T) {
 	pool := newSlabPool(4 * 1024 * 1024)
 
+	// N is a n constant.
 	const N = 5
 	slabs := make([][]byte, N)
 	for i := 0; i < N; i++ {

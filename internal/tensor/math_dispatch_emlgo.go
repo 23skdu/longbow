@@ -12,9 +12,12 @@ import (
 type MathImpl int
 
 const (
-	MathGo   MathImpl = iota // pure Go fallback (Taylor series, Newton)
-	MathSIMD                 // Standard SIMD-accelerated kernels wrapping math.*
-	MathEML                  // High-performance EMLGo SIMD & fastmath
+	// MathGo is a math go constant.
+	MathGo MathImpl = iota // pure Go fallback (Taylor series, Newton)
+	// MathSIMD is a math simd constant.
+	MathSIMD // Standard SIMD-accelerated kernels wrapping math.*
+	// MathEML is a math eml constant.
+	MathEML // High-performance EMLGo SIMD & fastmath
 )
 
 var mathImpl MathImpl = MathEML

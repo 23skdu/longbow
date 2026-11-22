@@ -48,6 +48,7 @@ type FSStorageBackend struct {
 	path string
 }
 
+// NewFSStorageBackend constructs a new FSStorageBackend.
 func NewFSStorageBackend(path string, directIO bool) (*FSStorageBackend, error) {
 	flags := os.O_RDWR | os.O_CREATE
 	var f *os.File
@@ -65,6 +66,7 @@ func NewFSStorageBackend(path string, directIO bool) (*FSStorageBackend, error) 
 	}, nil
 }
 
+// ReadAt runs the read at operation.
 func (b *FSStorageBackend) ReadAt(p []byte, off int64) (int, error) {
 	n, err := b.f.ReadAt(p, off)
 	if err == nil || err == io.EOF {
@@ -74,6 +76,7 @@ func (b *FSStorageBackend) ReadAt(p []byte, off int64) (int, error) {
 	return n, err
 }
 
+// WriteAt runs the write at operation.
 func (b *FSStorageBackend) WriteAt(p []byte, off int64) (int, error) {
 	n, err := b.f.WriteAt(p, off)
 	if err == nil {
@@ -83,6 +86,7 @@ func (b *FSStorageBackend) WriteAt(p []byte, off int64) (int, error) {
 	return n, err
 }
 
+// Readv runs the readv operation.
 func (b *FSStorageBackend) Readv(iovs [][]byte, off int64) (int, error) {
 	// Fallback to sequential Pread if Readv is not natively available or platform is not Linux.
 	// Note: On Darwin/Unix, we could use unix.Readv but it doesn't take an offset (it uses current pos).
@@ -103,6 +107,7 @@ func (b *FSStorageBackend) Readv(iovs [][]byte, off int64) (int, error) {
 	return total, nil
 }
 
+// Writev runs the writev operation.
 func (b *FSStorageBackend) Writev(iovs [][]byte, off int64) (int, error) {
 	total := 0
 	currOff := off
@@ -119,6 +124,7 @@ func (b *FSStorageBackend) Writev(iovs [][]byte, off int64) (int, error) {
 	return total, nil
 }
 
+// Sync runs the sync operation.
 func (b *FSStorageBackend) Sync() error {
 	start := time.Now()
 	err := b.f.Sync()
@@ -126,10 +132,12 @@ func (b *FSStorageBackend) Sync() error {
 	return err
 }
 
+// Close runs the close operation.
 func (b *FSStorageBackend) Close() error {
 	return b.f.Close()
 }
 
+// Size runs the size operation.
 func (b *FSStorageBackend) Size() (int64, error) {
 	fi, err := b.f.Stat()
 	if err != nil {
@@ -138,6 +146,7 @@ func (b *FSStorageBackend) Size() (int64, error) {
 	return fi.Size(), nil
 }
 
+// Name runs the name operation.
 func (b *FSStorageBackend) Name() string {
 	return b.path
 }

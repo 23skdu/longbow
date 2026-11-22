@@ -27,8 +27,11 @@ import (
 type CloudTier string
 
 const (
+	// CloudTierServerless is a cloud tier serverless constant.
 	CloudTierServerless CloudTier = "serverless"
-	CloudTierDedicated  CloudTier = "dedicated"
+	// CloudTierDedicated is a cloud tier dedicated constant.
+	CloudTierDedicated CloudTier = "dedicated"
+	// CloudTierEnterprise is a cloud tier enterprise constant.
 	CloudTierEnterprise CloudTier = "enterprise"
 )
 
@@ -36,21 +39,30 @@ const (
 type CloudClusterStatus string
 
 const (
+	// ClusterStatusProvisioning is a cluster status provisioning constant.
 	ClusterStatusProvisioning CloudClusterStatus = "provisioning"
-	ClusterStatusActive       CloudClusterStatus = "active"
-	ClusterStatusScaling      CloudClusterStatus = "scaling"
-	ClusterStatusDegraded     CloudClusterStatus = "degraded"
-	ClusterStatusFailover     CloudClusterStatus = "failover"
-	ClusterStatusDeleting     CloudClusterStatus = "deleting"
+	// ClusterStatusActive is a cluster status active constant.
+	ClusterStatusActive CloudClusterStatus = "active"
+	// ClusterStatusScaling is a cluster status scaling constant.
+	ClusterStatusScaling CloudClusterStatus = "scaling"
+	// ClusterStatusDegraded is a cluster status degraded constant.
+	ClusterStatusDegraded CloudClusterStatus = "degraded"
+	// ClusterStatusFailover is a cluster status failover constant.
+	ClusterStatusFailover CloudClusterStatus = "failover"
+	// ClusterStatusDeleting is a cluster status deleting constant.
+	ClusterStatusDeleting CloudClusterStatus = "deleting"
 )
 
 // ReplicationMode configures cross-region write acknowledgment policy.
 type ReplicationMode string
 
 const (
-	ReplicationAsync    ReplicationMode = "async"
+	// ReplicationAsync is a replication async constant.
+	ReplicationAsync ReplicationMode = "async"
+	// ReplicationSemiSync is a replication semi sync constant.
 	ReplicationSemiSync ReplicationMode = "semi_sync"
-	ReplicationSync     ReplicationMode = "sync"
+	// ReplicationSync is a replication sync constant.
+	ReplicationSync ReplicationMode = "sync"
 )
 
 // SLAPolicy defines uptime, replication RPO/lag, failover RTO, and latency targets.
@@ -181,6 +193,7 @@ type httpReplicationTransport struct {
 	client *http.Client
 }
 
+// Replicate runs the replicate operation.
 func (t *httpReplicationTransport) Replicate(ctx context.Context, replica *RegionReplica, ev ReplicationEvent) error {
 	if replica == nil {
 		return errors.New("nil replica")

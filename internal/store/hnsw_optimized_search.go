@@ -54,9 +54,14 @@ type BeamSearchCandidate struct {
 // BeamSearchHeap is a min-priority queue of search candidates, ordered by distance.
 type BeamSearchHeap []BeamSearchCandidate
 
-func (h BeamSearchHeap) Len() int           { return len(h) }
+// Len runs the len operation.
+func (h BeamSearchHeap) Len() int { return len(h) }
+
+// Less runs the less operation.
 func (h BeamSearchHeap) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
-func (h BeamSearchHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+// Swap runs the swap operation.
+func (h BeamSearchHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 // Push adds a candidate to the heap.
 func (h *BeamSearchHeap) Push(x any) {

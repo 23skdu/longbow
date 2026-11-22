@@ -9,16 +9,19 @@ import (
 type PacketType uint8
 
 const (
-	PacketPing    PacketType = 1
-	PacketAck     PacketType = 2
+	// PacketPing is a packet ping constant.
+	PacketPing PacketType = 1
+	// PacketAck is a packet ack constant.
+	PacketAck PacketType = 2
+	// PacketPingReq is a packet ping req constant.
 	PacketPingReq PacketType = 3
 )
 
 const (
-	// HeaderSize: Type(1) + Flags(1) + Seq(4) + NumUpdates(1)
+	// HeaderSize Type(1) + Flags(1) + Seq(4) + NumUpdates(1)
 	HeaderSize = 7
 
-	// Flags
+	// FlagCompressed marks a gossip packet payload as compressed.
 	FlagCompressed uint8 = 0x01
 )
 

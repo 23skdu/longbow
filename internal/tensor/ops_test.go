@@ -43,6 +43,7 @@ func assertNoErr(t *testing.T, err error) {
 	}
 }
 
+// TestDtypeSize runs the test dtype size operation.
 func TestDtypeSize(t *testing.T) {
 	tests := []struct {
 		d    Dtype
@@ -63,6 +64,7 @@ func TestDtypeSize(t *testing.T) {
 	}
 }
 
+// TestDtypePromote runs the test dtype promote operation.
 func TestDtypePromote(t *testing.T) {
 	tests := []struct {
 		a, b, want Dtype
@@ -79,6 +81,7 @@ func TestDtypePromote(t *testing.T) {
 	}
 }
 
+// TestDtypeClassification runs the test dtype classification operation.
 func TestDtypeClassification(t *testing.T) {
 	if !DtypeFloat32.IsFloat() {
 		t.Error("float32 should be float")
@@ -97,6 +100,7 @@ func TestDtypeClassification(t *testing.T) {
 	}
 }
 
+// TestNewTensor runs the test new tensor operation.
 func TestNewTensor(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 3})
 	assertEq(t, a.Rank(), 2)
@@ -107,6 +111,7 @@ func TestNewTensor(t *testing.T) {
 	assertEq(t, len(a.Data()), 24)
 }
 
+// TestNewFromData runs the test new from data operation.
 func TestNewFromData(t *testing.T) {
 	data := make([]byte, 12) // 3 float32s
 	a := NewFromData(DtypeFloat32, Shape{3}, data)
@@ -115,6 +120,7 @@ func TestNewFromData(t *testing.T) {
 	assertEq32(t, a.Float32s()[0], 1.5, 1e-6)
 }
 
+// TestCloneIndependence runs the test clone independence operation.
 func TestCloneIndependence(t *testing.T) {
 	a := New(DtypeFloat32, Shape{3})
 	a.Float32s()[0] = 1
@@ -126,6 +132,7 @@ func TestCloneIndependence(t *testing.T) {
 	assertEq32(t, b.Float32s()[0], 99, 1e-6)
 }
 
+// TestReshape runs the test reshape operation.
 func TestReshape(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 3})
 	b := a.Reshape(Shape{6})
@@ -135,6 +142,7 @@ func TestReshape(t *testing.T) {
 	assertPanic(t, func() { a.Reshape(Shape{5}) })
 }
 
+// TestAt runs the test at operation.
 func TestAt(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 2})
 	a.Float32s()[0] = 1 // [0,0]
@@ -146,6 +154,7 @@ func TestAt(t *testing.T) {
 	assertPanic(t, func() { a.At(0) })
 }
 
+// TestLabels runs the test labels operation.
 func TestLabels(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 3})
 	if a.Labels() != nil {
@@ -157,6 +166,7 @@ func TestLabels(t *testing.T) {
 	assertPanic(t, func() { a.SetLabels([]string{"x"}) })
 }
 
+// TestAdd runs the test add operation.
 func TestAdd(t *testing.T) {
 	a := New(DtypeFloat32, Shape{3})
 	a.Float32s()[0] = 1
@@ -173,6 +183,7 @@ func TestAdd(t *testing.T) {
 	assertEq32(t, c.Float32s()[2], 33, 1e-6)
 }
 
+// TestBroadcast runs the test broadcast operation.
 func TestBroadcast(t *testing.T) {
 	a := New(DtypeFloat32, Shape{3, 1})
 	a.Float32s()[0] = 10
@@ -191,6 +202,7 @@ func TestBroadcast(t *testing.T) {
 	assertEq32(t, out[2], 13, 1e-6) // [0,2] = 10+3
 }
 
+// TestNeg runs the test neg operation.
 func TestNeg(t *testing.T) {
 	a := New(DtypeFloat32, Shape{3})
 	a.Float32s()[0] = 1
@@ -203,6 +215,7 @@ func TestNeg(t *testing.T) {
 	assertEq32(t, c.Float32s()[2], -3, 1e-6)
 }
 
+// TestSinCos runs the test sin cos operation.
 func TestSinCos(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2})
 	a.Float32s()[0] = 0
@@ -216,6 +229,7 @@ func TestSinCos(t *testing.T) {
 	assertEq32(t, cos.Float32s()[0], 1, 1e-4)
 }
 
+// TestExpLogSqrtPow runs the test exp log sqrt pow operation.
 func TestExpLogSqrtPow(t *testing.T) {
 	a := New(DtypeFloat32, Shape{3})
 	a.Float32s()[0] = 0
@@ -249,6 +263,7 @@ func TestExpLogSqrtPow(t *testing.T) {
 	assertEq32(t, pow.Float32s()[0], 8, 0.1)
 }
 
+// TestSinhCoshTanhErf runs the test sinh cosh tanh erf operation.
 func TestSinhCoshTanhErf(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2})
 	a.Float32s()[0] = 0
@@ -269,6 +284,7 @@ func TestSinhCoshTanhErf(t *testing.T) {
 	assertEq32(t, erf.Float32s()[1], 0.5205, 1e-2)
 }
 
+// TestTranspose runs the test transpose operation.
 func TestTranspose(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 3})
 	// row-major: [0,0]=0, [0,1]=1, [0,2]=2, [1,0]=3, [1,1]=4, [1,2]=5
@@ -282,6 +298,7 @@ func TestTranspose(t *testing.T) {
 	assertEq(t, b.NumElements(), 6)
 }
 
+// TestReduceSum runs the test reduce sum operation.
 func TestReduceSum(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 2})
 	a.Float32s()[0] = 1 // [0,0]
@@ -297,6 +314,7 @@ func TestReduceSum(t *testing.T) {
 	assertEq32(t, sum.Float32s()[1], 6, 1e-6)
 }
 
+// TestTensorContract runs the test tensor contract operation.
 func TestTensorContract(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2})
 	a.Float32s()[0] = 1
@@ -312,6 +330,7 @@ func TestTensorContract(t *testing.T) {
 	assertEq32(t, out.Float32s()[0], 11, 1e-6) // 1*3 + 2*4
 }
 
+// TestMatMul runs the test mat mul operation.
 func TestMatMul(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 2})
 	a.Float32s()[0] = 1 // [0,0]
@@ -331,6 +350,7 @@ func TestMatMul(t *testing.T) {
 	assertEq(t, out.Shape()[1], 2)
 }
 
+// TestMatMulError runs the test mat mul error operation.
 func TestMatMulError(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 3})
 	b := New(DtypeFloat32, Shape{4, 5})
@@ -345,6 +365,7 @@ func TestMatMulError(t *testing.T) {
 	}
 }
 
+// TestBinaryShapeError runs the test binary shape error operation.
 func TestBinaryShapeError(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 3})
 	b := New(DtypeFloat32, Shape{4}) // not broadcastable with [2,3]
@@ -354,6 +375,7 @@ func TestBinaryShapeError(t *testing.T) {
 	}
 }
 
+// TestParseEinsum runs the test parse einsum operation.
 func TestParseEinsum(t *testing.T) {
 	op, err := ParseEinsum("ij,jk->ik")
 	assertNoErr(t, err)
@@ -367,6 +389,7 @@ func TestParseEinsum(t *testing.T) {
 	assertEq(t, op.NumIndices, 3)
 }
 
+// TestParseEinsumErrors runs the test parse einsum errors operation.
 func TestParseEinsumErrors(t *testing.T) {
 	_, err := ParseEinsum("")
 	if err == nil {
@@ -378,6 +401,7 @@ func TestParseEinsumErrors(t *testing.T) {
 	}
 }
 
+// TestEinsumValidate runs the test einsum validate operation.
 func TestEinsumValidate(t *testing.T) {
 	op, _ := ParseEinsum("ij,jk->ik")
 	assertNoErr(t, op.Validate([]Shape{{2, 3}, {3, 4}}))
@@ -391,6 +415,7 @@ func TestEinsumValidate(t *testing.T) {
 	}
 }
 
+// TestInferOutputShape runs the test infer output shape operation.
 func TestInferOutputShape(t *testing.T) {
 	op, _ := ParseEinsum("ij,jk->ik")
 	shape := op.InferOutputShape([]Shape{{2, 3}, {3, 4}})
@@ -398,6 +423,7 @@ func TestInferOutputShape(t *testing.T) {
 	assertEq(t, shape[1], 4)
 }
 
+// TestOptimizePath runs the test optimize path operation.
 func TestOptimizePath(t *testing.T) {
 	op, _ := ParseEinsum("ij,jk,kl->il")
 	path := op.OptimizePath([]Shape{{2, 3}, {3, 4}, {4, 5}})
@@ -409,12 +435,14 @@ func TestOptimizePath(t *testing.T) {
 	assertStr(t, path.Final[1], "l")
 }
 
+// TestOptimizePathTwoInputs runs the test optimize path two inputs operation.
 func TestOptimizePathTwoInputs(t *testing.T) {
 	op, _ := ParseEinsum("ij,jk->ik")
 	path := op.OptimizePath([]Shape{{2, 3}, {3, 4}})
 	assertEq(t, len(path.Contracts), 1)
 }
 
+// TestIRGraph runs the test ir graph operation.
 func TestIRGraph(t *testing.T) {
 	in0 := NewInput(0, DtypeFloat32, Shape{2, 3})
 	in1 := NewInput(1, DtypeFloat32, Shape{3, 4})
@@ -426,6 +454,7 @@ func TestIRGraph(t *testing.T) {
 	assertEq(t, len(g.Input), 2)
 }
 
+// TestIRGraphDedup runs the test ir graph dedup operation.
 func TestIRGraphDedup(t *testing.T) {
 	in := NewInput(0, DtypeFloat32, Shape{3})
 	root := NewElementwise("add", in, in)
@@ -433,6 +462,7 @@ func TestIRGraphDedup(t *testing.T) {
 	assertEq(t, len(g.Input), 1)
 }
 
+// TestIRNodeTypes runs the test ir node types operation.
 func TestIRNodeTypes(t *testing.T) {
 	in := NewInput(0, DtypeFloat32, Shape{3})
 	if in.Kind != OpInput {
@@ -460,11 +490,13 @@ func TestIRNodeTypes(t *testing.T) {
 	}
 }
 
+// TestIRNumElements runs the test ir num elements operation.
 func TestIRNumElements(t *testing.T) {
 	in := NewInput(0, DtypeFloat32, Shape{2, 3, 4})
 	assertEq(t, in.NumElements(), 24)
 }
 
+// TestIRString runs the test ir string operation.
 func TestIRString(t *testing.T) {
 	in := NewInput(0, DtypeFloat32, Shape{2, 3})
 	if s := in.String(); s != "input[0][2 3]" {
@@ -484,6 +516,7 @@ func TestIRString(t *testing.T) {
 	}
 }
 
+// TestContractShapeInference runs the test contract shape inference operation.
 func TestContractShapeInference(t *testing.T) {
 	a := NewInput(0, DtypeFloat32, Shape{2, 5, 3})
 	b := NewInput(1, DtypeFloat32, Shape{3, 4})

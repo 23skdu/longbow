@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestVectorStore_GoroutineLeak runs the test vector store_goroutine leak operation.
 func TestVectorStore_GoroutineLeak(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

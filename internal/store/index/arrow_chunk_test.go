@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestChunkedGrowth runs the test chunked growth operation.
 func TestChunkedGrowth(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.InitialCapacity = 10 // Start small
@@ -97,6 +98,7 @@ func TestChunkedGrowth(t *testing.T) {
 	}
 }
 
+// TestChunkHelpers runs the test chunk helpers operation.
 func TestChunkHelpers(t *testing.T) {
 	// Verify types.ChunkID/Offset logic matches types.ChunkSize constants
 	id := uint32(types.ChunkSize + 5)

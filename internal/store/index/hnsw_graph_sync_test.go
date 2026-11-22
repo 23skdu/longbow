@@ -9,6 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
+// TestHNSWGraphSync_ExportState runs the test hnsw graph sync_export state operation.
 func TestHNSWGraphSync_ExportState(t *testing.T) {
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -35,6 +36,7 @@ func TestHNSWGraphSync_ExportState(t *testing.T) {
 	}
 }
 
+// TestHNSWGraphSync_ImportState runs the test hnsw graph sync_import state operation.
 func TestHNSWGraphSync_ImportState(t *testing.T) {
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -74,6 +76,7 @@ func TestHNSWGraphSync_ImportState(t *testing.T) {
 	}
 }
 
+// TestHNSWGraphSync_GraphExportImport runs the test hnsw graph sync_graph export import operation.
 func TestHNSWGraphSync_GraphExportImport(t *testing.T) {
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -100,6 +103,7 @@ func TestHNSWGraphSync_GraphExportImport(t *testing.T) {
 	}
 }
 
+// TestHNSWGraphSync_DeltaSync runs the test hnsw graph sync_delta sync operation.
 func TestHNSWGraphSync_DeltaSync(t *testing.T) {
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -132,6 +136,7 @@ func TestHNSWGraphSync_DeltaSync(t *testing.T) {
 	}
 }
 
+// TestHNSWGraphSync_Metrics runs the test hnsw graph sync_metrics operation.
 func TestHNSWGraphSync_Metrics(t *testing.T) {
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -153,6 +158,7 @@ func TestHNSWGraphSync_Metrics(t *testing.T) {
 	}
 }
 
+// TestHNSWGraphSync_EmptyGraph runs the test hnsw graph sync_empty graph operation.
 func TestHNSWGraphSync_EmptyGraph(t *testing.T) {
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -174,6 +180,7 @@ func TestHNSWGraphSync_EmptyGraph(t *testing.T) {
 	}
 }
 
+// TestHNSWGraphSync_ConcurrentSync runs the test hnsw graph sync_concurrent sync operation.
 func TestHNSWGraphSync_ConcurrentSync(t *testing.T) {
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -208,6 +215,7 @@ func TestHNSWGraphSync_ConcurrentSync(t *testing.T) {
 	}
 }
 
+// TestHNSWGraphSync_ApplyDelta runs the test hnsw graph sync_apply delta operation.
 func TestHNSWGraphSync_ApplyDelta(t *testing.T) {
 	schema := arrow.NewSchema(
 		[]arrow.Field{

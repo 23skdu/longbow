@@ -8,6 +8,7 @@ import (
 // Adaptive Alpha Tests
 // =============================================================================
 
+// TestEstimateAlpha runs the test estimate alpha operation.
 func TestEstimateAlpha(t *testing.T) {
 	tests := []struct {
 		query    string

@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// FuzzDecodePacket runs the fuzz decode packet operation.
 func FuzzDecodePacket(f *testing.F) {
 	// Seed corpus matches HeaderSize (6 bytes) + some payload
 	f.Add([]byte{1, 0, 0, 0, 0, 0})                 // Min valid packet

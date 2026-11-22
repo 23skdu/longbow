@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestBatchDistanceCompute runs the test batch distance compute operation.
 func TestBatchDistanceCompute(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -31,6 +32,7 @@ func TestBatchDistanceCompute(t *testing.T) {
 	}
 }
 
+// BenchmarkBatchDistanceCompute runs the benchmark batch distance compute operation.
 func BenchmarkBatchDistanceCompute(b *testing.B) {
 	numPairs := 100
 	queries := make([][]float32, numPairs)
@@ -52,6 +54,7 @@ func BenchmarkBatchDistanceCompute(b *testing.B) {
 	}
 }
 
+// BenchmarkBatchVsSequential runs the benchmark batch vs sequential operation.
 func BenchmarkBatchVsSequential(b *testing.B) {
 	numPairs := 100
 	queries := make([][]float32, numPairs)

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFSStorageBackend runs the test fs storage backend operation.
 func TestFSStorageBackend(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.bin")
@@ -50,6 +51,7 @@ func TestFSStorageBackend(t *testing.T) {
 	assert.Equal(t, "data", string(riovs[1]))
 }
 
+// TestDirectIOBackend runs the test direct io backend operation.
 func TestDirectIOBackend(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "direct.bin")

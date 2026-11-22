@@ -354,7 +354,7 @@ func TestEnsureTimestampZeroCopy_ConsistentTimestamp(t *testing.T) {
 	}
 }
 
-// Benchmark: Compare old vs new implementation
+// BenchmarkEnsureTimestamp_Old Compare old vs new implementation
 func BenchmarkEnsureTimestamp_Old(b *testing.B) {
 	mem := memory.NewGoAllocator()
 
@@ -385,6 +385,7 @@ func BenchmarkEnsureTimestamp_Old(b *testing.B) {
 	}
 }
 
+// BenchmarkEnsureTimestamp_ZeroCopy runs the benchmark ensure timestamp_zero copy operation.
 func BenchmarkEnsureTimestamp_ZeroCopy(b *testing.B) {
 	mem := memory.NewGoAllocator()
 
@@ -415,7 +416,7 @@ func BenchmarkEnsureTimestamp_ZeroCopy(b *testing.B) {
 	}
 }
 
-// Benchmark with large records (10K rows)
+// BenchmarkEnsureTimestamp_Old_10K with large records (10K rows)
 func BenchmarkEnsureTimestamp_Old_10K(b *testing.B) {
 	mem := memory.NewGoAllocator()
 
@@ -445,6 +446,7 @@ func BenchmarkEnsureTimestamp_Old_10K(b *testing.B) {
 	}
 }
 
+// BenchmarkEnsureTimestamp_ZeroCopy_10K runs the benchmark ensure timestamp_zero copy_10 k operation.
 func BenchmarkEnsureTimestamp_ZeroCopy_10K(b *testing.B) {
 	mem := memory.NewGoAllocator()
 

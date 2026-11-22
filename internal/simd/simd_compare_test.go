@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestMatchInt64_Correctness runs the test match int64_correctness operation.
 func TestMatchInt64_Correctness(t *testing.T) {
 	src := []int64{10, 20, 30, 40, 50, 10, 50}
 	dst := make([]byte, len(src))
@@ -38,6 +39,7 @@ func TestMatchInt64_Correctness(t *testing.T) {
 	}
 }
 
+// TestMatchFloat32_Correctness runs the test match float32_correctness operation.
 func TestMatchFloat32_Correctness(t *testing.T) {
 	src := []float32{1.5, 2.5, 3.5, 4.5, 5.5}
 	dst := make([]byte, len(src))
@@ -71,6 +73,7 @@ func TestMatchFloat32_Correctness(t *testing.T) {
 	}
 }
 
+// TestMatchFloat32_AVX2_LargeArray runs the test match float32_avx2_large array operation.
 func TestMatchFloat32_AVX2_LargeArray(t *testing.T) {
 	src8 := []float32{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0}
 	dst8 := make([]byte, len(src8))

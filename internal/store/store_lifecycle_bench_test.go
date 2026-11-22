@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// BenchmarkIndexWorker_Throughput runs the benchmark index worker_throughput operation.
 func BenchmarkIndexWorker_Throughput(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
@@ -37,6 +38,7 @@ func BenchmarkIndexWorker_Throughput(b *testing.B) {
 	})
 }
 
+// BenchmarkIndexWorker_BulkInsert runs the benchmark index worker_bulk insert operation.
 func BenchmarkIndexWorker_BulkInsert(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema(

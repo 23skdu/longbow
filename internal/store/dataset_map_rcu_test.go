@@ -15,6 +15,7 @@ type ProtoRCU struct {
 	data atomic.Pointer[map[string]int]
 }
 
+// NewProtoRCU constructs a new ProtoRCU.
 func NewProtoRCU() *ProtoRCU {
 	p := &ProtoRCU{}
 	m := make(map[string]int)
@@ -22,12 +23,14 @@ func NewProtoRCU() *ProtoRCU {
 	return p
 }
 
+// Get returns the .
 func (p *ProtoRCU) Get(key string) (int, bool) {
 	m := *p.data.Load()
 	val, ok := m[key]
 	return val, ok
 }
 
+// Len runs the len operation.
 func (p *ProtoRCU) Len() int {
 	return len(*p.data.Load())
 }
@@ -83,6 +86,7 @@ func (p *ProtoRCU) Delete(key string) {
 	}
 }
 
+// TestProtoRCU_Correctness runs the test proto rcu_correctness operation.
 func TestProtoRCU_Correctness(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -108,6 +112,7 @@ func TestProtoRCU_Correctness(t *testing.T) {
 	}
 }
 
+// TestProtoRCU_Concurrency runs the test proto rcu_concurrency operation.
 func TestProtoRCU_Concurrency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -149,6 +154,7 @@ func TestProtoRCU_Concurrency(t *testing.T) {
 	}
 }
 
+// TestProtoRCU_CompareAndSwap_Spin runs the test proto rcu_compare and swap_spin operation.
 func TestProtoRCU_CompareAndSwap_Spin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

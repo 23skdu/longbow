@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMortonEncoding runs the test morton encoding operation.
 func TestMortonEncoding(t *testing.T) {
 	// 2D Morton tests
 	assert.Equal(t, uint64(0), MortonEncode2D(0, 0))
@@ -24,6 +25,7 @@ func TestMortonEncoding(t *testing.T) {
 	assert.Equal(t, uint64(7), MortonEncode3D(1, 1, 1))
 }
 
+// TestHNSW_CompactGraphLayoutParity runs the test hnsw_compact graph layout parity operation.
 func TestHNSW_CompactGraphLayoutParity(t *testing.T) {
 	numVecs := 100
 	dims := 32

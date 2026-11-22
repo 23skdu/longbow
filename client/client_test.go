@@ -24,6 +24,7 @@ type MockFlightServer struct {
 	callCount   atomic.Int32
 }
 
+// DoGet runs the do get operation.
 func (s *MockFlightServer) DoGet(ticket *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 	s.callCount.Add(1)
 	if s.shouldError {
@@ -33,6 +34,7 @@ func (s *MockFlightServer) DoGet(ticket *flight.Ticket, stream flight.FlightServ
 	return nil
 }
 
+// GetFlightInfo returns the flight info.
 func (s *MockFlightServer) GetFlightInfo(ctx context.Context, desc *flight.FlightDescriptor) (*flight.FlightInfo, error) {
 	s.callCount.Add(1)
 	if s.shouldError {
@@ -58,6 +60,7 @@ func startMockServer(t *testing.T) (*MockFlightServer, *grpc.Server) {
 	return mock, s
 }
 
+// TestSmartClient_Redirection runs the test smart client_redirection operation.
 func TestSmartClient_Redirection(t *testing.T) {
 	// Setup Node 1 (Redirects)
 	mock1, s1 := startMockServer(t)
@@ -127,6 +130,7 @@ func TestSmartClient_Redirection(t *testing.T) {
 	})
 }
 
+// TestSmartClient_MaxRedirects runs the test smart client_max redirects operation.
 func TestSmartClient_MaxRedirects(t *testing.T) {
 	// Setup Node 1 (Redirects loop)
 	mock1, s1 := startMockServer(t)

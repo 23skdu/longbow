@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestConsistentHash_AddRemove runs the test consistent hash_add remove operation.
 func TestConsistentHash_AddRemove(t *testing.T) {
 	c := NewConsistentHash(20)
 	c.AddNode("node1")
@@ -21,6 +22,7 @@ func TestConsistentHash_AddRemove(t *testing.T) {
 	assert.Equal(t, "node2", node)
 }
 
+// TestConsistentHash_Distribution runs the test consistent hash_distribution operation.
 func TestConsistentHash_Distribution(t *testing.T) {
 	c := NewConsistentHash(20)
 	nodes := []string{"node1", "node2", "node3", "node4", "node5"}
@@ -41,6 +43,7 @@ func TestConsistentHash_Distribution(t *testing.T) {
 	}
 }
 
+// TestConsistentHash_GetPreferenceList runs the test consistent hash_get preference list operation.
 func TestConsistentHash_GetPreferenceList(t *testing.T) {
 	c := NewConsistentHash(20)
 	nodes := []string{"node1", "node2", "node3", "node4", "node5"}
@@ -61,12 +64,14 @@ func TestConsistentHash_GetPreferenceList(t *testing.T) {
 	}
 }
 
+// TestConsistentHash_EmptyRing runs the test consistent hash_empty ring operation.
 func TestConsistentHash_EmptyRing(t *testing.T) {
 	c := NewConsistentHash(10)
 	node := c.GetNode("any-key")
 	assert.Equal(t, "", node)
 }
 
+// TestConsistentHash_SingleNode runs the test consistent hash_single node operation.
 func TestConsistentHash_SingleNode(t *testing.T) {
 	c := NewConsistentHash(50)
 	c.AddNode("single")
@@ -78,6 +83,7 @@ func TestConsistentHash_SingleNode(t *testing.T) {
 	}
 }
 
+// TestConsistentHash_RemoveLastNode runs the test consistent hash_remove last node operation.
 func TestConsistentHash_RemoveLastNode(t *testing.T) {
 	c := NewConsistentHash(20)
 	c.AddNode("only-node")
@@ -88,6 +94,7 @@ func TestConsistentHash_RemoveLastNode(t *testing.T) {
 	assert.Equal(t, "", node)
 }
 
+// TestConsistentHash_GetNodeDeterministic runs the test consistent hash_get node deterministic operation.
 func TestConsistentHash_GetNodeDeterministic(t *testing.T) {
 	c := NewConsistentHash(50)
 	c.AddNode("node1")
@@ -101,6 +108,7 @@ func TestConsistentHash_GetNodeDeterministic(t *testing.T) {
 	assert.Equal(t, node1, node2, "Same key should always return same node")
 }
 
+// TestConsistentHash_PreferenceListExhaustion runs the test consistent hash_preference list exhaustion operation.
 func TestConsistentHash_PreferenceListExhaustion(t *testing.T) {
 	c := NewConsistentHash(100)
 	c.AddNode("node1")
@@ -111,6 +119,7 @@ func TestConsistentHash_PreferenceListExhaustion(t *testing.T) {
 	assert.Len(t, replicas, 2) // Only 2 distinct nodes exist
 }
 
+// TestConsistentHash_PreferenceListUniqueness runs the test consistent hash_preference list uniqueness operation.
 func TestConsistentHash_PreferenceListUniqueness(t *testing.T) {
 	c := NewConsistentHash(50)
 	c.AddNode("node1")
@@ -130,6 +139,7 @@ func TestConsistentHash_PreferenceListUniqueness(t *testing.T) {
 	}
 }
 
+// BenchmarkConsistentHash_GetNode runs the benchmark consistent hash_get node operation.
 func BenchmarkConsistentHash_GetNode(b *testing.B) {
 	c := NewConsistentHash(100)
 	for i := 0; i < 10; i++ {
@@ -151,6 +161,7 @@ func BenchmarkConsistentHash_GetNode(b *testing.B) {
 	}
 }
 
+// BenchmarkConsistentHash_GetPreferenceList runs the benchmark consistent hash_get preference list operation.
 func BenchmarkConsistentHash_GetPreferenceList(b *testing.B) {
 	c := NewConsistentHash(100)
 	for i := 0; i < 10; i++ {
@@ -172,6 +183,7 @@ func BenchmarkConsistentHash_GetPreferenceList(b *testing.B) {
 	}
 }
 
+// BenchmarkConsistentHash_AddNode runs the benchmark consistent hash_add node operation.
 func BenchmarkConsistentHash_AddNode(b *testing.B) {
 	c := NewConsistentHash(100)
 
@@ -183,6 +195,7 @@ func BenchmarkConsistentHash_AddNode(b *testing.B) {
 	}
 }
 
+// TestConsistentHash_CacheBasic runs the test consistent hash_cache basic operation.
 func TestConsistentHash_CacheBasic(t *testing.T) {
 	c := NewConsistentHash(20)
 	c.AddNode("node1")
@@ -205,6 +218,7 @@ func TestConsistentHash_CacheBasic(t *testing.T) {
 	assert.Equal(t, int64(1), metrics.CacheHits)
 }
 
+// TestConsistentHash_CacheInvalidation runs the test consistent hash_cache invalidation operation.
 func TestConsistentHash_CacheInvalidation(t *testing.T) {
 	c := NewConsistentHash(20)
 	c.AddNode("node1")
@@ -240,6 +254,7 @@ func TestConsistentHash_CacheInvalidation(t *testing.T) {
 	assert.Equal(t, int64(2), metrics.CacheMisses)
 }
 
+// TestConsistentHash_CacheClear runs the test consistent hash_cache clear operation.
 func TestConsistentHash_CacheClear(t *testing.T) {
 	c := NewConsistentHash(20)
 	c.AddNode("node1")
@@ -262,6 +277,7 @@ func TestConsistentHash_CacheClear(t *testing.T) {
 	assert.Equal(t, 0, metrics.CacheSize)
 }
 
+// TestConsistentHash_CacheExpiry runs the test consistent hash_cache expiry operation.
 func TestConsistentHash_CacheExpiry(t *testing.T) {
 	// Create ring with very short TTL
 	c := NewConsistentHashWithCache(20, 100, 10*time.Millisecond)
@@ -283,6 +299,7 @@ func TestConsistentHash_CacheExpiry(t *testing.T) {
 	assert.Equal(t, int64(2), metrics.CacheMisses)
 }
 
+// TestConsistentHash_CacheCapacity runs the test consistent hash_cache capacity operation.
 func TestConsistentHash_CacheCapacity(t *testing.T) {
 	// Create ring with small cache
 	c := NewConsistentHashWithCache(20, 50, time.Hour)
@@ -297,6 +314,7 @@ func TestConsistentHash_CacheCapacity(t *testing.T) {
 	assert.Equal(t, 50, metrics.CacheSize, "Cache should be at capacity")
 }
 
+// TestConsistentHash_GetNodeUncached runs the test consistent hash_get node uncached operation.
 func TestConsistentHash_GetNodeUncached(t *testing.T) {
 	c := NewConsistentHash(20)
 	c.AddNode("node1")
@@ -329,6 +347,7 @@ func TestConsistentHash_GetNodeUncached(t *testing.T) {
 	assert.Equal(t, int64(1), metrics.CacheMisses)
 }
 
+// TestConsistentHash_NodeCount runs the test consistent hash_node count operation.
 func TestConsistentHash_NodeCount(t *testing.T) {
 	c := NewConsistentHash(20)
 	assert.Equal(t, 0, c.NodeCount())
@@ -343,11 +362,13 @@ func TestConsistentHash_NodeCount(t *testing.T) {
 	assert.Equal(t, 1, c.NodeCount())
 }
 
+// TestConsistentHash_VirtualNodeCount runs the test consistent hash_virtual node count operation.
 func TestConsistentHash_VirtualNodeCount(t *testing.T) {
 	c := NewConsistentHash(100)
 	assert.Equal(t, 100, c.VirtualNodeCount())
 }
 
+// TestConsistentHash_TotalHashCount runs the test consistent hash_total hash count operation.
 func TestConsistentHash_TotalHashCount(t *testing.T) {
 	c := NewConsistentHash(50)
 	assert.Equal(t, 0, c.TotalHashCount())
@@ -359,6 +380,7 @@ func TestConsistentHash_TotalHashCount(t *testing.T) {
 	assert.Equal(t, 100, c.TotalHashCount())
 }
 
+// BenchmarkConsistentHash_GetNodeWithCache runs the benchmark consistent hash_get node with cache operation.
 func BenchmarkConsistentHash_GetNodeWithCache(b *testing.B) {
 	c := NewConsistentHash(100)
 	for i := 0; i < 10; i++ {
@@ -385,6 +407,7 @@ func BenchmarkConsistentHash_GetNodeWithCache(b *testing.B) {
 	}
 }
 
+// BenchmarkConsistentHash_GetNodeWithoutCache runs the benchmark consistent hash_get node without cache operation.
 func BenchmarkConsistentHash_GetNodeWithoutCache(b *testing.B) {
 	c := NewConsistentHash(100)
 	for i := 0; i < 10; i++ {
@@ -406,6 +429,7 @@ func BenchmarkConsistentHash_GetNodeWithoutCache(b *testing.B) {
 	}
 }
 
+// BenchmarkConsistentHash_CacheHitRate runs the benchmark consistent hash_cache hit rate operation.
 func BenchmarkConsistentHash_CacheHitRate(b *testing.B) {
 	c := NewConsistentHash(100)
 	for i := 0; i < 10; i++ {
@@ -428,6 +452,7 @@ func BenchmarkConsistentHash_CacheHitRate(b *testing.B) {
 	}
 }
 
+// TestConsistentHash_UpdateVNodeCount runs the test consistent hash_update v node count operation.
 func TestConsistentHash_UpdateVNodeCount(t *testing.T) {
 	c := NewConsistentHash(10)
 	c.AddNode("node1")

@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestFixedHeap_PushPop runs the test fixed heap_push pop operation.
 func TestFixedHeap_PushPop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -50,6 +51,7 @@ func TestFixedHeap_PushPop(t *testing.T) {
 	}
 }
 
+// TestFixedHeap_Peek runs the test fixed heap_peek operation.
 func TestFixedHeap_Peek(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -70,6 +72,7 @@ func TestFixedHeap_Peek(t *testing.T) {
 	}
 }
 
+// TestFixedHeap_Clear runs the test fixed heap_clear operation.
 func TestFixedHeap_Clear(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -91,6 +94,7 @@ func TestFixedHeap_Clear(t *testing.T) {
 	}
 }
 
+// TestFixedHeap_Capacity runs the test fixed heap_capacity operation.
 func TestFixedHeap_Capacity(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -113,6 +117,7 @@ func TestFixedHeap_Capacity(t *testing.T) {
 	}
 }
 
+// TestFixedHeap_RandomOrder runs the test fixed heap_random order operation.
 func TestFixedHeap_RandomOrder(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -145,6 +150,7 @@ func TestFixedHeap_RandomOrder(t *testing.T) {
 	}
 }
 
+// BenchmarkFixedHeap_Push runs the benchmark fixed heap_push operation.
 func BenchmarkFixedHeap_Push(b *testing.B) {
 	h := NewFixedHeap(1000)
 	b.ResetTimer()
@@ -156,6 +162,7 @@ func BenchmarkFixedHeap_Push(b *testing.B) {
 	}
 }
 
+// BenchmarkFixedHeap_Pop runs the benchmark fixed heap_pop operation.
 func BenchmarkFixedHeap_Pop(b *testing.B) {
 	h := NewFixedHeap(1000)
 	for j := 0; j < 1000; j++ {

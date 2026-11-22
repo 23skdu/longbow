@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestWebSocketServer_New runs the test web socket server_new operation.
 func TestWebSocketServer_New(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -27,6 +28,7 @@ func TestWebSocketServer_New(t *testing.T) {
 	assert.NotNil(t, wsServer.cdc)
 }
 
+// TestWSConnection_Close runs the test ws connection_close operation.
 func TestWSConnection_Close(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -49,6 +51,7 @@ func TestWSConnection_Close(t *testing.T) {
 	assert.True(t, wsConn.closed)
 }
 
+// TestWebSocketServer_Start runs the test web socket server_start operation.
 func TestWebSocketServer_Start(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -67,6 +70,7 @@ func TestWebSocketServer_Start(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestWSMessage_JSON runs the test ws message_json operation.
 func TestWSMessage_JSON(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -81,6 +85,7 @@ func TestWSMessage_JSON(t *testing.T) {
 	assert.Contains(t, string(data), "subscribe")
 }
 
+// TestWSSubscribePayload_JSON runs the test ws subscribe payload_json operation.
 func TestWSSubscribePayload_JSON(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -101,6 +106,7 @@ func TestWSSubscribePayload_JSON(t *testing.T) {
 	assert.Len(t, parsed.Columns, 2)
 }
 
+// TestWSDataPayload_JSON runs the test ws data payload_json operation.
 func TestWSDataPayload_JSON(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -121,6 +127,7 @@ func TestWSDataPayload_JSON(t *testing.T) {
 	assert.Equal(t, "insert", parsed.Event)
 }
 
+// TestWSType_String runs the test ws type_string operation.
 func TestWSType_String(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -133,6 +140,7 @@ func TestWSType_String(t *testing.T) {
 	assert.Equal(t, "pong", string(WSTypePong))
 }
 
+// TestWebSocketServer_Stop_Empty runs the test web socket server_stop_empty operation.
 func TestWebSocketServer_Stop_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -146,6 +154,7 @@ func TestWebSocketServer_Stop_Empty(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestWebSocketServer_HandleWS_UpgradeError runs the test web socket server_handle ws_upgrade error operation.
 func TestWebSocketServer_HandleWS_UpgradeError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

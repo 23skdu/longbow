@@ -20,10 +20,12 @@ type storeDatasetSearcher struct {
 	dataset string
 }
 
+// Search runs the search operation.
 func (a *storeDatasetSearcher) Search(ctx context.Context, query []float32, k int, _ types.SearchOptions) ([]types.SearchResult, error) {
 	return a.store.SearchDatasetVectors(ctx, a.dataset, query, k, nil)
 }
 
+// GetDimension returns the dimension.
 func (a *storeDatasetSearcher) GetDimension() int {
 	ds, ok := a.store.getDataset(a.dataset)
 	if !ok {

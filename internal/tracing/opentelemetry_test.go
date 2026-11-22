@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
+// TestInitTracer runs the test init tracer operation.
 func TestInitTracer(t *testing.T) {
 	err := InitTracer(SpanConfig{
 		ServiceName:    "test-service",
@@ -18,6 +19,7 @@ func TestInitTracer(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestInitTracerInvalidSampleRate runs the test init tracer invalid sample rate operation.
 func TestInitTracerInvalidSampleRate(t *testing.T) {
 	err := InitTracer(SpanConfig{SampleRate: -1})
 	assert.Error(t, err)
@@ -27,6 +29,7 @@ func TestInitTracerInvalidSampleRate(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestCreateSpan runs the test create span operation.
 func TestCreateSpan(t *testing.T) {
 	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
@@ -41,6 +44,7 @@ func TestCreateSpan(t *testing.T) {
 	}
 }
 
+// TestCreateSpanNoTracer runs the test create span no tracer operation.
 func TestCreateSpanNoTracer(t *testing.T) {
 	globalTracer = nil
 	ctx, span := CreateSpan(context.Background(), "test")
@@ -48,6 +52,7 @@ func TestCreateSpanNoTracer(t *testing.T) {
 	assert.Nil(t, span)
 }
 
+// TestTraceSpanEnd runs the test trace span end operation.
 func TestTraceSpanEnd(t *testing.T) {
 	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
@@ -59,6 +64,7 @@ func TestTraceSpanEnd(t *testing.T) {
 	assert.NotPanics(t, span.End)
 }
 
+// TestTraceSpanNilSafety runs the test trace span nil safety operation.
 func TestTraceSpanNilSafety(t *testing.T) {
 	var nilSpan *TraceSpan
 	assert.NotPanics(t, nilSpan.End)
@@ -68,6 +74,7 @@ func TestTraceSpanNilSafety(t *testing.T) {
 	assert.Equal(t, "", nilSpan.GetTraceID())
 }
 
+// TestTraceSpanSetStatus runs the test trace span set status operation.
 func TestTraceSpanSetStatus(t *testing.T) {
 	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
@@ -78,6 +85,7 @@ func TestTraceSpanSetStatus(t *testing.T) {
 	assert.NotPanics(t, func() { span.SetStatus(codes.Error, "something went wrong") })
 }
 
+// TestTraceSpanSetError runs the test trace span set error operation.
 func TestTraceSpanSetError(t *testing.T) {
 	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
@@ -88,6 +96,7 @@ func TestTraceSpanSetError(t *testing.T) {
 	assert.NotPanics(t, func() { span.SetError(assert.AnError) })
 }
 
+// TestTraceSpanSetAttributes runs the test trace span set attributes operation.
 func TestTraceSpanSetAttributes(t *testing.T) {
 	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
@@ -98,6 +107,7 @@ func TestTraceSpanSetAttributes(t *testing.T) {
 	assert.NotPanics(t, func() { span.SetAttributes("key1", "val1", "key2", "val2") })
 }
 
+// TestTraceSpanGetTraceID runs the test trace span get trace id operation.
 func TestTraceSpanGetTraceID(t *testing.T) {
 	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
@@ -109,6 +119,7 @@ func TestTraceSpanGetTraceID(t *testing.T) {
 	assert.IsType(t, "", id)
 }
 
+// TestGetContextTraceID runs the test get context trace id operation.
 func TestGetContextTraceID(t *testing.T) {
 	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
@@ -121,6 +132,7 @@ func TestGetContextTraceID(t *testing.T) {
 	assert.Empty(t, id)
 }
 
+// TestGetContextTraceIDWithSpan runs the test get context trace id with span operation.
 func TestGetContextTraceIDWithSpan(t *testing.T) {
 	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
@@ -135,6 +147,7 @@ func TestGetContextTraceIDWithSpan(t *testing.T) {
 	}
 }
 
+// TestGetContextTraceIDNoTracer runs the test get context trace id no tracer operation.
 func TestGetContextTraceIDNoTracer(t *testing.T) {
 	globalTracer = nil
 	ctx := context.Background()
@@ -142,6 +155,7 @@ func TestGetContextTraceIDNoTracer(t *testing.T) {
 	assert.Empty(t, id)
 }
 
+// TestSpanAttributeKeys runs the test span attribute keys operation.
 func TestSpanAttributeKeys(t *testing.T) {
 	assert.Equal(t, SpanAttributeKey("component"), ComponentKey)
 	assert.Equal(t, SpanAttributeKey("level"), LevelKey)

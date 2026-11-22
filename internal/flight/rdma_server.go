@@ -20,6 +20,7 @@ type RDMAServer struct {
 	grpcSrv  *grpc.Server
 }
 
+// NewRDMAServer constructs a new RDMAServer.
 func NewRDMAServer(enabled bool) *RDMAServer {
 	s := &RDMAServer{
 		ctx: mesh.NewRDMAContext(enabled),

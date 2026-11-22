@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestCUVSStub runs the test cuvs stub operation.
 func TestCUVSStub(t *testing.T) {
 	idx, err := NewCUVSIndex("test", 128)
 	if err == nil || idx != nil {

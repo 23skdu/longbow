@@ -18,6 +18,7 @@ type MockFailingBackend struct {
 	failSync  bool
 }
 
+// Write runs the write operation.
 func (m *MockFailingBackend) Write(p []byte) (int, error) {
 	if m.failWrite {
 		return 0, errors.New("simulated disk full")
@@ -25,6 +26,7 @@ func (m *MockFailingBackend) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Sync runs the sync operation.
 func (m *MockFailingBackend) Sync() error {
 	if m.failSync {
 		return errors.New("simulated sync error")
@@ -32,10 +34,16 @@ func (m *MockFailingBackend) Sync() error {
 	return nil
 }
 
-func (m *MockFailingBackend) Close() error   { return nil }
-func (m *MockFailingBackend) Name() string   { return "mock_fail" }
+// Close runs the close operation.
+func (m *MockFailingBackend) Close() error { return nil }
+
+// Name runs the name operation.
+func (m *MockFailingBackend) Name() string { return "mock_fail" }
+
+// File runs the file operation.
 func (m *MockFailingBackend) File() *os.File { return nil }
 
+// TestBufferedWAL_SilentFlushFailure_Reproduction runs the test buffered wal_silent flush failure_reproduction operation.
 func TestBufferedWAL_SilentFlushFailure_Reproduction(t *testing.T) {
 	// After fix: verify we catch the error on ErrCh
 

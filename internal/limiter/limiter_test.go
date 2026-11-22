@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// TestNewRateLimiter runs the test new rate limiter operation.
 func TestNewRateLimiter(t *testing.T) {
 	// Disabled
 	l := NewRateLimiter(Config{RPS: 0})
@@ -24,6 +25,7 @@ func TestNewRateLimiter(t *testing.T) {
 	assert.Equal(t, 20, l.limiter.Burst())
 }
 
+// TestRateLimiter_UnaryInterceptor runs the test rate limiter_unary interceptor operation.
 func TestRateLimiter_UnaryInterceptor(t *testing.T) {
 	// Setup limiter allowing 1 req/sec with burst 0 (implies burst 1 if passed via config logic,
 	// but NewRateLimiter(RPS:1, Burst:1) logic handles it. Let's verify.)
@@ -94,6 +96,7 @@ func TestRateLimiter_UnaryInterceptor(t *testing.T) {
 	assert.Equal(t, codes.ResourceExhausted, st.Code())
 }
 
+// TestRateLimiter_Disabled runs the test rate limiter_disabled operation.
 func TestRateLimiter_Disabled(t *testing.T) {
 	l := NewRateLimiter(Config{RPS: 0})
 	interceptor := l.UnaryInterceptor()
@@ -106,12 +109,14 @@ func TestRateLimiter_Disabled(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestRateLimiter_ZeroBurstDefaultsToRPS runs the test rate limiter_zero burst defaults to rps operation.
 func TestRateLimiter_ZeroBurstDefaultsToRPS(t *testing.T) {
 	l := NewRateLimiter(Config{RPS: 5, Burst: 0})
 	assert.True(t, l.enabled)
 	assert.Equal(t, 5, l.limiter.Burst())
 }
 
+// TestRateLimiter_StreamInterceptor_Disabled runs the test rate limiter_stream interceptor_disabled operation.
 func TestRateLimiter_StreamInterceptor_Disabled(t *testing.T) {
 	l := NewRateLimiter(Config{RPS: 0})
 	interceptor := l.StreamInterceptor()
@@ -124,6 +129,7 @@ func TestRateLimiter_StreamInterceptor_Disabled(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestRateLimiter_StreamInterceptor_Allowed runs the test rate limiter_stream interceptor_allowed operation.
 func TestRateLimiter_StreamInterceptor_Allowed(t *testing.T) {
 	l := NewRateLimiter(Config{RPS: 100, Burst: 100})
 	interceptor := l.StreamInterceptor()
@@ -138,6 +144,7 @@ func TestRateLimiter_StreamInterceptor_Allowed(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestRateLimiter_StreamInterceptor_ContextCanceled runs the test rate limiter_stream interceptor_context canceled operation.
 func TestRateLimiter_StreamInterceptor_ContextCanceled(t *testing.T) {
 	l := NewRateLimiter(Config{RPS: 1, Burst: 1})
 	interceptor := l.StreamInterceptor()
@@ -168,10 +175,12 @@ type mockServerStream struct {
 	grpc.ServerStream
 }
 
+// Context runs the context operation.
 func (m *mockServerStream) Context() context.Context {
 	return m.ctx
 }
 
+// TestRateLimiter_BurstExceededResourceExhausted runs the test rate limiter_burst exceeded resource exhausted operation.
 func TestRateLimiter_BurstExceededResourceExhausted(t *testing.T) {
 	l := NewRateLimiter(Config{RPS: 1, Burst: 1})
 	interceptor := l.UnaryInterceptor()
@@ -197,6 +206,7 @@ func TestRateLimiter_BurstExceededResourceExhausted(t *testing.T) {
 		"expected ResourceExhausted or DeadlineExceeded, got %v", st.Code())
 }
 
+// TestRateLimiter_UnaryInterceptor_ContextCanceled runs the test rate limiter_unary interceptor_context canceled operation.
 func TestRateLimiter_UnaryInterceptor_ContextCanceled(t *testing.T) {
 	l := NewRateLimiter(Config{RPS: 1, Burst: 1})
 	interceptor := l.UnaryInterceptor()
@@ -220,6 +230,7 @@ func TestRateLimiter_UnaryInterceptor_ContextCanceled(t *testing.T) {
 	assert.Equal(t, codes.Canceled, st.Code())
 }
 
+// TestRateLimiter_StreamInterceptor_Throttled runs the test rate limiter_stream interceptor_throttled operation.
 func TestRateLimiter_StreamInterceptor_Throttled(t *testing.T) {
 	l := NewRateLimiter(Config{RPS: 1, Burst: 1})
 	interceptor := l.StreamInterceptor()

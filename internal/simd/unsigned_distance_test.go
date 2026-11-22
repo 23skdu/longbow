@@ -28,6 +28,7 @@ func referenceL2(a, b []uint64) float64 {
 	return math.Sqrt(sum)
 }
 
+// TestEuclideanDistanceUint64DoesNotWrap runs the test euclidean distance uint64 does not wrap operation.
 func TestEuclideanDistanceUint64DoesNotWrap(t *testing.T) {
 	// Sizes straddle the 8x unroll boundary, since the unrolled loop and the tail
 	// used to disagree.
@@ -50,6 +51,7 @@ func TestEuclideanDistanceUint64DoesNotWrap(t *testing.T) {
 	}
 }
 
+// TestEuclideanUint64UnrolledMatchesDispatch runs the test euclidean uint64 unrolled matches dispatch operation.
 func TestEuclideanUint64UnrolledMatchesDispatch(t *testing.T) {
 	// The function used directly and the dispatched path must agree. They did not
 	// before the fix, because the unrolled body and its own tail loop disagreed.
@@ -74,6 +76,7 @@ func TestEuclideanUint64UnrolledMatchesDispatch(t *testing.T) {
 	}
 }
 
+// TestEuclideanDistanceUint64LargeValues runs the test euclidean distance uint64 large values operation.
 func TestEuclideanDistanceUint64LargeValues(t *testing.T) {
 	// Large magnitudes must not turn a small distance into a huge one.
 	const n = 128

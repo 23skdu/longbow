@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestElasticShardingSplitMergeFailoverAndAutoScale runs the test elastic sharding split merge failover and auto scale operation.
 func TestElasticShardingSplitMergeFailoverAndAutoScale(t *testing.T) {
 	ctrl := NewElasticShardingController(nil)
 	now := time.Now()
@@ -63,6 +64,7 @@ func TestElasticShardingSplitMergeFailoverAndAutoScale(t *testing.T) {
 	require.Equal(t, int64(200), merged.VectorCount)
 }
 
+// BenchmarkElasticShardSplitAndRoute runs the benchmark elastic shard split and route operation.
 func BenchmarkElasticShardSplitAndRoute(b *testing.B) {
 	ctrl := NewElasticShardingController(nil)
 	ctrl.RegisterNode(ClusterNodeHealth{NodeID: "n1", Healthy: true, LastHeartbeat: time.Now(), LoadScore: 0.2})
@@ -72,6 +74,7 @@ func BenchmarkElasticShardSplitAndRoute(b *testing.B) {
 	}
 }
 
+// FuzzElasticShardingRouting runs the fuzz elastic sharding routing operation.
 func FuzzElasticShardingRouting(f *testing.F) {
 	f.Add("dataset-1", "key-alpha", 4)
 	f.Add("ds", "", 1)

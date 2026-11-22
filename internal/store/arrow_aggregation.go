@@ -14,14 +14,21 @@ type mergeItem struct {
 // mergeHeap is a min-heap of mergeItems, ordered by score (distance).
 type mergeHeap []mergeItem
 
-func (h mergeHeap) Len() int           { return len(h) }
-func (h mergeHeap) Less(i, j int) bool { return h[i].result.Score < h[j].result.Score }
-func (h mergeHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+// Len runs the len operation.
+func (h mergeHeap) Len() int { return len(h) }
 
+// Less runs the less operation.
+func (h mergeHeap) Less(i, j int) bool { return h[i].result.Score < h[j].result.Score }
+
+// Swap runs the swap operation.
+func (h mergeHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+
+// Push runs the push operation.
 func (h *mergeHeap) Push(x any) {
 	*h = append(*h, x.(mergeItem))
 }
 
+// Pop runs the pop operation.
 func (h *mergeHeap) Pop() any {
 	old := *h
 	n := len(old)

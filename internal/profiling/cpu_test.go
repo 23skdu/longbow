@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestProfiler runs the test profiler operation.
 func TestProfiler(t *testing.T) {
 	logger := zerolog.New(io.Discard)
 	tmpDir, err := os.MkdirTemp("", "profiler-test-*")
@@ -55,6 +56,7 @@ func TestProfiler(t *testing.T) {
 	assert.GreaterOrEqual(t, len(entries), 2, "Should have at least CPU and Mem profile")
 }
 
+// TestProfiler_WriteProfile runs the test profiler_write profile operation.
 func TestProfiler_WriteProfile(t *testing.T) {
 	logger := zerolog.New(io.Discard)
 	p := NewProfiler(ProfilerConfig{}, &logger)
@@ -71,6 +73,7 @@ func TestProfiler_WriteProfile(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestGPURecorder runs the test gpu recorder operation.
 func TestGPURecorder(t *testing.T) {
 	g := NewGPURecorder(5)
 	require.NotNil(t, g)
@@ -88,6 +91,7 @@ func TestGPURecorder(t *testing.T) {
 	assert.Equal(t, "kernel6", records[4].KernelName)
 }
 
+// TestFlameGraphGenerator runs the test flame graph generator operation.
 func TestFlameGraphGenerator(t *testing.T) {
 	f := NewFlameGraphGenerator()
 	require.NotNil(t, f)

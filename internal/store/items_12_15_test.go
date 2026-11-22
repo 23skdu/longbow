@@ -71,6 +71,7 @@ func buildRichBatch(t testing.TB, alloc memory.Allocator, rows []struct {
 	return array.NewRecordBatch(schema, cols, int64(len(rows)))
 }
 
+// TestItem12SchemaConstraintsEvolutionAndMigration runs the test item12 schema constraints evolution and migration operation.
 func TestItem12SchemaConstraintsEvolutionAndMigration(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	reg := NewSchemaConstraintRegistry(nil)
@@ -133,6 +134,7 @@ func TestItem12SchemaConstraintsEvolutionAndMigration(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestItem13MaterializedViewsAndBench runs the test item13 materialized views and bench operation.
 func TestItem13MaterializedViewsAndBench(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -192,6 +194,7 @@ func TestItem13MaterializedViewsAndBench(t *testing.T) {
 	require.True(t, hit)
 }
 
+// BenchmarkMaterializedViewAggregation runs the benchmark materialized view aggregation operation.
 func BenchmarkMaterializedViewAggregation(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	rec := buildRichBatch(b, mem, []struct {
@@ -219,6 +222,7 @@ func BenchmarkMaterializedViewAggregation(b *testing.B) {
 	}
 }
 
+// TestItems14And15TextSearchFacetsAnalyticsAndProvenance runs the test items14 and15 text search facets analytics and provenance operation.
 func TestItems14And15TextSearchFacetsAnalyticsAndProvenance(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -298,6 +302,7 @@ func TestItems14And15TextSearchFacetsAnalyticsAndProvenance(t *testing.T) {
 	require.Equal(t, "s3://docs/security.pdf", exp.Candidates[0].Provenance.SourceURI)
 }
 
+// FuzzItems12To15ParsersAndEval runs the fuzz items12 to15 parsers and eval operation.
 func FuzzItems12To15ParsersAndEval(f *testing.F) {
 	f.Add(`"vector db" AND (auth~1 OR NOT legacy)`, "vector db auth encryption")
 	f.Add(`(((broken`, "")

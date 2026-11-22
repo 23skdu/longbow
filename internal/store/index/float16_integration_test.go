@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_Float16_ZeroCopy runs the test arrow hnsw_float16_zero copy operation.
 func TestArrowHNSW_Float16_ZeroCopy(t *testing.T) {
 	// 1. Setup
 	config := lbtypes.DefaultArrowHNSWConfig()

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestDispatchDistance_AllTypes runs the test dispatch distance_all types operation.
 func TestDispatchDistance_AllTypes(t *testing.T) {
 	// Initialize dispatch to ensure registry is populated
 	initializeDispatch()
@@ -77,6 +78,7 @@ func TestDispatchDistance_AllTypes(t *testing.T) {
 	})
 }
 
+// TestDispatchDistance_Metrics runs the test dispatch distance_metrics operation.
 func TestDispatchDistance_Metrics(t *testing.T) {
 	initializeDispatch()
 	a := []float32{1.0, 0.0}
@@ -92,6 +94,7 @@ func TestDispatchDistance_Metrics(t *testing.T) {
 	}
 }
 
+// TestDispatchDistance_Errors runs the test dispatch distance_errors operation.
 func TestDispatchDistance_Errors(t *testing.T) {
 	initializeDispatch()
 
@@ -116,6 +119,7 @@ func TestDispatchDistance_Errors(t *testing.T) {
 	})
 }
 
+// TestGetDataType_Extended runs the test get data type_extended operation.
 func TestGetDataType_Extended(t *testing.T) {
 	assert.Equal(t, DataTypeFloat32, GetDataType[float32]())
 	assert.Equal(t, DataTypeFloat16, GetDataType[float16.Num]())
@@ -135,6 +139,7 @@ func TestGetDataType_Extended(t *testing.T) {
 	assert.Equal(t, DataTypeFloat32, GetDataType[custom](), "Should fallback to float32")
 }
 
+// TestRegistry_Specialized runs the test registry_specialized operation.
 func TestRegistry_Specialized(t *testing.T) {
 	initializeDispatch()
 

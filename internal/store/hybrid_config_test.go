@@ -8,6 +8,7 @@ import (
 // Subtask 3: HybridSearchConfig Tests (TDD)
 // =============================================================================
 
+// TestDefaultHybridSearchConfig runs the test default hybrid search config operation.
 func TestDefaultHybridSearchConfig(t *testing.T) {
 	cfg := DefaultHybridSearchConfig()
 
@@ -40,6 +41,7 @@ func TestDefaultHybridSearchConfig(t *testing.T) {
 	}
 }
 
+// TestHybridSearchConfigValidation runs the test hybrid search config validation operation.
 func TestHybridSearchConfigValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -135,6 +137,7 @@ func TestHybridSearchConfigValidation(t *testing.T) {
 	}
 }
 
+// TestHybridSearchConfigWithBM25Config runs the test hybrid search config with bm25 config operation.
 func TestHybridSearchConfigWithBM25Config(t *testing.T) {
 	// Test that HybridSearchConfig embeds BM25Config properly
 	cfg := HybridSearchConfig{
@@ -164,6 +167,7 @@ func TestHybridSearchConfigWithBM25Config(t *testing.T) {
 	}
 }
 
+// TestHybridSearchConfigAlphaSemantics runs the test hybrid search config alpha semantics operation.
 func TestHybridSearchConfigAlphaSemantics(t *testing.T) {
 	// Alpha = 1.0 means pure vector search
 	// Alpha = 0.0 means pure keyword search

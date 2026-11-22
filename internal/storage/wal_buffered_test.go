@@ -24,6 +24,7 @@ type MockBackend struct {
 	closed bool
 }
 
+// Write runs the write operation.
 func (m *MockBackend) Write(p []byte) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -34,6 +35,7 @@ func (m *MockBackend) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Sync runs the sync operation.
 func (m *MockBackend) Sync() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -41,6 +43,7 @@ func (m *MockBackend) Sync() error {
 	return nil
 }
 
+// Close runs the close operation.
 func (m *MockBackend) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -66,9 +69,13 @@ func (m *MockBackend) isClosed() bool {
 	return m.closed
 }
 
-func (m *MockBackend) Name() string   { return "mock" }
+// Name runs the name operation.
+func (m *MockBackend) Name() string { return "mock" }
+
+// File runs the file operation.
 func (m *MockBackend) File() *os.File { return nil }
 
+// TestBufferedWAL_FlushInterval runs the test buffered wal_flush interval operation.
 func TestBufferedWAL_FlushInterval(t *testing.T) {
 	backend := &MockBackend{}
 	// Short flush interval
@@ -104,6 +111,7 @@ func TestBufferedWAL_FlushInterval(t *testing.T) {
 	assert.True(t, backend.isClosed())
 }
 
+// TestBufferedWAL_SyncForce runs the test buffered wal_sync force operation.
 func TestBufferedWAL_SyncForce(t *testing.T) {
 	backend := &MockBackend{}
 	// Long flush interval
@@ -134,6 +142,7 @@ func TestBufferedWAL_SyncForce(t *testing.T) {
 	assert.True(t, backend.isSynced())
 }
 
+// TestBufferedWAL_BatchSizeTrigger runs the test buffered wal_batch size trigger operation.
 func TestBufferedWAL_BatchSizeTrigger(t *testing.T) {
 	backend := &MockBackend{}
 	// Small batch buffer
@@ -159,6 +168,7 @@ func TestBufferedWAL_BatchSizeTrigger(t *testing.T) {
 	assert.NotEmpty(t, backend.getWrites(), "Should trigger flush due to size limit")
 }
 
+// TestBufferedWAL_ConcurrentSync runs the test buffered wal_concurrent sync operation.
 func TestBufferedWAL_ConcurrentSync(t *testing.T) {
 	backend := &MockBackend{}
 	// Large buffer to allow buildup, longer flush

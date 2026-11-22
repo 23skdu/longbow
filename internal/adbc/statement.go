@@ -20,6 +20,7 @@ var (
 	_ adbc.StatementExecuteSchemaWithContext = (*Statement)(nil)
 )
 
+// Statement represents a statement value.
 type Statement struct {
 	conn   *Connection
 	query  string
@@ -31,19 +32,23 @@ func newStatement(conn *Connection) adbc.Statement {
 	return &Statement{conn: conn, logger: conn.logger}
 }
 
+// Close runs the close operation.
 func (s *Statement) Close() error {
 	return nil
 }
 
+// SetOption sets the option.
 func (s *Statement) SetOption(key, value string) error {
 	return adbc.Error{Code: adbc.StatusNotImplemented}
 }
 
+// SetSqlQuery sets the sql query.
 func (s *Statement) SetSqlQuery(query string) error {
 	s.query = query
 	return nil
 }
 
+// ExecuteQuery runs the execute query operation.
 func (s *Statement) ExecuteQuery(ctx context.Context) (array.RecordReader, int64, error) {
 	if s.conn.store == nil || strings.TrimSpace(s.query) == "" {
 		return s.stubExecuteQuery()
@@ -115,31 +120,38 @@ func (s *Statement) ExecuteSchema(ctx context.Context) (*arrow.Schema, error) {
 	}
 }
 
+// ExecuteUpdate runs the execute update operation.
 func (s *Statement) ExecuteUpdate(ctx context.Context) (int64, error) {
 	return -1, adbc.Error{Code: adbc.StatusNotImplemented}
 }
 
+// Prepare runs the prepare operation.
 func (s *Statement) Prepare(ctx context.Context) error {
 	return adbc.Error{Code: adbc.StatusNotImplemented}
 }
 
+// SetSubstraitPlan sets the substrait plan.
 func (s *Statement) SetSubstraitPlan(plan []byte) error {
 	return adbc.Error{Code: adbc.StatusNotImplemented}
 }
 
+// Bind runs the bind operation.
 func (s *Statement) Bind(ctx context.Context, values arrow.RecordBatch) error {
 	return adbc.Error{Code: adbc.StatusNotImplemented}
 }
 
+// BindStream runs the bind stream operation.
 func (s *Statement) BindStream(ctx context.Context, stream array.RecordReader) error {
 	s.stream = stream
 	return nil
 }
 
+// GetParameterSchema returns the parameter schema.
 func (s *Statement) GetParameterSchema() (*arrow.Schema, error) {
 	return nil, adbc.Error{Code: adbc.StatusNotImplemented}
 }
 
+// ExecutePartitions runs the execute partitions operation.
 func (s *Statement) ExecutePartitions(ctx context.Context) (*arrow.Schema, adbc.Partitions, int64, error) {
 	return nil, adbc.Partitions{}, -1, adbc.Error{Code: adbc.StatusNotImplemented}
 }

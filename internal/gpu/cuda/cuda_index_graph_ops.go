@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// AssignToClusters runs the assign to clusters operation.
 func (idx *CUDAIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
 	// CPU fallback for cluster assignment
 	numVecs := len(vectors) / idx.dim
@@ -45,6 +46,7 @@ func (idx *CUDAIndex) AssignToClusters(vectors []float32, centroids []float32) (
 	return assignments, nil
 }
 
+// UpdateGraph runs the update graph operation.
 func (idx *CUDAIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -74,6 +76,7 @@ func (idx *CUDAIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights 
 	return nil
 }
 
+// GraphExpand runs the graph expand operation.
 func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	if err := idx.acquireGPUOp(); err != nil {
 		return nil, nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
@@ -211,6 +214,8 @@ func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]u
 
 	return resIDs, resScores, nil
 }
+
+// SearchBatchDistances runs the search batch distances operation.
 func (idx *CUDAIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
 	if err := idx.acquireGPUOp(); err != nil {
 		return nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
@@ -387,6 +392,7 @@ func (idx *CUDAIndex) searchBatchDistancesCPU(query []float32, candidateIDs []ui
 	return dists, nil
 }
 
+// HaversineSearch runs the haversine search operation.
 func (idx *CUDAIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	idx.mu.RLock()
 	closed := idx.closed
@@ -445,6 +451,7 @@ func (idx *CUDAIndex) HaversineSearch(centerLat, centerLon float32, points []flo
 	return results, nil
 }
 
+// NormBatch runs the norm batch operation.
 func (idx *CUDAIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	idx.mu.RLock()
 	closed := idx.closed
@@ -494,6 +501,7 @@ func (idx *CUDAIndex) NormBatch(vectors []float32, dims int) ([]float32, error) 
 	return results, nil
 }
 
+// PruneNeighbors runs the prune neighbors operation.
 func (idx *CUDAIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

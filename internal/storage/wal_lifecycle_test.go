@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestWAL_Lifecycle runs the test wal_lifecycle operation.
 func TestWAL_Lifecycle(t *testing.T) {
 	tmpDir := t.TempDir()
 	wal := NewWAL(tmpDir)
@@ -74,6 +75,7 @@ func TestWAL_Lifecycle(t *testing.T) {
 	fmt.Printf("WAL file size: %d bytes\n", len(data))
 }
 
+// TestWAL_MultiWrite runs the test wal_multi write operation.
 func TestWAL_MultiWrite(t *testing.T) {
 	tmpDir := t.TempDir()
 	wal := NewWAL(tmpDir)

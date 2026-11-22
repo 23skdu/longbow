@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHNSW_TombstoneRepair_WiresAround runs the test hnsw_tombstone repair_wires around operation.
 func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 	// 1. Setup
 	config := types.DefaultArrowHNSWConfig()

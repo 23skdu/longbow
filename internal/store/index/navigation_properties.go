@@ -218,7 +218,7 @@ func (h *ArrowHNSW) flushSearchMetrics(ctx *ArrowSearchContext) {
 	}
 }
 
-// MinCandidateHeap for exploration (closest first)
+// GetLayerNeighbors for exploration (closest first)
 // Uses store.Candidate (ID, Dist) to match ArrowSearchContext
 // GetLayerNeighbors returns internal neighbor IDs for a specific layer
 func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {

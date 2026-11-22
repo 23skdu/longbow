@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestJITEuclidean runs the test jit euclidean operation.
 func TestJITEuclidean(t *testing.T) {
 	err := initJIT()
 	require.NoError(t, err)
@@ -23,6 +24,7 @@ func TestJITEuclidean(t *testing.T) {
 	assert.InDelta(t, expected, actual, 0.0001)
 }
 
+// TestJITEuclideanBatch runs the test jit euclidean batch operation.
 func TestJITEuclideanBatch(t *testing.T) {
 	err := initJIT()
 	require.NoError(t, err)
@@ -43,6 +45,7 @@ func TestJITEuclideanBatch(t *testing.T) {
 	assert.InDelta(t, float32(13.0), res[2], 0.0001)
 }
 
+// BenchmarkJITEuclidean runs the benchmark jit euclidean operation.
 func BenchmarkJITEuclidean(b *testing.B) {
 	_ = initJIT()
 	a := make([]float32, 384)
@@ -71,6 +74,7 @@ func BenchmarkJITEuclidean(b *testing.B) {
 	})
 }
 
+// BenchmarkJITEuclideanBatch runs the benchmark jit euclidean batch operation.
 func BenchmarkJITEuclideanBatch(b *testing.B) {
 	_ = initJIT()
 	dim := 384

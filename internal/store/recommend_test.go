@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// FuzzRecommendEdgeCases runs the fuzz recommend edge cases operation.
 func FuzzRecommendEdgeCases(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -116,6 +117,7 @@ func FuzzRecommendEdgeCases(f *testing.F) {
 	})
 }
 
+// FuzzRecommendAlphaRange runs the fuzz recommend alpha range operation.
 func FuzzRecommendAlphaRange(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -201,6 +203,7 @@ func FuzzRecommendAlphaRange(f *testing.F) {
 	})
 }
 
+// FuzzRecommendDecayRange runs the fuzz recommend decay range operation.
 func FuzzRecommendDecayRange(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -285,6 +288,7 @@ func FuzzRecommendDecayRange(f *testing.F) {
 	})
 }
 
+// FuzzRecommendMaxHopsRange runs the fuzz recommend max hops range operation.
 func FuzzRecommendMaxHopsRange(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -370,6 +374,7 @@ func FuzzRecommendMaxHopsRange(f *testing.F) {
 	})
 }
 
+// TestRecommend runs the test recommend operation.
 func TestRecommend(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

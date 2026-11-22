@@ -12,6 +12,7 @@ import (
 	longbowadbc "github.com/23skdu/longbow/internal/adbc"
 )
 
+// TestStatement_SetSqlQuery runs the test statement_set sql query operation.
 func TestStatement_SetSqlQuery(t *testing.T) {
 	stmt := newTestStatement(t)
 	if err := stmt.SetSqlQuery("SELECT 1"); err != nil {
@@ -22,6 +23,7 @@ func TestStatement_SetSqlQuery(t *testing.T) {
 	}
 }
 
+// TestStatement_ExecuteQuery_Stub runs the test statement_execute query_stub operation.
 func TestStatement_ExecuteQuery_Stub(t *testing.T) {
 	stmt := newTestStatement(t)
 	if err := stmt.SetSqlQuery("SELECT * FROM nonexistent"); err != nil {
@@ -33,6 +35,7 @@ func TestStatement_ExecuteQuery_Stub(t *testing.T) {
 	}
 }
 
+// TestStatement_ExecuteQuery_EmptySQL runs the test statement_execute query_empty sql operation.
 func TestStatement_ExecuteQuery_EmptySQL(t *testing.T) {
 	stmt := newTestStatement(t)
 	reader, rows, err := stmt.ExecuteQuery(context.Background())
@@ -51,6 +54,7 @@ func TestStatement_ExecuteQuery_EmptySQL(t *testing.T) {
 	reader.Release()
 }
 
+// TestStatement_ExecuteUpdate_NotImplemented runs the test statement_execute update_not implemented operation.
 func TestStatement_ExecuteUpdate_NotImplemented(t *testing.T) {
 	stmt := newTestStatement(t)
 	rows, err := stmt.ExecuteUpdate(context.Background())
@@ -60,16 +64,19 @@ func TestStatement_ExecuteUpdate_NotImplemented(t *testing.T) {
 	}
 }
 
+// TestStatement_Prepare_NotImplemented runs the test statement_prepare_not implemented operation.
 func TestStatement_Prepare_NotImplemented(t *testing.T) {
 	stmt := newTestStatement(t)
 	assertNotImplemented(t, stmt.Prepare(context.Background()), "Prepare")
 }
 
+// TestStatement_SetSubstraitPlan_NotImplemented runs the test statement_set substrait plan_not implemented operation.
 func TestStatement_SetSubstraitPlan_NotImplemented(t *testing.T) {
 	stmt := newTestStatement(t)
 	assertNotImplemented(t, stmt.SetSubstraitPlan([]byte("plan")), "SetSubstraitPlan")
 }
 
+// TestStatement_Bind_NotImplemented runs the test statement_bind_not implemented operation.
 func TestStatement_Bind_NotImplemented(t *testing.T) {
 	stmt := newTestStatement(t)
 	pool := memory.NewGoAllocator()
@@ -81,6 +88,7 @@ func TestStatement_Bind_NotImplemented(t *testing.T) {
 	assertNotImplemented(t, stmt.Bind(context.Background(), rec), "Bind")
 }
 
+// TestStatement_BindStream runs the test statement_bind stream operation.
 func TestStatement_BindStream(t *testing.T) {
 	stmt := newTestStatement(t)
 	schema := newTestArrowSchema()
@@ -94,6 +102,7 @@ func TestStatement_BindStream(t *testing.T) {
 	}
 }
 
+// TestStatement_GetParameterSchema_NotImplemented runs the test statement_get parameter schema_not implemented operation.
 func TestStatement_GetParameterSchema_NotImplemented(t *testing.T) {
 	stmt := newTestStatement(t)
 	schema, err := stmt.GetParameterSchema()
@@ -103,6 +112,7 @@ func TestStatement_GetParameterSchema_NotImplemented(t *testing.T) {
 	}
 }
 
+// TestStatement_ExecutePartitions_NotImplemented runs the test statement_execute partitions_not implemented operation.
 func TestStatement_ExecutePartitions_NotImplemented(t *testing.T) {
 	stmt := newTestStatement(t)
 	schema, partitions, rows, err := stmt.ExecutePartitions(context.Background())
@@ -121,6 +131,7 @@ func TestStatement_ExecutePartitions_NotImplemented(t *testing.T) {
 	}
 }
 
+// TestStatement_ExecuteSchema runs the test statement_execute schema operation.
 func TestStatement_ExecuteSchema(t *testing.T) {
 	stmt := newTestStatement(t)
 	execSchema, ok := stmt.(adbc.StatementExecuteSchemaWithContext)
@@ -166,6 +177,7 @@ func TestStatement_ExecuteSchema(t *testing.T) {
 	}
 }
 
+// FuzzDialectParsing runs the fuzz dialect parsing operation.
 func FuzzDialectParsing(f *testing.F) {
 	f.Add("SELECT * FROM test")
 	f.Add("vector <-> ?")

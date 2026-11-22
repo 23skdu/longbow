@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSelectTopKNeighbors runs the test select top k neighbors operation.
 func TestSelectTopKNeighbors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -51,6 +52,7 @@ func TestSelectTopKNeighbors(t *testing.T) {
 	assert.Len(t, resIDs2, n) // Should return all
 }
 
+// TestComputeL2DistancesKernel runs the test compute l2 distances kernel operation.
 func TestComputeL2DistancesKernel(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

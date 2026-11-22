@@ -200,7 +200,7 @@ func TestTurboQuantIndexIsEngaged(t *testing.T) {
 		bits, stride, f32Stride, float64(stride)/float64(f32Stride), len(gd.VectorsTQ))
 }
 
-// TestTurboQuantGraphIsConnected is the gate. It asserts the layer-0 graph is
+// TestTurboQuantGraphIsConnectedWithoutConfiguredDimension is the gate. It asserts the layer-0 graph is
 // essentially fully connected rather than merely non-empty, because the
 // pre-a955a0c1 graph passed any check that only asked "are there edges?" - it
 // had 276,940 of them, and still left 27% of the corpus unreachable.
@@ -259,6 +259,7 @@ func TestTurboQuantGraphIsConnectedWithoutConfiguredDimension(t *testing.T) {
 	}
 }
 
+// TestTurboQuantGraphIsConnected runs the test turbo quant graph is connected operation.
 func TestTurboQuantGraphIsConnected(t *testing.T) {
 	n, dims, batch := 20_000, 128, 10_000
 	if raceEnabled {

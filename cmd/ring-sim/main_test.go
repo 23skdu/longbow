@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestNewRing runs the test new ring operation.
 func TestNewRing(t *testing.T) {
 	r := NewRing(10)
 	if r == nil {
@@ -22,6 +23,7 @@ func TestNewRing(t *testing.T) {
 	}
 }
 
+// TestAddNode runs the test add node operation.
 func TestAddNode(t *testing.T) {
 	r := NewRing(5)
 	r.AddNode("node1")
@@ -48,6 +50,7 @@ func TestAddNode(t *testing.T) {
 	}
 }
 
+// TestAddMultipleNodes runs the test add multiple nodes operation.
 func TestAddMultipleNodes(t *testing.T) {
 	r := NewRing(10)
 	r.AddNode("a")
@@ -63,6 +66,7 @@ func TestAddMultipleNodes(t *testing.T) {
 	}
 }
 
+// TestRemoveNode runs the test remove node operation.
 func TestRemoveNode(t *testing.T) {
 	r := NewRing(5)
 	r.AddNode("node1")
@@ -82,6 +86,7 @@ func TestRemoveNode(t *testing.T) {
 	}
 }
 
+// TestRemoveNonexistentNode runs the test remove nonexistent node operation.
 func TestRemoveNonexistentNode(t *testing.T) {
 	r := NewRing(5)
 	r.AddNode("node1")
@@ -94,6 +99,7 @@ func TestRemoveNonexistentNode(t *testing.T) {
 	}
 }
 
+// TestGetNodeEmptyRing runs the test get node empty ring operation.
 func TestGetNodeEmptyRing(t *testing.T) {
 	r := NewRing(10)
 	if got := r.GetNode("any-key"); got != "" {
@@ -101,6 +107,7 @@ func TestGetNodeEmptyRing(t *testing.T) {
 	}
 }
 
+// TestGetNodeDeterministic runs the test get node deterministic operation.
 func TestGetNodeDeterministic(t *testing.T) {
 	r := NewRing(10)
 	r.AddNode("node1")
@@ -114,6 +121,7 @@ func TestGetNodeDeterministic(t *testing.T) {
 	}
 }
 
+// TestGetNodeReturnsKnownNode runs the test get node returns known node operation.
 func TestGetNodeReturnsKnownNode(t *testing.T) {
 	r := NewRing(10)
 	r.AddNode("node1")
@@ -129,6 +137,7 @@ func TestGetNodeReturnsKnownNode(t *testing.T) {
 	}
 }
 
+// TestGetNodeUniformDistribution runs the test get node uniform distribution operation.
 func TestGetNodeUniformDistribution(t *testing.T) {
 	r := NewRing(20)
 	nodes := []string{"a", "b", "c", "d", "e"}
@@ -150,6 +159,7 @@ func TestGetNodeUniformDistribution(t *testing.T) {
 	}
 }
 
+// TestGetPreferenceListEmptyRing runs the test get preference list empty ring operation.
 func TestGetPreferenceListEmptyRing(t *testing.T) {
 	r := NewRing(10)
 	result := r.GetPreferenceList("key", 3)
@@ -158,6 +168,7 @@ func TestGetPreferenceListEmptyRing(t *testing.T) {
 	}
 }
 
+// TestGetPreferenceListDistinctNodes runs the test get preference list distinct nodes operation.
 func TestGetPreferenceListDistinctNodes(t *testing.T) {
 	r := NewRing(10)
 	r.AddNode("a")
@@ -178,6 +189,7 @@ func TestGetPreferenceListDistinctNodes(t *testing.T) {
 	}
 }
 
+// TestGetPreferenceListWraps runs the test get preference list wraps operation.
 func TestGetPreferenceListWraps(t *testing.T) {
 	r := NewRing(20)
 	r.AddNode("a")
@@ -200,6 +212,7 @@ func TestGetPreferenceListWraps(t *testing.T) {
 	}
 }
 
+// TestGetPreferenceListMoreThanAvailable runs the test get preference list more than available operation.
 func TestGetPreferenceListMoreThanAvailable(t *testing.T) {
 	r := NewRing(10)
 	r.AddNode("only-one")
@@ -213,6 +226,7 @@ func TestGetPreferenceListMoreThanAvailable(t *testing.T) {
 	}
 }
 
+// TestHashConsistency runs the test hash consistency operation.
 func TestHashConsistency(t *testing.T) {
 	r := NewRing(1)
 	h1 := r.hash("test")
@@ -222,6 +236,7 @@ func TestHashConsistency(t *testing.T) {
 	}
 }
 
+// TestHashDifferentInputs runs the test hash different inputs operation.
 func TestHashDifferentInputs(t *testing.T) {
 	r := NewRing(1)
 	h1 := r.hash("test1")
@@ -231,6 +246,7 @@ func TestHashDifferentInputs(t *testing.T) {
 	}
 }
 
+// TestNodeAfterRemovalNotReturned runs the test node after removal not returned operation.
 func TestNodeAfterRemovalNotReturned(t *testing.T) {
 	r := NewRing(20)
 	r.AddNode("keep")
@@ -247,6 +263,7 @@ func TestNodeAfterRemovalNotReturned(t *testing.T) {
 	}
 }
 
+// TestPreferenceListConsistency runs the test preference list consistency operation.
 func TestPreferenceListConsistency(t *testing.T) {
 	r := NewRing(10)
 	r.AddNode("a")
@@ -267,6 +284,7 @@ func TestPreferenceListConsistency(t *testing.T) {
 	}
 }
 
+// BenchmarkGetNode runs the benchmark get node operation.
 func BenchmarkGetNode(b *testing.B) {
 	r := NewRing(20)
 	for i := 0; i < 100; i++ {
@@ -278,6 +296,7 @@ func BenchmarkGetNode(b *testing.B) {
 	}
 }
 
+// BenchmarkGetPreferenceList runs the benchmark get preference list operation.
 func BenchmarkGetPreferenceList(b *testing.B) {
 	r := NewRing(20)
 	for i := 0; i < 100; i++ {

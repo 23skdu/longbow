@@ -17,6 +17,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// SearchInt8 runs the search int8 operation.
 func (idx *MetalHybridIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -31,6 +32,7 @@ func (idx *MetalHybridIndex) SearchInt8(vector []int8, k int) ([]int64, []float3
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchUint8 runs the search uint8 operation.
 func (idx *MetalHybridIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -44,6 +46,7 @@ func (idx *MetalHybridIndex) SearchUint8(vector []uint8, k int) ([]int64, []floa
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchInt16 runs the search int16 operation.
 func (idx *MetalHybridIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -57,6 +60,7 @@ func (idx *MetalHybridIndex) SearchInt16(vector []int16, k int) ([]int64, []floa
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchUint16 runs the search uint16 operation.
 func (idx *MetalHybridIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -70,6 +74,7 @@ func (idx *MetalHybridIndex) SearchUint16(vector []uint16, k int) ([]int64, []fl
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchFloat16 runs the search float16 operation.
 func (idx *MetalHybridIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -87,6 +92,7 @@ func (idx *MetalHybridIndex) SearchFloat16(vector []uint16, k int) ([]int64, []f
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchComplex64 runs the search complex64 operation.
 func (idx *MetalHybridIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -104,6 +110,7 @@ func (idx *MetalHybridIndex) SearchComplex64(vector []uint16, k int) ([]int64, [
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchComplex128 runs the search complex128 operation.
 func (idx *MetalHybridIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -116,14 +123,17 @@ func (idx *MetalHybridIndex) SearchComplex128(vector []float32, k int) ([]int64,
 	return idx.searchFloat32(vector, k)
 }
 
+// AddTurboQuant runs the add turbo quant operation.
 func (idx *MetalHybridIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
 	return nil
 }
 
+// SearchTurboQuant runs the search turbo quant operation.
 func (idx *MetalHybridIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	return nil, nil, nil
 }
 
+// AssignToClusters runs the assign to clusters operation.
 func (idx *MetalHybridIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
 	// CPU fallback for cluster assignment
 	numVecs := len(vectors) / idx.dim
@@ -210,39 +220,48 @@ func (idx *MetalHybridIndex) searchFloat32(vector []float32, k int) ([]int64, []
 	return resultIDs, resultDistances, nil
 }
 
+// AddPQ runs the add pq operation.
 func (idx *MetalHybridIndex) AddPQ(ids []int64, codes []byte, m int) error {
 	return nil
 }
 
+// UpdateGraph runs the update graph operation.
 func (idx *MetalHybridIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
 	return nil
 }
 
+// GraphExpand runs the graph expand operation.
 func (idx *MetalHybridIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	return nil, nil, nil
 }
 
+// HaversineSearch runs the haversine search operation.
 func (idx *MetalHybridIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	return nil, nil
 }
 
+// NormBatch runs the norm batch operation.
 func (idx *MetalHybridIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	return nil, nil
 }
 
+// PruneNeighbors runs the prune neighbors operation.
 func (idx *MetalHybridIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
 	return nil, nil
 }
 
+// SearchGreedy runs the search greedy operation.
 func (idx *MetalHybridIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
 	// CPU fallback for hybrid index
 	return entryPoint, entryDist, nil
 }
 
+// Sync runs the sync operation.
 func (idx *MetalHybridIndex) Sync() error {
 	return nil
 }
 
+// Clear runs the clear operation.
 func (idx *MetalHybridIndex) Clear() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -253,10 +272,12 @@ func (idx *MetalHybridIndex) Clear() error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (idx *MetalHybridIndex) Reset() error {
 	return idx.Clear()
 }
 
+// SearchBatchDistances runs the search batch distances operation.
 func (idx *MetalHybridIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

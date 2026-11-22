@@ -10,7 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-// TestDatasetMetadata tests the metadata struct
+// TestDatasetMetadata_Fields tests the metadata struct
 func TestDatasetMetadata_Fields(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

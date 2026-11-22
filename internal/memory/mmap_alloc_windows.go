@@ -7,24 +7,29 @@ import (
 	"sync/atomic"
 )
 
+// OffHeapAllocator represents a off heap allocator value.
 type OffHeapAllocator struct {
 	allocated atomic.Int64
 }
 
+// NewOffHeapAllocator constructs a new OffHeapAllocator.
 func NewOffHeapAllocator() *OffHeapAllocator {
 	return &OffHeapAllocator{}
 }
 
+// Allocate runs the allocate operation.
 func (a *OffHeapAllocator) Allocate(size int) []byte {
 	// On Windows stub, we just use heap for now to allow compilation.
 	// Production Windows support would use VirtualAlloc.
 	return make([]byte, size)
 }
 
+// Free runs the free operation.
 func (a *OffHeapAllocator) Free(b []byte) {
 	// No-op for heap-backed stub
 }
 
+// Reallocate runs the reallocate operation.
 func (a *OffHeapAllocator) Reallocate(size int, b []byte) []byte {
 	if len(b) == size {
 		return b
@@ -34,6 +39,7 @@ func (a *OffHeapAllocator) Reallocate(size int, b []byte) []byte {
 	return newBuf
 }
 
+// Allocated runs the allocated operation.
 func (a *OffHeapAllocator) Allocated() int64 {
 	return 0
 }
@@ -54,8 +60,12 @@ func Madvise(b []byte, advice int) error {
 }
 
 const (
-	MadvRandom     = 0
+	// MadvRandom is a madv random constant.
+	MadvRandom = 0
+	// MadvSequential is a madv sequential constant.
 	MadvSequential = 0
-	MadvWillNeed   = 0
-	MadvDontNeed   = 0
+	// MadvWillNeed is a madv will need constant.
+	MadvWillNeed = 0
+	// MadvDontNeed is a madv dont need constant.
+	MadvDontNeed = 0
 )

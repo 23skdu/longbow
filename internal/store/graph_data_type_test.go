@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestGraphData_PolymorphicAllocation runs the test graph data_polymorphic allocation operation.
 func TestGraphData_PolymorphicAllocation(t *testing.T) {
 	types := []VectorDataType{
 		lbtypes.VectorTypeInt8, lbtypes.VectorTypeUint8,

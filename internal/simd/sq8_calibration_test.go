@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSQ8Adaptive_CalibrationAndReconstruction runs the test sq8 adaptive_calibration and reconstruction operation.
 func TestSQ8Adaptive_CalibrationAndReconstruction(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	dims := 128

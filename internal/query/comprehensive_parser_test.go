@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestQuery_ComprehensiveParsing runs the test query_comprehensive parsing operation.
 func TestQuery_ComprehensiveParsing(t *testing.T) {
 	logger := zerolog.Nop()
 

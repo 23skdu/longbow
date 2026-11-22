@@ -7,6 +7,7 @@ import (
 	"github.com/23skdu/longbow/internal/memory"
 )
 
+// FuzzArenaVectorConcurrentAlloc runs the fuzz arena vector concurrent alloc operation.
 func FuzzArenaVectorConcurrentAlloc(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -76,6 +77,7 @@ func FuzzArenaVectorConcurrentAlloc(f *testing.F) {
 	})
 }
 
+// TestArenaVectorConcurrentAlloc runs the test arena vector concurrent alloc operation.
 func TestArenaVectorConcurrentAlloc(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -118,6 +120,7 @@ func TestArenaVectorConcurrentAlloc(t *testing.T) {
 		arenaStats.TotalCapacity, arenaStats.UsedBytes)
 }
 
+// BenchmarkArena_VectorStorage runs the benchmark arena_vector storage operation.
 func BenchmarkArena_VectorStorage(b *testing.B) {
 	arena := memory.NewTypedArena[float32](memory.NewSlabArena(64 * 1024 * 1024))
 	dim := 128
@@ -143,6 +146,7 @@ func BenchmarkArena_VectorStorage(b *testing.B) {
 	}
 }
 
+// BenchmarkArena_VectorStorageVsMap runs the benchmark arena_vector storage vs map operation.
 func BenchmarkArena_VectorStorageVsMap(b *testing.B) {
 	dim := 128
 	vecCount := 10000

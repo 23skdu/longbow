@@ -33,6 +33,7 @@ type VaultStore struct {
 
 var _ Store = (*VaultStore)(nil)
 
+// NewVaultStore constructs a new VaultStore.
 func NewVaultStore(cfg VaultConfig) (*VaultStore, error) {
 	if strings.TrimSpace(cfg.Addr) == "" {
 		return nil, fmt.Errorf("secrets: vault addr must not be empty")
@@ -94,6 +95,7 @@ func (s *VaultStore) do(ctx context.Context, method, path string, body, out any)
 	return nil
 }
 
+// LoadAll runs the load all operation.
 func (s *VaultStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 	var listed struct {
 		Data struct {
@@ -127,6 +129,7 @@ func (s *VaultStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 	return out, nil
 }
 
+// Put runs the put operation.
 func (s *VaultStore) Put(ctx context.Context, key StoredKey) error {
 	path, err := s.dataPath(key.KeyID)
 	if err != nil {
@@ -135,6 +138,7 @@ func (s *VaultStore) Put(ctx context.Context, key StoredKey) error {
 	return s.do(ctx, http.MethodPut, path, map[string]any{"data": key}, nil)
 }
 
+// Delete runs the delete operation.
 func (s *VaultStore) Delete(ctx context.Context, keyID string) error {
 	path, err := s.dataPath(keyID)
 	if err != nil {

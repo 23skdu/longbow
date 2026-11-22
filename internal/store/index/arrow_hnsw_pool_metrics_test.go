@@ -21,6 +21,7 @@ func getCounterValue(c interface {
 	return m.GetCounter().GetValue()
 }
 
+// TestArrowHNSW_PoolMetrics runs the test arrow hnsw_pool metrics operation.
 func TestArrowHNSW_PoolMetrics(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.M = 16

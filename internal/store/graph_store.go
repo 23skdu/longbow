@@ -86,11 +86,13 @@ type PathPriorityQueue []Path
 // Len returns the number of paths in the queue.
 func (pq PathPriorityQueue) Len() int { return len(pq) }
 
+// Less runs the less operation.
 func (pq PathPriorityQueue) Less(i, j int) bool {
 	// Higher score comes first (Max-Heap)
 	return pq[i].Score > pq[j].Score
 }
 
+// Swap runs the swap operation.
 func (pq PathPriorityQueue) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
 }

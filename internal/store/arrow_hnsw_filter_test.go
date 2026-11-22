@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_VectorizedFilter runs the test arrow hnsw_vectorized filter operation.
 func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -124,6 +125,7 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 	assert.Greater(t, len(results2), 0)
 }
 
+// TestArrowHNSW_SIMDPredicate runs the test arrow hnsw_simd predicate operation.
 func TestArrowHNSW_SIMDPredicate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

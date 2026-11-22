@@ -661,6 +661,7 @@ type WarmupStats struct {
 	Duration         time.Duration
 }
 
+// String runs the string operation.
 func (w WarmupStats) String() string {
 	return fmt.Sprintf("Warmed %d datasets (%d skipped), touched %d nodes in %v",
 		w.DatasetsWarmed, w.DatasetsSkipped, w.TotalNodesWarmed, w.Duration)
@@ -909,10 +910,12 @@ func (vs *VectorStore) GetNeighborsBulk(ctx context.Context, datasetName string,
 	return results, nil
 }
 
+// TurboQuantBits runs the turbo quant bits operation.
 func (d *Dataset) TurboQuantBits() int {
 	return d.turboQuantBits
 }
 
+// SetTurboQuantBits sets the turbo quant bits.
 func (d *Dataset) SetTurboQuantBits(bits int) {
 	d.dataMu.Lock()
 	defer d.dataMu.Unlock()

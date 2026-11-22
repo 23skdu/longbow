@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHighDimGrowth runs the test high dim growth operation.
 func TestHighDimGrowth(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

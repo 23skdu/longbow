@@ -9,22 +9,37 @@ import (
 type Dtype uint8
 
 const (
+	// DtypeInvalid is a dtype invalid constant.
 	DtypeInvalid Dtype = iota
+	// DtypeFloat32 is a dtype float32 constant.
 	DtypeFloat32
+	// DtypeFloat64 is a dtype float64 constant.
 	DtypeFloat64
+	// DtypeInt8 is a dtype int8 constant.
 	DtypeInt8
+	// DtypeUint8 is a dtype uint8 constant.
 	DtypeUint8
+	// DtypeInt16 is a dtype int16 constant.
 	DtypeInt16
+	// DtypeUint16 is a dtype uint16 constant.
 	DtypeUint16
+	// DtypeInt32 is a dtype int32 constant.
 	DtypeInt32
+	// DtypeUint32 is a dtype uint32 constant.
 	DtypeUint32
+	// DtypeInt64 is a dtype int64 constant.
 	DtypeInt64
+	// DtypeUint64 is a dtype uint64 constant.
 	DtypeUint64
+	// DtypeFloat16 is a dtype float16 constant.
 	DtypeFloat16
+	// DtypeComplex64 is a dtype complex64 constant.
 	DtypeComplex64
+	// DtypeComplex128 is a dtype complex128 constant.
 	DtypeComplex128
 )
 
+// Size runs the size operation.
 func (d Dtype) Size() int {
 	switch d {
 	case DtypeFloat32, DtypeInt32, DtypeUint32:
@@ -42,6 +57,7 @@ func (d Dtype) Size() int {
 	}
 }
 
+// String runs the string operation.
 func (d Dtype) String() string {
 	switch d {
 	case DtypeFloat32:
@@ -75,10 +91,12 @@ func (d Dtype) String() string {
 	}
 }
 
+// IsFloat reports whether the condition holds.
 func (d Dtype) IsFloat() bool {
 	return d == DtypeFloat32 || d == DtypeFloat64 || d == DtypeFloat16
 }
 
+// IsInt reports whether the condition holds.
 func (d Dtype) IsInt() bool {
 	switch d {
 	case DtypeInt8, DtypeInt16, DtypeInt32, DtypeInt64:
@@ -87,6 +105,7 @@ func (d Dtype) IsInt() bool {
 	return false
 }
 
+// IsUint reports whether the condition holds.
 func (d Dtype) IsUint() bool {
 	switch d {
 	case DtypeUint8, DtypeUint16, DtypeUint32, DtypeUint64:
@@ -95,6 +114,7 @@ func (d Dtype) IsUint() bool {
 	return false
 }
 
+// IsComplex reports whether the condition holds.
 func (d Dtype) IsComplex() bool {
 	return d == DtypeComplex64 || d == DtypeComplex128
 }
@@ -143,7 +163,7 @@ func Promote(a, b Dtype) Dtype {
 	return DtypeFloat32
 }
 
-// Finite checks if a float32 value is finite (non-NaN, non-Inf).
+// Finite32 checks if a float32 value is finite (non-NaN, non-Inf).
 func Finite32(v float32) bool {
 	return !math.IsInf(float64(v), 0) && !math.IsNaN(float64(v))
 }

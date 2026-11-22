@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// TestParseFloats runs the test parse floats operation.
 func TestParseFloats(t *testing.T) {
 	floats := parseFloats("1.0, 2.0, 3.5")
 	if len(floats) != 3 || floats[0] != 1.0 || floats[1] != 2.0 || floats[2] != 3.5 {
@@ -33,6 +34,7 @@ func TestParseFloats(t *testing.T) {
 	printUsage()
 }
 
+// TestSearchModes runs the test search modes operation.
 func TestSearchModes(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -67,6 +69,7 @@ func TestSearchModes(t *testing.T) {
 	}
 }
 
+// TestSearchTicketBuilders runs the test search ticket builders operation.
 func TestSearchTicketBuilders(t *testing.T) {
 	if _, err := buildGeoSearchTicket("box", "kb", "37.7,-122.5,37.8,-122.4", "", 0, 0, 0, 5); err != nil {
 		t.Fatalf("box geo ticket failed: %v", err)
@@ -86,6 +89,7 @@ func TestSearchTicketBuilders(t *testing.T) {
 	}
 }
 
+// TestVectorParseIntegrity runs the test vector parse integrity operation.
 func TestVectorParseIntegrity(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -110,6 +114,7 @@ func TestVectorParseIntegrity(t *testing.T) {
 	}
 }
 
+// TestFilterExpressionParse runs the test filter expression parse operation.
 func TestFilterExpressionParse(t *testing.T) {
 	validFilters := []string{"field == 'value'", `{"field": "value"}`}
 	invalidFilters := []string{"invalid{{", "@#$%"}
@@ -152,6 +157,7 @@ func isValidFilterExpr(s string) bool {
 	return hasValidChars
 }
 
+// TestGeoSearchParams runs the test geo search params operation.
 func TestGeoSearchParams(t *testing.T) {
 	tests := []struct {
 		lat    float64
@@ -175,6 +181,7 @@ func TestGeoSearchParams(t *testing.T) {
 	}
 }
 
+// TestTemporalSearchTypes runs the test temporal search types operation.
 func TestTemporalSearchTypes(t *testing.T) {
 	validTypes := []string{"as_of", "range", "sliding_window", "sliding_window_time", "window"}
 	for _, typ := range validTypes {
@@ -188,6 +195,7 @@ func TestTemporalSearchTypes(t *testing.T) {
 	}
 }
 
+// TestFormatCLIAuthError runs the test format cli auth error operation.
 func TestFormatCLIAuthError(t *testing.T) {
 	unauth := formatCLIAuthError("ListAPIKeys", status.Error(codes.Unauthenticated, "invalid or expired token"))
 	if !strings.Contains(unauth, "Authentication failed on ListAPIKeys (Unauthenticated)") {

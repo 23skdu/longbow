@@ -49,6 +49,7 @@ type storeSnapshotSource struct {
 	s *VectorStore
 }
 
+// Iterate runs the iterate operation.
 func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) error {
 	src.s.configMu.RLock()
 	datasets := src.s.datasets.Load()

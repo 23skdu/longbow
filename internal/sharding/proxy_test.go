@@ -12,6 +12,7 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 )
 
+// TestPartitionProxyInterceptor_Local runs the test partition proxy interceptor_local operation.
 func TestPartitionProxyInterceptor_Local(t *testing.T) {
 	logger := zerolog.Nop()
 	rm := NewRingManager("local-node", logger)
@@ -35,6 +36,7 @@ func TestPartitionProxyInterceptor_Local(t *testing.T) {
 	assert.Equal(t, "success", resp)
 }
 
+// TestPartitionProxyInterceptor_Remote runs the test partition proxy interceptor_remote operation.
 func TestPartitionProxyInterceptor_Remote(t *testing.T) {
 	logger := zerolog.Nop()
 	rm := NewRingManager("local-node", logger)

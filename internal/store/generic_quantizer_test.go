@@ -286,6 +286,7 @@ func TestGenericQuantizer_Float32ToByte(t *testing.T) {
 	require.Equal(t, 8, len(codes), "Code length should match M (number of subspaces)")
 }
 
+// TestQuantizer_TypeConversion_Float16ToFloat32 runs the test quantizer_type conversion_float16 to float32 operation.
 func TestQuantizer_TypeConversion_Float16ToFloat32(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -308,6 +309,7 @@ func TestQuantizer_TypeConversion_Float16ToFloat32(t *testing.T) {
 	require.True(t, minVals[0] < maxVals[0], "min should be less than max")
 }
 
+// TestQuantizer_TypeConversion_Int8ToFloat32 runs the test quantizer_type conversion_int8 to float32 operation.
 func TestQuantizer_TypeConversion_Int8ToFloat32(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -554,7 +556,7 @@ func TestBQ_Float32ToHamming(t *testing.T) {
 	assert.Equal(t, 100, hamming)
 }
 
-// FuzzQuantizer_RoundTrip tests full encode/decode cycle with random data
+// FuzzQuantizerRoundTrip tests full encode/decode cycle with random data
 func FuzzQuantizerRoundTrip(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

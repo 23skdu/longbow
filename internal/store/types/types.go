@@ -260,6 +260,7 @@ type ErrVectorDimensionMismatch struct {
 	Actual   int
 }
 
+// Error runs the error operation.
 func (e *ErrVectorDimensionMismatch) Error() string {
 	return fmt.Sprintf("dimension mismatch for vector %d: expected %d, got %d", e.ID, e.Expected, e.Actual)
 }
@@ -279,6 +280,7 @@ type ErrNeighborSelectionLengthMismatch struct {
 	IDsLen       int
 }
 
+// Error runs the error operation.
 func (e *ErrNeighborSelectionLengthMismatch) Error() string {
 	return fmt.Sprintf("length mismatch: got %d distances and %d IDs", e.DistancesLen, e.IDsLen)
 }

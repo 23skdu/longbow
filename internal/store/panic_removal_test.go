@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestBatchDistanceCompute_EmptyInputs runs the test batch distance compute_empty inputs operation.
 func TestBatchDistanceCompute_EmptyInputs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -17,6 +18,7 @@ func TestBatchDistanceCompute_EmptyInputs(t *testing.T) {
 	_ = BatchDistanceCompute(queries, candidates, results)
 }
 
+// TestBatchDistanceCompute_ValidInputs runs the test batch distance compute_valid inputs operation.
 func TestBatchDistanceCompute_ValidInputs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -37,6 +39,7 @@ func TestBatchDistanceCompute_ValidInputs(t *testing.T) {
 	assert.Equal(t, float32(0.0), results[1])
 }
 
+// TestBatchDistanceCompute_MismatchedQueryCandidateLengths_ReturnsError runs the test batch distance compute_mismatched query candidate lengths_returns error operation.
 func TestBatchDistanceCompute_MismatchedQueryCandidateLengths_ReturnsError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -55,6 +58,7 @@ func TestBatchDistanceCompute_MismatchedQueryCandidateLengths_ReturnsError(t *te
 	assert.Contains(t, err.Error(), "batch distance length mismatch")
 }
 
+// TestBatchDistanceCompute_MismatchedResultsLength_ReturnsError runs the test batch distance compute_mismatched results length_returns error operation.
 func TestBatchDistanceCompute_MismatchedResultsLength_ReturnsError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -73,6 +77,7 @@ func TestBatchDistanceCompute_MismatchedResultsLength_ReturnsError(t *testing.T)
 	assert.Contains(t, err.Error(), "batch distance length mismatch")
 }
 
+// TestBatchDistanceCompute_SingleQuery runs the test batch distance compute_single query operation.
 func TestBatchDistanceCompute_SingleQuery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -90,6 +95,7 @@ func TestBatchDistanceCompute_SingleQuery(t *testing.T) {
 	assert.True(t, results[0] > 0, "distance should be positive")
 }
 
+// TestBatchDistanceCompute_128Dimensions runs the test batch distance compute_128 dimensions operation.
 func TestBatchDistanceCompute_128Dimensions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -114,6 +120,7 @@ func TestBatchDistanceCompute_128Dimensions(t *testing.T) {
 	}
 }
 
+// TestBatchDistanceCompute_384Dimensions runs the test batch distance compute_384 dimensions operation.
 func TestBatchDistanceCompute_384Dimensions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -138,6 +145,7 @@ func TestBatchDistanceCompute_384Dimensions(t *testing.T) {
 	}
 }
 
+// TestBatchDistanceCompute_VariableDimensions runs the test batch distance compute_variable dimensions operation.
 func TestBatchDistanceCompute_VariableDimensions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -158,6 +166,7 @@ func TestBatchDistanceCompute_VariableDimensions(t *testing.T) {
 	assert.Equal(t, float32(0.0), results[1])
 }
 
+// TestBatchDistanceCompute_ZeroVectors runs the test batch distance compute_zero vectors operation.
 func TestBatchDistanceCompute_ZeroVectors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -175,6 +184,7 @@ func TestBatchDistanceCompute_ZeroVectors(t *testing.T) {
 	assert.True(t, results[0] >= 0, "distance should be non-negative")
 }
 
+// TestBatchDistanceCompute_MixedDimensions runs the test batch distance compute_mixed dimensions operation.
 func TestBatchDistanceCompute_MixedDimensions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

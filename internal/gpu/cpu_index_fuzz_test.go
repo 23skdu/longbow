@@ -90,6 +90,7 @@ func refHaversine(centerLat, centerLon, lat, lon, radius float32) float64 {
 	return float64(radius) * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }
 
+// FuzzCPUIndexSearchParity runs the fuzz cpu index search parity operation.
 func FuzzCPUIndexSearchParity(f *testing.F) {
 	f.Add(
 		encodeFuzzInt64s([]int64{1, 2, 3}),
@@ -236,6 +237,7 @@ func FuzzCPUIndexSearchParity(f *testing.F) {
 	})
 }
 
+// FuzzCPUIndexHaversine runs the fuzz cpu index haversine operation.
 func FuzzCPUIndexHaversine(f *testing.F) {
 	f.Add(float32(0), float32(0), float32(6371000), encodeFuzzFloat32s([]float32{0, 0, 45, 80, -33.5, 89}))
 	f.Add(float32(51.5), float32(-0.12), float32(6371000), encodeFuzzFloat32s([]float32{51.5, -0.12, 48.85, 2.35}))

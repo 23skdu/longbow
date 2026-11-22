@@ -71,6 +71,7 @@ func generateTestCertPair(t *testing.T, dir, prefix string, isCA bool, caCert *x
 	return certPath, keyPath, parsed, priv
 }
 
+// TestTenantContextAndRLSEvaluation runs the test tenant context and rls evaluation operation.
 func TestTenantContextAndRLSEvaluation(t *testing.T) {
 	eval := NewRLSEvaluator()
 	require.NoError(t, eval.SetPolicy(RLSPolicy{
@@ -123,6 +124,7 @@ func TestTenantContextAndRLSEvaluation(t *testing.T) {
 	}))
 }
 
+// TestTLSAndMTLSReloader runs the test tls and mtls reloader operation.
 func TestTLSAndMTLSReloader(t *testing.T) {
 	dir := t.TempDir()
 	caPath, _, caCert, caKey := generateTestCertPair(t, dir, "ca", true, nil, nil)
@@ -205,6 +207,7 @@ func TestTLSAndMTLSReloader(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestLocalAndVaultKMSProvider runs the test local and vault kms provider operation.
 func TestLocalAndVaultKMSProvider(t *testing.T) {
 	ctx := context.Background()
 
@@ -281,6 +284,7 @@ func TestLocalAndVaultKMSProvider(t *testing.T) {
 	require.Contains(t, rotID, "longbow@")
 }
 
+// FuzzRLSEvaluation runs the fuzz rls evaluation operation.
 func FuzzRLSEvaluation(f *testing.F) {
 	f.Add("t1", "ns1", "ds1", "t1", "public")
 	f.Add("t1", "ns1", "ds2", "t2", "secret")
@@ -302,6 +306,7 @@ func FuzzRLSEvaluation(f *testing.F) {
 	})
 }
 
+// FuzzTLSConfigValidation runs the fuzz tls config validation operation.
 func FuzzTLSConfigValidation(f *testing.F) {
 	f.Add(true, "/a.crt", "/a.key", "/ca.crt", true, "1.3")
 	f.Add(true, "", "/a.key", "", false, "invalid")

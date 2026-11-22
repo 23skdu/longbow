@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// BenchmarkLayer0Contention runs the benchmark layer0 contention operation.
 func BenchmarkLayer0Contention(b *testing.B) {
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 128
@@ -35,6 +36,7 @@ func BenchmarkLayer0Contention(b *testing.B) {
 	})
 }
 
+// TestConcurrentLayer0Adds runs the test concurrent layer0 adds operation.
 func TestConcurrentLayer0Adds(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.MMax0 = 64

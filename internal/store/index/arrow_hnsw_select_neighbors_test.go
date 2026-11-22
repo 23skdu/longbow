@@ -26,6 +26,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// TestSelectNeighborsIsTheSingleEntryPoint runs the test select neighbors is the single entry point operation.
 func TestSelectNeighborsIsTheSingleEntryPoint(t *testing.T) {
 	const dims = 4
 
@@ -88,6 +89,7 @@ func TestSelectNeighborsIsTheSingleEntryPoint(t *testing.T) {
 	}
 }
 
+// TestSelectNeighborsFloat64Batched runs the test select neighbors float64 batched operation.
 func TestSelectNeighborsFloat64Batched(t *testing.T) {
 	const dims = 8
 	data := types.NewGraphData(128, dims, false, false, 0, false, false, false,
@@ -123,6 +125,7 @@ func TestSelectNeighborsFloat64Batched(t *testing.T) {
 	}
 }
 
+// BenchmarkSelectNeighborsFloat64 runs the benchmark select neighbors float64 operation.
 func BenchmarkSelectNeighborsFloat64(b *testing.B) {
 	const dims = 128
 	data := types.NewGraphData(256, dims, false, false, 0, false, false, false,
@@ -160,6 +163,7 @@ func BenchmarkSelectNeighborsFloat64(b *testing.B) {
 	}
 }
 
+// TestComplex128ChunkedBulkInsert runs the test complex128 chunked bulk insert operation.
 func TestComplex128ChunkedBulkInsert(t *testing.T) {
 	const (
 		numRows = 64

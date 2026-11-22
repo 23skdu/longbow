@@ -10,6 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// Clone runs the clone operation.
 func (g *GraphData) Clone() *GraphData {
 	// Signal to any concurrent Release() that a Clone is in progress.
 	// Release() will spin-wait until all outstanding Clones finish

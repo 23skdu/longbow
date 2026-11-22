@@ -46,6 +46,7 @@ func tq2VBMIProbe(dim int, seed int64) []float32 {
 	return src
 }
 
+// TestPackTQ2AVX512VBMIMatchesGeneric runs the test pack tq2 avx512 vbmi matches generic operation.
 func TestPackTQ2AVX512VBMIMatchesGeneric(t *testing.T) {
 	if !features.HasAVX512 || !features.HasVBMI {
 		t.Skip("AVX512 VBMI not supported")

@@ -21,8 +21,11 @@ import (
 )
 
 var (
-	ErrKeyNotFound    = errors.New("kms: key version not found")
+	// ErrKeyNotFound is a err key not found value.
+	ErrKeyNotFound = errors.New("kms: key version not found")
+	// ErrInvalidKeySize is a err invalid key size value.
 	ErrInvalidKeySize = errors.New("kms: master key must be 32 bytes (AES-256)")
+	// ErrKMSUnavailable is a err kms unavailable value.
 	ErrKMSUnavailable = errors.New("kms: key management service unavailable")
 )
 
@@ -95,12 +98,14 @@ func NewLocalKeyProviderFromSecret(secret string) (*LocalKeyProvider, error) {
 	return NewLocalKeyProvider(sum[:])
 }
 
+// ActiveKeyID runs the active key id operation.
 func (p *LocalKeyProvider) ActiveKeyID(_ context.Context) (string, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.activeID, nil
 }
 
+// GenerateDEK runs the generate dek operation.
 func (p *LocalKeyProvider) GenerateDEK(_ context.Context) ([]byte, WrappedDEK, error) {
 	dek := make([]byte, 32)
 	if _, err := rand.Read(dek); err != nil {
@@ -119,6 +124,7 @@ func (p *LocalKeyProvider) GenerateDEK(_ context.Context) ([]byte, WrappedDEK, e
 	return dek, WrappedDEK{KeyID: keyID, Ciphertext: ct}, nil
 }
 
+// UnwrapDEK runs the unwrap dek operation.
 func (p *LocalKeyProvider) UnwrapDEK(_ context.Context, wrapped WrappedDEK) ([]byte, error) {
 	p.mu.RLock()
 	kek, ok := p.keys[wrapped.KeyID]
@@ -129,6 +135,7 @@ func (p *LocalKeyProvider) UnwrapDEK(_ context.Context, wrapped WrappedDEK) ([]b
 	return unwrapWithAESGCM(kek, wrapped.Ciphertext, []byte(wrapped.KeyID))
 }
 
+// RotateKey runs the rotate key operation.
 func (p *LocalKeyProvider) RotateKey(_ context.Context) (string, error) {
 	newKEK := make([]byte, 32)
 	if _, err := rand.Read(newKEK); err != nil {
@@ -174,12 +181,14 @@ func NewVaultTransitKeyProvider(addr, token, mount, keyName string) (*VaultTrans
 	}, nil
 }
 
+// ActiveKeyID runs the active key id operation.
 func (v *VaultTransitKeyProvider) ActiveKeyID(_ context.Context) (string, error) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.activeID, nil
 }
 
+// GenerateDEK runs the generate dek operation.
 func (v *VaultTransitKeyProvider) GenerateDEK(ctx context.Context) ([]byte, WrappedDEK, error) {
 	endpoint := fmt.Sprintf("%s/v1/%s/datakey/plaintext/%s", v.addr, v.mount, v.keyName)
 	body, err := v.doVaultRequest(ctx, http.MethodPost, endpoint, map[string]any{"bits": 256})
@@ -213,6 +222,7 @@ func (v *VaultTransitKeyProvider) GenerateDEK(ctx context.Context) ([]byte, Wrap
 	}, nil
 }
 
+// UnwrapDEK runs the unwrap dek operation.
 func (v *VaultTransitKeyProvider) UnwrapDEK(ctx context.Context, wrapped WrappedDEK) ([]byte, error) {
 	endpoint := fmt.Sprintf("%s/v1/%s/decrypt/%s", v.addr, v.mount, v.keyName)
 	body, err := v.doVaultRequest(ctx, http.MethodPost, endpoint, map[string]any{
@@ -232,6 +242,7 @@ func (v *VaultTransitKeyProvider) UnwrapDEK(ctx context.Context, wrapped Wrapped
 	return base64.StdEncoding.DecodeString(resp.Data.Plaintext)
 }
 
+// RotateKey runs the rotate key operation.
 func (v *VaultTransitKeyProvider) RotateKey(ctx context.Context) (string, error) {
 	endpoint := fmt.Sprintf("%s/v1/%s/keys/%s/rotate", v.addr, v.mount, v.keyName)
 	if _, err := v.doVaultRequest(ctx, http.MethodPost, endpoint, nil); err != nil {

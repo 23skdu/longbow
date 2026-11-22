@@ -39,6 +39,7 @@ func waitForZeroTemporalWorkers(t *testing.T, timeout time.Duration) {
 	t.Fatalf("expected 0 temporal ingest workers, found %d", countTemporalIngestWorkers())
 }
 
+// TestVectorStore_NoTemporalGoroutineLeakAcrossNamespaces runs the test vector store_no temporal goroutine leak across namespaces operation.
 func TestVectorStore_NoTemporalGoroutineLeakAcrossNamespaces(t *testing.T) {
 	waitForZeroTemporalWorkers(t, time.Second)
 	baseline := runtime.NumGoroutine()

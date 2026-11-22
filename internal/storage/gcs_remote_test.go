@@ -10,6 +10,7 @@ import (
 	"google.golang.org/api/option"
 )
 
+// TestGCSRemoteStorage_Integration runs the test gcs remote storage_integration operation.
 func TestGCSRemoteStorage_Integration(t *testing.T) {
 	if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
 		t.Skip("Skipping GCS integration test due to missing credentials")

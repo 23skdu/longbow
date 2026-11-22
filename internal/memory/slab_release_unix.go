@@ -48,7 +48,7 @@ func AdviseHugePage(b []byte) error {
 	ptr := unsafe.Pointer(&b[0]) // #nosec G103
 	length := uintptr(cap(b))
 
-	// Call madvise with MADV_HUGEPAGE (Linux only, no-op on Darwin)
+	// MADV_HUGEPAGE madvise with MADV_HUGEPAGE (Linux only, no-op on Darwin)
 	// We use the literal value for MADV_HUGEPAGE (14) if not defined in syscall
 	const MADV_HUGEPAGE = 14
 

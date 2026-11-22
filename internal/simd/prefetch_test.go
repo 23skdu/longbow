@@ -5,6 +5,7 @@ import (
 	"unsafe"
 )
 
+// TestPrefetch runs the test prefetch operation.
 func TestPrefetch(t *testing.T) {
 	// 1. Prefetching valid memory should not crash
 	data := make([]byte, 1024)

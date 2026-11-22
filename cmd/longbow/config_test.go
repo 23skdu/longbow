@@ -7,6 +7,7 @@ import (
 
 // Unit tests for config.go - covers extracted helper functions
 
+// TestValidateConfig_Valid runs the test validate config_valid operation.
 func TestValidateConfig_Valid(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -29,6 +30,7 @@ func TestValidateConfig_Valid(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_EmptyListenAddr runs the test validate config_empty listen addr operation.
 func TestValidateConfig_EmptyListenAddr(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -52,6 +54,7 @@ func TestValidateConfig_EmptyListenAddr(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_EmptyMetaAddr runs the test validate config_empty meta addr operation.
 func TestValidateConfig_EmptyMetaAddr(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -75,6 +78,7 @@ func TestValidateConfig_EmptyMetaAddr(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_EmptyMetricsAddr runs the test validate config_empty metrics addr operation.
 func TestValidateConfig_EmptyMetricsAddr(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -98,6 +102,7 @@ func TestValidateConfig_EmptyMetricsAddr(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_InvalidMaxMemory runs the test validate config_invalid max memory operation.
 func TestValidateConfig_InvalidMaxMemory(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -126,6 +131,7 @@ func TestValidateConfig_InvalidMaxMemory(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_EmptyDataPath runs the test validate config_empty data path operation.
 func TestValidateConfig_EmptyDataPath(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -149,6 +155,7 @@ func TestValidateConfig_EmptyDataPath(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_InvalidMaxWALSize runs the test validate config_invalid max wal size operation.
 func TestValidateConfig_InvalidMaxWALSize(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -172,6 +179,7 @@ func TestValidateConfig_InvalidMaxWALSize(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_InvalidLogFormat runs the test validate config_invalid log format operation.
 func TestValidateConfig_InvalidLogFormat(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -195,6 +203,7 @@ func TestValidateConfig_InvalidLogFormat(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_ValidLogFormats runs the test validate config_valid log formats operation.
 func TestValidateConfig_ValidLogFormats(t *testing.T) {
 	for _, format := range []string{"json", "console"} {
 		cfg := Config{
@@ -220,6 +229,7 @@ func TestValidateConfig_ValidLogFormats(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_InvalidLogLevel runs the test validate config_invalid log level operation.
 func TestValidateConfig_InvalidLogLevel(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -243,6 +253,7 @@ func TestValidateConfig_InvalidLogLevel(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_ValidLogLevels runs the test validate config_valid log levels operation.
 func TestValidateConfig_ValidLogLevels(t *testing.T) {
 	for _, level := range []string{"debug", "info", "warn", "error"} {
 		cfg := Config{
@@ -268,6 +279,7 @@ func TestValidateConfig_ValidLogLevels(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_InvalidKeepAliveTime runs the test validate config_invalid keep alive time operation.
 func TestValidateConfig_InvalidKeepAliveTime(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -293,6 +305,7 @@ func TestValidateConfig_InvalidKeepAliveTime(t *testing.T) {
 
 // CalculateEvictionInterval tests
 
+// TestCalculateEvictionInterval_ZeroTTL runs the test calculate eviction interval_zero ttl operation.
 func TestCalculateEvictionInterval_ZeroTTL(t *testing.T) {
 	result := CalculateEvictionInterval(0)
 	if result != 0 {
@@ -300,6 +313,7 @@ func TestCalculateEvictionInterval_ZeroTTL(t *testing.T) {
 	}
 }
 
+// TestCalculateEvictionInterval_NegativeTTL runs the test calculate eviction interval_negative ttl operation.
 func TestCalculateEvictionInterval_NegativeTTL(t *testing.T) {
 	result := CalculateEvictionInterval(-time.Hour)
 	if result != 0 {
@@ -307,6 +321,7 @@ func TestCalculateEvictionInterval_NegativeTTL(t *testing.T) {
 	}
 }
 
+// TestCalculateEvictionInterval_LargeTTL runs the test calculate eviction interval_large ttl operation.
 func TestCalculateEvictionInterval_LargeTTL(t *testing.T) {
 	// 1 hour TTL -> 1/10 is 6min, but capped at 1min
 	result := CalculateEvictionInterval(time.Hour)
@@ -315,6 +330,7 @@ func TestCalculateEvictionInterval_LargeTTL(t *testing.T) {
 	}
 }
 
+// TestCalculateEvictionInterval_SmallTTL runs the test calculate eviction interval_small ttl operation.
 func TestCalculateEvictionInterval_SmallTTL(t *testing.T) {
 	// 30 second TTL -> 1/10 is 3s
 	result := CalculateEvictionInterval(30 * time.Second)
@@ -323,6 +339,7 @@ func TestCalculateEvictionInterval_SmallTTL(t *testing.T) {
 	}
 }
 
+// TestCalculateEvictionInterval_VerySmallTTL runs the test calculate eviction interval_very small ttl operation.
 func TestCalculateEvictionInterval_VerySmallTTL(t *testing.T) {
 	// 5 second TTL -> 1/10 is 500ms, capped at 1s minimum
 	result := CalculateEvictionInterval(5 * time.Second)
@@ -331,6 +348,7 @@ func TestCalculateEvictionInterval_VerySmallTTL(t *testing.T) {
 	}
 }
 
+// TestCalculateEvictionInterval_TinyTTL runs the test calculate eviction interval_tiny ttl operation.
 func TestCalculateEvictionInterval_TinyTTL(t *testing.T) {
 	// 100ms TTL -> 1/10 is 10ms, capped at 1s minimum
 	result := CalculateEvictionInterval(100 * time.Millisecond)
@@ -341,6 +359,7 @@ func TestCalculateEvictionInterval_TinyTTL(t *testing.T) {
 
 // BuildKeepaliveParams tests
 
+// TestBuildKeepaliveParams runs the test build keepalive params operation.
 func TestBuildKeepaliveParams(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -368,6 +387,7 @@ func TestBuildKeepaliveParams(t *testing.T) {
 	}
 }
 
+// TestBuildKeepaliveParams_CustomValues runs the test build keepalive params_custom values operation.
 func TestBuildKeepaliveParams_CustomValues(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:    30 * time.Second,
@@ -385,6 +405,7 @@ func TestBuildKeepaliveParams_CustomValues(t *testing.T) {
 
 // BuildKeepalivePolicy tests
 
+// TestBuildKeepalivePolicy runs the test build keepalive policy operation.
 func TestBuildKeepalivePolicy(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -412,6 +433,7 @@ func TestBuildKeepalivePolicy(t *testing.T) {
 	}
 }
 
+// TestBuildKeepalivePolicy_PermitWithoutStream runs the test build keepalive policy_permit without stream operation.
 func TestBuildKeepalivePolicy_PermitWithoutStream(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -439,6 +461,7 @@ func TestBuildKeepalivePolicy_PermitWithoutStream(t *testing.T) {
 
 // DefaultConfig tests
 
+// TestDefaultConfig_Values runs the test default config_values operation.
 func TestDefaultConfig_Values(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -480,6 +503,7 @@ func TestDefaultConfig_Values(t *testing.T) {
 	}
 }
 
+// TestDefaultConfig_IsValid runs the test default config_is valid operation.
 func TestDefaultConfig_IsValid(t *testing.T) {
 	cfg := Config{
 		KeepAliveTime:                2 * time.Hour,
@@ -502,6 +526,7 @@ func TestDefaultConfig_IsValid(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_SecretsProviders runs the test validate config_secrets providers operation.
 func TestValidateConfig_SecretsProviders(t *testing.T) {
 	base := Config{
 		KeepAliveTime:    2 * time.Hour,

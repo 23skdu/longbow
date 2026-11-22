@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestStorageEngine_Extended runs the test storage engine_extended operation.
 func TestStorageEngine_Extended(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "engine-extended-test")
 	require.NoError(t, err)
@@ -75,6 +76,7 @@ func TestStorageEngine_Extended(t *testing.T) {
 	})
 }
 
+// TestStorageEngine_writeSnapshotItem_Graph runs the test storage engine_write snapshot item_graph operation.
 func TestStorageEngine_writeSnapshotItem_Graph(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "engine-graph-test")
 	require.NoError(t, err)
@@ -134,6 +136,7 @@ func TestStorageEngine_writeSnapshotItem_Graph(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestStorageEngine_Snapshot_Error runs the test storage engine_snapshot_error operation.
 func TestStorageEngine_Snapshot_Error(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "engine-err-test")
 	require.NoError(t, err)
@@ -165,6 +168,7 @@ func TestStorageEngine_Snapshot_Error(t *testing.T) {
 	_ = engine.Close()
 }
 
+// TestStorageEngine_LoadSnapshots runs the test storage engine_load snapshots operation.
 func TestStorageEngine_LoadSnapshots(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "engine-load-test")
 	require.NoError(t, err)
@@ -209,6 +213,7 @@ func TestStorageEngine_LoadSnapshots(t *testing.T) {
 	assert.Equal(t, 1, count)
 }
 
+// TestStorageEngine_NoBatcher runs the test storage engine_no batcher operation.
 func TestStorageEngine_NoBatcher(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "engine-nobatcher-test")
 	require.NoError(t, err)

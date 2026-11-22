@@ -58,6 +58,7 @@ func TestAddConnectionsBatchReusesPooledBuffers(t *testing.T) {
 		"AddConnectionsBatch must be zero-allocation per call (saw %.2f allocs per run)", allocs)
 }
 
+// TestGetNeighborsCombinedManualReusesCallerBuffer runs the test get neighbors combined manual reuses caller buffer operation.
 func TestGetNeighborsCombinedManualReusesCallerBuffer(t *testing.T) {
 	h := newLinkageTestIndex(t)
 	data := h.data.Load()
@@ -79,6 +80,7 @@ func TestGetNeighborsCombinedManualReusesCallerBuffer(t *testing.T) {
 	require.Equal(t, 0.0, allocs, "GetNeighborsCombinedManual with caller buffer must be zero-allocation (roadmap A2)")
 }
 
+// TestResolveHNSWComputerReusesContextSlots runs the test resolve hnsw computer reuses context slots operation.
 func TestResolveHNSWComputerReusesContextSlots(t *testing.T) {
 	h := newLinkageTestIndex(t)
 	data := h.data.Load()

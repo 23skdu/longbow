@@ -42,6 +42,7 @@ func createTestMockDataset(t *testing.T, name string, dims, numVectors int) *ind
 // HNSW Batch Search Integration Tests
 // =============================================================================
 
+// TestHNSWIndex_SearchBatch runs the test hnsw index_search batch operation.
 func TestHNSWIndex_SearchBatch(t *testing.T) {
 	ds := createTestMockDataset(t, "batch-search-test", 16, 100)
 	if ds == nil {
@@ -75,6 +76,7 @@ func TestHNSWIndex_SearchBatch(t *testing.T) {
 	}
 }
 
+// TestHNSWIndex_RerankBatch runs the test hnsw index_rerank batch operation.
 func TestHNSWIndex_RerankBatch(t *testing.T) {
 	ds := createTestMockDataset(t, "rerank-batch-test", 16, 50)
 	if ds == nil {
@@ -104,6 +106,7 @@ func TestHNSWIndex_RerankBatch(t *testing.T) {
 	}
 }
 
+// TestHNSWIndex_SearchBatchWithArena runs the test hnsw index_search batch with arena operation.
 func TestHNSWIndex_SearchBatchWithArena(t *testing.T) {
 	ds := createTestMockDataset(t, "batch-arena-test", 16, 100)
 	if ds == nil {
@@ -133,6 +136,7 @@ func TestHNSWIndex_SearchBatchWithArena(t *testing.T) {
 	}
 }
 
+// TestHNSWIndex_SearchBatch_Empty runs the test hnsw index_search batch_empty operation.
 func TestHNSWIndex_SearchBatch_Empty(t *testing.T) {
 	ds := createTestMockDataset(t, "empty-batch-test", 16, 10)
 	idx := index.NewTestHNSWIndex(ds)
@@ -150,6 +154,7 @@ func TestHNSWIndex_SearchBatch_Empty(t *testing.T) {
 	}
 }
 
+// TestHNSWIndex_RerankBatch_Empty runs the test hnsw index_rerank batch_empty operation.
 func TestHNSWIndex_RerankBatch_Empty(t *testing.T) {
 	ds := createTestMockDataset(t, "rerank-empty-test", 16, 10)
 	idx := index.NewTestHNSWIndex(ds)
@@ -171,6 +176,7 @@ func TestHNSWIndex_RerankBatch_Empty(t *testing.T) {
 // index.RankedResult type tests
 // =============================================================================
 
+// TestRankedResult_Fields runs the test ranked result_fields operation.
 func TestRankedResult_Fields(t *testing.T) {
 	r := index.RankedResult{
 		ID:       types.VectorID(42),
@@ -189,6 +195,7 @@ func TestRankedResult_Fields(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkSequential_1000Candidates runs the benchmark sequential_1000 candidates operation.
 func BenchmarkSequential_1000Candidates(b *testing.B) {
 	query := make([]float32, 128)
 	for i := range query {

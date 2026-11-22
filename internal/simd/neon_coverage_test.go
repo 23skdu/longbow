@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestNEONComprehensive runs the test neon comprehensive operation.
 func TestNEONComprehensive(t *testing.T) {
 	initializeDispatch()
 

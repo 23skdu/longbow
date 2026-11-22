@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestMetricType_String runs the test metric type_string operation.
 func TestMetricType_String(t *testing.T) {
 	tests := []struct {
 		metric   MetricType
@@ -26,6 +27,7 @@ func TestMetricType_String(t *testing.T) {
 	}
 }
 
+// TestGenerateBatchBody runs the test generate batch body operation.
 func TestGenerateBatchBody(t *testing.T) {
 	body := GenerateBatchBody()
 
@@ -36,6 +38,7 @@ func TestGenerateBatchBody(t *testing.T) {
 	t.Logf("GenerateBatchBody generated %d bytes of WASM code", len(body))
 }
 
+// TestEuclideanBatchInto_EmptyVectors runs the test euclidean batch into_empty vectors operation.
 func TestEuclideanBatchInto_EmptyVectors(t *testing.T) {
 	rt := getJitRuntime()
 	if rt == nil {
@@ -52,6 +55,7 @@ func TestEuclideanBatchInto_EmptyVectors(t *testing.T) {
 	}
 }
 
+// TestEuclideanBatchInto_ResultsTooSmall runs the test euclidean batch into_results too small operation.
 func TestEuclideanBatchInto_ResultsTooSmall(t *testing.T) {
 	rt := getJitRuntime()
 	if rt == nil {
@@ -71,6 +75,7 @@ func TestEuclideanBatchInto_ResultsTooSmall(t *testing.T) {
 	}
 }
 
+// TestEuclideanBatchInto_SingleVector runs the test euclidean batch into_single vector operation.
 func TestEuclideanBatchInto_SingleVector(t *testing.T) {
 	rt := getJitRuntime()
 	if rt == nil {
@@ -93,6 +98,7 @@ func TestEuclideanBatchInto_SingleVector(t *testing.T) {
 	}
 }
 
+// TestEuclideanBatchInto_MultipleVectors runs the test euclidean batch into_multiple vectors operation.
 func TestEuclideanBatchInto_MultipleVectors(t *testing.T) {
 	rt := getJitRuntime()
 	if rt == nil {
@@ -123,6 +129,7 @@ func TestEuclideanBatchInto_MultipleVectors(t *testing.T) {
 	}
 }
 
+// TestEuclideanBatchInto_128Dimensions runs the test euclidean batch into_128 dimensions operation.
 func TestEuclideanBatchInto_128Dimensions(t *testing.T) {
 	rt := getJitRuntime()
 	if rt == nil {
@@ -151,6 +158,7 @@ func TestEuclideanBatchInto_128Dimensions(t *testing.T) {
 	}
 }
 
+// TestEuclideanBatchInto_ReuseResults runs the test euclidean batch into_reuse results operation.
 func TestEuclideanBatchInto_ReuseResults(t *testing.T) {
 	rt := getJitRuntime()
 	if rt == nil {

@@ -39,6 +39,7 @@ type MemoryRegion struct {
 	Handle uint64 // internal handle
 }
 
+// NewRDMAContext constructs a new RDMAContext.
 func NewRDMAContext(enabled bool) *RDMAContext {
 	return &RDMAContext{
 		enabled: enabled,

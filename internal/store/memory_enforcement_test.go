@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMemoryEnforcementLoadAndReject runs the test memory enforcement load and reject operation.
 func TestMemoryEnforcementLoadAndReject(t *testing.T) {
 	const memLimit = 1024
 	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), memLimit, 0, 0)

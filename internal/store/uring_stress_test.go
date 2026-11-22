@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+// TestUringReaderStress runs the test uring reader stress operation.
 func TestUringReaderStress(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFilterEvaluator_Reuse runs the test filter evaluator_reuse operation.
 func TestFilterEvaluator_Reuse(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -67,6 +68,7 @@ func TestFilterEvaluator_Reuse(t *testing.T) {
 	require.False(t, mask2.Value(1))
 }
 
+// TestFilterEvaluator_MatchesBatch runs the test filter evaluator_matches batch operation.
 func TestFilterEvaluator_MatchesBatch(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -105,6 +107,7 @@ func TestFilterEvaluator_MatchesBatch(t *testing.T) {
 	require.Nil(t, singleResult)
 }
 
+// TestFilterEvaluator_MatchesBatchFused runs the test filter evaluator_matches batch fused operation.
 func TestFilterEvaluator_MatchesBatchFused(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -192,6 +195,7 @@ func TestFilterEvaluator_MatchesBatchFused(t *testing.T) {
 	})
 }
 
+// TestFilterEvaluator_MatchesBatchVsMatchesBatchFused runs the test filter evaluator_matches batch vs matches batch fused operation.
 func TestFilterEvaluator_MatchesBatchVsMatchesBatchFused(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -239,6 +243,7 @@ func TestFilterEvaluator_MatchesBatchVsMatchesBatchFused(t *testing.T) {
 	require.ElementsMatch(t, resultBatch, resultFused)
 }
 
+// TestFilterEvaluator_MatchesBatchFusedSubset runs the test filter evaluator_matches batch fused subset operation.
 func TestFilterEvaluator_MatchesBatchFusedSubset(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -268,6 +273,7 @@ func TestFilterEvaluator_MatchesBatchFusedSubset(t *testing.T) {
 	require.Equal(t, []int{3, 6, 7}, result)
 }
 
+// BenchmarkFilterEvaluator_MatchesBatch runs the benchmark filter evaluator_matches batch operation.
 func BenchmarkFilterEvaluator_MatchesBatch(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	builder := array.NewRecordBuilder(mem, arrow.NewSchema([]arrow.Field{
@@ -307,6 +313,7 @@ func BenchmarkFilterEvaluator_MatchesBatch(b *testing.B) {
 	}
 }
 
+// BenchmarkFilterEvaluator_MatchesBatchFused runs the benchmark filter evaluator_matches batch fused operation.
 func BenchmarkFilterEvaluator_MatchesBatchFused(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	builder := array.NewRecordBuilder(mem, arrow.NewSchema([]arrow.Field{
@@ -362,6 +369,7 @@ func makeInt64Mod(_, mod, count int) []int64 { //nolint:unparam
 	return result
 }
 
+// FuzzFilterEvaluator_MatchesBatchFused runs the fuzz filter evaluator_matches batch fused operation.
 func FuzzFilterEvaluator_MatchesBatchFused(f *testing.F) {
 	f.Add(100, 3, 10)     // numRows, numFilters, categories
 	f.Add(1000, 5, 100)   // Larger dataset
@@ -440,6 +448,7 @@ func FuzzFilterEvaluator_MatchesBatchFused(f *testing.F) {
 	})
 }
 
+// FuzzFilterEvaluator_CompareBatchMethods runs the fuzz filter evaluator_compare batch methods operation.
 func FuzzFilterEvaluator_CompareBatchMethods(f *testing.F) {
 	f.Add(500, 3, 5)   // numRows, numFilters, categories
 	f.Add(2000, 4, 10) // Larger dataset
@@ -515,6 +524,7 @@ func FuzzFilterEvaluator_CompareBatchMethods(f *testing.F) {
 	})
 }
 
+// TestFilterEvaluator_MatchesAll runs the test filter evaluator_matches all operation.
 func TestFilterEvaluator_MatchesAll(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -628,6 +638,7 @@ func TestFilterEvaluator_MatchesAll(t *testing.T) {
 	})
 }
 
+// TestFilterEvaluator_MatchesAllVsMatchesBatch runs the test filter evaluator_matches all vs matches batch operation.
 func TestFilterEvaluator_MatchesAllVsMatchesBatch(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -675,6 +686,7 @@ func TestFilterEvaluator_MatchesAllVsMatchesBatch(t *testing.T) {
 	require.ElementsMatch(t, resultBatch, resultAll)
 }
 
+// TestIsBitmapAllZeros runs the test is bitmap all zeros operation.
 func TestIsBitmapAllZeros(t *testing.T) {
 	t.Run("AllZeros", func(t *testing.T) {
 		bitmap := []byte{0, 0, 0, 0}
@@ -707,6 +719,7 @@ func TestIsBitmapAllZeros(t *testing.T) {
 	})
 }
 
+// TestSelectOpsBySelectivity runs the test select ops by selectivity operation.
 func TestSelectOpsBySelectivity(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -737,6 +750,7 @@ func TestSelectOpsBySelectivity(t *testing.T) {
 	// So the filter with lowest selectivity (id=3) should come first
 }
 
+// BenchmarkFilterEvaluator_MatchesAll runs the benchmark filter evaluator_matches all operation.
 func BenchmarkFilterEvaluator_MatchesAll(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	builder := array.NewRecordBuilder(mem, arrow.NewSchema([]arrow.Field{
@@ -771,6 +785,7 @@ func BenchmarkFilterEvaluator_MatchesAll(b *testing.B) {
 	}
 }
 
+// BenchmarkFilterEvaluator_MatchesAll_SelectiveEarlyExit runs the benchmark filter evaluator_matches all_selective early exit operation.
 func BenchmarkFilterEvaluator_MatchesAll_SelectiveEarlyExit(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	builder := array.NewRecordBuilder(mem, arrow.NewSchema([]arrow.Field{
@@ -802,6 +817,7 @@ func BenchmarkFilterEvaluator_MatchesAll_SelectiveEarlyExit(b *testing.B) {
 	}
 }
 
+// FuzzFilterEvaluator_MatchesAll runs the fuzz filter evaluator_matches all operation.
 func FuzzFilterEvaluator_MatchesAll(f *testing.F) {
 	f.Add(100, 3, 10)     // numRows, numFilters, categories
 	f.Add(1000, 5, 100)   // Larger dataset
@@ -873,6 +889,7 @@ func FuzzFilterEvaluator_MatchesAll(f *testing.F) {
 	})
 }
 
+// TestStringFilterEvaluator_Match runs the test string filter evaluator_match operation.
 func TestStringFilterEvaluator_Match(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -896,6 +913,7 @@ func TestStringFilterEvaluator_Match(t *testing.T) {
 	require.False(t, eval.Matches(2)) // cherry != banana
 }
 
+// TestStringFilterEvaluator_MatchBitmap runs the test string filter evaluator_match bitmap operation.
 func TestStringFilterEvaluator_MatchBitmap(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -966,6 +984,7 @@ func TestStringFilterEvaluator_MatchBitmap(t *testing.T) {
 	})
 }
 
+// TestStringFilterEvaluator_MatchesAll runs the test string filter evaluator_matches all operation.
 func TestStringFilterEvaluator_MatchesAll(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1030,6 +1049,7 @@ func TestStringFilterEvaluator_MatchesAll(t *testing.T) {
 	})
 }
 
+// TestStringFilterEvaluator_FilterBatch runs the test string filter evaluator_filter batch operation.
 func TestStringFilterEvaluator_FilterBatch(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1052,6 +1072,7 @@ func TestStringFilterEvaluator_FilterBatch(t *testing.T) {
 	require.Equal(t, []int{0}, result)
 }
 
+// TestStringFilterEvaluator_EqualLengthStrings runs the test string filter evaluator_equal length strings operation.
 func TestStringFilterEvaluator_EqualLengthStrings(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1076,6 +1097,7 @@ func TestStringFilterEvaluator_EqualLengthStrings(t *testing.T) {
 	require.Equal(t, expected, bitmap)
 }
 
+// TestStringFilterEvaluator_VariableLengthStrings runs the test string filter evaluator_variable length strings operation.
 func TestStringFilterEvaluator_VariableLengthStrings(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1117,6 +1139,7 @@ func TestStringFilterEvaluator_VariableLengthStrings(t *testing.T) {
 	})
 }
 
+// TestStringFilterEvaluator_WithNulls runs the test string filter evaluator_with nulls operation.
 func TestStringFilterEvaluator_WithNulls(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1138,6 +1161,7 @@ func TestStringFilterEvaluator_WithNulls(t *testing.T) {
 	require.False(t, eval.Matches(2)) // Null value should not match
 }
 
+// BenchmarkStringFilterEvaluator_MatchBitmap runs the benchmark string filter evaluator_match bitmap operation.
 func BenchmarkStringFilterEvaluator_MatchBitmap(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	builder := array.NewRecordBuilder(mem, arrow.NewSchema([]arrow.Field{
@@ -1172,6 +1196,7 @@ func BenchmarkStringFilterEvaluator_MatchBitmap(b *testing.B) {
 	}
 }
 
+// BenchmarkStringFilterEvaluator_MatchesAll runs the benchmark string filter evaluator_matches all operation.
 func BenchmarkStringFilterEvaluator_MatchesAll(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	builder := array.NewRecordBuilder(mem, arrow.NewSchema([]arrow.Field{
@@ -1209,6 +1234,7 @@ func BenchmarkStringFilterEvaluator_MatchesAll(b *testing.B) {
 	}
 }
 
+// FuzzStringFilterEvaluator_Match runs the fuzz string filter evaluator_match operation.
 func FuzzStringFilterEvaluator_Match(f *testing.F) {
 	f.Add(100, "test_value") // numRows, value
 	f.Add(1000, "category_50")
@@ -1255,6 +1281,7 @@ func FuzzStringFilterEvaluator_Match(f *testing.F) {
 	})
 }
 
+// FuzzStringFilterEvaluator_MultipleOps runs the fuzz string filter evaluator_multiple ops operation.
 func FuzzStringFilterEvaluator_MultipleOps(f *testing.F) {
 	f.Add(500, "eq") // numRows, operator
 	f.Add(2000, "neq")
@@ -1305,6 +1332,7 @@ func FuzzStringFilterEvaluator_MultipleOps(f *testing.F) {
 	})
 }
 
+// TestFilterEvaluator_CompoundFilter_AND runs the test filter evaluator_compound filter_and operation.
 func TestFilterEvaluator_CompoundFilter_AND(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1341,6 +1369,7 @@ func TestFilterEvaluator_CompoundFilter_AND(t *testing.T) {
 	require.Equal(t, []int{2, 6, 7}, result)
 }
 
+// TestFilterEvaluator_CompoundFilter_OR runs the test filter evaluator_compound filter_or operation.
 func TestFilterEvaluator_CompoundFilter_OR(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1373,6 +1402,7 @@ func TestFilterEvaluator_CompoundFilter_OR(t *testing.T) {
 	require.Equal(t, []int{0, 2, 4}, result)
 }
 
+// TestFilterEvaluator_CompoundFilter_NOT runs the test filter evaluator_compound filter_not operation.
 func TestFilterEvaluator_CompoundFilter_NOT(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1403,6 +1433,7 @@ func TestFilterEvaluator_CompoundFilter_NOT(t *testing.T) {
 	require.Equal(t, []int{0, 2, 4}, result)
 }
 
+// TestFilterEvaluator_CompoundFilter_NestedAND runs the test filter evaluator_compound filter_nested and operation.
 func TestFilterEvaluator_CompoundFilter_NestedAND(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1442,6 +1473,7 @@ func TestFilterEvaluator_CompoundFilter_NestedAND(t *testing.T) {
 	require.Equal(t, []int{4, 5}, result)
 }
 
+// TestFilterEvaluator_CompoundFilter_MixedWithFlat runs the test filter evaluator_compound filter_mixed with flat operation.
 func TestFilterEvaluator_CompoundFilter_MixedWithFlat(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1476,6 +1508,7 @@ func TestFilterEvaluator_CompoundFilter_MixedWithFlat(t *testing.T) {
 	require.Equal(t, []int{2, 4, 5, 6}, result)
 }
 
+// TestFilterEvaluator_CompoundFilter_MatchesBatch runs the test filter evaluator_compound filter_matches batch operation.
 func TestFilterEvaluator_CompoundFilter_MatchesBatch(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1507,6 +1540,7 @@ func TestFilterEvaluator_CompoundFilter_MatchesBatch(t *testing.T) {
 	require.Equal(t, []int{0, 1, 2, 4, 6}, result)
 }
 
+// TestFilterEvaluator_CompoundFilter_EmptyChildren runs the test filter evaluator_compound filter_empty children operation.
 func TestFilterEvaluator_CompoundFilter_EmptyChildren(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1530,6 +1564,7 @@ func TestFilterEvaluator_CompoundFilter_EmptyChildren(t *testing.T) {
 	require.Equal(t, []int{0, 1, 2}, result)
 }
 
+// TestFilterEvaluator_CompoundFilter_ThreeLevels runs the test filter evaluator_compound filter_three levels operation.
 func TestFilterEvaluator_CompoundFilter_ThreeLevels(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -1575,6 +1610,7 @@ func TestFilterEvaluator_CompoundFilter_ThreeLevels(t *testing.T) {
 	require.Equal(t, []int{2, 3, 4}, result)
 }
 
+// TestFilterEvaluator_NestedField_Struct runs the test filter evaluator_nested field_struct operation.
 func TestFilterEvaluator_NestedField_Struct(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	nestedType := arrow.StructOf(
@@ -1613,6 +1649,7 @@ func TestFilterEvaluator_NestedField_Struct(t *testing.T) {
 	require.Equal(t, []int{1, 2, 3}, result)
 }
 
+// TestFilterEvaluator_NestedField_List runs the test filter evaluator_nested field_list operation.
 func TestFilterEvaluator_NestedField_List(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	listType := arrow.ListOf(arrow.PrimitiveTypes.Int64)
@@ -1650,6 +1687,7 @@ func TestFilterEvaluator_NestedField_List(t *testing.T) {
 	require.Equal(t, []int{1}, result)
 }
 
+// TestFilterEvaluator_NestedField_FixedSizeList runs the test filter evaluator_nested field_fixed size list operation.
 func TestFilterEvaluator_NestedField_FixedSizeList(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	fixedType := arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Int64)
@@ -1687,6 +1725,7 @@ func TestFilterEvaluator_NestedField_FixedSizeList(t *testing.T) {
 	require.Equal(t, []int{1, 2}, result)
 }
 
+// TestFilterEvaluator_CompoundAndNested runs the test filter evaluator_compound and nested operation.
 func TestFilterEvaluator_CompoundAndNested(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	nestedType := arrow.StructOf(
@@ -1728,6 +1767,7 @@ func TestFilterEvaluator_CompoundAndNested(t *testing.T) {
 	require.Equal(t, []int{0}, result)
 }
 
+// FuzzFilterEvaluator_CompoundFilters runs the fuzz filter evaluator_compound filters operation.
 func FuzzFilterEvaluator_CompoundFilters(f *testing.F) {
 	f.Add(100, 3, 10, 0)
 	f.Add(500, 2, 5, 1)
@@ -1802,6 +1842,7 @@ func FuzzFilterEvaluator_CompoundFilters(f *testing.F) {
 	})
 }
 
+// FuzzFilterEvaluator_NestedFieldFilters runs the fuzz filter evaluator_nested field filters operation.
 func FuzzFilterEvaluator_NestedFieldFilters(f *testing.F) {
 	f.Add(100, 50)
 	f.Add(500, 200)

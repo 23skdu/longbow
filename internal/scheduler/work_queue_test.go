@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestWorkQueue_NewWorkQueue runs the test work queue_new work queue operation.
 func TestWorkQueue_NewWorkQueue(t *testing.T) {
 	wq := NewWorkQueue(100, 4)
 	if wq == nil {
@@ -20,6 +21,7 @@ func TestWorkQueue_NewWorkQueue(t *testing.T) {
 	}
 }
 
+// TestWorkQueue_DefaultWorkers runs the test work queue_default workers operation.
 func TestWorkQueue_DefaultWorkers(t *testing.T) {
 	wq := NewWorkQueue(100, 0)
 	if wq.workers == 0 {
@@ -27,6 +29,7 @@ func TestWorkQueue_DefaultWorkers(t *testing.T) {
 	}
 }
 
+// TestWorkQueue_DefaultBufferSize runs the test work queue_default buffer size operation.
 func TestWorkQueue_DefaultBufferSize(t *testing.T) {
 	wq := NewWorkQueue(0, 1)
 	if cap(wq.items) == 0 {
@@ -34,6 +37,7 @@ func TestWorkQueue_DefaultBufferSize(t *testing.T) {
 	}
 }
 
+// TestWorkQueue_SubmitAndProcess runs the test work queue_submit and process operation.
 func TestWorkQueue_SubmitAndProcess(t *testing.T) {
 	wq := NewWorkQueue(100, 2)
 	processed := atomic.Int32{}
@@ -58,6 +62,7 @@ func TestWorkQueue_SubmitAndProcess(t *testing.T) {
 	}
 }
 
+// TestWorkQueue_SubmitBlocking runs the test work queue_submit blocking operation.
 func TestWorkQueue_SubmitBlocking(t *testing.T) {
 	wq := NewWorkQueue(10, 1)
 	processed := atomic.Int32{}
@@ -80,6 +85,7 @@ func TestWorkQueue_SubmitBlocking(t *testing.T) {
 	}
 }
 
+// TestWorkQueue_Close runs the test work queue_close operation.
 func TestWorkQueue_Close(t *testing.T) {
 	wq := NewWorkQueue(100, 2)
 	handler := func(ctx context.Context, item WorkItem) {}
@@ -96,6 +102,7 @@ func TestWorkQueue_Close(t *testing.T) {
 	}
 }
 
+// TestWorkQueue_Backlog runs the test work queue_backlog operation.
 func TestWorkQueue_Backlog(t *testing.T) {
 	wq := NewWorkQueue(100, 1)
 
@@ -109,6 +116,7 @@ func TestWorkQueue_Backlog(t *testing.T) {
 	}
 }
 
+// TestWorkQueue_Len runs the test work queue_len operation.
 func TestWorkQueue_Len(t *testing.T) {
 	wq := NewWorkQueue(100, 1)
 
@@ -122,6 +130,7 @@ func TestWorkQueue_Len(t *testing.T) {
 	}
 }
 
+// TestWorkQueue_CloseCancelsContext runs the test work queue_close cancels context operation.
 func TestWorkQueue_CloseCancelsContext(t *testing.T) {
 	wq := NewWorkQueue(100, 1)
 	cancelled := make(chan struct{})
@@ -146,6 +155,7 @@ func TestWorkQueue_CloseCancelsContext(t *testing.T) {
 	}
 }
 
+// TestWorkQueue_SubmitWhenFull runs the test work queue_submit when full operation.
 func TestWorkQueue_SubmitWhenFull(t *testing.T) {
 	wq := NewWorkQueue(1, 1)
 	wq.SubmitBlocking(1)
@@ -153,6 +163,7 @@ func TestWorkQueue_SubmitWhenFull(t *testing.T) {
 	_ = wq.Close()
 }
 
+// TestPriorityWorkQueue_Defaults runs the test priority work queue_defaults operation.
 func TestPriorityWorkQueue_Defaults(t *testing.T) {
 	pwq := NewPriorityWorkQueue(0, 0)
 	if pwq.workers == 0 {
@@ -164,6 +175,7 @@ func TestPriorityWorkQueue_Defaults(t *testing.T) {
 	_ = pwq.Close()
 }
 
+// TestPriorityWorkQueue_SubmitAllPriorities runs the test priority work queue_submit all priorities operation.
 func TestPriorityWorkQueue_SubmitAllPriorities(t *testing.T) {
 	pwq := NewPriorityWorkQueue(10, 1)
 	processed := atomic.Int32{}
@@ -183,6 +195,7 @@ func TestPriorityWorkQueue_SubmitAllPriorities(t *testing.T) {
 	assert.Equal(t, int32(5), processed.Load())
 }
 
+// TestWorkQueue_ConcurrentSubmit runs the test work queue_concurrent submit operation.
 func TestWorkQueue_ConcurrentSubmit(t *testing.T) {
 	wq := NewWorkQueue(1000, 4)
 	var wg sync.WaitGroup
@@ -211,6 +224,7 @@ func TestWorkQueue_ConcurrentSubmit(t *testing.T) {
 	}
 }
 
+// TestPriorityWorkQueue_NewPriorityWorkQueue runs the test priority work queue_new priority work queue operation.
 func TestPriorityWorkQueue_NewPriorityWorkQueue(t *testing.T) {
 	pwq := NewPriorityWorkQueue(100, 4)
 	if pwq == nil {
@@ -221,6 +235,7 @@ func TestPriorityWorkQueue_NewPriorityWorkQueue(t *testing.T) {
 	}
 }
 
+// TestPriorityWorkQueue_SubmitAndProcess runs the test priority work queue_submit and process operation.
 func TestPriorityWorkQueue_SubmitAndProcess(t *testing.T) {
 	pwq := NewPriorityWorkQueue(100, 2)
 	processed := atomic.Int32{}
@@ -245,6 +260,7 @@ func TestPriorityWorkQueue_SubmitAndProcess(t *testing.T) {
 	}
 }
 
+// TestPriorityWorkQueue_PriorityClamping runs the test priority work queue_priority clamping operation.
 func TestPriorityWorkQueue_PriorityClamping(t *testing.T) {
 	pwq := NewPriorityWorkQueue(100, 1)
 
@@ -256,6 +272,7 @@ func TestPriorityWorkQueue_PriorityClamping(t *testing.T) {
 	}
 }
 
+// TestPriorityWorkQueue_Close runs the test priority work queue_close operation.
 func TestPriorityWorkQueue_Close(t *testing.T) {
 	pwq := NewPriorityWorkQueue(100, 2)
 	handler := func(ctx context.Context, item WorkItem) {}
@@ -272,6 +289,7 @@ func TestPriorityWorkQueue_Close(t *testing.T) {
 	}
 }
 
+// TestPriorityWorkQueue_PriorityOrdering runs the test priority work queue_priority ordering operation.
 func TestPriorityWorkQueue_PriorityOrdering(t *testing.T) {
 	pwq := NewPriorityWorkQueue(100, 1)
 	order := []int{}

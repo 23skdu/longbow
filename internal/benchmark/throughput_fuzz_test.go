@@ -14,6 +14,7 @@ func computeThroughput(ops int, elapsed time.Duration, size int) (opsPerSec, byt
 	return opsPerSec, bytesPerSec
 }
 
+// FuzzThroughputMetrics runs the fuzz throughput metrics operation.
 func FuzzThroughputMetrics(f *testing.F) {
 	f.Add(100, int64(time.Second), 1024)
 	f.Add(0, int64(time.Second), 0)

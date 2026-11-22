@@ -14,6 +14,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// TestMemoryUsage runs the test memory usage operation.
 func TestMemoryUsage(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping memory test in short mode")

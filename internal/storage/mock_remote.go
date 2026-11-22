@@ -18,6 +18,7 @@ type MockRemoteStorage struct {
 	provider string // "s3" or "gcs"
 }
 
+// NewMockRemoteStorage constructs a new MockRemoteStorage.
 func NewMockRemoteStorage(provider string) *MockRemoteStorage {
 	return &MockRemoteStorage{
 		data:     make(map[string][]byte),
@@ -25,6 +26,7 @@ func NewMockRemoteStorage(provider string) *MockRemoteStorage {
 	}
 }
 
+// Put runs the put operation.
 func (m *MockRemoteStorage) Put(ctx context.Context, key string, r io.Reader) error {
 	start := time.Now()
 	op := "put"
@@ -48,6 +50,7 @@ func (m *MockRemoteStorage) Put(ctx context.Context, key string, r io.Reader) er
 	return nil
 }
 
+// Get returns the .
 func (m *MockRemoteStorage) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	start := time.Now()
 	op := "get"
@@ -70,6 +73,7 @@ func (m *MockRemoteStorage) Get(ctx context.Context, key string) (io.ReadCloser,
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
+// Delete runs the delete operation.
 func (m *MockRemoteStorage) Delete(ctx context.Context, key string) error {
 	start := time.Now()
 	op := "delete"
@@ -85,6 +89,7 @@ func (m *MockRemoteStorage) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// Exists runs the exists operation.
 func (m *MockRemoteStorage) Exists(ctx context.Context, key string) (bool, error) {
 	start := time.Now()
 	op := "exists"

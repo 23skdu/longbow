@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestParseCPUList_SingleCPU runs the test parse cpu list_single cpu operation.
 func TestParseCPUList_SingleCPU(t *testing.T) {
 	res, err := parseCPUList("0")
 	if err != nil {
@@ -16,6 +17,7 @@ func TestParseCPUList_SingleCPU(t *testing.T) {
 	}
 }
 
+// TestParseCPUList_CommaSeparated runs the test parse cpu list_comma separated operation.
 func TestParseCPUList_CommaSeparated(t *testing.T) {
 	res, err := parseCPUList("0,2,4")
 	if err != nil {
@@ -32,6 +34,7 @@ func TestParseCPUList_CommaSeparated(t *testing.T) {
 	}
 }
 
+// TestParseCPUList_Range runs the test parse cpu list_range operation.
 func TestParseCPUList_Range(t *testing.T) {
 	res, err := parseCPUList("0-3")
 	if err != nil {
@@ -48,6 +51,7 @@ func TestParseCPUList_Range(t *testing.T) {
 	}
 }
 
+// TestParseCPUList_Mixed runs the test parse cpu list_mixed operation.
 func TestParseCPUList_Mixed(t *testing.T) {
 	res, err := parseCPUList("0,2-4,7")
 	if err != nil {
@@ -64,6 +68,7 @@ func TestParseCPUList_Mixed(t *testing.T) {
 	}
 }
 
+// TestParseCPUList_Empty runs the test parse cpu list_empty operation.
 func TestParseCPUList_Empty(t *testing.T) {
 	res, err := parseCPUList("")
 	if err != nil {
@@ -74,6 +79,7 @@ func TestParseCPUList_Empty(t *testing.T) {
 	}
 }
 
+// TestParseCPUList_Invalid runs the test parse cpu list_invalid operation.
 func TestParseCPUList_Invalid(t *testing.T) {
 	res, err := parseCPUList("abc")
 	if err == nil {
@@ -84,6 +90,7 @@ func TestParseCPUList_Invalid(t *testing.T) {
 	}
 }
 
+// TestNUMATopology_Direct runs the test numa topology_direct operation.
 func TestNUMATopology_Direct(t *testing.T) {
 	topo := &NUMATopology{
 		NumNodes: 4,
@@ -97,6 +104,7 @@ func TestNUMATopology_Direct(t *testing.T) {
 	}
 }
 
+// TestNUMAAllocator_Basic runs the test numa allocator_basic operation.
 func TestNUMAAllocator_Basic(t *testing.T) {
 	topo := &NUMATopology{
 		NumNodes: 2,
@@ -111,6 +119,7 @@ func TestNUMAAllocator_Basic(t *testing.T) {
 	alloc.Free(buf)
 }
 
+// TestNUMAAllocator_MultipleNodes runs the test numa allocator_multiple nodes operation.
 func TestNUMAAllocator_MultipleNodes(t *testing.T) {
 	topo := &NUMATopology{
 		NumNodes: 2,

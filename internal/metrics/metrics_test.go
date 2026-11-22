@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestMetricsInitialization runs the test metrics initialization operation.
 func TestMetricsInitialization(t *testing.T) {
 	assert.NotNil(t, FlightOpsTotal)
 	assert.NotNil(t, FlightDurationSeconds)

@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestBitWidthPredictor runs the test bit width predictor operation.
 func TestBitWidthPredictor(t *testing.T) {
 	predictor := NewBitWidthPredictor(100)
 

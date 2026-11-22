@@ -35,6 +35,7 @@ func buildTestGraphData(t *testing.T, n int) *types.GraphData {
 	return g
 }
 
+// TestDiskGraph_RoundTrip runs the test disk graph_round trip operation.
 func TestDiskGraph_RoundTrip(t *testing.T) {
 	const n = 32
 	gd := buildTestGraphData(t, n)
@@ -69,6 +70,7 @@ func TestDiskGraph_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestDiskGraph_GetNeighborsBufReuse runs the test disk graph_get neighbors buf reuse operation.
 func TestDiskGraph_GetNeighborsBufReuse(t *testing.T) {
 	const n = 16
 	gd := buildTestGraphData(t, n)
@@ -91,6 +93,7 @@ func TestDiskGraph_GetNeighborsBufReuse(t *testing.T) {
 	require.Equal(t, len(first), cap(second))
 }
 
+// TestDiskGraph_GetLevel runs the test disk graph_get level operation.
 func TestDiskGraph_GetLevel(t *testing.T) {
 	const n = 16
 	gd := buildTestGraphData(t, n)
@@ -109,6 +112,7 @@ func TestDiskGraph_GetLevel(t *testing.T) {
 	assert.Equal(t, 0, dg.GetLevel(uint32(n+10)))
 }
 
+// TestDiskGraph_GetNeighborsOutOfRange runs the test disk graph_get neighbors out of range operation.
 func TestDiskGraph_GetNeighborsOutOfRange(t *testing.T) {
 	const n = 8
 	gd := buildTestGraphData(t, n)
@@ -124,6 +128,7 @@ func TestDiskGraph_GetNeighborsOutOfRange(t *testing.T) {
 	assert.Nil(t, dg.GetNeighbors(1, 5, nil)) // odd node not on layer 1
 }
 
+// BenchmarkDiskGraph_GetNeighborsNilBuf runs the benchmark disk graph_get neighbors nil buf operation.
 func BenchmarkDiskGraph_GetNeighborsNilBuf(b *testing.B) {
 	const n = 1024
 	gd := buildTestGraphData(&testing.T{}, n)
@@ -146,6 +151,7 @@ func BenchmarkDiskGraph_GetNeighborsNilBuf(b *testing.B) {
 	}
 }
 
+// BenchmarkDiskGraph_GetNeighborsReusedBuf runs the benchmark disk graph_get neighbors reused buf operation.
 func BenchmarkDiskGraph_GetNeighborsReusedBuf(b *testing.B) {
 	const n = 1024
 	gd := buildTestGraphData(&testing.T{}, n)

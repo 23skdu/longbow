@@ -88,6 +88,7 @@ func TestExtractFeatureVector_EmbeddingFields(t *testing.T) {
 	assert.InDelta(t, 4.0, fv[12], 1e-6, "text-embedding-3-large dim ratio must be 4.0")
 }
 
+// TestExtractFeatureVector_NoEmbedding runs the test extract feature vector_no embedding operation.
 func TestExtractFeatureVector_NoEmbedding(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

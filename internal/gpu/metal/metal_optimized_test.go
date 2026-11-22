@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMetalIndexOptimized_Lifecycle runs the test metal index optimized_lifecycle operation.
 func TestMetalIndexOptimized_Lifecycle(t *testing.T) {
 	cfg := types.GPUConfig{
 		DeviceID:  0,
@@ -55,6 +56,7 @@ func TestMetalIndexOptimized_Lifecycle(t *testing.T) {
 	require.NotNil(t, info)
 }
 
+// TestMetalIndexOptimized_Functional runs the test metal index optimized_functional operation.
 func TestMetalIndexOptimized_Functional(t *testing.T) {
 	cfg := types.GPUConfig{
 		DeviceID:  0,
@@ -91,6 +93,7 @@ func TestMetalIndexOptimized_Functional(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestMetalIndexOptimized_Prune runs the test metal index optimized_prune operation.
 func TestMetalIndexOptimized_Prune(t *testing.T) {
 	cfg := types.GPUConfig{
 		DeviceID:  0,
@@ -265,12 +268,14 @@ func verifyAllDTypesOnIndex(t *testing.T, newIdx func(dim int) (types.Index, err
 	}
 }
 
+// TestMetalIndexOptimized_AllDTypesAndDims runs the test metal index optimized_all d types and dims operation.
 func TestMetalIndexOptimized_AllDTypesAndDims(t *testing.T) {
 	verifyAllDTypesOnIndex(t, func(dim int) (types.Index, error) {
 		return NewMetalIndexOptimized(types.GPUConfig{DeviceID: 0, Dimension: dim})
 	})
 }
 
+// TestMetalIndex_StandardAllDTypesAndDims runs the test metal index_standard all d types and dims operation.
 func TestMetalIndex_StandardAllDTypesAndDims(t *testing.T) {
 	verifyAllDTypesOnIndex(t, func(dim int) (types.Index, error) {
 		return NewMetalIndexImpl(types.GPUConfig{DeviceID: 0, Dimension: dim})
@@ -322,6 +327,7 @@ func TestMetalIndex_StandardAllDTypesAndDims(t *testing.T) {
 	assert.InDelta(t, 0.5, outScores[0], 1e-4)
 }
 
+// TestMetalHybridIndex_AllDTypesAndDims runs the test metal hybrid index_all d types and dims operation.
 func TestMetalHybridIndex_AllDTypesAndDims(t *testing.T) {
 	verifyAllDTypesOnIndex(t, func(dim int) (types.Index, error) {
 		return NewMetalHybridIndex(types.GPUConfig{DeviceID: 0, Dimension: dim})

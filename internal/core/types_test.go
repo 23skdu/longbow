@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestPackLocation runs the test pack location operation.
 func TestPackLocation(t *testing.T) {
 	tests := []struct {
 		name string
@@ -25,6 +26,7 @@ func TestPackLocation(t *testing.T) {
 	}
 }
 
+// TestUnpackLocation runs the test unpack location operation.
 func TestUnpackLocation(t *testing.T) {
 	// Test roundtrip
 	original := Location{BatchIdx: 42, RowIdx: 123}
@@ -39,6 +41,7 @@ func TestUnpackLocation(t *testing.T) {
 	}
 }
 
+// TestPackBytesToFloat32s runs the test pack bytes to float32s operation.
 func TestPackBytesToFloat32s(t *testing.T) {
 	// Test with 4 bytes (1 float)
 	input := []byte{0x00, 0x00, 0x80, 0x3f} // 1.0 in little-endian
@@ -52,6 +55,7 @@ func TestPackBytesToFloat32s(t *testing.T) {
 	}
 }
 
+// TestPackBytesToFloat32s_Padding runs the test pack bytes to float32s_padding operation.
 func TestPackBytesToFloat32s_Padding(t *testing.T) {
 	// Test with 3 bytes (should pad to 4)
 	input := []byte{0x00, 0x00, 0x80} // partial
@@ -62,6 +66,7 @@ func TestPackBytesToFloat32s_Padding(t *testing.T) {
 	}
 }
 
+// TestPackBytesToFloat32s_Multiple runs the test pack bytes to float32s_multiple operation.
 func TestPackBytesToFloat32s_Multiple(t *testing.T) {
 	// Test with 8 bytes (2 floats)
 	input := []byte{0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x40} // 1.0, 2.0
@@ -78,6 +83,7 @@ func TestPackBytesToFloat32s_Multiple(t *testing.T) {
 	}
 }
 
+// TestVectorID runs the test vector id operation.
 func TestVectorID(t *testing.T) {
 	var id VectorID = 42
 	if uint32(id) != 42 {
@@ -85,6 +91,7 @@ func TestVectorID(t *testing.T) {
 	}
 }
 
+// TestLocation runs the test location operation.
 func TestLocation(t *testing.T) {
 	loc := Location{BatchIdx: 1, RowIdx: 2}
 	if loc.BatchIdx != 1 {

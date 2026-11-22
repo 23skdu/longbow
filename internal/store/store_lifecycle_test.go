@@ -10,10 +10,12 @@ type mockAdaptiveIndex struct {
 	ef int
 }
 
+// SetEfConstruction sets the ef construction.
 func (m *mockAdaptiveIndex) SetEfConstruction(ef int) {
 	m.ef = ef
 }
 
+// TestAdaptiveEfConstructionLimits runs the test adaptive ef construction limits operation.
 func TestAdaptiveEfConstructionLimits(t *testing.T) {
 	// We want to test that the adaptive targetEf logic:
 	// - depth > 5000 -> targetEf = 100

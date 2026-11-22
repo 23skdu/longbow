@@ -52,6 +52,7 @@ func (b *wasmBackend) ensure() error {
 	return nil
 }
 
+// Embed runs the embed operation.
 func (b *wasmBackend) Embed(ctx context.Context, texts []string) ([][]float32, error) {
 	if err := b.ensure(); err != nil {
 		return nil, err
@@ -73,6 +74,7 @@ func (b *wasmBackend) Embed(ctx context.Context, texts []string) ([][]float32, e
 	return results, nil
 }
 
+// Score runs the score operation.
 func (b *wasmBackend) Score(ctx context.Context, query string, docs []string) ([]float32, error) {
 	if err := b.ensure(); err != nil {
 		return nil, err
@@ -96,8 +98,10 @@ func (b *wasmBackend) Score(ctx context.Context, query string, docs []string) ([
 	return scores, nil
 }
 
+// Dimension runs the dimension operation.
 func (b *wasmBackend) Dimension() int { return b.dimension }
 
+// Close runs the close operation.
 func (b *wasmBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -134,6 +138,7 @@ func (b *onnxBackend) ensure() error {
 	return nil
 }
 
+// Embed runs the embed operation.
 func (b *onnxBackend) Embed(ctx context.Context, texts []string) ([][]float32, error) {
 	if err := b.ensure(); err != nil {
 		return nil, err
@@ -144,6 +149,7 @@ func (b *onnxBackend) Embed(ctx context.Context, texts []string) ([][]float32, e
 	return session.Embed(ctx, texts)
 }
 
+// Score runs the score operation.
 func (b *onnxBackend) Score(ctx context.Context, query string, docs []string) ([]float32, error) {
 	if err := b.ensure(); err != nil {
 		return nil, err
@@ -154,8 +160,10 @@ func (b *onnxBackend) Score(ctx context.Context, query string, docs []string) ([
 	return session.Score(ctx, query, docs)
 }
 
+// Dimension runs the dimension operation.
 func (b *onnxBackend) Dimension() int { return b.dimension }
 
+// Close runs the close operation.
 func (b *onnxBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()

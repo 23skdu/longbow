@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestBM25ScoreBatchCorrectness runs the test bm25 score batch correctness operation.
 func TestBM25ScoreBatchCorrectness(t *testing.T) {
 	// Sample data
 	tfs := []int{1, 2, 0, 5}
@@ -42,6 +43,7 @@ func TestBM25ScoreBatchCorrectness(t *testing.T) {
 	}
 }
 
+// TestBM25ScoreBatchEmpty runs the test bm25 score batch empty operation.
 func TestBM25ScoreBatchEmpty(t *testing.T) {
 	actual := BM25ScoreBatch(nil, nil, 100, 2.0, 1.2, 0.75)
 	if len(actual) != 0 {

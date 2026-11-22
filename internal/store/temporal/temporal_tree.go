@@ -12,6 +12,7 @@ import (
 	"github.com/23skdu/longbow/internal/memory"
 )
 
+// TemporalEntry represents a temporal entry value.
 type TemporalEntry struct {
 	ID   uint64
 	Norm float32

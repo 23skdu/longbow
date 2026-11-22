@@ -385,6 +385,7 @@ func TestTQLUTConcurrentUse(t *testing.T) {
 	}
 }
 
+// BenchmarkTurboQuantDistanceGeneric_LUT_vs_Sincos runs the benchmark turbo quant distance generic_lut_vs_sincos operation.
 func BenchmarkTurboQuantDistanceGeneric_LUT_vs_Sincos(b *testing.B) {
 	const dim, pow2 = 768, 1024
 	query := make([]float32, pow2)

@@ -26,6 +26,7 @@ type filterOp interface {
 
 // compoundFilterOp handles AND/OR/NOT logic over child filterOps
 
+// FilterEvaluator represents a filter evaluator value.
 type FilterEvaluator struct {
 	ops []filterOp
 }
@@ -213,6 +214,7 @@ func resolveFilterColumn(schema arrow.Schema, rec arrow.RecordBatch, fieldPath s
 
 // Matches returns true if the row satisfies all filters
 
+// Matches runs the matches operation.
 func (e *FilterEvaluator) Matches(rowIdx int) bool {
 	// Unrolled check for performance (Go compiler can optimize this)
 	for i := 0; i < len(e.ops); i++ {
@@ -392,6 +394,7 @@ func (e *FilterEvaluator) Reset(rec arrow.RecordBatch) error {
 	return nil
 }
 
+// EvaluateToArrowBoolean runs the evaluate to arrow boolean operation.
 func (e *FilterEvaluator) EvaluateToArrowBoolean(mem memory.Allocator, rows int) (*array.Boolean, error) {
 	if len(e.ops) == 0 {
 		b := array.NewBooleanBuilder(mem)

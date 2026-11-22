@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGraphRAG_SearchHybrid runs the test graph rag_search hybrid operation.
 func TestGraphRAG_SearchHybrid(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -104,6 +105,7 @@ func TestGraphRAG_SearchHybrid(t *testing.T) {
 	assert.NotEmpty(t, results)
 }
 
+// TestGraphRAG_Stability_Large runs the test graph rag_stability_large operation.
 func TestGraphRAG_Stability_Large(t *testing.T) {
 	if testing.Short() || raceEnabled {
 		t.Skip("skipping 25k stability test in short mode or under race detector")
@@ -210,6 +212,7 @@ func TestGraphRAG_Stability_Large(t *testing.T) {
 	t.Logf("GraphRAG Search (25k nodes) took %v", duration)
 }
 
+// TestHNSW_SearchLayer_NilContext_Regression runs the test hnsw_search layer_nil context_regression operation.
 func TestHNSW_SearchLayer_NilContext_Regression(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

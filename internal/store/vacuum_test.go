@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestVacuum_Basic runs the test vacuum_basic operation.
 func TestVacuum_Basic(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	dims := 4
@@ -43,6 +44,7 @@ func TestVacuum_Basic(t *testing.T) {
 	assert.Equal(t, 0, pruned) // ArrowHNSW stub returns 0
 }
 
+// TestVacuum_SearchImpact runs the test vacuum_search impact operation.
 func TestVacuum_SearchImpact(t *testing.T) {
 	// Verify search works after "vacuum"
 	mem := memory.NewGoAllocator()

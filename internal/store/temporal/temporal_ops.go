@@ -205,6 +205,7 @@ func (ti *TemporalIndex) GetHistory(id uint64) []TemporalVector {
 	return []TemporalVector{*vec}
 }
 
+// VectorTimestamp represents a vector timestamp value.
 type VectorTimestamp struct {
 	ID        uint64    `json:"id"`
 	Timestamp time.Time `json:"timestamp"`
@@ -249,6 +250,7 @@ func (ti *TemporalIndex) GetVectorsInRange(startTime, endTime int64) []VectorTim
 
 // MarshalJSON provides custom JSON serialization for TemporalIndex.
 func (ti *TemporalIndex) MarshalJSON() ([]byte, error) {
+	// TempVec represents a temp vec value.
 	type TempVec struct {
 		ID        uint64    `json:"id"`
 		Vector    []float32 `json:"vector"`

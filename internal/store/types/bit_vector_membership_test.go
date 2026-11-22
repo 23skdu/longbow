@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestBitVectorTest_Membership runs the test bit vector test_membership operation.
 func TestBitVectorTest_Membership(t *testing.T) {
 	const n = 200 // not a multiple of 64, so the tail word is partial
 
@@ -41,6 +42,7 @@ func TestBitVectorTest_Membership(t *testing.T) {
 	}
 }
 
+// TestBitVectorTest_NegativeSafeCasts runs the test bit vector test_negative safe casts operation.
 func TestBitVectorTest_NegativeSafeCasts(t *testing.T) {
 	bv := NewBitVector(64)
 	bv.Set(0)
@@ -66,6 +68,7 @@ func TestBitVectorTest_NegativeSafeCasts(t *testing.T) {
 	assert.False(t, empty.Test(uint32(negatives[0]))) // #nosec G115
 }
 
+// TestBitVectorTest_EmptyVector runs the test bit vector test_empty vector operation.
 func TestBitVectorTest_EmptyVector(t *testing.T) {
 	for _, bv := range []BitVector{nil, {}, make(BitVector, 0, 8)} {
 		assert.False(t, bv.Test(0), "empty vector admits nothing")
@@ -76,6 +79,7 @@ func TestBitVectorTest_EmptyVector(t *testing.T) {
 	}
 }
 
+// TestBitVectorTest_AgreesWithRoaring runs the test bit vector test_agrees with roaring operation.
 func TestBitVectorTest_AgreesWithRoaring(t *testing.T) {
 	bv := NewBitVector(1000)
 	set := []uint32{0, 1, 63, 64, 127, 128, 511, 512, 999}

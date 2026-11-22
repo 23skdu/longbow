@@ -26,6 +26,7 @@ type peekedStream struct {
 	used     bool
 }
 
+// Recv runs the recv operation.
 func (p *peekedStream) Recv() (*flight.FlightData, error) {
 	if !p.used {
 		p.used = true

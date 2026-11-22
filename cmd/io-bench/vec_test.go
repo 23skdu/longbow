@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestVectorSearchModes runs the test vector search modes operation.
 func TestVectorSearchModes(t *testing.T) {
 	validModes := map[string]bool{
 		"dense":    true,
@@ -25,6 +26,7 @@ func TestVectorSearchModes(t *testing.T) {
 	}
 }
 
+// TestDataTypes runs the test data types operation.
 func TestDataTypes(t *testing.T) {
 	validDtypes := []string{
 		"float32", "float64", "float16",
@@ -41,6 +43,7 @@ func TestDataTypes(t *testing.T) {
 	}
 }
 
+// TestDimensions runs the test dimensions operation.
 func TestDimensions(t *testing.T) {
 	validDims := []int{128, 384, 768, 1024, 3072}
 	brokenDims := []int{512}
@@ -56,6 +59,7 @@ func TestDimensions(t *testing.T) {
 	}
 }
 
+// TestVectorCounts runs the test vector counts operation.
 func TestVectorCounts(t *testing.T) {
 	validCounts := []int{100, 500, 1000, 5000, 10000, 50000, 100000}
 	minCount := 1
@@ -68,6 +72,7 @@ func TestVectorCounts(t *testing.T) {
 	}
 }
 
+// TestSearchModesParse runs the test search modes parse operation.
 func TestSearchModesParse(t *testing.T) {
 	tests := []struct {
 		input    string

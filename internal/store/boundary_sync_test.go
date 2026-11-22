@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestBoundarySyncAndRouting runs the test boundary sync and routing operation.
 func TestBoundarySyncAndRouting(t *testing.T) {
 	logger := zerolog.Nop()
 

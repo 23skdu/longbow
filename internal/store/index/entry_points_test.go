@@ -11,6 +11,7 @@ type mockComputer struct {
 	distances map[uint32]float32
 }
 
+// ComputeSingle runs the compute single operation.
 func (m *mockComputer) ComputeSingle(id uint32) (float32, error) {
 	if d, ok := m.distances[id]; ok {
 		return d, nil
@@ -18,6 +19,7 @@ func (m *mockComputer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (m *mockComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	dst = dst[:0]
 	for _, id := range ids {
@@ -30,8 +32,10 @@ func (m *mockComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, err
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (m *mockComputer) Prefetch(id uint32) {}
 
+// TestMultiCentroidTracker_AddAndSelect runs the test multi centroid tracker_add and select operation.
 func TestMultiCentroidTracker_AddAndSelect(t *testing.T) {
 	tracker := NewMultiCentroidTracker(4)
 

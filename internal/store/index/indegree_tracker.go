@@ -69,6 +69,7 @@ func (t *inDegreeTracker) chunk(id uint32, create bool) *inDegreeChunk {
 	return grown[idx]
 }
 
+// Inc runs the inc operation.
 func (t *inDegreeTracker) Inc(id uint32) {
 	c := t.chunk(id, true)
 	if c == nil {
@@ -77,6 +78,7 @@ func (t *inDegreeTracker) Inc(id uint32) {
 	c[id&inDegreeChunkMask].Add(1)
 }
 
+// Dec runs the dec operation.
 func (t *inDegreeTracker) Dec(id uint32) {
 	c := t.chunk(id, false)
 	if c == nil {
@@ -96,6 +98,7 @@ func (t *inDegreeTracker) Get(id uint32) int32 {
 	return c[id&inDegreeChunkMask].Load()
 }
 
+// Clear runs the clear operation.
 func (t *inDegreeTracker) Clear() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -119,6 +122,7 @@ type inDegreeReader interface {
 // sequence, which is the same thing the sequential code it replaced saw.
 type inDegreeSnapshot []int32
 
+// Get returns the .
 func (s inDegreeSnapshot) Get(id uint32) int32 {
 	if int(id) >= len(s) {
 		return 0

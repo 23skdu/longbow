@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// TestNewAutoTuner runs the test new auto tuner operation.
 func TestNewAutoTuner(t *testing.T) {
 	logger := zerolog.New(nil)
 	config := AutoTunerConfig{
@@ -29,6 +30,7 @@ func TestNewAutoTuner(t *testing.T) {
 	}
 }
 
+// TestNewAutoTuner_Defaults runs the test new auto tuner_defaults operation.
 func TestNewAutoTuner_Defaults(t *testing.T) {
 	logger := zerolog.New(nil)
 	config := AutoTunerConfig{
@@ -50,6 +52,7 @@ func TestNewAutoTuner_Defaults(t *testing.T) {
 	}
 }
 
+// TestAutoTuner_RegisterParameter runs the test auto tuner_register parameter operation.
 func TestAutoTuner_RegisterParameter(t *testing.T) {
 	logger := zerolog.New(nil)
 	at := NewAutoTuner(AutoTunerConfig{Enabled: false}, &logger)
@@ -70,6 +73,7 @@ func TestAutoTuner_RegisterParameter(t *testing.T) {
 	}
 }
 
+// TestAutoTuner_GetParameterValue runs the test auto tuner_get parameter value operation.
 func TestAutoTuner_GetParameterValue(t *testing.T) {
 	logger := zerolog.New(nil)
 	at := NewAutoTuner(AutoTunerConfig{Enabled: false}, &logger)
@@ -82,6 +86,7 @@ func TestAutoTuner_GetParameterValue(t *testing.T) {
 	}
 }
 
+// TestAutoTuner_GetParameterValue_NotFound runs the test auto tuner_get parameter value_not found operation.
 func TestAutoTuner_GetParameterValue_NotFound(t *testing.T) {
 	logger := zerolog.New(nil)
 	at := NewAutoTuner(AutoTunerConfig{Enabled: false}, &logger)
@@ -92,6 +97,7 @@ func TestAutoTuner_GetParameterValue_NotFound(t *testing.T) {
 	}
 }
 
+// TestAutoTuner_GetAllTunings runs the test auto tuner_get all tunings operation.
 func TestAutoTuner_GetAllTunings(t *testing.T) {
 	logger := zerolog.New(nil)
 	at := NewAutoTuner(AutoTunerConfig{Enabled: false}, &logger)
@@ -112,6 +118,7 @@ func TestAutoTuner_GetAllTunings(t *testing.T) {
 	}
 }
 
+// TestAutoTuner_Start_Disabled runs the test auto tuner_start_disabled operation.
 func TestAutoTuner_Start_Disabled(t *testing.T) {
 	logger := zerolog.New(nil)
 	at := NewAutoTuner(AutoTunerConfig{Enabled: false}, &logger)
@@ -122,6 +129,7 @@ func TestAutoTuner_Start_Disabled(t *testing.T) {
 	}
 }
 
+// TestAutoTuner_Start_Enabled runs the test auto tuner_start_enabled operation.
 func TestAutoTuner_Start_Enabled(t *testing.T) {
 	logger := zerolog.New(nil)
 	at := NewAutoTuner(AutoTunerConfig{
@@ -140,6 +148,7 @@ func TestAutoTuner_Start_Enabled(t *testing.T) {
 	}
 }
 
+// TestAutoTuner_Start_Idempotent runs the test auto tuner_start_idempotent operation.
 func TestAutoTuner_Start_Idempotent(t *testing.T) {
 	logger := zerolog.New(nil)
 	at := NewAutoTuner(AutoTunerConfig{
@@ -156,6 +165,7 @@ func TestAutoTuner_Start_Idempotent(t *testing.T) {
 	_ = at.Stop()
 }
 
+// TestAutoTuner_Stop_Idempotent runs the test auto tuner_stop_idempotent operation.
 func TestAutoTuner_Stop_Idempotent(t *testing.T) {
 	logger := zerolog.New(nil)
 	at := NewAutoTuner(AutoTunerConfig{
@@ -171,6 +181,7 @@ func TestAutoTuner_Stop_Idempotent(t *testing.T) {
 	}
 }
 
+// TestAutoTuner_RecordMeasurement runs the test auto tuner_record measurement operation.
 func TestAutoTuner_RecordMeasurement(t *testing.T) {
 	logger := zerolog.New(nil)
 	at := NewAutoTuner(AutoTunerConfig{Enabled: false}, &logger)
@@ -184,6 +195,7 @@ func TestAutoTuner_RecordMeasurement(t *testing.T) {
 	}
 }
 
+// TestAutoTuner_RecordMeasurement_Limit runs the test auto tuner_record measurement_limit operation.
 func TestAutoTuner_RecordMeasurement_Limit(t *testing.T) {
 	logger := zerolog.New(nil)
 	at := NewAutoTuner(AutoTunerConfig{Enabled: false}, &logger)
@@ -197,6 +209,7 @@ func TestAutoTuner_RecordMeasurement_Limit(t *testing.T) {
 	}
 }
 
+// TestNewWorkloadAnalyzer runs the test new workload analyzer operation.
 func TestNewWorkloadAnalyzer(t *testing.T) {
 	wa := NewWorkloadAnalyzer(100)
 	if wa == nil {
@@ -208,6 +221,7 @@ func TestNewWorkloadAnalyzer(t *testing.T) {
 	}
 }
 
+// TestNewWorkloadAnalyzer_Default runs the test new workload analyzer_default operation.
 func TestNewWorkloadAnalyzer_Default(t *testing.T) {
 	wa := NewWorkloadAnalyzer(0)
 	if wa.maxSamples != 1000 {
@@ -215,6 +229,7 @@ func TestNewWorkloadAnalyzer_Default(t *testing.T) {
 	}
 }
 
+// TestWorkloadAnalyzer_RecordSample runs the test workload analyzer_record sample operation.
 func TestWorkloadAnalyzer_RecordSample(t *testing.T) {
 	wa := NewWorkloadAnalyzer(100)
 
@@ -226,6 +241,7 @@ func TestWorkloadAnalyzer_RecordSample(t *testing.T) {
 	}
 }
 
+// TestWorkloadAnalyzer_RecordSample_Limit runs the test workload analyzer_record sample_limit operation.
 func TestWorkloadAnalyzer_RecordSample_Limit(t *testing.T) {
 	wa := NewWorkloadAnalyzer(100)
 
@@ -238,6 +254,7 @@ func TestWorkloadAnalyzer_RecordSample_Limit(t *testing.T) {
 	}
 }
 
+// TestWorkloadAnalyzer_Analyze_Empty runs the test workload analyzer_analyze_empty operation.
 func TestWorkloadAnalyzer_Analyze_Empty(t *testing.T) {
 	wa := NewWorkloadAnalyzer(100)
 
@@ -247,6 +264,7 @@ func TestWorkloadAnalyzer_Analyze_Empty(t *testing.T) {
 	}
 }
 
+// TestWorkloadAnalyzer_Analyze_Throughput runs the test workload analyzer_analyze_throughput operation.
 func TestWorkloadAnalyzer_Analyze_Throughput(t *testing.T) {
 	wa := NewWorkloadAnalyzer(100)
 
@@ -260,6 +278,7 @@ func TestWorkloadAnalyzer_Analyze_Throughput(t *testing.T) {
 	}
 }
 
+// TestWorkloadAnalyzer_Analyze_Latency runs the test workload analyzer_analyze_latency operation.
 func TestWorkloadAnalyzer_Analyze_Latency(t *testing.T) {
 	wa := NewWorkloadAnalyzer(100)
 
@@ -273,6 +292,7 @@ func TestWorkloadAnalyzer_Analyze_Latency(t *testing.T) {
 	}
 }
 
+// TestWorkloadAnalyzer_Analyze_Balanced runs the test workload analyzer_analyze_balanced operation.
 func TestWorkloadAnalyzer_Analyze_Balanced(t *testing.T) {
 	wa := NewWorkloadAnalyzer(100)
 
@@ -286,6 +306,7 @@ func TestWorkloadAnalyzer_Analyze_Balanced(t *testing.T) {
 	}
 }
 
+// TestWorkloadAnalyzer_Analyze_AverageQueryRate runs the test workload analyzer_analyze_average query rate operation.
 func TestWorkloadAnalyzer_Analyze_AverageQueryRate(t *testing.T) {
 	wa := NewWorkloadAnalyzer(100)
 
@@ -298,6 +319,7 @@ func TestWorkloadAnalyzer_Analyze_AverageQueryRate(t *testing.T) {
 	}
 }
 
+// TestWorkloadAnalyzer_Concurrent runs the test workload analyzer_concurrent operation.
 func TestWorkloadAnalyzer_Concurrent(t *testing.T) {
 	wa := NewWorkloadAnalyzer(1000)
 	var wg sync.WaitGroup
@@ -320,6 +342,7 @@ func TestWorkloadAnalyzer_Concurrent(t *testing.T) {
 	}
 }
 
+// TestCalculateMean runs the test calculate mean operation.
 func TestCalculateMean(t *testing.T) {
 	values := []float64{1, 2, 3, 4, 5}
 	mean := calculateMean(values)
@@ -328,6 +351,7 @@ func TestCalculateMean(t *testing.T) {
 	}
 }
 
+// TestCalculateMean_Empty runs the test calculate mean_empty operation.
 func TestCalculateMean_Empty(t *testing.T) {
 	values := []float64{}
 	mean := calculateMean(values)
@@ -336,6 +360,7 @@ func TestCalculateMean_Empty(t *testing.T) {
 	}
 }
 
+// TestCalculateStdDev runs the test calculate std dev operation.
 func TestCalculateStdDev(t *testing.T) {
 	values := []float64{2, 4, 4, 4, 5, 5, 7, 9}
 	mean := calculateMean(values)
@@ -345,6 +370,7 @@ func TestCalculateStdDev(t *testing.T) {
 	}
 }
 
+// TestCalculateStdDev_Empty runs the test calculate std dev_empty operation.
 func TestCalculateStdDev_Empty(t *testing.T) {
 	values := []float64{}
 	mean := calculateMean(values)

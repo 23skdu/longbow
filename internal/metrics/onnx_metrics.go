@@ -20,6 +20,7 @@ var (
 		[]string{"operation"}, // "single", "batch"
 	)
 
+	// OnnxMetalBatchSize is a onnx metal batch size value.
 	OnnxMetalBatchSize = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_onnx_metal_batch_size",
@@ -28,6 +29,7 @@ var (
 		},
 	)
 
+	// OnnxMetalMemoryUsed is a onnx metal memory used value.
 	OnnxMetalMemoryUsed = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_onnx_metal_memory_used_bytes",
@@ -35,6 +37,7 @@ var (
 		},
 	)
 
+	// OnnxMetalModelLoadDuration is a onnx metal model load duration value.
 	OnnxMetalModelLoadDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_onnx_metal_model_load_duration_seconds",
@@ -43,6 +46,7 @@ var (
 		},
 	)
 
+	// OnnxMetalInferenceErrors is a onnx metal inference errors value.
 	OnnxMetalInferenceErrors = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_onnx_metal_inference_errors_total",
@@ -50,6 +54,7 @@ var (
 		},
 	)
 
+	// OnnxMetalTensorAllocations is a onnx metal tensor allocations value.
 	OnnxMetalTensorAllocations = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_onnx_metal_tensor_allocations_total",
@@ -57,6 +62,7 @@ var (
 		},
 	)
 
+	// OnnxMetalInferenceRequests is a onnx metal inference requests value.
 	OnnxMetalInferenceRequests = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_onnx_metal_inference_requests_total",
@@ -65,6 +71,7 @@ var (
 		[]string{"result"}, // "success", "error"
 	)
 
+	// OnnxMetalModelLoaded is a onnx metal model loaded value.
 	OnnxMetalModelLoaded = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_onnx_metal_model_loaded",
@@ -88,6 +95,7 @@ var (
 		[]string{"backend", "operation"}, // "cpu", "metal", "cuda"
 	)
 
+	// OnnxInferenceErrors is a onnx inference errors value.
 	OnnxInferenceErrors = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_onnx_inference_errors_total",
@@ -96,6 +104,7 @@ var (
 		[]string{"backend", "error_type"},
 	)
 
+	// OnnxModelLoadDuration is a onnx model load duration value.
 	OnnxModelLoadDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_onnx_model_load_duration_seconds",
@@ -120,6 +129,7 @@ var (
 		},
 	)
 
+	// RerankerScoresComputed is a reranker scores computed value.
 	RerankerScoresComputed = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_reranker_scores_computed_total",
@@ -127,6 +137,7 @@ var (
 		},
 	)
 
+	// RerankerErrors is a reranker errors value.
 	RerankerErrors = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_reranker_errors_total",
@@ -135,6 +146,7 @@ var (
 		[]string{"type"}, // "model_load", "inference", "tokenization"
 	)
 
+	// RerankerBatchSize is a reranker batch size value.
 	RerankerBatchSize = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_reranker_batch_size",

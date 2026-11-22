@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// TestGPUBatchBuildConfig runs the test gpu batch build config operation.
 func TestGPUBatchBuildConfig(t *testing.T) {
 	config := DefaultGPUBatchBuildConfig()
 
@@ -24,6 +25,7 @@ func TestGPUBatchBuildConfig(t *testing.T) {
 	}
 }
 
+// TestNewGPUBatchBuilder_NilIndex runs the test new gpu batch builder_nil index operation.
 func TestNewGPUBatchBuilder_NilIndex(t *testing.T) {
 	logger := zerolog.Nop()
 	config := DefaultGPUBatchBuildConfig()
@@ -34,6 +36,7 @@ func TestNewGPUBatchBuilder_NilIndex(t *testing.T) {
 	}
 }
 
+// TestBatchInsertWithGPU_CPUFallback runs the test batch insert with gpu_cpu fallback operation.
 func TestBatchInsertWithGPU_CPUFallback(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.DataType = types.VectorTypeFloat32
@@ -65,6 +68,7 @@ func TestBatchInsertWithGPU_CPUFallback(t *testing.T) {
 	}
 }
 
+// TestBuildIndexWithGPU_CPUFallback runs the test build index with gpu_cpu fallback operation.
 func TestBuildIndexWithGPU_CPUFallback(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.DataType = types.VectorTypeFloat32

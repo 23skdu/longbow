@@ -25,19 +25,39 @@ type MockProvider struct {
 	mu   sync.RWMutex
 }
 
-func (m *MockProvider) GetName() string                      { return "test" }
-func (m *MockProvider) GetRecords() []arrow.RecordBatch      { return m.recs }
-func (m *MockProvider) GetSchema() *arrow.Schema             { return m.recs[0].Schema() }
+// GetName returns the name.
+func (m *MockProvider) GetName() string { return "test" }
+
+// GetRecords returns the records.
+func (m *MockProvider) GetRecords() []arrow.RecordBatch { return m.recs }
+
+// GetSchema returns the schema.
+func (m *MockProvider) GetSchema() *arrow.Schema { return m.recs[0].Schema() }
+
+// GetTombstones returns the tombstones.
 func (m *MockProvider) GetTombstones() map[int]*types.Bitset { return nil }
-func (m *MockProvider) GetPQEncoder() *pq.PQEncoder          { return nil }
-func (m *MockProvider) RLockData()                           { m.mu.RLock() }
-func (m *MockProvider) RUnlockData()                         { m.mu.RUnlock() }
+
+// GetPQEncoder returns the pq encoder.
+func (m *MockProvider) GetPQEncoder() *pq.PQEncoder { return nil }
+
+// RLockData runs the r lock data operation.
+func (m *MockProvider) RLockData() { m.mu.RLock() }
+
+// RUnlockData runs the r unlock data operation.
+func (m *MockProvider) RUnlockData() { m.mu.RUnlock() }
+
+// GenerateFilterBitset runs the generate filter bitset operation.
 func (m *MockProvider) GenerateFilterBitset(filters []core.Filter, expr types.FilterExpr) (*types.Bitset, error) {
 	return nil, nil
 }
-func (m *MockProvider) ResetTombstones() {}
-func (m *MockProvider) GetIndex() any    { return nil }
 
+// ResetTombstones runs the reset tombstones operation.
+func (m *MockProvider) ResetTombstones() {}
+
+// GetIndex returns the index.
+func (m *MockProvider) GetIndex() any { return nil }
+
+// TestArrowHNSW_SharedVectorSpace_Integration runs the test arrow hnsw_shared vector space_integration operation.
 func TestArrowHNSW_SharedVectorSpace_Integration(t *testing.T) {
 	done := make(chan bool)
 	go func() {
@@ -115,6 +135,7 @@ func TestArrowHNSW_SharedVectorSpace_Integration(t *testing.T) {
 	}
 }
 
+// TestArrowHNSW_RelocateToOffHeap_Full runs the test arrow hnsw_relocate to off heap_full operation.
 func TestArrowHNSW_RelocateToOffHeap_Full(t *testing.T) {
 	// Setup mock provider
 	pool := amemory.NewGoAllocator()
@@ -164,6 +185,7 @@ func TestArrowHNSW_RelocateToOffHeap_Full(t *testing.T) {
 	assert.Equal(t, uint32(15), uint32(results[0].ID))
 }
 
+// TestPackedAdjacency_RelocateToOffHeap runs the test packed adjacency_relocate to off heap operation.
 func TestPackedAdjacency_RelocateToOffHeap(t *testing.T) {
 	arena := memory.NewSlabArena(16384)   // Large enough for pages (8KB each)
 	pa := NewPackedAdjacency(arena, 2000) // 2 chunks
@@ -192,6 +214,7 @@ func TestPackedAdjacency_RelocateToOffHeap(t *testing.T) {
 	assert.Greater(t, alloc.Allocated(), int64(16))
 }
 
+// TestSlabArena_RelocateToOffHeap runs the test slab arena_relocate to off heap operation.
 func TestSlabArena_RelocateToOffHeap(t *testing.T) {
 	a := memory.NewSlabArena(1024)
 	off, _ := a.Alloc(100)
@@ -216,6 +239,7 @@ func TestSlabArena_RelocateToOffHeap(t *testing.T) {
 	}
 }
 
+// TestGraphData_RelocateToOffHeap_Full runs the test graph data_relocate to off heap_full operation.
 func TestGraphData_RelocateToOffHeap_Full(t *testing.T) {
 	gd := types.NewGraphData(100, 128, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 
@@ -256,6 +280,7 @@ func TestGraphData_RelocateToOffHeap_Full(t *testing.T) {
 	}
 }
 
+// TestGraphData_SharedVectorSpace_PreAllocate runs the test graph data_shared vector space_pre allocate operation.
 func TestGraphData_SharedVectorSpace_PreAllocate(t *testing.T) {
 	// SharedVectorSpace = true
 	gd := types.NewGraphData(1000, 128, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, true)
@@ -275,6 +300,7 @@ func TestGraphData_SharedVectorSpace_PreAllocate(t *testing.T) {
 	assert.NotEmpty(t, gd.Neighbors[0])
 }
 
+// TestGraphData_NeedsChunk_SharedVectorSpace runs the test graph data_needs chunk_shared vector space operation.
 func TestGraphData_NeedsChunk_SharedVectorSpace(t *testing.T) {
 	gd := types.NewGraphData(100, 128, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, true)
 
@@ -292,26 +318,32 @@ func TestGraphData_NeedsChunk_SharedVectorSpace(t *testing.T) {
 	assert.True(t, gd.NeedsChunk(1))
 }
 
+// GetMetric returns the metric.
 func (m *MockProvider) GetMetric() core.DistanceMetric {
 	return core.MetricEuclidean
 }
 
+// GetLogger returns the logger.
 func (m *MockProvider) GetLogger() zerolog.Logger {
 	return zerolog.Nop()
 }
 
+// GetTopo returns the topo.
 func (m *MockProvider) GetTopo() *memory.NUMATopology {
 	return nil
 }
 
+// TurboQuantBits runs the turbo quant bits operation.
 func (m *MockProvider) TurboQuantBits() int {
 	return 8
 }
 
+// GetEvictionManager returns the eviction manager.
 func (m *MockProvider) GetEvictionManager() any {
 	return nil
 }
 
+// GetDiskStore returns the disk store.
 func (m *MockProvider) GetDiskStore() any {
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMetalHybridIndex_Basic runs the test metal hybrid index_basic operation.
 func TestMetalHybridIndex_Basic(t *testing.T) {
 	idx, err := metal.NewMetalHybridIndex(GPUConfig{
 		DeviceID:  0,
@@ -39,6 +40,7 @@ func TestMetalHybridIndex_Basic(t *testing.T) {
 	assert.Less(t, distances[0], float32(0.01))
 }
 
+// TestMetalHybridIndex_SearchBatchDistances runs the test metal hybrid index_search batch distances operation.
 func TestMetalHybridIndex_SearchBatchDistances(t *testing.T) {
 	idx, err := metal.NewMetalHybridIndex(GPUConfig{
 		DeviceID:  0,
@@ -82,6 +84,7 @@ func TestMetalHybridIndex_SearchBatchDistances(t *testing.T) {
 	}
 }
 
+// BenchmarkMetalHybridSearch runs the benchmark metal hybrid search operation.
 func BenchmarkMetalHybridSearch(b *testing.B) {
 	idx, err := metal.NewMetalHybridIndex(GPUConfig{
 		DeviceID:  0,

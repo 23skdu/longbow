@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// TestBenchmarkModes runs the test benchmark modes operation.
 func TestBenchmarkModes(t *testing.T) {
 	tests := []struct {
 		name string
@@ -25,6 +26,7 @@ func TestBenchmarkModes(t *testing.T) {
 	}
 }
 
+// TestBlockSizes runs the test block sizes operation.
 func TestBlockSizes(t *testing.T) {
 	validSizes := []int{512, 1024, 2048, 4096, 8192, 16384}
 
@@ -35,6 +37,7 @@ func TestBlockSizes(t *testing.T) {
 	}
 }
 
+// TestConcurrencyBounds runs the test concurrency bounds operation.
 func TestConcurrencyBounds(t *testing.T) {
 	invalidWorkers := []int{0, -1, -100}
 	for _, w := range invalidWorkers {
@@ -44,6 +47,7 @@ func TestConcurrencyBounds(t *testing.T) {
 	}
 }
 
+// TestFileSizeValidation runs the test file size validation operation.
 func TestFileSizeValidation(t *testing.T) {
 	invalidSizes := []int{0, -1, -100}
 	for _, s := range invalidSizes {
@@ -53,6 +57,7 @@ func TestFileSizeValidation(t *testing.T) {
 	}
 }
 
+// TestIOBenchHelpers runs the test io bench helpers operation.
 func TestIOBenchHelpers(t *testing.T) {
 	printStats("SmokeTest", time.Second, 100, 1024*1024)
 	tmpDir := t.TempDir()
@@ -62,6 +67,7 @@ func TestIOBenchHelpers(t *testing.T) {
 	}
 }
 
+// TestBuildIOBenchTicket runs the test build io bench ticket operation.
 func TestBuildIOBenchTicket(t *testing.T) {
 	query := []float32{0.1, 0.2, 0.3}
 	cases := []struct {

@@ -1,11 +1,13 @@
 package temporal
 
+// TemporalPredicate represents a temporal predicate value.
 type TemporalPredicate struct {
 	minTs  int64
 	maxTs  int64
 	shards *[TemporalShards]temporalShard
 }
 
+// IsMatch reports whether the condition holds.
 func (tp *TemporalPredicate) IsMatch(id uint32) bool {
 	shard := &tp.shards[uint64(id)%uint64(TemporalShards)]
 	shard.mu.RLock()
@@ -17,6 +19,7 @@ func (tp *TemporalPredicate) IsMatch(id uint32) bool {
 	return vec.Timestamp >= tp.minTs && vec.Timestamp <= tp.maxTs
 }
 
+// MatchBatch runs the match batch operation.
 func (tp *TemporalPredicate) MatchBatch(ids []uint32, dst []byte) {
 	for i, id := range ids {
 		if tp.IsMatch(id) {
@@ -32,11 +35,13 @@ type SlidingWindowPredicate struct {
 	validIDs map[uint64]struct{}
 }
 
+// IsMatch reports whether the condition holds.
 func (sp *SlidingWindowPredicate) IsMatch(id uint32) bool {
 	_, ok := sp.validIDs[uint64(id)]
 	return ok
 }
 
+// MatchBatch runs the match batch operation.
 func (sp *SlidingWindowPredicate) MatchBatch(ids []uint32, dst []byte) {
 	for i, id := range ids {
 		if sp.IsMatch(id) {

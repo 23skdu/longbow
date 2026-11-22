@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestRateLimiter runs the test rate limiter operation.
 func TestRateLimiter(t *testing.T) {
 	rl := NewRateLimiter(10, 60) // 10 requests per minute
 
@@ -25,6 +26,7 @@ func TestRateLimiter(t *testing.T) {
 	})
 }
 
+// TestInputSanitizer runs the test input sanitizer operation.
 func TestInputSanitizer(t *testing.T) {
 	is := NewInputSanitizer()
 
@@ -68,6 +70,7 @@ func TestInputSanitizer(t *testing.T) {
 	}
 }
 
+// TestSecurityHeaders runs the test security headers operation.
 func TestSecurityHeaders(t *testing.T) {
 	// Create a mock handler
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

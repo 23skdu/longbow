@@ -269,6 +269,8 @@ func (idx *AutoShardingIndex) checkMigrationPressure() {
 		}
 	}
 }
+
+// IsSharded reports whether the condition holds.
 func (idx *AutoShardingIndex) IsSharded() bool {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -347,7 +349,7 @@ func (idx *AutoShardingIndex) GetVectorID(loc any) (uint32, bool) {
 	return idx.current.GetVectorID(loc)
 }
 
-// Search implements VectorIndexer.
+// Warmup implements VectorIndexer.
 func (idx *AutoShardingIndex) Warmup() int {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -394,7 +396,7 @@ func (idx *AutoShardingIndex) Close() error {
 	return idx.current.Close()
 }
 
-// GetRawNeighbors returns the diagnostic neighbor IDs for a given vector ID.
+// EstimateMemory returns the diagnostic neighbor IDs for a given vector ID.
 func (idx *AutoShardingIndex) EstimateMemory() int64 {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -430,7 +432,7 @@ func (idx *AutoShardingIndex) Size() int {
 	return idx.current.Size()
 }
 
-// ExportState serializes the current index state.
+// GetData serializes the current index state.
 // GetData returns graph data from the current index.
 func (idx *AutoShardingIndex) GetData() *types.GraphData {
 	idx.mu.RLock()

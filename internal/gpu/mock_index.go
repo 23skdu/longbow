@@ -18,6 +18,7 @@ type MockIndex struct {
 	closed    bool
 }
 
+// NewMockIndex constructs a new MockIndex.
 func NewMockIndex(cfg GPUConfig, backend GPUBackend) Index {
 	return &MockIndex{
 		vectors:   make(map[int64][]float32),
@@ -27,6 +28,7 @@ func NewMockIndex(cfg GPUConfig, backend GPUBackend) Index {
 	}
 }
 
+// Add runs the add operation.
 func (m *MockIndex) Add(ids []int64, vectors []float32) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -55,6 +57,7 @@ func (m *MockIndex) Add(ids []int64, vectors []float32) error {
 	return nil
 }
 
+// AddPQ runs the add pq operation.
 func (m *MockIndex) AddPQ(ids []int64, codes []byte, m_val int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -64,6 +67,7 @@ func (m *MockIndex) AddPQ(ids []int64, codes []byte, m_val int) error {
 	return nil
 }
 
+// Search runs the search operation.
 func (m *MockIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -105,6 +109,7 @@ func (m *MockIndex) Search(vector []float32, k int) ([]int64, []float32, error) 
 	return ids, distances, nil
 }
 
+// SearchBatch runs the search batch operation.
 func (m *MockIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	batchIDs := make([][]int64, len(vectors))
 	batchDists := make([][]float32, len(vectors))
@@ -121,23 +126,28 @@ func (m *MockIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]floa
 	return batchIDs, batchDists, nil
 }
 
+// SearchPQ runs the search pq operation.
 func (m *MockIndex) SearchPQ(lookupTable []float32, m_val int, k int) ([]int64, []float32, error) {
 	// Simple fallback for mock
 	return nil, nil, fmt.Errorf("SearchPQ not implemented in MockIndex")
 }
 
+// TrainPQ runs the train pq operation.
 func (m *MockIndex) TrainPQ(vectors []float32, m_val int, k int) error {
 	return nil
 }
 
+// EncodePQ runs the encode pq operation.
 func (m *MockIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	return nil, nil
 }
 
+// SearchGreedy runs the search greedy operation.
 func (m *MockIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
 	return entryPoint, entryDist, nil
 }
 
+// Close runs the close operation.
 func (m *MockIndex) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -146,14 +156,17 @@ func (m *MockIndex) Close() error {
 	return nil
 }
 
+// Backend runs the backend operation.
 func (m *MockIndex) Backend() GPUBackend {
 	return m.backend
 }
 
+// DeviceID runs the device id operation.
 func (m *MockIndex) DeviceID() int32 {
 	return m.deviceID
 }
 
+// GetDeviceInfo returns the device info.
 func (m *MockIndex) GetDeviceInfo() (*GPUInfo, error) {
 	return &GPUInfo{
 		Backend:  m.backend,
@@ -163,6 +176,7 @@ func (m *MockIndex) GetDeviceInfo() (*GPUInfo, error) {
 	}, nil
 }
 
+// GetMemoryInfo returns the memory info.
 func (m *MockIndex) GetMemoryInfo() (total, free, used int64, err error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -171,6 +185,7 @@ func (m *MockIndex) GetMemoryInfo() (total, free, used int64, err error) {
 	return 16384 * 1024 * 1024, 16384*1024*1024 - usedMem, usedMem, nil
 }
 
+// GetUtilization returns the utilization.
 func (m *MockIndex) GetUtilization() (float32, error) {
 	return 0.1, nil
 }
@@ -184,6 +199,7 @@ func (m *MockIndex) euclideanDistance(a, b []float32) float32 {
 	return sum
 }
 
+// SearchInt8 runs the search int8 operation.
 func (m *MockIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -197,6 +213,7 @@ func (m *MockIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error)
 	return m.Search(f32, k)
 }
 
+// SearchUint8 runs the search uint8 operation.
 func (m *MockIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -210,6 +227,7 @@ func (m *MockIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, erro
 	return m.Search(f32, k)
 }
 
+// SearchInt16 runs the search int16 operation.
 func (m *MockIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -223,6 +241,7 @@ func (m *MockIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, erro
 	return m.Search(f32, k)
 }
 
+// SearchUint16 runs the search uint16 operation.
 func (m *MockIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -236,6 +255,7 @@ func (m *MockIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, er
 	return m.Search(f32, k)
 }
 
+// SearchFloat16 runs the search float16 operation.
 func (m *MockIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -252,6 +272,7 @@ func (m *MockIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, e
 	return m.Search(f32, k)
 }
 
+// SearchComplex64 runs the search complex64 operation.
 func (m *MockIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -268,6 +289,7 @@ func (m *MockIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32,
 	return m.Search(f32, k)
 }
 
+// SearchComplex128 runs the search complex128 operation.
 func (m *MockIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -280,14 +302,17 @@ func (m *MockIndex) SearchComplex128(vector []float32, k int) ([]int64, []float3
 	return m.Search(vector, k)
 }
 
+// AddTurboQuant runs the add turbo quant operation.
 func (m *MockIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
 	return nil
 }
 
+// SearchTurboQuant runs the search turbo quant operation.
 func (m *MockIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	return nil, nil, nil
 }
 
+// AssignToClusters runs the assign to clusters operation.
 func (m *MockIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -324,15 +349,18 @@ func (m *MockIndex) AssignToClusters(vectors []float32, centroids []float32) ([]
 	return assignments, nil
 }
 
+// UpdateGraph runs the update graph operation.
 func (m *MockIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
 	return nil // Mock success
 }
 
+// GraphExpand runs the graph expand operation.
 func (m *MockIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	// Simple mock return: the seeds themselves
 	return seeds, make([]float32, len(seeds)), nil
 }
 
+// SearchBatchDistances runs the search batch distances operation.
 func (m *MockIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -353,16 +381,19 @@ func (m *MockIndex) SearchBatchDistances(query []float32, candidateIDs []uint32)
 	return distances, nil
 }
 
+// HaversineSearch runs the haversine search operation.
 func (m *MockIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	// Simple mock: return zeros for now or implement if needed for tests
 	return make([]float32, len(points)/2), nil
 }
 
+// NormBatch runs the norm batch operation.
 func (m *MockIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	// Simple mock: return zeros
 	return make([]float32, len(vectors)/dims), nil
 }
 
+// Clear runs the clear operation.
 func (m *MockIndex) Clear() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -370,14 +401,17 @@ func (m *MockIndex) Clear() error {
 	return nil
 }
 
+// Sync runs the sync operation.
 func (m *MockIndex) Sync() error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (m *MockIndex) Reset() error {
 	return m.Clear()
 }
 
+// PruneNeighbors runs the prune neighbors operation.
 func (m *MockIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
 	// Simple mock: return first maxNeighbors candidates
 	if len(candidateIds) <= maxNeighbors {

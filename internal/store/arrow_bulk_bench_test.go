@@ -10,10 +10,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// BenchmarkAddBatch_SQ8 runs the benchmark add batch_sq8 operation.
 func BenchmarkAddBatch_SQ8(b *testing.B) {
 	benchmarkAddBatch(b, true)
 }
 
+// BenchmarkAddBatch_Float32 runs the benchmark add batch_float32 operation.
 func BenchmarkAddBatch_Float32(b *testing.B) {
 	benchmarkAddBatch(b, false)
 }

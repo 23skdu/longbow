@@ -14,6 +14,7 @@ type WALError struct {
 	Timestamp time.Time // When the error occurred
 }
 
+// Error runs the error operation.
 func (e *WALError) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("WAL %s failed at %s (offset %d): %v", e.Op, e.Path, e.Offset, e.Cause)
@@ -21,6 +22,7 @@ func (e *WALError) Error() string {
 	return fmt.Sprintf("WAL %s failed at %s (offset %d)", e.Op, e.Path, e.Offset)
 }
 
+// Unwrap runs the unwrap operation.
 func (e *WALError) Unwrap() error {
 	return e.Cause
 }
@@ -45,6 +47,7 @@ type S3Error struct {
 	Timestamp time.Time // When the error occurred
 }
 
+// Error runs the error operation.
 func (e *S3Error) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("S3 %s failed for s3://%s/%s: %v", e.Op, e.Bucket, e.Key, e.Cause)
@@ -52,6 +55,7 @@ func (e *S3Error) Error() string {
 	return fmt.Sprintf("S3 %s failed for s3://%s/%s", e.Op, e.Bucket, e.Key)
 }
 
+// Unwrap runs the unwrap operation.
 func (e *S3Error) Unwrap() error {
 	return e.Cause
 }

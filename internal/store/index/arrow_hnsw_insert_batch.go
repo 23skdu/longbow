@@ -15,6 +15,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// AddBatch runs the add batch operation.
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	// Count callers for the whole call, not just the bulk link. The R8 quality
 	// gate can only measure a batch's reachability when no other ingest caller is

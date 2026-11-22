@@ -87,14 +87,21 @@ func ValidateGeoSearchRequest(req *GeoSearchRequest) error {
 // root, so Score<Score roots the smallest score.)
 type geoResultHeap []lbtypes.SearchResult
 
-func (h geoResultHeap) Len() int           { return len(h) }
-func (h geoResultHeap) Less(i, j int) bool { return h[i].Score < h[j].Score }
-func (h geoResultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+// Len runs the len operation.
+func (h geoResultHeap) Len() int { return len(h) }
 
+// Less runs the less operation.
+func (h geoResultHeap) Less(i, j int) bool { return h[i].Score < h[j].Score }
+
+// Swap runs the swap operation.
+func (h geoResultHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+
+// Push runs the push operation.
 func (h *geoResultHeap) Push(x any) {
 	*h = append(*h, x.(lbtypes.SearchResult))
 }
 
+// Pop runs the pop operation.
 func (h *geoResultHeap) Pop() any {
 	old := *h
 	n := len(old)

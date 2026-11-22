@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestWALBatcher_CompressionTypes runs the test wal batcher_compression types operation.
 func TestWALBatcher_CompressionTypes(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "wal-compression-test-*")
 	require.NoError(t, err)
@@ -55,6 +56,7 @@ func TestWALBatcher_CompressionTypes(t *testing.T) {
 	}
 }
 
+// TestWALBatcher_Adaptive runs the test wal batcher_adaptive operation.
 func TestWALBatcher_Adaptive(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "wal-adaptive-test-*")
 	require.NoError(t, err)
@@ -83,6 +85,7 @@ func TestWALBatcher_Adaptive(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestWALBatcher_AsyncFsync runs the test wal batcher_async fsync operation.
 func TestWALBatcher_AsyncFsync(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "wal-async-fsync-test-*")
 	require.NoError(t, err)
@@ -104,6 +107,7 @@ func TestWALBatcher_AsyncFsync(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestWALBatcher_QueueFull runs the test wal batcher_queue full operation.
 func TestWALBatcher_QueueFull(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "wal-full-test-*")
 	require.NoError(t, err)

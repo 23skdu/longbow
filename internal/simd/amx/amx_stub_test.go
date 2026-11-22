@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestAMXStub runs the test amx stub operation.
 func TestAMXStub(t *testing.T) {
 	a := []float32{1, 2, 3, 4}
 	b := []float32{5, 6, 7, 8}

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestDiscovery_Static runs the test discovery_static operation.
 func TestDiscovery_Static(t *testing.T) {
 	// Node 1 (Seeds Node 2)
 	g1 := NewGossip(&GossipConfig{
@@ -39,6 +40,7 @@ func TestDiscovery_Static(t *testing.T) {
 	// We assume success if execution reaches here.
 }
 
+// TestDiscovery_Multi runs the test discovery_multi operation.
 func TestDiscovery_Multi(t *testing.T) {
 	p1 := NewStaticProvider([]string{"p1"})
 	p2 := NewMDNSProvider("test")
@@ -54,6 +56,7 @@ func TestDiscovery_Multi(t *testing.T) {
 	assert.Contains(t, peers, "p1")
 }
 
+// TestDiscovery_MDNS_Lifecycle runs the test discovery_mdns_lifecycle operation.
 func TestDiscovery_MDNS_Lifecycle(t *testing.T) {
 	provider := NewMDNSProvider("longbow-test")
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)

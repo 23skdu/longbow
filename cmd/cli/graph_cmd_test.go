@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The server dispatch (internal/store/store_actions.go for the data plane,
+// TestGraphActionNames_AreKebabCase server dispatch (internal/store/store_actions.go for the data plane,
 // store_meta_actions.go for the meta plane) and the RBAC allowlist
 // (internal/store/rbac_actions.go) only recognise kebab-case action types for
 // graph operations; anything else falls through to codes.Unimplemented (or,
@@ -30,6 +30,7 @@ func TestGraphActionNames_AreKebabCase(t *testing.T) {
 	}
 }
 
+// TestBuildAddEdgeAction runs the test build add edge action operation.
 func TestBuildAddEdgeAction(t *testing.T) {
 	a, err := buildAddEdgeAction("kb", 1, "knows", 2, 0.5)
 	if err != nil {
@@ -54,6 +55,7 @@ func TestBuildAddEdgeAction(t *testing.T) {
 	}
 }
 
+// TestBuildTraverseAction runs the test build traverse action operation.
 func TestBuildTraverseAction(t *testing.T) {
 	a, err := buildTraverseAction("kb", 3, 4, true, true)
 	if err != nil {
@@ -79,6 +81,7 @@ func TestBuildTraverseAction(t *testing.T) {
 	}
 }
 
+// TestBuildPageRankAction runs the test build page rank action operation.
 func TestBuildPageRankAction(t *testing.T) {
 	a, err := buildPageRankAction("kb", 0.7, 42)
 	if err != nil {
@@ -100,6 +103,7 @@ func TestBuildPageRankAction(t *testing.T) {
 	}
 }
 
+// TestBuildDetectCommunitiesAction runs the test build detect communities action operation.
 func TestBuildDetectCommunitiesAction(t *testing.T) {
 	a, err := buildDetectCommunitiesAction("kb", 25)
 	if err != nil {
@@ -120,6 +124,7 @@ func TestBuildDetectCommunitiesAction(t *testing.T) {
 	}
 }
 
+// TestBuildGetGraphStatsAction runs the test build get graph stats action operation.
 func TestBuildGetGraphStatsAction(t *testing.T) {
 	a, err := buildGetGraphStatsAction("kb")
 	if err != nil {

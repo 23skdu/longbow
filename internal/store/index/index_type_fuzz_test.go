@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// FuzzVectorDataType runs the fuzz vector data type operation.
 func FuzzVectorDataType(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

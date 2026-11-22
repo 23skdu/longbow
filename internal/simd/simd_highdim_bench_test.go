@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// BenchmarkL2Float32_3072 runs the benchmark l2 float32_3072 operation.
 func BenchmarkL2Float32_3072(b *testing.B) {
 	dim := 3072
 	a := make([]float32, dim)

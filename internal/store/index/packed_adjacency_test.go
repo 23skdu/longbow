@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestPackedAdjacency_Basic runs the test packed adjacency_basic operation.
 func TestPackedAdjacency_Basic(t *testing.T) {
 	// Setup Arena - need enough space for pages (1024 uint64 = 8192 bytes)
 	arena := memory.NewSlabArena(1024 * 1024)
@@ -24,6 +25,7 @@ func TestPackedAdjacency_Basic(t *testing.T) {
 	assert.Equal(t, neighbors, got)
 }
 
+// TestPackedAdjacency_Resize runs the test packed adjacency_resize operation.
 func TestPackedAdjacency_Resize(t *testing.T) {
 	arena := memory.NewSlabArena(1024 * 1024) // Increased from 1024
 	adj := NewPackedAdjacency(arena, 10)
@@ -52,6 +54,7 @@ func TestPackedAdjacency_Resize(t *testing.T) {
 	assert.Equal(t, []uint32{99}, got2)
 }
 
+// TestPackedAdjacency_MultipleNodes runs the test packed adjacency_multiple nodes operation.
 func TestPackedAdjacency_MultipleNodes(t *testing.T) {
 	arena := memory.NewSlabArena(1024 * 1024) // Increased from 1024
 	adj := NewPackedAdjacency(arena, 100)

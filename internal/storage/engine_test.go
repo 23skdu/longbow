@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestStorageEngine_Lifecycle runs the test storage engine_lifecycle operation.
 func TestStorageEngine_Lifecycle(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "storage-engine-test-*")
 	require.NoError(t, err)
@@ -69,6 +70,7 @@ type mockSnapshotSource struct {
 	items []SnapshotItem
 }
 
+// Iterate runs the iterate operation.
 func (m *mockSnapshotSource) Iterate(f func(SnapshotItem) error) error {
 	for _, item := range m.items {
 		if err := f(item); err != nil {
@@ -78,6 +80,7 @@ func (m *mockSnapshotSource) Iterate(f func(SnapshotItem) error) error {
 	return nil
 }
 
+// TestStorageEngine_Snapshot runs the test storage engine_snapshot operation.
 func TestStorageEngine_Snapshot(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "storage-snapshot-test-*")
 	require.NoError(t, err)
@@ -134,6 +137,7 @@ func TestStorageEngine_Snapshot(t *testing.T) {
 	assert.Equal(t, 1, count)
 }
 
+// TestStorageEngine_BackendSetters runs the test storage engine_backend setters operation.
 func TestStorageEngine_BackendSetters(t *testing.T) {
 	engine := &StorageEngine{}
 	backend := &FileSnapshotBackend{}

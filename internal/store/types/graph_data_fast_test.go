@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestFastPathChunkAccessors runs the test fast path chunk accessors operation.
 func TestFastPathChunkAccessors(t *testing.T) {
 	g := &GraphData{
 		Type: VectorTypeFloat32,
@@ -45,6 +46,7 @@ func TestFastPathChunkAccessors(t *testing.T) {
 	}
 }
 
+// TestGenerationBypass runs the test generation bypass operation.
 func TestGenerationBypass(t *testing.T) {
 	g := &GraphData{
 		Type: VectorTypeFloat32,
@@ -78,6 +80,7 @@ func TestGenerationBypass(t *testing.T) {
 	}
 }
 
+// FuzzConcurrentChunkIO runs the fuzz concurrent chunk io operation.
 func FuzzConcurrentChunkIO(f *testing.F) {
 	f.Add(uint32(0))
 	f.Add(uint32(5))

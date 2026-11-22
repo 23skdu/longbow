@@ -14,46 +14,57 @@ const (
 	dim3072 = 3072 // OpenAI text-embedding-3-large
 )
 
+// BenchmarkHighDim_Float64_1536 runs the benchmark high dim_float64_1536 operation.
 func BenchmarkHighDim_Float64_1536(b *testing.B) {
 	benchmarkFloat64(b, dim1536)
 }
 
+// BenchmarkHighDim_Float64_3072 runs the benchmark high dim_float64_3072 operation.
 func BenchmarkHighDim_Float64_3072(b *testing.B) {
 	benchmarkFloat64(b, dim3072)
 }
 
+// BenchmarkHighDim_Int8_1536 runs the benchmark high dim_int8_1536 operation.
 func BenchmarkHighDim_Int8_1536(b *testing.B) {
 	benchmarkInt8(b, dim1536)
 }
 
+// BenchmarkHighDim_Int8_3072 runs the benchmark high dim_int8_3072 operation.
 func BenchmarkHighDim_Int8_3072(b *testing.B) {
 	benchmarkInt8(b, dim3072)
 }
 
+// BenchmarkHighDim_Int16_1536 runs the benchmark high dim_int16_1536 operation.
 func BenchmarkHighDim_Int16_1536(b *testing.B) {
 	benchmarkInt16(b, dim1536)
 }
 
+// BenchmarkHighDim_Int16_3072 runs the benchmark high dim_int16_3072 operation.
 func BenchmarkHighDim_Int16_3072(b *testing.B) {
 	benchmarkInt16(b, dim3072)
 }
 
+// BenchmarkHighDim_Complex128_1536 runs the benchmark high dim_complex128_1536 operation.
 func BenchmarkHighDim_Complex128_1536(b *testing.B) {
 	benchmarkComplex128(b, dim1536)
 }
 
+// BenchmarkHighDim_Complex128_3072 runs the benchmark high dim_complex128_3072 operation.
 func BenchmarkHighDim_Complex128_3072(b *testing.B) {
 	benchmarkComplex128(b, dim3072)
 }
 
+// BenchmarkHighDim_Uint32_128 runs the benchmark high dim_uint32_128 operation.
 func BenchmarkHighDim_Uint32_128(b *testing.B) {
 	benchmarkUint32(b, 128)
 }
 
+// BenchmarkHighDim_Int32_128 runs the benchmark high dim_int32_128 operation.
 func BenchmarkHighDim_Int32_128(b *testing.B) {
 	benchmarkInt32(b, 128)
 }
 
+// BenchmarkHighDim_Float32_128 runs the benchmark high dim_float32_128 operation.
 func BenchmarkHighDim_Float32_128(b *testing.B) {
 	benchmarkFloat32(b, 128)
 }

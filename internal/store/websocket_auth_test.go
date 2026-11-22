@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestWebSocketUpgradeRequiresAuthentication runs the test web socket upgrade requires authentication operation.
 func TestWebSocketUpgradeRequiresAuthentication(t *testing.T) {
 	vs, _, _, _, adminRaw := newNamespacePayloadStore(t)
 	wsServer := NewWebSocketServer(zerolog.Nop(), NewChangeDataCapture(vs, zerolog.Nop()))
@@ -41,6 +42,7 @@ func TestWebSocketUpgradeRequiresAuthentication(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, httpResp.StatusCode)
 }
 
+// TestWebSocketSubscriptionUsesTenantScope runs the test web socket subscription uses tenant scope operation.
 func TestWebSocketSubscriptionUsesTenantScope(t *testing.T) {
 	vs, mgr, _, _, _ := newNamespacePayloadStore(t)
 	key, raw, err := mgr.CreateAPIKeyWithOptions(APIKeyOptions{

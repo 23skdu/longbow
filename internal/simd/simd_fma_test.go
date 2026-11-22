@@ -61,6 +61,7 @@ func referenceCosineFMA(a, b []float32) float32 {
 // Tests for 32-element FMA kernels (processes 32 floats = 2 ZMM registers)
 // =============================================================================
 
+// TestDot32FMA_Correctness runs the test dot32 fma_correctness operation.
 func TestDot32FMA_Correctness(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")
@@ -79,6 +80,7 @@ func TestDot32FMA_Correctness(t *testing.T) {
 	}
 }
 
+// TestEuclidean32FMA_Correctness runs the test euclidean32 fma_correctness operation.
 func TestEuclidean32FMA_Correctness(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")
@@ -98,6 +100,7 @@ func TestEuclidean32FMA_Correctness(t *testing.T) {
 	}
 }
 
+// TestCosine32FMA_Correctness runs the test cosine32 fma_correctness operation.
 func TestCosine32FMA_Correctness(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")
@@ -124,6 +127,7 @@ func TestCosine32FMA_Correctness(t *testing.T) {
 // Tests for 64-element FMA kernels (processes 64 floats = 4 ZMM registers)
 // =============================================================================
 
+// TestDot64FMA_Correctness runs the test dot64 fma_correctness operation.
 func TestDot64FMA_Correctness(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")
@@ -141,6 +145,7 @@ func TestDot64FMA_Correctness(t *testing.T) {
 	}
 }
 
+// TestEuclidean64FMA_Correctness runs the test euclidean64 fma_correctness operation.
 func TestEuclidean64FMA_Correctness(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")
@@ -163,6 +168,7 @@ func TestEuclidean64FMA_Correctness(t *testing.T) {
 // Integration tests: Full-length vectors using FMA dispatch
 // =============================================================================
 
+// TestDotProductFMA_FullVector768 runs the test dot product fma_full vector768 operation.
 func TestDotProductFMA_FullVector768(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")
@@ -183,6 +189,7 @@ func TestDotProductFMA_FullVector768(t *testing.T) {
 	}
 }
 
+// TestEuclideanDistanceFMA_FullVector1536 runs the test euclidean distance fma_full vector1536 operation.
 func TestEuclideanDistanceFMA_FullVector1536(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")
@@ -202,6 +209,7 @@ func TestEuclideanDistanceFMA_FullVector1536(t *testing.T) {
 	}
 }
 
+// TestCosineDistanceFMA_FullVector768 runs the test cosine distance fma_full vector768 operation.
 func TestCosineDistanceFMA_FullVector768(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")
@@ -224,6 +232,7 @@ func TestCosineDistanceFMA_FullVector768(t *testing.T) {
 // Benchmarks: Compare FMA vs existing implementations
 // =============================================================================
 
+// BenchmarkDotProduct_FMA_768 runs the benchmark dot product_fma_768 operation.
 func BenchmarkDotProduct_FMA_768(b *testing.B) {
 	if !features.HasAVX512 {
 		b.Skip("AVX-512 not available")
@@ -239,6 +248,7 @@ func BenchmarkDotProduct_FMA_768(b *testing.B) {
 	}
 }
 
+// BenchmarkDotProduct_Current_768 runs the benchmark dot product_current_768 operation.
 func BenchmarkDotProduct_Current_768(b *testing.B) {
 	v1 := generateRandomVectorFMA(768, 100)
 	v2 := generateRandomVectorFMA(768, 101)
@@ -250,6 +260,7 @@ func BenchmarkDotProduct_Current_768(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclidean_FMA_1536 runs the benchmark euclidean_fma_1536 operation.
 func BenchmarkEuclidean_FMA_1536(b *testing.B) {
 	if !features.HasAVX512 {
 		b.Skip("AVX-512 not available")
@@ -265,6 +276,7 @@ func BenchmarkEuclidean_FMA_1536(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclidean_Current_1536 runs the benchmark euclidean_current_1536 operation.
 func BenchmarkEuclidean_Current_1536(b *testing.B) {
 	v1 := generateRandomVectorFMA(1536, 102)
 	v2 := generateRandomVectorFMA(1536, 103)
@@ -276,6 +288,7 @@ func BenchmarkEuclidean_Current_1536(b *testing.B) {
 	}
 }
 
+// BenchmarkCosine_FMA_768 runs the benchmark cosine_fma_768 operation.
 func BenchmarkCosine_FMA_768(b *testing.B) {
 	if !features.HasAVX512 {
 		b.Skip("AVX-512 not available")
@@ -291,6 +304,7 @@ func BenchmarkCosine_FMA_768(b *testing.B) {
 	}
 }
 
+// BenchmarkCosine_Current_768 runs the benchmark cosine_current_768 operation.
 func BenchmarkCosine_Current_768(b *testing.B) {
 	v1 := generateRandomVectorFMA(768, 104)
 	v2 := generateRandomVectorFMA(768, 105)
@@ -306,6 +320,7 @@ func BenchmarkCosine_Current_768(b *testing.B) {
 // Edge case tests
 // =============================================================================
 
+// TestFMA_ZeroVector runs the test fma_zero vector operation.
 func TestFMA_ZeroVector(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")
@@ -329,6 +344,7 @@ func TestFMA_ZeroVector(t *testing.T) {
 	}
 }
 
+// TestFMA_IdenticalVectors runs the test fma_identical vectors operation.
 func TestFMA_IdenticalVectors(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")
@@ -351,6 +367,7 @@ func TestFMA_IdenticalVectors(t *testing.T) {
 	}
 }
 
+// TestFMA_NonAlignedLength runs the test fma_non aligned length operation.
 func TestFMA_NonAlignedLength(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX-512 not available")

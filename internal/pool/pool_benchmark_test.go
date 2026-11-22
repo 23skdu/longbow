@@ -6,6 +6,7 @@ import (
 	"github.com/RoaringBitmap/roaring/v2"
 )
 
+// BenchmarkBitmapAllocation runs the benchmark bitmap allocation operation.
 func BenchmarkBitmapAllocation(b *testing.B) {
 	b.Run("RoaringNew", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {

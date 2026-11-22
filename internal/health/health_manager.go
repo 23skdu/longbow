@@ -18,8 +18,11 @@ import (
 type HealthStatus string
 
 const (
-	StatusHealthy   HealthStatus = "healthy"
-	StatusDegraded  HealthStatus = "degraded"
+	// StatusHealthy is a status healthy constant.
+	StatusHealthy HealthStatus = "healthy"
+	// StatusDegraded is a status degraded constant.
+	StatusDegraded HealthStatus = "degraded"
+	// StatusUnhealthy is a status unhealthy constant.
 	StatusUnhealthy HealthStatus = "unhealthy"
 )
 

@@ -42,46 +42,55 @@ func newBenchSharded(b *testing.B, name string) *ShardedCounter {
 	return NewShardedCounter(target, ShardedCounterOptions{Name: name})
 }
 
+// BenchmarkShardedCounter_Add_1Goroutine runs the benchmark sharded counter_add_1 goroutine operation.
 func BenchmarkShardedCounter_Add_1Goroutine(b *testing.B) {
 	sc := newBenchSharded(b, "bench_sharded_add_1")
 	benchParallel(b, 1, func() { sc.Add(1) })
 }
 
+// BenchmarkShardedCounter_Add_4Goroutines runs the benchmark sharded counter_add_4 goroutines operation.
 func BenchmarkShardedCounter_Add_4Goroutines(b *testing.B) {
 	sc := newBenchSharded(b, "bench_sharded_add_4")
 	benchParallel(b, 4, func() { sc.Add(1) })
 }
 
+// BenchmarkShardedCounter_Add_16Goroutines runs the benchmark sharded counter_add_16 goroutines operation.
 func BenchmarkShardedCounter_Add_16Goroutines(b *testing.B) {
 	sc := newBenchSharded(b, "bench_sharded_add_16")
 	benchParallel(b, 16, func() { sc.Add(1) })
 }
 
+// BenchmarkShardedCounter_Inc_1Goroutine runs the benchmark sharded counter_inc_1 goroutine operation.
 func BenchmarkShardedCounter_Inc_1Goroutine(b *testing.B) {
 	sc := newBenchSharded(b, "bench_sharded_inc_1")
 	benchParallel(b, 1, func() { sc.Inc() })
 }
 
+// BenchmarkShardedCounter_Inc_4Goroutines runs the benchmark sharded counter_inc_4 goroutines operation.
 func BenchmarkShardedCounter_Inc_4Goroutines(b *testing.B) {
 	sc := newBenchSharded(b, "bench_sharded_inc_4")
 	benchParallel(b, 4, func() { sc.Inc() })
 }
 
+// BenchmarkShardedCounter_Inc_16Goroutines runs the benchmark sharded counter_inc_16 goroutines operation.
 func BenchmarkShardedCounter_Inc_16Goroutines(b *testing.B) {
 	sc := newBenchSharded(b, "bench_sharded_inc_16")
 	benchParallel(b, 16, func() { sc.Inc() })
 }
 
+// BenchmarkPrometheusCounter_Inc_1Goroutine runs the benchmark prometheus counter_inc_1 goroutine operation.
 func BenchmarkPrometheusCounter_Inc_1Goroutine(b *testing.B) {
 	c := prometheus.NewCounter(prometheus.CounterOpts{Name: "bench_prom_inc_1", Help: "benchmark"})
 	benchParallel(b, 1, func() { c.Inc() })
 }
 
+// BenchmarkPrometheusCounter_Inc_4Goroutines runs the benchmark prometheus counter_inc_4 goroutines operation.
 func BenchmarkPrometheusCounter_Inc_4Goroutines(b *testing.B) {
 	c := prometheus.NewCounter(prometheus.CounterOpts{Name: "bench_prom_inc_4", Help: "benchmark"})
 	benchParallel(b, 4, func() { c.Inc() })
 }
 
+// BenchmarkPrometheusCounter_Inc_16Goroutines runs the benchmark prometheus counter_inc_16 goroutines operation.
 func BenchmarkPrometheusCounter_Inc_16Goroutines(b *testing.B) {
 	c := prometheus.NewCounter(prometheus.CounterOpts{Name: "bench_prom_inc_16", Help: "benchmark"})
 	benchParallel(b, 16, func() { c.Inc() })
@@ -109,6 +118,7 @@ func BenchmarkCounterVec_CachedHandle_16Goroutines(b *testing.B) {
 	benchParallel(b, 16, func() { handle.Inc() })
 }
 
+// BenchmarkShardedCounter_Flush runs the benchmark sharded counter_flush operation.
 func BenchmarkShardedCounter_Flush(b *testing.B) {
 	b.Run("WithPending", func(b *testing.B) {
 		sc := newBenchSharded(b, "bench_sharded_flush_pending")
@@ -130,6 +140,7 @@ func BenchmarkShardedCounter_Flush(b *testing.B) {
 	})
 }
 
+// BenchmarkShardedCounterVec_For_16Goroutines runs the benchmark sharded counter vec_for_16 goroutines operation.
 func BenchmarkShardedCounterVec_For_16Goroutines(b *testing.B) {
 	vec := prometheus.NewCounterVec(
 		prometheus.CounterOpts{Name: "bench_sharded_vec_for_total", Help: "benchmark"},
@@ -147,6 +158,7 @@ func BenchmarkShardedCounterVec_For_16Goroutines(b *testing.B) {
 	benchParallel(b, 16, func() { handle.Inc() })
 }
 
+// BenchmarkShardedCounter_Lifecycle runs the benchmark sharded counter_lifecycle operation.
 func BenchmarkShardedCounter_Lifecycle(b *testing.B) {
 	target := prometheus.NewCounter(prometheus.CounterOpts{Name: "bench_sharded_lifecycle_total", Help: "benchmark"})
 	ctx := context.Background()

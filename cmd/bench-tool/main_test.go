@@ -11,6 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
+// TestGenerateRecordFloat32 runs the test generate record float32 operation.
 func TestGenerateRecordFloat32(t *testing.T) {
 	rec, schema, err := generateRecord(10, 128, "float32", 4)
 	if err != nil {
@@ -31,6 +32,7 @@ func TestGenerateRecordFloat32(t *testing.T) {
 	}
 }
 
+// TestGenerateRecordInt32 runs the test generate record int32 operation.
 func TestGenerateRecordInt32(t *testing.T) {
 	rec, _, err := generateRecord(5, 32, "int32", 0)
 	if err != nil {
@@ -43,6 +45,7 @@ func TestGenerateRecordInt32(t *testing.T) {
 	}
 }
 
+// TestGenerateRecordFloat64 runs the test generate record float64 operation.
 func TestGenerateRecordFloat64(t *testing.T) {
 	rec, _, err := generateRecord(5, 16, "float64", 0)
 	if err != nil {
@@ -55,6 +58,7 @@ func TestGenerateRecordFloat64(t *testing.T) {
 	}
 }
 
+// TestGenerateRecordComplex64 runs the test generate record complex64 operation.
 func TestGenerateRecordComplex64(t *testing.T) {
 	rec, schema, err := generateRecord(3, 8, "complex64", 0)
 	if err != nil {
@@ -77,6 +81,7 @@ func TestGenerateRecordComplex64(t *testing.T) {
 	}
 }
 
+// TestGenerateRecordComplex128 runs the test generate record complex128 operation.
 func TestGenerateRecordComplex128(t *testing.T) {
 	rec, schema, err := generateRecord(3, 8, "complex128", 0)
 	if err != nil {
@@ -94,6 +99,7 @@ func TestGenerateRecordComplex128(t *testing.T) {
 	}
 }
 
+// TestGenerateRecordTurboquant runs the test generate record turboquant operation.
 func TestGenerateRecordTurboquant(t *testing.T) {
 	rec, schema, err := generateRecord(5, 64, "turboquant", 8)
 	if err != nil {
@@ -116,6 +122,7 @@ func TestGenerateRecordTurboquant(t *testing.T) {
 	}
 }
 
+// TestGenerateRecordFloat16 runs the test generate record float16 operation.
 func TestGenerateRecordFloat16(t *testing.T) {
 	rec, _, err := generateRecord(5, 32, "float16", 0)
 	if err != nil {
@@ -128,6 +135,7 @@ func TestGenerateRecordFloat16(t *testing.T) {
 	}
 }
 
+// TestGenerateRecordUnsupportedDtype runs the test generate record unsupported dtype operation.
 func TestGenerateRecordUnsupportedDtype(t *testing.T) {
 	_, _, err := generateRecord(5, 32, "bogus", 0)
 	if err == nil {
@@ -138,6 +146,7 @@ func TestGenerateRecordUnsupportedDtype(t *testing.T) {
 	}
 }
 
+// TestGenerateRecordInt8 runs the test generate record int8 operation.
 func TestGenerateRecordInt8(t *testing.T) {
 	rec, _, err := generateRecord(4, 16, "int8", 0)
 	if err != nil {
@@ -149,6 +158,7 @@ func TestGenerateRecordInt8(t *testing.T) {
 	}
 }
 
+// TestGenerateRecordInt16 runs the test generate record int16 operation.
 func TestGenerateRecordInt16(t *testing.T) {
 	rec, _, err := generateRecord(4, 16, "int16", 0)
 	if err != nil {
@@ -157,6 +167,7 @@ func TestGenerateRecordInt16(t *testing.T) {
 	defer rec.Release()
 }
 
+// TestGenerateRecordUint8 runs the test generate record uint8 operation.
 func TestGenerateRecordUint8(t *testing.T) {
 	rec, _, err := generateRecord(4, 16, "uint8", 0)
 	if err != nil {
@@ -165,6 +176,7 @@ func TestGenerateRecordUint8(t *testing.T) {
 	defer rec.Release()
 }
 
+// TestGenerateRecordUint16 runs the test generate record uint16 operation.
 func TestGenerateRecordUint16(t *testing.T) {
 	rec, _, err := generateRecord(4, 16, "uint16", 0)
 	if err != nil {
@@ -173,6 +185,7 @@ func TestGenerateRecordUint16(t *testing.T) {
 	defer rec.Release()
 }
 
+// TestGenerateRecordUint32 runs the test generate record uint32 operation.
 func TestGenerateRecordUint32(t *testing.T) {
 	rec, _, err := generateRecord(4, 16, "uint32", 0)
 	if err != nil {
@@ -181,6 +194,7 @@ func TestGenerateRecordUint32(t *testing.T) {
 	defer rec.Release()
 }
 
+// TestGenerateRecordInt64 runs the test generate record int64 operation.
 func TestGenerateRecordInt64(t *testing.T) {
 	rec, _, err := generateRecord(4, 16, "int64", 0)
 	if err != nil {
@@ -189,6 +203,7 @@ func TestGenerateRecordInt64(t *testing.T) {
 	defer rec.Release()
 }
 
+// TestGenerateRecordUint64 runs the test generate record uint64 operation.
 func TestGenerateRecordUint64(t *testing.T) {
 	rec, _, err := generateRecord(4, 16, "uint64", 0)
 	if err != nil {
@@ -197,6 +212,7 @@ func TestGenerateRecordUint64(t *testing.T) {
 	defer rec.Release()
 }
 
+// TestGenerateRecordColumns runs the test generate record columns operation.
 func TestGenerateRecordColumns(t *testing.T) {
 	rec, schema, err := generateRecord(10, 32, "float32", 4)
 	if err != nil {
@@ -212,6 +228,7 @@ func TestGenerateRecordColumns(t *testing.T) {
 	}
 }
 
+// TestNewReusableSearchState runs the test new reusable search state operation.
 func TestNewReusableSearchState(t *testing.T) {
 	s := NewReusableSearchState(128)
 	if s == nil {
@@ -222,6 +239,7 @@ func TestNewReusableSearchState(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketDense runs the test build search ticket dense operation.
 func TestBuildSearchTicketDense(t *testing.T) {
 	s := NewReusableSearchState(128)
 	ticket := s.BuildSearchTicket("test_ds", 128, "float32", "Dense", 10, 0)
@@ -251,6 +269,7 @@ func TestBuildSearchTicketDense(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketHybrid runs the test build search ticket hybrid operation.
 func TestBuildSearchTicketHybrid(t *testing.T) {
 	s := NewReusableSearchState(64)
 	ticket := s.BuildSearchTicket("ds", 64, "float32", "Hybrid", 5, 0)
@@ -269,6 +288,7 @@ func TestBuildSearchTicketHybrid(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketSparse runs the test build search ticket sparse operation.
 func TestBuildSearchTicketSparse(t *testing.T) {
 	s := NewReusableSearchState(64)
 	ticket := s.BuildSearchTicket("ds", 64, "float32", "Sparse", 10, 0)
@@ -284,6 +304,7 @@ func TestBuildSearchTicketSparse(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketFiltered runs the test build search ticket filtered operation.
 func TestBuildSearchTicketFiltered(t *testing.T) {
 	s := NewReusableSearchState(64)
 	ticket := s.BuildSearchTicket("ds", 64, "float32", "Filtered", 10, 0)
@@ -304,6 +325,7 @@ func TestBuildSearchTicketFiltered(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketFilteredBool runs the test build search ticket filtered bool operation.
 func TestBuildSearchTicketFilteredBool(t *testing.T) {
 	s := NewReusableSearchState(64)
 	ticket := s.BuildSearchTicket("ds", 64, "float32", "FilteredBool", 10, 0)
@@ -321,6 +343,7 @@ func TestBuildSearchTicketFilteredBool(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketFilteredString runs the test build search ticket filtered string operation.
 func TestBuildSearchTicketFilteredString(t *testing.T) {
 	s := NewReusableSearchState(64)
 	ticket := s.BuildSearchTicket("ds", 64, "float32", "FilteredString", 10, 0)
@@ -338,6 +361,7 @@ func TestBuildSearchTicketFilteredString(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketGraphRAG runs the test build search ticket graph rag operation.
 func TestBuildSearchTicketGraphRAG(t *testing.T) {
 	s := NewReusableSearchState(64)
 	ticket := s.BuildSearchTicket("ds", 64, "float32", "GraphRAG", 10, 0)
@@ -353,6 +377,7 @@ func TestBuildSearchTicketGraphRAG(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketLearnedIndex runs the test build search ticket learned index operation.
 func TestBuildSearchTicketLearnedIndex(t *testing.T) {
 	s := NewReusableSearchState(64)
 	ticket := s.BuildSearchTicket("ds", 64, "float32", "LearnedIndex", 10, 0)
@@ -368,6 +393,7 @@ func TestBuildSearchTicketLearnedIndex(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketComplex runs the test build search ticket complex operation.
 func TestBuildSearchTicketComplex(t *testing.T) {
 	s := NewReusableSearchState(32)
 	ticket := s.BuildSearchTicket("ds", 32, "complex64", "Dense", 10, 0)
@@ -384,6 +410,7 @@ func TestBuildSearchTicketComplex(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketComplex128 runs the test build search ticket complex128 operation.
 func TestBuildSearchTicketComplex128(t *testing.T) {
 	s := NewReusableSearchState(32)
 	ticket := s.BuildSearchTicket("ds", 32, "complex128", "Dense", 10, 0)
@@ -400,6 +427,7 @@ func TestBuildSearchTicketComplex128(t *testing.T) {
 	}
 }
 
+// TestBuildSpecialTicketRecommend runs the test build special ticket recommend operation.
 func TestBuildSpecialTicketRecommend(t *testing.T) {
 	s := NewReusableSearchState(128)
 	ticket := s.BuildSpecialTicket("test_ds", "Recommend", 0, 0)
@@ -421,6 +449,7 @@ func TestBuildSpecialTicketRecommend(t *testing.T) {
 	}
 }
 
+// TestBuildSpecialTicketGeo runs the test build special ticket geo operation.
 func TestBuildSpecialTicketGeo(t *testing.T) {
 	s := NewReusableSearchState(128)
 	ticket := s.BuildSpecialTicket("test_ds", "Geo", 0, 0)
@@ -446,6 +475,7 @@ func TestBuildSpecialTicketGeo(t *testing.T) {
 	}
 }
 
+// TestBuildSpecialTicketTemporal runs the test build special ticket temporal operation.
 func TestBuildSpecialTicketTemporal(t *testing.T) {
 	s := NewReusableSearchState(128)
 	ticket := s.BuildSpecialTicket("test_ds", "Temporal", 0, 0)
@@ -467,6 +497,7 @@ func TestBuildSpecialTicketTemporal(t *testing.T) {
 	}
 }
 
+// TestBuildSpecialTicketByID runs the test build special ticket by id operation.
 func TestBuildSpecialTicketByID(t *testing.T) {
 	s := NewReusableSearchState(128)
 	ticket := s.BuildSpecialTicket("test_ds", "ByID", 0, 0)
@@ -485,6 +516,7 @@ func TestBuildSpecialTicketByID(t *testing.T) {
 	}
 }
 
+// TestBuildSearchTicketBufferReuse runs the test build search ticket buffer reuse operation.
 func TestBuildSearchTicketBufferReuse(t *testing.T) {
 	s := NewReusableSearchState(128)
 	t1 := s.BuildSearchTicket("ds1", 128, "float32", "Dense", 10, 0)
@@ -502,6 +534,7 @@ func TestBuildSearchTicketBufferReuse(t *testing.T) {
 	_ = t1
 }
 
+// BenchmarkGenerateRecord runs the benchmark generate record operation.
 func BenchmarkGenerateRecord(b *testing.B) {
 	for b.Loop() {
 		rec, _, err := generateRecord(1000, 128, "float32", 4)
@@ -512,6 +545,7 @@ func BenchmarkGenerateRecord(b *testing.B) {
 	}
 }
 
+// BenchmarkBuildSearchTicket runs the benchmark build search ticket operation.
 func BenchmarkBuildSearchTicket(b *testing.B) {
 	s := NewReusableSearchState(128)
 	for b.Loop() {
@@ -632,6 +666,7 @@ func TestTemporalAsOfIsFixed(t *testing.T) {
 	}
 }
 
+// TestResolveSearchModes runs the test resolve search modes operation.
 func TestResolveSearchModes(t *testing.T) {
 	all := resolveSearchModes("all")
 	if len(all) != len(allSearchModes) {
@@ -662,6 +697,7 @@ func TestResolveSearchModes(t *testing.T) {
 	}
 }
 
+// TestBuildExtendedSpecialAndVectorTickets runs the test build extended special and vector tickets operation.
 func TestBuildExtendedSpecialAndVectorTickets(t *testing.T) {
 	s := NewReusableSearchState(64)
 

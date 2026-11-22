@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestAdaptiveBatchBuffer_Add runs the test adaptive batch buffer_add operation.
 func TestAdaptiveBatchBuffer_Add(t *testing.T) {
 	dim := 128
 	var flushedIDs []int64
@@ -41,6 +42,7 @@ func TestAdaptiveBatchBuffer_Add(t *testing.T) {
 	assert.Equal(t, CUDABlockSize+5, len(flushedIDs))
 }
 
+// FuzzAdaptiveBatchBuffer runs the fuzz adaptive batch buffer operation.
 func FuzzAdaptiveBatchBuffer(f *testing.F) {
 	f.Add(100, 128)
 	f.Add(300, 64)

@@ -141,12 +141,14 @@ var (
 			Help: "Configured max header list size for gRPC",
 		},
 	)
+	// GRPCMaxRecvMsgSize is a grpc max recv msg size value.
 	GRPCMaxRecvMsgSize = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_grpc_max_recv_msg_size",
 			Help: "Configured max receive message size for gRPC",
 		},
 	)
+	// GRPCMaxSendMsgSize is a grpc max send msg size value.
 	GRPCMaxSendMsgSize = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_grpc_max_send_msg_size",
@@ -154,6 +156,7 @@ var (
 		},
 	)
 
+	// GRPCCallDurationSeconds is a grpc call duration seconds value.
 	GRPCCallDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_grpc_call_duration_seconds",
@@ -163,6 +166,7 @@ var (
 		[]string{"method", "status"},
 	)
 
+	// GRPCCallTotal is a grpc call total value.
 	GRPCCallTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_grpc_call_total",
@@ -171,6 +175,7 @@ var (
 		[]string{"method", "status"},
 	)
 
+	// GRPCMessagesSentTotal is a grpc messages sent total value.
 	GRPCMessagesSentTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_grpc_messages_sent_total",
@@ -179,6 +184,7 @@ var (
 		[]string{"method"},
 	)
 
+	// GRPCMessagesReceivedTotal is a grpc messages received total value.
 	GRPCMessagesReceivedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_grpc_messages_received_total",
@@ -187,6 +193,7 @@ var (
 		[]string{"method"},
 	)
 
+	// GRPCStreamSendLatencySeconds is a grpc stream send latency seconds value.
 	GRPCStreamSendLatencySeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_grpc_stream_send_latency_seconds",
@@ -195,6 +202,7 @@ var (
 		},
 	)
 
+	// GRPCStreamStallTotal is a grpc stream stall total value.
 	GRPCStreamStallTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_grpc_stream_stall_total",

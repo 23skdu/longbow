@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestDelete runs the test delete operation.
 func TestDelete(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.InitialCapacity = 100

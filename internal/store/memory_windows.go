@@ -12,11 +12,17 @@ import (
 type MemoryAdvice int
 
 const (
+	// AdviceNormal is a advice normal constant.
 	AdviceNormal MemoryAdvice = iota
+	// AdviceRandom is a advice random constant.
 	AdviceRandom
+	// AdviceSequential is a advice sequential constant.
 	AdviceSequential
+	// AdviceWillNeed is a advice will need constant.
 	AdviceWillNeed
+	// AdviceDontNeed is a advice dont need constant.
 	AdviceDontNeed
+	// AdviceHugePage is a advice huge page constant.
 	AdviceHugePage
 )
 

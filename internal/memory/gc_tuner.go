@@ -22,6 +22,7 @@ type MemStatsReader interface {
 
 type defaultMemStatsReader struct{}
 
+// ReadMemStats runs the read mem stats operation.
 func (d *defaultMemStatsReader) ReadMemStats(m *runtime.MemStats) {
 	runtime.ReadMemStats(m)
 }

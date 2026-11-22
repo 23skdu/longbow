@@ -13,8 +13,10 @@ import (
 type Metric string
 
 const (
+	// MetricCosine is a metric cosine constant.
 	MetricCosine Metric = "cosine"
-	MetricL2     Metric = "l2"
+	// MetricL2 is a metric l2 constant.
+	MetricL2 Metric = "l2"
 )
 
 // EdgeDocument holds a locally cached or edge-indexed vector and its metadata.

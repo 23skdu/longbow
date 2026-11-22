@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestEncryptedWALAndStorageAndSnapshot runs the test encrypted wal and storage and snapshot operation.
 func TestEncryptedWALAndStorageAndSnapshot(t *testing.T) {
 	ctx := context.Background()
 	kp, err := security.NewLocalKeyProvider(nil)
@@ -91,6 +92,7 @@ func TestEncryptedWALAndStorageAndSnapshot(t *testing.T) {
 	require.Equal(t, []byte("snap-payload"), snapGot)
 }
 
+// FuzzEncryptDecryptChunk runs the fuzz encrypt decrypt chunk operation.
 func FuzzEncryptDecryptChunk(f *testing.F) {
 	f.Add([]byte("hello vector"), []byte("aad-1"))
 	f.Add([]byte(""), []byte(""))

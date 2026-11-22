@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestConcurrentSnapshot_NonBlocking runs the test concurrent snapshot_non blocking operation.
 func TestConcurrentSnapshot_NonBlocking(t *testing.T) {
 	// this test verifies that Snapshot() does not block ingest for long periods
 	// and produces a valid snapshot.
@@ -131,6 +132,7 @@ func TestConcurrentSnapshot_NonBlocking(t *testing.T) {
 	t.Logf("Restored %d records", count)
 }
 
+// TestSnapshotRateLimit runs the test snapshot rate limit operation.
 func TestSnapshotRateLimit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping slow rate limit test")

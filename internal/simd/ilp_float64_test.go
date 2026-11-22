@@ -50,6 +50,7 @@ func ilpCheck(t *testing.T, name string, dims int, got, want float32) bool {
 	return true
 }
 
+// TestEuclideanFloat64AVX2_ILPParity runs the test euclidean float64 avx2_ilp parity operation.
 func TestEuclideanFloat64AVX2_ILPParity(t *testing.T) {
 	rng := rand.New(rand.NewSource(20240928))
 	for _, d := range ilpTestDims() {
@@ -81,6 +82,7 @@ func TestEuclideanFloat64AVX2_ILPParity(t *testing.T) {
 	}
 }
 
+// TestDotFloat64AVX2_ILPParity runs the test dot float64 avx2_ilp parity operation.
 func TestDotFloat64AVX2_ILPParity(t *testing.T) {
 	rng := rand.New(rand.NewSource(20240929))
 	for _, d := range ilpTestDims() {
@@ -104,6 +106,7 @@ func TestDotFloat64AVX2_ILPParity(t *testing.T) {
 	}
 }
 
+// TestEuclideanComplex128_ILPParity runs the test euclidean complex128_ilp parity operation.
 func TestEuclideanComplex128_ILPParity(t *testing.T) {
 	rng := rand.New(rand.NewSource(20240930))
 	for _, d := range ilpTestDims() {
@@ -226,6 +229,7 @@ func float32BitsEqual(x, y float32) bool {
 	return math.Float32bits(x) == math.Float32bits(y)
 }
 
+// TestILPParityToleranceDocumentation runs the test ilp parity tolerance documentation operation.
 func TestILPParityToleranceDocumentation(t *testing.T) {
 	t.Logf("float32 ulp relative=%g; test tolerances rel=%g abs=%g",
 		float64(1.1920929e-7), ilpParityRelTol, ilpParityAbsTol)

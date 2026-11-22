@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestValidateInput runs the test validate input operation.
 func TestValidateInput(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -67,6 +68,7 @@ func TestValidateInput(t *testing.T) {
 	}
 }
 
+// TestAuditLogger runs the test audit logger operation.
 func TestAuditLogger(t *testing.T) {
 	auditLogger := NewAuditLogger()
 
@@ -103,6 +105,7 @@ func TestAuditLogger(t *testing.T) {
 	})
 }
 
+// TestAuthenticationMiddleware runs the test authentication middleware operation.
 func TestAuthenticationMiddleware(t *testing.T) {
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -156,6 +159,7 @@ func TestAuthenticationMiddleware(t *testing.T) {
 	}
 }
 
+// TestGetClientIP runs the test get client ip operation.
 func TestGetClientIP(t *testing.T) {
 	tests := []struct {
 		name       string

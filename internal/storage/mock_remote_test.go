@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMockRemoteStorage runs the test mock remote storage operation.
 func TestMockRemoteStorage(t *testing.T) {
 	mock := NewMockRemoteStorage("s3")
 	ctx := context.Background()

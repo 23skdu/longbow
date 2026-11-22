@@ -13,6 +13,7 @@ import (
 	types "github.com/23skdu/longbow/internal/store/types"
 )
 
+// TestLevelGenerator runs the test level generator operation.
 func TestLevelGenerator(t *testing.T) {
 	lg := NewLevelGenerator(1.44269504089) // 1/ln(2)
 
@@ -35,6 +36,7 @@ func TestLevelGenerator(t *testing.T) {
 	t.Logf("Level distribution: %v", levels)
 }
 
+// TestInsert_SingleNode runs the test insert_single node operation.
 func TestInsert_SingleNode(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -77,6 +79,7 @@ func TestInsert_SingleNode(t *testing.T) {
 	}
 }
 
+// TestInsert_MultipleNodes runs the test insert_multiple nodes operation.
 func TestInsert_MultipleNodes(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -119,6 +122,7 @@ func TestInsert_MultipleNodes(t *testing.T) {
 	}
 }
 
+// TestAddConnection runs the test add connection operation.
 func TestAddConnection(t *testing.T) {
 	dataset := &MockDataset{Name: "test"}
 	config := types.DefaultArrowHNSWConfig()
@@ -186,6 +190,7 @@ func TestAddConnection(t *testing.T) {
 	}
 }
 
+// TestPruneConnections runs the test prune connections operation.
 func TestPruneConnections(t *testing.T) {
 	dataset := &MockDataset{Name: "test"}
 	config := types.DefaultArrowHNSWConfig()
@@ -297,6 +302,7 @@ func TestPruneConnections(t *testing.T) {
 	}
 }
 
+// BenchmarkInsert runs the benchmark insert operation.
 func BenchmarkInsert(b *testing.B) {
 	// Create dataset with enough records
 	dim := 2

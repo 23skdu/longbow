@@ -228,6 +228,7 @@ func TestPackTQAVX2TopOfRange(t *testing.T) {
 	})
 }
 
+// TestPackTQ2AVX512MatchesGeneric runs the test pack tq2 avx512 matches generic operation.
 func TestPackTQ2AVX512MatchesGeneric(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not supported")
@@ -250,6 +251,7 @@ func TestPackTQ2AVX512MatchesGeneric(t *testing.T) {
 	}
 }
 
+// TestPackTQ4AVX512MatchesGeneric runs the test pack tq4 avx512 matches generic operation.
 func TestPackTQ4AVX512MatchesGeneric(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not supported")
@@ -272,6 +274,7 @@ func TestPackTQ4AVX512MatchesGeneric(t *testing.T) {
 	}
 }
 
+// TestPackTQ8AVX512MatchesGeneric runs the test pack tq8 avx512 matches generic operation.
 func TestPackTQ8AVX512MatchesGeneric(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not supported")
@@ -294,6 +297,7 @@ func TestPackTQ8AVX512MatchesGeneric(t *testing.T) {
 	}
 }
 
+// TestPackTQAVX512IsMonotonic runs the test pack tqavx512 is monotonic operation.
 func TestPackTQAVX512IsMonotonic(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not supported")
@@ -345,6 +349,7 @@ func TestPackTQAVX512IsMonotonic(t *testing.T) {
 	})
 }
 
+// TestPackTQAVX512TopOfRange runs the test pack tqavx512 top of range operation.
 func TestPackTQAVX512TopOfRange(t *testing.T) {
 	if !features.HasAVX512 {
 		t.Skip("AVX512 not supported")

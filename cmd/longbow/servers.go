@@ -115,6 +115,7 @@ func startHTTPMetricsServer(cfg *Config, vectorStore *store.VectorStore, certRel
 			backpressure := vectorStore.CheckIngestionBackpressure()
 			delay := vectorStore.IngestionBackpressureDelay()
 
+			// DatasetProgress represents a dataset progress value.
 			type DatasetProgress struct {
 				Name      string `json:"name"`
 				NodeCount int64  `json:"node_count"`

@@ -47,6 +47,7 @@ type GeoPoint struct {
 	Name string  `json:"name,omitempty"`
 }
 
+// MarshalJSON runs the marshal json operation.
 func (g *GeoPoint) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Lat  float64 `json:"lat"`
@@ -59,6 +60,7 @@ func (g *GeoPoint) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// UnmarshalJSON runs the unmarshal json operation.
 func (g *GeoPoint) UnmarshalJSON(data []byte) error {
 	var parsed struct {
 		Lat  float64 `json:"lat"`
@@ -214,6 +216,7 @@ type TemporalAggregationRequest struct {
 	MetricField     string `json:"metric_field,omitempty"`
 }
 
+// Validate runs the validate operation.
 func (req *TemporalSearchRequest) Validate() error {
 	if req.K <= 0 {
 		req.K = 10
@@ -232,6 +235,7 @@ func (req *TemporalSearchRequest) Validate() error {
 	return nil
 }
 
+// Validate runs the validate operation.
 func (req *TemporalAggregationRequest) Validate() error {
 	if req.StartTime <= 0 || req.EndTime <= 0 {
 		return errors.New("start_time and end_time required")

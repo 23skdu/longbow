@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestCandidateHeap_Internal runs the test candidate heap_internal operation.
 func TestCandidateHeap_Internal(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		var h2 CandidateHeap

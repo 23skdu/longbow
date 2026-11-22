@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestUsageMeterQuotasBillingAndHTTPExport runs the test usage meter quotas billing and http export operation.
 func TestUsageMeterQuotasBillingAndHTTPExport(t *testing.T) {
 	meter := NewUsageMeter(zerolog.Nop())
 	now := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
@@ -97,6 +98,7 @@ func TestUsageMeterQuotasBillingAndHTTPExport(t *testing.T) {
 	require.Len(t, webhookPayloads, 1)
 }
 
+// FuzzUsageMeterAndQuotaDecisions runs the fuzz usage meter and quota decisions operation.
 func FuzzUsageMeterAndQuotaDecisions(f *testing.F) {
 	f.Add("tenant-1", int64(5), int64(100), int64(10))
 	f.Add("", int64(-1), int64(0), int64(0))

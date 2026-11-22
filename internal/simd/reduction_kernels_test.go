@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestArgMaxCorrectness runs the test arg max correctness operation.
 func TestArgMaxCorrectness(t *testing.T) {
 	for _, n := range []int{1, 7, 8, 15, 16, 31, 32, 100, 1000} {
 		t.Run(fmt.Sprintf("n=%d", n), func(t *testing.T) {
@@ -26,6 +27,7 @@ func TestArgMaxCorrectness(t *testing.T) {
 	}
 }
 
+// TestArgMinCorrectness runs the test arg min correctness operation.
 func TestArgMinCorrectness(t *testing.T) {
 	for _, n := range []int{1, 7, 8, 15, 16, 31, 32, 100, 1000} {
 		t.Run(fmt.Sprintf("n=%d", n), func(t *testing.T) {
@@ -45,6 +47,7 @@ func TestArgMinCorrectness(t *testing.T) {
 	}
 }
 
+// TestMatMulCorrectness runs the test mat mul correctness operation.
 func TestMatMulCorrectness(t *testing.T) {
 	m, n, k := 4, 8, 4 // n must be multiple of 8 for our AVX2 kernel
 	a := make([]float32, m*k)

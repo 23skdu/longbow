@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// FuzzNextPowerOf2 runs the fuzz next power of2 operation.
 func FuzzNextPowerOf2(f *testing.F) {
 	f.Add(uint32(0))
 	f.Add(uint32(1))
@@ -48,6 +49,7 @@ func FuzzNextPowerOf2(f *testing.F) {
 	})
 }
 
+// FuzzNewRingEntriesValidation runs the fuzz new ring entries validation operation.
 func FuzzNewRingEntriesValidation(f *testing.F) {
 	f.Add(uint32(0), uint32(0))
 	f.Add(uint32(4097), uint32(0))
@@ -77,6 +79,7 @@ func FuzzNewRingEntriesValidation(f *testing.F) {
 	})
 }
 
+// FuzzBufferPoolLifecycle runs the fuzz buffer pool lifecycle operation.
 func FuzzBufferPoolLifecycle(f *testing.F) {
 	f.Add(512, 2, byte(0xAB))
 	f.Add(1, 1, byte(255))

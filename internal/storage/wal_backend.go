@@ -57,6 +57,7 @@ func NewWALBackend(path string, preferAsync, directIO bool) (WALBackend, error) 
 	return NewFSBackend(path)
 }
 
+// NewFSBackend constructs a new FSBackend.
 func NewFSBackend(path string) (*FSBackend, error) {
 	path = filepath.Clean(path)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600) // #nosec G304
@@ -69,6 +70,7 @@ func NewFSBackend(path string) (*FSBackend, error) {
 	}, nil
 }
 
+// NewFSBackendWithDirectIO constructs a new FSBackendWithDirectIO.
 func NewFSBackendWithDirectIO(path string) (*FSBackend, error) {
 	f, err := OpenFileDirect(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -80,6 +82,7 @@ func NewFSBackendWithDirectIO(path string) (*FSBackend, error) {
 	}, nil
 }
 
+// Write runs the write operation.
 func (b *FSBackend) Write(p []byte) (int, error) {
 	// os.File.Write is thread-safe for append if O_APPEND is used,
 	// but we lock to be explicit if we move away from O_APPEND logic later.
@@ -93,6 +96,7 @@ func (b *FSBackend) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// Sync runs the sync operation.
 func (b *FSBackend) Sync() error {
 	start := time.Now()
 	b.mu.Lock()
@@ -102,16 +106,19 @@ func (b *FSBackend) Sync() error {
 	return err
 }
 
+// Close runs the close operation.
 func (b *FSBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.f.Close()
 }
 
+// Name runs the name operation.
 func (b *FSBackend) Name() string {
 	return b.path
 }
 
+// File runs the file operation.
 func (b *FSBackend) File() *os.File {
 	return b.f
 }

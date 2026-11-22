@@ -332,6 +332,8 @@ func isSupportedADBCVersion(version int) bool {
 	return version == 0 || version == 1 || (version >= 1000000 && version < 1002000)
 }
 
+// AdbcLongbowAdbcInit runs the adbc longbow adbc init operation.
+//
 //export AdbcLongbowAdbcInit
 func AdbcLongbowAdbcInit(version C.int, driver unsafe.Pointer, err *C.struct_AdbcError) C.int {
 	// ADBC API version negotiation.
@@ -378,6 +380,8 @@ func AdbcLongbowAdbcInit(version C.int, driver unsafe.Pointer, err *C.struct_Adb
 	return C.int(adbcStatusOK)
 }
 
+// AdbcDriverInit runs the adbc driver init operation.
+//
 //export AdbcDriverInit
 func AdbcDriverInit(version C.int, driver unsafe.Pointer, err *C.struct_AdbcError) C.int {
 	return AdbcLongbowAdbcInit(version, driver, err)
@@ -421,6 +425,8 @@ func setCErrorRelease(err *C.struct_AdbcError) {
 	err.message = nil
 }
 
+// AdbcDatabaseNew runs the adbc database new operation.
+//
 //export AdbcDatabaseNew
 func AdbcDatabaseNew(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) C.int {
 	if db == nil {
@@ -436,6 +442,8 @@ func AdbcDatabaseNew(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) C.int {
 	return C.int(adbcStatusOK)
 }
 
+// AdbcDatabaseInit runs the adbc database init operation.
+//
 //export AdbcDatabaseInit
 func AdbcDatabaseInit(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) C.int {
 	if db == nil || db.private_data == nil {
@@ -446,6 +454,8 @@ func AdbcDatabaseInit(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) C.int 
 	return C.int(adbcStatusOK)
 }
 
+// AdbcDatabaseRelease runs the adbc database release operation.
+//
 //export AdbcDatabaseRelease
 func AdbcDatabaseRelease(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) C.int {
 	if db == nil || db.private_data == nil {
@@ -455,6 +465,8 @@ func AdbcDatabaseRelease(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) C.i
 	return C.int(adbcStatusOK)
 }
 
+// AdbcConnectionNew runs the adbc connection new operation.
+//
 //export AdbcConnectionNew
 func AdbcConnectionNew(conn *C.struct_AdbcConnection, err *C.struct_AdbcError) C.int {
 	if conn == nil {
@@ -475,6 +487,8 @@ func AdbcConnectionNew(conn *C.struct_AdbcConnection, err *C.struct_AdbcError) C
 	return C.int(adbcStatusOK)
 }
 
+// AdbcConnectionInit runs the adbc connection init operation.
+//
 //export AdbcConnectionInit
 func AdbcConnectionInit(conn *C.struct_AdbcConnection, db *C.struct_AdbcDatabase, err *C.struct_AdbcError) C.int {
 	if conn == nil || conn.private_data == nil {
@@ -484,6 +498,8 @@ func AdbcConnectionInit(conn *C.struct_AdbcConnection, db *C.struct_AdbcDatabase
 	return C.int(adbcStatusOK)
 }
 
+// AdbcConnectionRelease runs the adbc connection release operation.
+//
 //export AdbcConnectionRelease
 func AdbcConnectionRelease(conn *C.struct_AdbcConnection, err *C.struct_AdbcError) C.int {
 	if conn == nil || conn.private_data == nil {
@@ -493,6 +509,8 @@ func AdbcConnectionRelease(conn *C.struct_AdbcConnection, err *C.struct_AdbcErro
 	return C.int(adbcStatusOK)
 }
 
+// AdbcStatementNew runs the adbc statement new operation.
+//
 //export AdbcStatementNew
 func AdbcStatementNew(conn *C.struct_AdbcConnection, stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) C.int {
 	if conn == nil || conn.private_data == nil || stmt == nil {
@@ -509,6 +527,8 @@ func AdbcStatementNew(conn *C.struct_AdbcConnection, stmt *C.struct_AdbcStatemen
 	return C.int(adbcStatusOK)
 }
 
+// AdbcStatementRelease runs the adbc statement release operation.
+//
 //export AdbcStatementRelease
 func AdbcStatementRelease(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) C.int {
 	if stmt == nil || stmt.private_data == nil {
@@ -518,6 +538,8 @@ func AdbcStatementRelease(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError)
 	return C.int(adbcStatusOK)
 }
 
+// AdbcStatementSetSqlQuery runs the adbc statement set sql query operation.
+//
 //export AdbcStatementSetSqlQuery
 func AdbcStatementSetSqlQuery(stmt *C.struct_AdbcStatement, query *C.char, err *C.struct_AdbcError) C.int {
 	if stmt == nil || stmt.private_data == nil || query == nil {
@@ -532,6 +554,8 @@ func AdbcStatementSetSqlQuery(stmt *C.struct_AdbcStatement, query *C.char, err *
 	return C.int(adbcStatusOK)
 }
 
+// AdbcStatementExecuteQuery runs the adbc statement execute query operation.
+//
 //export AdbcStatementExecuteQuery
 func AdbcStatementExecuteQuery(stmt *C.struct_AdbcStatement, out *C.struct_ArrowArrayStream, rows *C.int64_t, err *C.struct_AdbcError) C.int {
 	if stmt == nil || stmt.private_data == nil || out == nil {
@@ -556,6 +580,8 @@ func AdbcStatementExecuteQuery(stmt *C.struct_AdbcStatement, out *C.struct_Arrow
 // refuse drivers that don't populate DatabaseSetOption,
 // ConnectionCommit/Rollback/SetOption, StatementSetOption).
 
+// AdbcDatabaseSetOption runs the adbc database set option operation.
+//
 //export AdbcDatabaseSetOption
 func AdbcDatabaseSetOption(db *C.struct_AdbcDatabase, key, value *C.char, err *C.struct_AdbcError) C.int {
 	// longbow's ADBC stub does not support options; signal
@@ -564,6 +590,8 @@ func AdbcDatabaseSetOption(db *C.struct_AdbcDatabase, key, value *C.char, err *C
 	return C.int(adbcStatusNotImplemented)
 }
 
+// AdbcConnectionCommit runs the adbc connection commit operation.
+//
 //export AdbcConnectionCommit
 func AdbcConnectionCommit(conn *C.struct_AdbcConnection, err *C.struct_AdbcError) C.int {
 	if conn == nil || conn.private_data == nil {
@@ -577,6 +605,8 @@ func AdbcConnectionCommit(conn *C.struct_AdbcConnection, err *C.struct_AdbcError
 	return C.int(adbcStatusOK)
 }
 
+// AdbcConnectionRollback runs the adbc connection rollback operation.
+//
 //export AdbcConnectionRollback
 func AdbcConnectionRollback(conn *C.struct_AdbcConnection, err *C.struct_AdbcError) C.int {
 	if conn == nil || conn.private_data == nil {
@@ -590,18 +620,24 @@ func AdbcConnectionRollback(conn *C.struct_AdbcConnection, err *C.struct_AdbcErr
 	return C.int(adbcStatusOK)
 }
 
+// AdbcConnectionSetOption runs the adbc connection set option operation.
+//
 //export AdbcConnectionSetOption
 func AdbcConnectionSetOption(conn *C.struct_AdbcConnection, key, value *C.char, err *C.struct_AdbcError) C.int {
 	setCError(err, "AdbcConnectionSetOption: not implemented in longbow ADBC stub")
 	return C.int(adbcStatusNotImplemented)
 }
 
+// AdbcStatementSetOption runs the adbc statement set option operation.
+//
 //export AdbcStatementSetOption
 func AdbcStatementSetOption(stmt *C.struct_AdbcStatement, key, value *C.char, err *C.struct_AdbcError) C.int {
 	setCError(err, "AdbcStatementSetOption: not implemented in longbow ADBC stub")
 	return C.int(adbcStatusNotImplemented)
 }
 
+// AdbcConnectionGetInfo runs the adbc connection get info operation.
+//
 //export AdbcConnectionGetInfo
 func AdbcConnectionGetInfo(conn *C.struct_AdbcConnection, infoCodes *C.uint32_t, infoCodesLen C.size_t, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) C.int {
 	if conn == nil || conn.private_data == nil || out == nil {
@@ -626,6 +662,8 @@ func AdbcConnectionGetInfo(conn *C.struct_AdbcConnection, infoCodes *C.uint32_t,
 	return C.int(adbcStatusOK)
 }
 
+// AdbcConnectionGetObjects runs the adbc connection get objects operation.
+//
 //export AdbcConnectionGetObjects
 func AdbcConnectionGetObjects(conn *C.struct_AdbcConnection, depth C.int, catalog, dbSchema, tableName *C.char, tableTypes **C.char, columnName *C.char, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) C.int {
 	if conn == nil || conn.private_data == nil || out == nil {
@@ -659,6 +697,8 @@ func AdbcConnectionGetObjects(conn *C.struct_AdbcConnection, depth C.int, catalo
 	return C.int(adbcStatusOK)
 }
 
+// AdbcConnectionGetTableSchema runs the adbc connection get table schema operation.
+//
 //export AdbcConnectionGetTableSchema
 func AdbcConnectionGetTableSchema(conn *C.struct_AdbcConnection, catalog, dbSchema, tableName *C.char, out *C.struct_ArrowSchema, err *C.struct_AdbcError) C.int {
 	if conn == nil || conn.private_data == nil || tableName == nil || out == nil {
@@ -685,6 +725,8 @@ func AdbcConnectionGetTableSchema(conn *C.struct_AdbcConnection, catalog, dbSche
 	return C.int(adbcStatusOK)
 }
 
+// AdbcConnectionGetTableTypes runs the adbc connection get table types operation.
+//
 //export AdbcConnectionGetTableTypes
 func AdbcConnectionGetTableTypes(conn *C.struct_AdbcConnection, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) C.int {
 	if conn == nil || conn.private_data == nil || out == nil {
@@ -701,6 +743,8 @@ func AdbcConnectionGetTableTypes(conn *C.struct_AdbcConnection, out *C.struct_Ar
 	return C.int(adbcStatusOK)
 }
 
+// AdbcConnectionCancel runs the adbc connection cancel operation.
+//
 //export AdbcConnectionCancel
 func AdbcConnectionCancel(conn *C.struct_AdbcConnection, err *C.struct_AdbcError) C.int {
 	if conn == nil || conn.private_data == nil {
@@ -709,6 +753,8 @@ func AdbcConnectionCancel(conn *C.struct_AdbcConnection, err *C.struct_AdbcError
 	return C.int(adbcStatusOK)
 }
 
+// AdbcStatementCancel runs the adbc statement cancel operation.
+//
 //export AdbcStatementCancel
 func AdbcStatementCancel(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) C.int {
 	if stmt == nil || stmt.private_data == nil {
@@ -717,6 +763,8 @@ func AdbcStatementCancel(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) 
 	return C.int(adbcStatusOK)
 }
 
+// AdbcStatementExecuteSchema runs the adbc statement execute schema operation.
+//
 //export AdbcStatementExecuteSchema
 func AdbcStatementExecuteSchema(stmt *C.struct_AdbcStatement, out *C.struct_ArrowSchema, err *C.struct_AdbcError) C.int {
 	if stmt == nil || stmt.private_data == nil || out == nil {

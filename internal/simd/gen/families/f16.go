@@ -5,6 +5,7 @@ import (
 	. "github.com/mmcloughlin/avo/operand"
 )
 
+// ImplementEuclideanF16AVX2 runs the implement euclidean f16 avx2 operation.
 func ImplementEuclideanF16AVX2() {
 	TEXT("euclideanF16AVX2Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
 	a := Load(Param("a"), GP64())
@@ -80,6 +81,7 @@ func ImplementEuclideanF16AVX2() {
 	RET()
 }
 
+// ImplementDotF16AVX2 runs the implement dot f16 avx2 operation.
 func ImplementDotF16AVX2() {
 	TEXT("dotF16AVX2Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
 	a := Load(Param("a"), GP64())
@@ -151,6 +153,7 @@ func ImplementDotF16AVX2() {
 	RET()
 }
 
+// ImplementEuclideanF16AVX512 runs the implement euclidean f16 avx512 operation.
 func ImplementEuclideanF16AVX512() {
 	TEXT("euclideanF16AVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
 	a := Load(Param("a"), GP64())
@@ -232,6 +235,7 @@ func ImplementEuclideanF16AVX512() {
 	RET()
 }
 
+// ImplementDotF16AVX512 runs the implement dot f16 avx512 operation.
 func ImplementDotF16AVX512() {
 	TEXT("dotF16AVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
 	a := Load(Param("a"), GP64())

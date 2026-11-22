@@ -22,6 +22,7 @@ type captureFlightStream struct {
 	msgs []*flight.FlightData
 }
 
+// Send runs the send operation.
 func (c *captureFlightStream) Send(fd *flight.FlightData) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -51,6 +52,7 @@ func (c *captureFlightStream) bodies() [][]byte {
 
 type discardFlightStream struct{}
 
+// Send runs the send operation.
 func (discardFlightStream) Send(*flight.FlightData) error { return nil }
 
 type flightMsgReader struct {
@@ -58,6 +60,7 @@ type flightMsgReader struct {
 	pos  int
 }
 
+// Recv runs the recv operation.
 func (r *flightMsgReader) Recv() (*flight.FlightData, error) {
 	if r.pos >= len(r.msgs) {
 		return nil, io.EOF
@@ -123,6 +126,7 @@ func newDoGetTestRecord(tb testing.TB, schema *arrow.Schema, rows, dim int) arro
 	return rec
 }
 
+// TestEstimateIPCResponseBytes_MonotonicInTopK runs the test estimate ipc response bytes_monotonic in top k operation.
 func TestEstimateIPCResponseBytes_MonotonicInTopK(t *testing.T) {
 	schema := doGetTestSchema(true, 2)
 	prev := 0
@@ -138,6 +142,7 @@ func TestEstimateIPCResponseBytes_MonotonicInTopK(t *testing.T) {
 	}
 }
 
+// TestEstimateIPCResponseBytes_MonotonicInSchemaWidth runs the test estimate ipc response bytes_monotonic in schema width operation.
 func TestEstimateIPCResponseBytes_MonotonicInSchemaWidth(t *testing.T) {
 	narrow := doGetTestSchema(false, 0)
 	mid := doGetTestSchema(false, 1)
@@ -153,6 +158,7 @@ func TestEstimateIPCResponseBytes_MonotonicInSchemaWidth(t *testing.T) {
 	}
 }
 
+// TestEstimateIPCResponseBytes_MeasuredAndNilSchema runs the test estimate ipc response bytes_measured and nil schema operation.
 func TestEstimateIPCResponseBytes_MeasuredAndNilSchema(t *testing.T) {
 	schema := doGetTestSchema(false, 0)
 	fields := len(schema.Fields())
@@ -173,6 +179,7 @@ func TestEstimateIPCResponseBytes_MeasuredAndNilSchema(t *testing.T) {
 		"negative row counts clamp to zero")
 }
 
+// TestEstimateIPCResponseBytes_CoversSerializedBody runs the test estimate ipc response bytes_covers serialized body operation.
 func TestEstimateIPCResponseBytes_CoversSerializedBody(t *testing.T) {
 	for _, dim := range []int{3, 64, 384} {
 		for _, rows := range []int{1, 128, 1024} {
@@ -198,6 +205,7 @@ func TestEstimateIPCResponseBytes_CoversSerializedBody(t *testing.T) {
 	}
 }
 
+// TestPooledFlightWriter_ByteIdenticalToStock runs the test pooled flight writer_byte identical to stock operation.
 func TestPooledFlightWriter_ByteIdenticalToStock(t *testing.T) {
 	schema := doGetTestSchema(true, 1)
 	rec := newDoGetTestRecord(t, schema, 300, 64)
@@ -229,6 +237,7 @@ func TestPooledFlightWriter_ByteIdenticalToStock(t *testing.T) {
 	require.Equal(t, stockEmpty.bodies(), pooledEmpty.bodies())
 }
 
+// TestPooledFlightWriter_RoundTripReadable runs the test pooled flight writer_round trip readable operation.
 func TestPooledFlightWriter_RoundTripReadable(t *testing.T) {
 	schema := doGetTestSchema(true, 0)
 	rec := newDoGetTestRecord(t, schema, 512, 32)
@@ -280,6 +289,7 @@ func minAllocsPerRun(runs int, f func()) float64 {
 	return best
 }
 
+// TestDoGetBufferPool_SizedGetReusesBuffer runs the test do get buffer pool_sized get reuses buffer operation.
 func TestDoGetBufferPool_SizedGetReusesBuffer(t *testing.T) {
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
 	schema := doGetTestSchema(true, 0)
@@ -317,6 +327,7 @@ func TestDoGetBufferPool_SizedGetReusesBuffer(t *testing.T) {
 	require.Equal(t, stats.Gets, stats.Puts, "every buffer taken from the pool must be returned")
 }
 
+// TestPooledFlightWriter_FewerAllocsThanStock runs the test pooled flight writer_fewer allocs than stock operation.
 func TestPooledFlightWriter_FewerAllocsThanStock(t *testing.T) {
 	schema := doGetTestSchema(true, 0)
 	rows, dim := 256, 128
@@ -364,6 +375,7 @@ func TestPooledFlightWriter_FewerAllocsThanStock(t *testing.T) {
 	require.LessOrEqual(t, stats.Misses, stats.Gets/2, "at least half of the Gets must be served by a pooled buffer")
 }
 
+// TestDoGetBufferPool_ConcurrentSizedWriters runs the test do get buffer pool_concurrent sized writers operation.
 func TestDoGetBufferPool_ConcurrentSizedWriters(t *testing.T) {
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
 	schema := doGetTestSchema(true, 0)
@@ -402,6 +414,7 @@ func TestDoGetBufferPool_ConcurrentSizedWriters(t *testing.T) {
 
 var benchmarkEstimateSink int
 
+// BenchmarkEstimateIPCResponseBytes runs the benchmark estimate ipc response bytes operation.
 func BenchmarkEstimateIPCResponseBytes(b *testing.B) {
 	schema := doGetTestSchema(true, 4)
 	b.ReportAllocs()
@@ -411,6 +424,7 @@ func BenchmarkEstimateIPCResponseBytes(b *testing.B) {
 	}
 }
 
+// BenchmarkDoGetResponseBuffer_Pooled runs the benchmark do get response buffer_pooled operation.
 func BenchmarkDoGetResponseBuffer_Pooled(b *testing.B) {
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
 	schema := doGetTestSchema(true, 0)
@@ -430,6 +444,7 @@ func BenchmarkDoGetResponseBuffer_Pooled(b *testing.B) {
 	}
 }
 
+// BenchmarkDoGetResponseBuffer_Unpooled runs the benchmark do get response buffer_unpooled operation.
 func BenchmarkDoGetResponseBuffer_Unpooled(b *testing.B) {
 	schema := doGetTestSchema(true, 0)
 	size := estimateIPCResponseBytes(1024, schema, doGetMeasuredRowBytes(128))
@@ -446,6 +461,7 @@ func BenchmarkDoGetResponseBuffer_Unpooled(b *testing.B) {
 	}
 }
 
+// BenchmarkDoGetFlightWriter_Pooled runs the benchmark do get flight writer_pooled operation.
 func BenchmarkDoGetFlightWriter_Pooled(b *testing.B) {
 	schema := doGetTestSchema(true, 0)
 	rows, dim := 256, 128
@@ -468,6 +484,7 @@ func BenchmarkDoGetFlightWriter_Pooled(b *testing.B) {
 	}
 }
 
+// BenchmarkDoGetFlightWriter_Unpooled runs the benchmark do get flight writer_unpooled operation.
 func BenchmarkDoGetFlightWriter_Unpooled(b *testing.B) {
 	schema := doGetTestSchema(true, 0)
 	rows, dim := 256, 128

@@ -7,11 +7,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestGetPhysicalMemory_Detection runs the test get physical memory_detection operation.
 func TestGetPhysicalMemory_Detection(t *testing.T) {
 	mem := GetPhysicalMemory()
 	assert.Greater(t, mem, int64(0), "Physical memory must be greater than 0")
 }
 
+// TestGetPhysicalMemory_Override runs the test get physical memory_override operation.
 func TestGetPhysicalMemory_Override(t *testing.T) {
 	defer os.Unsetenv("LONGBOW_PHYSICAL_RAM")
 
@@ -24,6 +26,7 @@ func TestGetPhysicalMemory_Override(t *testing.T) {
 	assert.Equal(t, int64(500)*1000*1000, mem)
 }
 
+// TestParseMemorySize runs the test parse memory size operation.
 func TestParseMemorySize(t *testing.T) {
 	assert.Equal(t, int64(1024), parseMemorySize("1KiB"))
 	assert.Equal(t, int64(1000), parseMemorySize("1KB"))

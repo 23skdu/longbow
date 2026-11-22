@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// MemoryLeakDetector represents a memory leak detector value.
 type MemoryLeakDetector struct {
 	logger         zerolog.Logger
 	mu             sync.RWMutex
@@ -25,6 +26,7 @@ type MemoryLeakDetector struct {
 	stopChan       chan struct{}
 }
 
+// MemSnapshot represents a mem snapshot value.
 type MemSnapshot struct {
 	Timestamp     time.Time
 	HeapAlloc     uint64
@@ -36,6 +38,7 @@ type MemSnapshot struct {
 	NumGoroutine  int
 }
 
+// LeakReport represents a leak report value.
 type LeakReport struct {
 	Timestamp      time.Time
 	Snapshots      []*MemSnapshot
@@ -46,6 +49,7 @@ type LeakReport struct {
 	GoroutineDiff  int
 }
 
+// NewMemoryLeakDetector constructs a new MemoryLeakDetector.
 func NewMemoryLeakDetector(logger zerolog.Logger, thresholdMB int, interval time.Duration) *MemoryLeakDetector {
 	return &MemoryLeakDetector{
 		logger:         logger.With().Str("component", "memory_leak_detector").Logger(),
@@ -56,10 +60,12 @@ func NewMemoryLeakDetector(logger zerolog.Logger, thresholdMB int, interval time
 	}
 }
 
+// SetAlertCallback sets the alert callback.
 func (mld *MemoryLeakDetector) SetAlertCallback(callback func(*LeakReport)) {
 	mld.alertCallback = callback
 }
 
+// CaptureBaseline runs the capture baseline operation.
 func (mld *MemoryLeakDetector) CaptureBaseline() {
 	mld.mu.Lock()
 	defer mld.mu.Unlock()
@@ -92,6 +98,7 @@ func (mld *MemoryLeakDetector) captureSnapshot() *MemSnapshot {
 	}
 }
 
+// Start runs the start operation.
 func (mld *MemoryLeakDetector) Start() {
 	mld.mu.Lock()
 	if mld.running {
@@ -110,6 +117,7 @@ func (mld *MemoryLeakDetector) Start() {
 	mld.logger.Info().Msg("Memory leak detector started")
 }
 
+// Stop runs the stop operation.
 func (mld *MemoryLeakDetector) Stop() {
 	mld.mu.Lock()
 	defer mld.mu.Unlock()
@@ -198,34 +206,41 @@ func (mld *MemoryLeakDetector) generateLeakReport(baseline, snapshot *MemSnapsho
 	}
 }
 
+// GetCurrentStats returns the current stats.
 func (mld *MemoryLeakDetector) GetCurrentStats() (heapAlloc, heapObjects uint64, goroutines int) {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	return mem.HeapAlloc, mem.HeapObjects, runtime.NumGoroutine()
 }
 
+// WriteHeapProfile runs the write heap profile operation.
 func (mld *MemoryLeakDetector) WriteHeapProfile(w io.Writer) error {
 	return pprof.WriteHeapProfile(w)
 }
 
+// WriteGoroutineProfile runs the write goroutine profile operation.
 func (mld *MemoryLeakDetector) WriteGoroutineProfile(w io.Writer) error {
 	return pprof.Lookup("goroutine").WriteTo(w, 2)
 }
 
+// WriteThreadCreateProfile runs the write thread create profile operation.
 func (mld *MemoryLeakDetector) WriteThreadCreateProfile(w io.Writer) error {
 	return pprof.Lookup("threadcreate").WriteTo(w, 2)
 }
 
+// WriteBlockProfile runs the write block profile operation.
 func (mld *MemoryLeakDetector) WriteBlockProfile(w io.Writer) error {
 	runtime.SetBlockProfileRate(100)
 	return pprof.Lookup("block").WriteTo(w, 2)
 }
 
+// WriteMutexProfile runs the write mutex profile operation.
 func (mld *MemoryLeakDetector) WriteMutexProfile(w io.Writer) error {
 	runtime.SetMutexProfileFraction(100)
 	return pprof.Lookup("mutex").WriteTo(w, 2)
 }
 
+// GetSnapshots returns the snapshots.
 func (mld *MemoryLeakDetector) GetSnapshots() []*MemSnapshot {
 	mld.mu.RLock()
 	defer mld.mu.RUnlock()
@@ -235,6 +250,7 @@ func (mld *MemoryLeakDetector) GetSnapshots() []*MemSnapshot {
 	return result
 }
 
+// LeakDetectorConfig represents a leak detector config value.
 type LeakDetectorConfig struct {
 	ThresholdMB      int
 	CheckInterval    time.Duration
@@ -246,6 +262,7 @@ type LeakDetectorConfig struct {
 	ProfileOutputDir string
 }
 
+// DefaultLeakDetectorConfig returns the default LeakDetectorConfig.
 func DefaultLeakDetectorConfig() LeakDetectorConfig {
 	return LeakDetectorConfig{
 		ThresholdMB:      10,
@@ -256,12 +273,14 @@ func DefaultLeakDetectorConfig() LeakDetectorConfig {
 	}
 }
 
+// LeakDetectorManager represents a leak detector manager value.
 type LeakDetectorManager struct {
 	logger   zerolog.Logger
 	detector *MemoryLeakDetector
 	config   LeakDetectorConfig
 }
 
+// NewLeakDetectorManager constructs a new LeakDetectorManager.
 func NewLeakDetectorManager(logger zerolog.Logger, config LeakDetectorConfig) *LeakDetectorManager {
 	return &LeakDetectorManager{
 		logger:   logger,
@@ -270,6 +289,7 @@ func NewLeakDetectorManager(logger zerolog.Logger, config LeakDetectorConfig) *L
 	}
 }
 
+// Start runs the start operation.
 func (ldm *LeakDetectorManager) Start() {
 	_ = os.MkdirAll(filepath.Clean(ldm.config.ProfileOutputDir), 0700) // #nosec G301
 
@@ -284,10 +304,12 @@ func (ldm *LeakDetectorManager) Start() {
 	ldm.detector.Start()
 }
 
+// Stop runs the stop operation.
 func (ldm *LeakDetectorManager) Stop() {
 	ldm.detector.Stop()
 }
 
+// CaptureProfiles runs the capture profiles operation.
 func (ldm *LeakDetectorManager) CaptureProfiles() error {
 	timestamp := time.Now().Format("20060102_150405")
 	dir := ldm.config.ProfileOutputDir
@@ -339,6 +361,7 @@ func (ldm *LeakDetectorManager) CaptureProfiles() error {
 	return nil
 }
 
+// GetStats returns the stats.
 func (ldm *LeakDetectorManager) GetStats() (heapAlloc, heapObjects uint64, goroutines int) {
 	return ldm.detector.GetCurrentStats()
 }

@@ -8,6 +8,7 @@ import (
 	"unsafe"
 )
 
+// TestSizeClassArena_AllocSlice runs the test size class arena_alloc slice operation.
 func TestSizeClassArena_AllocSlice(t *testing.T) {
 	sca := NewSizeClassArena[int32]()
 
@@ -56,6 +57,7 @@ func TestSizeClassArena_AllocSlice(t *testing.T) {
 	}
 }
 
+// TestSizeClassArena_AllocSliceDirty runs the test size class arena_alloc slice dirty operation.
 func TestSizeClassArena_AllocSliceDirty(t *testing.T) {
 	sca := NewSizeClassArena[float32]()
 
@@ -78,6 +80,7 @@ func TestSizeClassArena_AllocSliceDirty(t *testing.T) {
 	}
 }
 
+// TestSizeClassArena_ConcurrentAccess runs the test size class arena_concurrent access operation.
 func TestSizeClassArena_ConcurrentAccess(t *testing.T) {
 	sca := NewSizeClassArena[int64]()
 
@@ -118,6 +121,7 @@ func TestSizeClassArena_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+// TestSizeClassArena_MemoryUsage runs the test size class arena_memory usage operation.
 func TestSizeClassArena_MemoryUsage(t *testing.T) {
 	sca := NewSizeClassArena[uint8]()
 
@@ -152,6 +156,7 @@ func TestSizeClassArena_MemoryUsage(t *testing.T) {
 	}
 }
 
+// TestSizeClassArena_Compaction runs the test size class arena_compaction operation.
 func TestSizeClassArena_Compaction(t *testing.T) {
 	sca := NewSizeClassArena[float64]()
 
@@ -215,6 +220,7 @@ func TestSizeClassArena_Compaction(t *testing.T) {
 	}
 }
 
+// TestSizeClassArena_AllocError runs the test size class arena_alloc error operation.
 func TestSizeClassArena_AllocError(t *testing.T) {
 	sca := NewSizeClassArena[int32]()
 
@@ -229,6 +235,7 @@ func TestSizeClassArena_AllocError(t *testing.T) {
 	}
 }
 
+// TestProfiler_Tracking runs the test profiler_tracking operation.
 func TestProfiler_Tracking(t *testing.T) {
 	profiler := GetProfiler()
 
@@ -264,6 +271,7 @@ func TestProfiler_Tracking(t *testing.T) {
 	}
 }
 
+// TestAnalyzer_Analysis runs the test analyzer_analysis operation.
 func TestAnalyzer_Analysis(t *testing.T) {
 	analyzer := NewAnalyzer()
 
@@ -307,6 +315,7 @@ func TestAnalyzer_Analysis(t *testing.T) {
 	}
 }
 
+// TestAnalyzer_MemoryPressureCalculation runs the test analyzer_memory pressure calculation operation.
 func TestAnalyzer_MemoryPressureCalculation(t *testing.T) {
 	profiler := GetProfiler()
 
@@ -330,6 +339,7 @@ func TestAnalyzer_MemoryPressureCalculation(t *testing.T) {
 	}
 }
 
+// TestCopyBetweenArenas runs the test copy between arenas operation.
 func TestCopyBetweenArenas(t *testing.T) {
 	srcArena := NewTypedArena[uint16](NewSlabArena(1024 * 1024))
 	dstArena := NewTypedArena[uint16](NewSlabArena(1024 * 1024))
@@ -361,6 +371,7 @@ func TestCopyBetweenArenas(t *testing.T) {
 	}
 }
 
+// TestSizeClassArena_Performance runs the test size class arena_performance operation.
 func TestSizeClassArena_Performance(t *testing.T) {
 	sca := NewSizeClassArena[byte]()
 
@@ -405,6 +416,7 @@ func TestSizeClassArena_Performance(t *testing.T) {
 	}
 }
 
+// BenchmarkSizeClassArena_Allocation runs the benchmark size class arena_allocation operation.
 func BenchmarkSizeClassArena_Allocation(b *testing.B) {
 	sca := NewSizeClassArena[int32]()
 
@@ -420,6 +432,7 @@ func BenchmarkSizeClassArena_Allocation(b *testing.B) {
 	})
 }
 
+// BenchmarkSizeClassArena_Access runs the benchmark size class arena_access operation.
 func BenchmarkSizeClassArena_Access(b *testing.B) {
 	sca := NewSizeClassArena[float64]()
 
@@ -443,6 +456,7 @@ func BenchmarkSizeClassArena_Access(b *testing.B) {
 	}
 }
 
+// BenchmarkProfiler_RecordAllocation runs the benchmark profiler_record allocation operation.
 func BenchmarkProfiler_RecordAllocation(b *testing.B) {
 	profiler := GetProfiler()
 
@@ -451,6 +465,7 @@ func BenchmarkProfiler_RecordAllocation(b *testing.B) {
 	}
 }
 
+// BenchmarkAnalyzer_Analysis runs the benchmark analyzer_analysis operation.
 func BenchmarkAnalyzer_Analysis(b *testing.B) {
 	analyzer := NewAnalyzer()
 

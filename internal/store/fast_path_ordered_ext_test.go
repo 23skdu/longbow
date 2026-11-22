@@ -9,6 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// TestFastPathLessEqual_Int64 runs the test fast path less equal_int64 operation.
 func TestFastPathLessEqual_Int64(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewInt64Builder(alloc)
@@ -32,6 +33,7 @@ func TestFastPathLessEqual_Int64(t *testing.T) {
 	}
 }
 
+// TestFastPathGreaterEqual_Int64 runs the test fast path greater equal_int64 operation.
 func TestFastPathGreaterEqual_Int64(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewInt64Builder(alloc)
@@ -55,6 +57,7 @@ func TestFastPathGreaterEqual_Int64(t *testing.T) {
 	}
 }
 
+// TestFastPathLess_Int32 runs the test fast path less_int32 operation.
 func TestFastPathLess_Int32(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewInt32Builder(alloc)
@@ -78,6 +81,7 @@ func TestFastPathLess_Int32(t *testing.T) {
 	}
 }
 
+// TestFastPathGreater_Int16 runs the test fast path greater_int16 operation.
 func TestFastPathGreater_Int16(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewInt16Builder(alloc)
@@ -101,6 +105,7 @@ func TestFastPathGreater_Int16(t *testing.T) {
 	}
 }
 
+// TestFastPathLessEqual_Int8 runs the test fast path less equal_int8 operation.
 func TestFastPathLessEqual_Int8(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewInt8Builder(alloc)
@@ -124,6 +129,7 @@ func TestFastPathLessEqual_Int8(t *testing.T) {
 	}
 }
 
+// TestFastPathOrdered_NullHandling runs the test fast path ordered_null handling operation.
 func TestFastPathOrdered_NullHandling(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewInt64Builder(alloc)
@@ -152,6 +158,7 @@ func TestFastPathOrdered_NullHandling(t *testing.T) {
 	}
 }
 
+// TestFastPathOrdered_InvalidValue runs the test fast path ordered_invalid value operation.
 func TestFastPathOrdered_InvalidValue(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewInt64Builder(alloc)
@@ -166,6 +173,7 @@ func TestFastPathOrdered_InvalidValue(t *testing.T) {
 	}
 }
 
+// TestFastPathOrdered_UnsupportedType runs the test fast path ordered_unsupported type operation.
 func TestFastPathOrdered_UnsupportedType(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewBinaryBuilder(alloc, arrow.BinaryTypes.Binary)
@@ -180,6 +188,7 @@ func TestFastPathOrdered_UnsupportedType(t *testing.T) {
 	}
 }
 
+// TestFastPathLess_Uint64 runs the test fast path less_uint64 operation.
 func TestFastPathLess_Uint64(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewUint64Builder(alloc)
@@ -203,6 +212,7 @@ func TestFastPathLess_Uint64(t *testing.T) {
 	}
 }
 
+// TestFastPathGreaterEqual_Uint32 runs the test fast path greater equal_uint32 operation.
 func TestFastPathGreaterEqual_Uint32(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewUint32Builder(alloc)
@@ -226,6 +236,7 @@ func TestFastPathGreaterEqual_Uint32(t *testing.T) {
 	}
 }
 
+// TestFastPathLessEqual_Uint16 runs the test fast path less equal_uint16 operation.
 func TestFastPathLessEqual_Uint16(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewUint16Builder(alloc)
@@ -249,6 +260,7 @@ func TestFastPathLessEqual_Uint16(t *testing.T) {
 	}
 }
 
+// TestFastPathGreater_Uint8 runs the test fast path greater_uint8 operation.
 func TestFastPathGreater_Uint8(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewUint8Builder(alloc)
@@ -272,6 +284,7 @@ func TestFastPathGreater_Uint8(t *testing.T) {
 	}
 }
 
+// TestFastPathLess_Float64 runs the test fast path less_float64 operation.
 func TestFastPathLess_Float64(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewFloat64Builder(alloc)
@@ -295,6 +308,7 @@ func TestFastPathLess_Float64(t *testing.T) {
 	}
 }
 
+// TestFastPathGreaterEqual_Float32 runs the test fast path greater equal_float32 operation.
 func TestFastPathGreaterEqual_Float32(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewFloat32Builder(alloc)
@@ -318,6 +332,7 @@ func TestFastPathGreaterEqual_Float32(t *testing.T) {
 	}
 }
 
+// TestFastPathOrdered_Float64_InvalidValue runs the test fast path ordered_float64_invalid value operation.
 func TestFastPathOrdered_Float64_InvalidValue(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	builder := array.NewFloat64Builder(alloc)

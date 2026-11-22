@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestWALBackends_StdWAL runs the test wal backends_std wal operation.
 func TestWALBackends_StdWAL(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()

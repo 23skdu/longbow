@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowSearchContext_LifeCycle runs the test arrow search context_life cycle operation.
 func TestArrowSearchContext_LifeCycle(t *testing.T) {
 	pool := index.NewArrowSearchContextPool()
 	require.NotNil(t, pool)
@@ -45,6 +46,7 @@ func TestArrowSearchContext_LifeCycle(t *testing.T) {
 	})
 }
 
+// TestCandidateHeap runs the test candidate heap operation.
 func TestCandidateHeap(t *testing.T) {
 	// CandidateHeap is unexported, so this test should be in search_context_internal_test.go
 	// if we wanted to test the methods directly.

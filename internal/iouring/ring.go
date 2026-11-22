@@ -224,7 +224,10 @@ func nextPowerOf2(n uint32) uint32 {
 
 // IORING_OFF offsets
 const (
+	// IORING_OFF_SQ_RING is a ioring_off_sq_ring constant.
 	IORING_OFF_SQ_RING uint64 = 0
+	// IORING_OFF_CQ_RING is a ioring_off_cq_ring constant.
 	IORING_OFF_CQ_RING uint64 = 0x8000000
-	IORING_OFF_SQES    uint64 = 0x10000000
+	// IORING_OFF_SQES is a ioring_off_sqes constant.
+	IORING_OFF_SQES uint64 = 0x10000000
 )

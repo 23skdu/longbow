@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestAtan2Float32AVX2 runs the test atan2 float32 avx2 operation.
 func TestAtan2Float32AVX2(t *testing.T) {
 	if !features.HasAVX2 {
 		t.Skip("AVX2 not supported")

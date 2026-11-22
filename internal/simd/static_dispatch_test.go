@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestStaticDispatch_Euclidean runs the test static dispatch_euclidean operation.
 func TestStaticDispatch_Euclidean(t *testing.T) {
 	// Verify the global function variable is initialized and functioning
 	assert.NotNil(t, DistFunc, "DistFunc should be initialized")

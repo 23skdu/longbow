@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestMetricsListenAddr runs the test metrics listen addr operation.
 func TestMetricsListenAddr(t *testing.T) {
 	tests := []struct {
 		name string
@@ -26,6 +27,7 @@ func TestMetricsListenAddr(t *testing.T) {
 	}
 }
 
+// TestMetricsListenAddrUsesCLIFlag runs the test metrics listen addr uses cli flag operation.
 func TestMetricsListenAddrUsesCLIFlag(t *testing.T) {
 	cfg := &Config{MetricsAddr: "0.0.0.0:9090"}
 	if err := parseCLIFlags(cfg, []string{"--metrics-addr", "127.0.0.1:18080"}, io.Discard); err != nil {

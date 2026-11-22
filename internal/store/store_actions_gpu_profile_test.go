@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestDoAction_GPUKernelProfile runs the test do action_gpu kernel profile operation.
 func TestDoAction_GPUKernelProfile(t *testing.T) {
 	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<20, 0, 0)
 	defer s.Close()

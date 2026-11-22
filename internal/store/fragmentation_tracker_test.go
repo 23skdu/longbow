@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestFragmentationTracker_RecordDeletion runs the test fragmentation tracker_record deletion operation.
 func TestFragmentationTracker_RecordDeletion(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -26,6 +27,7 @@ func TestFragmentationTracker_RecordDeletion(t *testing.T) {
 	assert.InDelta(t, 0.03, density, 0.001, "Density should be 3%")
 }
 
+// TestFragmentationTracker_GetFragmentedBatches runs the test fragmentation tracker_get fragmented batches operation.
 func TestFragmentationTracker_GetFragmentedBatches(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -61,6 +63,7 @@ func TestFragmentationTracker_GetFragmentedBatches(t *testing.T) {
 	assert.NotContains(t, fragmented, 0, "Batch 0 should not be fragmented")
 }
 
+// TestFragmentationTracker_Reset runs the test fragmentation tracker_reset operation.
 func TestFragmentationTracker_Reset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -82,6 +85,7 @@ func TestFragmentationTracker_Reset(t *testing.T) {
 	assert.Equal(t, 0.0, tracker.GetDensity(0), "Density should be 0 after reset")
 }
 
+// TestFragmentationTracker_Concurrent runs the test fragmentation tracker_concurrent operation.
 func TestFragmentationTracker_Concurrent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -115,6 +119,7 @@ func TestFragmentationTracker_Concurrent(t *testing.T) {
 	assert.InDelta(t, expectedDensity, density, 0.001, "Concurrent deletions should be tracked correctly")
 }
 
+// TestFragmentationTracker_MultipleBatches runs the test fragmentation tracker_multiple batches operation.
 func TestFragmentationTracker_MultipleBatches(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -143,6 +148,7 @@ func TestFragmentationTracker_MultipleBatches(t *testing.T) {
 	assert.InDelta(t, 0.20, tracker.GetDensity(2), 0.001, "Batch 2 density")
 }
 
+// TestFragmentationTracker_ZeroSizeBatch runs the test fragmentation tracker_zero size batch operation.
 func TestFragmentationTracker_ZeroSizeBatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -157,6 +163,7 @@ func TestFragmentationTracker_ZeroSizeBatch(t *testing.T) {
 	assert.Equal(t, 0.0, density, "Density should be 0 for zero-size batch")
 }
 
+// TestFragmentationTracker_ThresholdEdgeCases runs the test fragmentation tracker_threshold edge cases operation.
 func TestFragmentationTracker_ThresholdEdgeCases(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -183,6 +190,7 @@ func TestFragmentationTracker_ThresholdEdgeCases(t *testing.T) {
 	assert.NotContains(t, fragmented, 1, "Batch below threshold should not be included")
 }
 
+// TestFragmentationTracker_UpdateBatchSize runs the test fragmentation tracker_update batch size operation.
 func TestFragmentationTracker_UpdateBatchSize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -205,6 +213,7 @@ func TestFragmentationTracker_UpdateBatchSize(t *testing.T) {
 	assert.InDelta(t, 0.05, tracker.GetDensity(0), 0.001, "Density after size update")
 }
 
+// BenchmarkFragmentationTracker_RecordDeletion runs the benchmark fragmentation tracker_record deletion operation.
 func BenchmarkFragmentationTracker_RecordDeletion(b *testing.B) {
 	tracker := NewFragmentationTracker()
 	tracker.SetBatchSize(0, 1000000)
@@ -215,6 +224,7 @@ func BenchmarkFragmentationTracker_RecordDeletion(b *testing.B) {
 	}
 }
 
+// BenchmarkFragmentationTracker_GetFragmentedBatches runs the benchmark fragmentation tracker_get fragmented batches operation.
 func BenchmarkFragmentationTracker_GetFragmentedBatches(b *testing.B) {
 	tracker := NewFragmentationTracker()
 

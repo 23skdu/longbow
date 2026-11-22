@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestReplication_ZeroCopy runs the test replication_zero copy operation.
 func TestReplication_ZeroCopy(t *testing.T) {
 	mem := memory.NewGoAllocator()
 

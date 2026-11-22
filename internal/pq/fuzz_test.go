@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// FuzzPQEncoder_TrainAndEncode runs the fuzz pq encoder_train and encode operation.
 func FuzzPQEncoder_TrainAndEncode(f *testing.F) {
 	// Add some seeds
 	f.Add(32, 4, 16, 100) // dims, M, K, numSamples
@@ -103,6 +104,7 @@ func mathAbs(f float32) float32 {
 	return f
 }
 
+// FuzzOPQEncoder_TrainAndEncode runs the fuzz opq encoder_train and encode operation.
 func FuzzOPQEncoder_TrainAndEncode(f *testing.F) {
 	f.Add(32, 4, 16, 50)
 	f.Add(64, 8, 256, 100)

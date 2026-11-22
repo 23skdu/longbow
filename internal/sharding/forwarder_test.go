@@ -20,11 +20,13 @@ type MockResolver struct {
 	mock.Mock
 }
 
+// GetNodeAddr returns the node addr.
 func (m *MockResolver) GetNodeAddr(nodeID string) string {
 	args := m.Called(nodeID)
 	return args.String(0)
 }
 
+// TestRequestForwarder_GetConn runs the test request forwarder_get conn operation.
 func TestRequestForwarder_GetConn(t *testing.T) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
@@ -45,6 +47,7 @@ func TestRequestForwarder_GetConn(t *testing.T) {
 	assert.Equal(t, conn, conn2, "Should return cached connection")
 }
 
+// TestRequestForwarder_Forward_UnknownNode runs the test request forwarder_forward_unknown node operation.
 func TestRequestForwarder_Forward_UnknownNode(t *testing.T) {
 	resolver := new(MockResolver)
 	resolver.On("GetNodeAddr", "unknown").Return("")
@@ -58,6 +61,7 @@ func TestRequestForwarder_Forward_UnknownNode(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown node ID")
 }
 
+// TestRequestForwarder_Forward_Connection runs the test request forwarder_forward_connection operation.
 func TestRequestForwarder_Forward_Connection(t *testing.T) {
 	resolver := new(MockResolver)
 	// Return invalid address to force dial fail or similar
@@ -73,6 +77,7 @@ func TestRequestForwarder_Forward_Connection(t *testing.T) {
 	// we stick to unit testing the Resolver logic and GetConn.
 }
 
+// TestRequestForwarder_ConnectionPooling runs the test request forwarder_connection pooling operation.
 func TestRequestForwarder_ConnectionPooling(t *testing.T) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
@@ -114,6 +119,7 @@ func TestRequestForwarder_ConnectionPooling(t *testing.T) {
 	assert.NotEqual(t, target2, target3)
 }
 
+// TestRequestForwarder_ConcurrentAccess runs the test request forwarder_concurrent access operation.
 func TestRequestForwarder_ConcurrentAccess(t *testing.T) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
@@ -146,6 +152,7 @@ func TestRequestForwarder_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+// TestRequestForwarder_Close runs the test request forwarder_close operation.
 func TestRequestForwarder_Close(t *testing.T) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
@@ -173,6 +180,7 @@ func TestRequestForwarder_Close(t *testing.T) {
 	_ = fwd.Close()
 }
 
+// TestRequestForwarder_EmptyTarget runs the test request forwarder_empty target operation.
 func TestRequestForwarder_EmptyTarget(t *testing.T) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
@@ -188,6 +196,7 @@ func TestRequestForwarder_EmptyTarget(t *testing.T) {
 	assert.NotNil(t, conn)
 }
 
+// TestRequestForwarder_MultipleClose runs the test request forwarder_multiple close operation.
 func TestRequestForwarder_MultipleClose(t *testing.T) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
@@ -199,6 +208,7 @@ func TestRequestForwarder_MultipleClose(t *testing.T) {
 	assert.NoError(t, fwd.Close())
 }
 
+// TestRequestForwarder_ConnectionCount runs the test request forwarder_connection count operation.
 func TestRequestForwarder_ConnectionCount(t *testing.T) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
@@ -225,6 +235,7 @@ func TestRequestForwarder_ConnectionCount(t *testing.T) {
 	}
 }
 
+// TestRequestForwarder_DifferentConfigs runs the test request forwarder_different configs operation.
 func TestRequestForwarder_DifferentConfigs(t *testing.T) {
 	resolver := new(MockResolver)
 
@@ -260,6 +271,7 @@ func TestRequestForwarder_DifferentConfigs(t *testing.T) {
 	assert.NotNil(t, conn2)
 }
 
+// BenchmarkRequestForwarder_GetConn runs the benchmark request forwarder_get conn operation.
 func BenchmarkRequestForwarder_GetConn(b *testing.B) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
@@ -281,6 +293,7 @@ func BenchmarkRequestForwarder_GetConn(b *testing.B) {
 	}
 }
 
+// BenchmarkRequestForwarder_GetConnConcurrent runs the benchmark request forwarder_get conn concurrent operation.
 func BenchmarkRequestForwarder_GetConnConcurrent(b *testing.B) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
@@ -305,6 +318,7 @@ func BenchmarkRequestForwarder_GetConnConcurrent(b *testing.B) {
 	})
 }
 
+// BenchmarkRequestForwarder_GetConnMultipleTargets runs the benchmark request forwarder_get conn multiple targets operation.
 func BenchmarkRequestForwarder_GetConnMultipleTargets(b *testing.B) {
 	resolver := new(MockResolver)
 	config := DefaultForwarderConfig()
@@ -330,6 +344,7 @@ func BenchmarkRequestForwarder_GetConnMultipleTargets(b *testing.B) {
 	}
 }
 
+// FuzzRequestForwarder_GetConn runs the fuzz request forwarder_get conn operation.
 func FuzzRequestForwarder_GetConn(f *testing.F) {
 	f.Add("127.0.0.1:9000") // target
 	f.Add("192.168.1.1:8080")
@@ -355,6 +370,7 @@ func FuzzRequestForwarder_GetConn(f *testing.F) {
 	})
 }
 
+// FuzzRequestForwarder_ConcurrentAccess runs the fuzz request forwarder_concurrent access operation.
 func FuzzRequestForwarder_ConcurrentAccess(f *testing.F) {
 	f.Add(10, 100) // numGoroutines, numIterations
 	f.Add(50, 500)
@@ -410,6 +426,7 @@ type testFlightServer struct {
 	flight.BaseFlightServer
 }
 
+// GetFlightInfo returns the flight info.
 func (s *testFlightServer) GetFlightInfo(ctx context.Context, desc *flight.FlightDescriptor) (*flight.FlightInfo, error) {
 	return &flight.FlightInfo{
 		FlightDescriptor: desc,
@@ -417,6 +434,7 @@ func (s *testFlightServer) GetFlightInfo(ctx context.Context, desc *flight.Fligh
 	}, nil
 }
 
+// DoGet runs the do get operation.
 func (s *testFlightServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 	// Send some dummy data
 	return stream.Send(&flight.FlightData{
@@ -424,6 +442,7 @@ func (s *testFlightServer) DoGet(tkt *flight.Ticket, stream flight.FlightService
 	})
 }
 
+// TestRequestForwarder_TransparentIntegration runs the test request forwarder_transparent integration operation.
 func TestRequestForwarder_TransparentIntegration(t *testing.T) {
 	// 1. Start a real gRPC server locally
 	lis, err := net.Listen("tcp", "127.0.0.1:0")

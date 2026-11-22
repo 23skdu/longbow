@@ -43,6 +43,7 @@ func makeTestRecordBatch(mem memory.Allocator, dims, numRows int) arrow.RecordBa
 	return builder.NewRecordBatch()
 }
 
+// TestArrowHNSW_Concurrency_AddBatch runs the test arrow hnsw_concurrency_add batch operation.
 func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 
 	mem := memory.NewGoAllocator()
@@ -134,6 +135,7 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 	t.Logf("Verified reachability for %d vectors", numRows)
 }
 
+// TestArrowHNSW_Concurrency_MixedReadWrite runs the test arrow hnsw_concurrency_mixed read write operation.
 func TestArrowHNSW_Concurrency_MixedReadWrite(t *testing.T) {
 	// Previously skipped: search readers raced with compareAndSwapData's
 	// synchronous Release. Fixed by removing the PackedNeighbors nil-out

@@ -14,6 +14,7 @@ type MockGraph struct {
 	mock.Mock
 }
 
+// GetNeighbors returns the neighbors.
 func (m *MockGraph) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 	args := m.Called(layer, id, buf)
 	if args.Get(0) == nil {
@@ -24,6 +25,7 @@ func (m *MockGraph) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 
 // ... other mock methods if needed ...
 
+// TestQueryPlanner_Selection runs the test query planner_selection operation.
 func TestQueryPlanner_Selection(t *testing.T) {
 	planner := NewQueryPlanner()
 
@@ -38,6 +40,7 @@ func TestQueryPlanner_Selection(t *testing.T) {
 	assert.Equal(t, "AStar", s2.Name())
 }
 
+// TestStrategies_Agreement runs the test strategies_agreement operation.
 func TestStrategies_Agreement(t *testing.T) {
 	// Setup a simple linear graph 1->2->3->4
 	// Both BFS and A* should find it.

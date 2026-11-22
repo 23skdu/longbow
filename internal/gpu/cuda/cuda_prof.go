@@ -73,7 +73,7 @@ func (p GPUKernelProfile) AttributedFraction() float64 {
 	return named / p.TotalMS
 }
 
-// MarshalText renders the profile as a fixed-width table, for a log line or a
+// Table renders the profile as a fixed-width table, for a log line or a
 // benchmark report.
 func (p GPUKernelProfile) Table() string {
 	out := ""

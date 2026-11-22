@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestRowBufferPool runs the test row buffer pool operation.
 func TestRowBufferPool(t *testing.T) {
 	pool := index.NewFloat32RowPool(128)
 	b1 := pool.Get()
@@ -28,6 +29,7 @@ func TestRowBufferPool(t *testing.T) {
 	require.Len(t, bb2, 512)
 }
 
+// TestDiskVectorStore_GetVectorInto runs the test disk vector store_get vector into operation.
 func TestDiskVectorStore_GetVectorInto(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "store.bin")
@@ -74,6 +76,7 @@ func TestDiskVectorStore_GetVectorInto(t *testing.T) {
 	require.Contains(t, err.Error(), "deleted")
 }
 
+// TestDiskVectorStore_ScanRows runs the test disk vector store_scan rows operation.
 func TestDiskVectorStore_ScanRows(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "scan.bin")
@@ -111,6 +114,7 @@ func TestDiskVectorStore_ScanRows(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+// TestDiskVectorStore_GetVectorAnyInto runs the test disk vector store_get vector any into operation.
 func TestDiskVectorStore_GetVectorAnyInto(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "u8_any.bin")
@@ -145,6 +149,7 @@ func TestDiskVectorStore_GetVectorAnyInto(t *testing.T) {
 	require.Equal(t, u8Vecs, scanned)
 }
 
+// BenchmarkDiskVectorStore_GetVectorInto runs the benchmark disk vector store_get vector into operation.
 func BenchmarkDiskVectorStore_GetVectorInto(b *testing.B) {
 	tmpDir := b.TempDir()
 	path := filepath.Join(tmpDir, "bench_into.bin")
@@ -177,6 +182,7 @@ func BenchmarkDiskVectorStore_GetVectorInto(b *testing.B) {
 	}
 }
 
+// BenchmarkDiskVectorStore_ScanRows runs the benchmark disk vector store_scan rows operation.
 func BenchmarkDiskVectorStore_ScanRows(b *testing.B) {
 	tmpDir := b.TempDir()
 	path := filepath.Join(tmpDir, "bench_scan.bin")
@@ -211,6 +217,7 @@ func BenchmarkDiskVectorStore_ScanRows(b *testing.B) {
 	}
 }
 
+// BenchmarkDiskVectorStore_GetBatchInto runs the benchmark disk vector store_get batch into operation.
 func BenchmarkDiskVectorStore_GetBatchInto(b *testing.B) {
 	tmpDir := b.TempDir()
 	path := filepath.Join(tmpDir, "bench_batch_into.bin")

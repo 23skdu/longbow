@@ -13,6 +13,7 @@ import (
 // Numerical Parity & Accuracy Validation
 // =============================================================================
 
+// TestEmlgoParity_Scalars runs the test emlgo parity_scalars operation.
 func TestEmlgoParity_Scalars(t *testing.T) {
 	testValues := []float64{
 		0.001, 0.01, 0.1, 0.5, 1.0, 1.5, 2.0, 3.1415926535, 5.0, 10.0, 50.0, 100.0,
@@ -82,6 +83,7 @@ func TestEmlgoParity_Scalars(t *testing.T) {
 	}
 }
 
+// TestEmlgoParity_TensorBatch runs the test emlgo parity_tensor batch operation.
 func TestEmlgoParity_TensorBatch(t *testing.T) {
 	n := 1024
 	tF64 := New(DtypeFloat64, Shape{n})
@@ -139,6 +141,7 @@ func TestEmlgoParity_TensorBatch(t *testing.T) {
 // Microbenchmarks: Standard Math vs EMLGo (Scalar)
 // =============================================================================
 
+// BenchmarkAB_Scalar_Sqrt runs the benchmark ab_scalar_sqrt operation.
 func BenchmarkAB_Scalar_Sqrt(b *testing.B) {
 	val := 12345.6789
 	b.Run("Standard_math.Sqrt", func(b *testing.B) {
@@ -161,6 +164,7 @@ func BenchmarkAB_Scalar_Sqrt(b *testing.B) {
 	})
 }
 
+// BenchmarkAB_Scalar_Sin runs the benchmark ab_scalar_sin operation.
 func BenchmarkAB_Scalar_Sin(b *testing.B) {
 	val := 1.2345
 	b.Run("Standard_math.Sin", func(b *testing.B) {
@@ -183,6 +187,7 @@ func BenchmarkAB_Scalar_Sin(b *testing.B) {
 	})
 }
 
+// BenchmarkAB_Scalar_Exp runs the benchmark ab_scalar_exp operation.
 func BenchmarkAB_Scalar_Exp(b *testing.B) {
 	val := 2.71828
 	b.Run("Standard_math.Exp", func(b *testing.B) {
@@ -205,6 +210,7 @@ func BenchmarkAB_Scalar_Exp(b *testing.B) {
 	})
 }
 
+// BenchmarkAB_Scalar_FMA runs the benchmark ab_scalar_fma operation.
 func BenchmarkAB_Scalar_FMA(b *testing.B) {
 	x, y, z := 1.23, 4.56, 7.89
 	b.Run("Standard_math.FMA", func(b *testing.B) {
@@ -227,6 +233,7 @@ func BenchmarkAB_Scalar_FMA(b *testing.B) {
 	})
 }
 
+// BenchmarkAB_Scalar_Sinh runs the benchmark ab_scalar_sinh operation.
 func BenchmarkAB_Scalar_Sinh(b *testing.B) {
 	val := 1.5
 	b.Run("Standard_math.Sinh", func(b *testing.B) {
@@ -278,8 +285,13 @@ func benchmarkBatchSin(b *testing.B, size int) {
 	})
 }
 
-func BenchmarkAB_Tensor_Sin_1K(b *testing.B)   { benchmarkBatchSin(b, 1000) }
-func BenchmarkAB_Tensor_Sin_10K(b *testing.B)  { benchmarkBatchSin(b, 10000) }
+// BenchmarkAB_Tensor_Sin_1K runs the benchmark ab_tensor_sin_1 k operation.
+func BenchmarkAB_Tensor_Sin_1K(b *testing.B) { benchmarkBatchSin(b, 1000) }
+
+// BenchmarkAB_Tensor_Sin_10K runs the benchmark ab_tensor_sin_10 k operation.
+func BenchmarkAB_Tensor_Sin_10K(b *testing.B) { benchmarkBatchSin(b, 10000) }
+
+// BenchmarkAB_Tensor_Sin_100K runs the benchmark ab_tensor_sin_100 k operation.
 func BenchmarkAB_Tensor_Sin_100K(b *testing.B) { benchmarkBatchSin(b, 100000) }
 
 func benchmarkBatchExp(b *testing.B, size int) {
@@ -307,8 +319,13 @@ func benchmarkBatchExp(b *testing.B, size int) {
 	})
 }
 
-func BenchmarkAB_Tensor_Exp_1K(b *testing.B)   { benchmarkBatchExp(b, 1000) }
-func BenchmarkAB_Tensor_Exp_10K(b *testing.B)  { benchmarkBatchExp(b, 10000) }
+// BenchmarkAB_Tensor_Exp_1K runs the benchmark ab_tensor_exp_1 k operation.
+func BenchmarkAB_Tensor_Exp_1K(b *testing.B) { benchmarkBatchExp(b, 1000) }
+
+// BenchmarkAB_Tensor_Exp_10K runs the benchmark ab_tensor_exp_10 k operation.
+func BenchmarkAB_Tensor_Exp_10K(b *testing.B) { benchmarkBatchExp(b, 10000) }
+
+// BenchmarkAB_Tensor_Exp_100K runs the benchmark ab_tensor_exp_100 k operation.
 func BenchmarkAB_Tensor_Exp_100K(b *testing.B) { benchmarkBatchExp(b, 100000) }
 
 func benchmarkBatchAdd(b *testing.B, size int) {
@@ -337,10 +354,16 @@ func benchmarkBatchAdd(b *testing.B, size int) {
 	})
 }
 
-func BenchmarkAB_Tensor_Add_1K(b *testing.B)   { benchmarkBatchAdd(b, 1000) }
-func BenchmarkAB_Tensor_Add_10K(b *testing.B)  { benchmarkBatchAdd(b, 10000) }
+// BenchmarkAB_Tensor_Add_1K runs the benchmark ab_tensor_add_1 k operation.
+func BenchmarkAB_Tensor_Add_1K(b *testing.B) { benchmarkBatchAdd(b, 1000) }
+
+// BenchmarkAB_Tensor_Add_10K runs the benchmark ab_tensor_add_10 k operation.
+func BenchmarkAB_Tensor_Add_10K(b *testing.B) { benchmarkBatchAdd(b, 10000) }
+
+// BenchmarkAB_Tensor_Add_100K runs the benchmark ab_tensor_add_100 k operation.
 func BenchmarkAB_Tensor_Add_100K(b *testing.B) { benchmarkBatchAdd(b, 100000) }
 
+// BenchmarkAB_Tensor_Sinh_TaylorVsEMLGo runs the benchmark ab_tensor_sinh_taylor vs eml go operation.
 func BenchmarkAB_Tensor_Sinh_TaylorVsEMLGo(b *testing.B) {
 	size := 1000
 	tF64 := New(DtypeFloat64, Shape{size})

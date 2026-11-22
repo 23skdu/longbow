@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestStatsOperations runs the test stats operations operation.
 func TestStatsOperations(t *testing.T) {
 	stats := &Stats{}
 
@@ -44,6 +45,7 @@ func TestStatsOperations(t *testing.T) {
 	}
 }
 
+// TestSearchModes runs the test search modes operation.
 func TestSearchModes(t *testing.T) {
 	modes := []SearchMode{
 		DenseSearch,
@@ -68,6 +70,7 @@ func TestSearchModes(t *testing.T) {
 	}
 }
 
+// TestBuildSoakSchema runs the test build soak schema operation.
 func TestBuildSoakSchema(t *testing.T) {
 	sch := buildSoakSchema(128)
 	if sch == nil {

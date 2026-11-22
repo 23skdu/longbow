@@ -17,6 +17,7 @@ import (
 // FlightDataQueue Tests
 // ============================================================================
 
+// TestFlightDataQueueConfig_Defaults runs the test flight data queue config_defaults operation.
 func TestFlightDataQueueConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -34,6 +35,7 @@ func TestFlightDataQueueConfig_Defaults(t *testing.T) {
 	}
 }
 
+// TestFlightDataQueueConfig_Validate runs the test flight data queue config_validate operation.
 func TestFlightDataQueueConfig_Validate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -60,6 +62,7 @@ func TestFlightDataQueueConfig_Validate(t *testing.T) {
 	}
 }
 
+// TestFlightDataQueue_NewAndClose runs the test flight data queue_new and close operation.
 func TestFlightDataQueue_NewAndClose(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -86,6 +89,7 @@ func TestFlightDataQueue_NewAndClose(t *testing.T) {
 	}
 }
 
+// TestFlightDataQueue_EnqueueDequeue runs the test flight data queue_enqueue dequeue operation.
 func TestFlightDataQueue_EnqueueDequeue(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -123,6 +127,7 @@ func TestFlightDataQueue_EnqueueDequeue(t *testing.T) {
 	}
 }
 
+// TestFlightDataQueue_TryEnqueue_NonBlocking runs the test flight data queue_try enqueue_non blocking operation.
 func TestFlightDataQueue_TryEnqueue_NonBlocking(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -163,6 +168,7 @@ func TestFlightDataQueue_TryEnqueue_NonBlocking(t *testing.T) {
 	}
 }
 
+// TestFlightDataQueue_Dequeue_ContextCancel runs the test flight data queue_dequeue_context cancel operation.
 func TestFlightDataQueue_Dequeue_ContextCancel(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -187,6 +193,7 @@ func TestFlightDataQueue_Dequeue_ContextCancel(t *testing.T) {
 	}
 }
 
+// TestFlightDataQueue_Dequeue_AfterClose runs the test flight data queue_dequeue_after close operation.
 func TestFlightDataQueue_Dequeue_AfterClose(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -215,6 +222,7 @@ func TestFlightDataQueue_Dequeue_AfterClose(t *testing.T) {
 	}
 }
 
+// TestFlightDataQueue_Stats runs the test flight data queue_stats operation.
 func TestFlightDataQueue_Stats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -240,6 +248,7 @@ func TestFlightDataQueue_Stats(t *testing.T) {
 	}
 }
 
+// TestFlightDataQueue_Concurrent runs the test flight data queue_concurrent operation.
 func TestFlightDataQueue_Concurrent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -297,6 +306,7 @@ func TestFlightDataQueue_Concurrent(t *testing.T) {
 // ChunkWorkerPool Tests
 // ============================================================================
 
+// TestChunkWorkerPoolConfig_Defaults runs the test chunk worker pool config_defaults operation.
 func TestChunkWorkerPoolConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -311,6 +321,7 @@ func TestChunkWorkerPoolConfig_Defaults(t *testing.T) {
 	}
 }
 
+// TestChunkWorkerPoolConfig_Validate runs the test chunk worker pool config_validate operation.
 func TestChunkWorkerPoolConfig_Validate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -336,6 +347,7 @@ func TestChunkWorkerPoolConfig_Validate(t *testing.T) {
 	}
 }
 
+// TestChunkWorkerPool_StartStop runs the test chunk worker pool_start stop operation.
 func TestChunkWorkerPool_StartStop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -381,6 +393,7 @@ func TestChunkWorkerPool_StartStop(t *testing.T) {
 	}
 }
 
+// TestChunkWorkerPool_Stats runs the test chunk worker pool_stats operation.
 func TestChunkWorkerPool_Stats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -420,6 +433,7 @@ func TestChunkWorkerPool_Stats(t *testing.T) {
 	queue.Close()
 }
 
+// TestChunkWorkerPool_ErrorHandling runs the test chunk worker pool_error handling operation.
 func TestChunkWorkerPool_ErrorHandling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -459,6 +473,7 @@ func TestChunkWorkerPool_ErrorHandling(t *testing.T) {
 // Benchmark
 // ============================================================================
 
+// BenchmarkFlightDataQueue_EnqueueDequeue runs the benchmark flight data queue_enqueue dequeue operation.
 func BenchmarkFlightDataQueue_EnqueueDequeue(b *testing.B) {
 	cfg := FlightDataQueueConfig{
 		QueueSize:      10000,

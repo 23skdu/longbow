@@ -26,10 +26,12 @@ type StdWAL struct {
 	mu   sync.Mutex
 }
 
+// NewWAL constructs a new WAL.
 func NewWAL(dir string) WAL {
 	return NewStdWAL(dir)
 }
 
+// NewStdWAL constructs a new StdWAL.
 func NewStdWAL(dir string) *StdWAL {
 	return &StdWAL{
 		dir: dir,
@@ -49,6 +51,7 @@ func (w *StdWAL) getFileLocked() (*os.File, error) {
 	return w.file, nil
 }
 
+// Write runs the write operation.
 func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBatch) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -95,6 +98,7 @@ func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBat
 	return err
 }
 
+// Close runs the close operation.
 func (w *StdWAL) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -110,6 +114,7 @@ func (w *StdWAL) Close() error {
 	return nil
 }
 
+// Sync runs the sync operation.
 func (w *StdWAL) Sync() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

@@ -28,7 +28,7 @@ func (s *VectorStore) EnableRBAC(mgr *RBACManager) {
 	s.rbacManager = mgr
 }
 
-// RBACManager returns the active RBACManager (nil if RBAC is disabled).
+// RBAC returns the active RBACManager (nil if RBAC is disabled).
 func (s *VectorStore) RBAC() *RBACManager {
 	s.configMu.RLock()
 	defer s.configMu.RUnlock()
@@ -456,7 +456,7 @@ func (s *VectorStore) EnableOIDC(mgr *security.OIDCManager) {
 	s.oidcManager = mgr
 }
 
-// OIDCManager returns the active OIDCManager (nil if disabled).
+// OIDC returns the active OIDCManager (nil if disabled).
 func (s *VectorStore) OIDC() *security.OIDCManager {
 	s.configMu.RLock()
 	defer s.configMu.RUnlock()
@@ -579,6 +579,7 @@ type dynamicStoreAccessValidator struct {
 	store *VectorStore
 }
 
+// AuthorizeToken runs the authorize token operation.
 func (d *dynamicStoreAccessValidator) AuthorizeToken(ctx context.Context, rawToken, permission, namespace, dataset string) (*security.TenantContext, error) {
 	v := d.store.AccessValidator()
 	if v == nil {
@@ -592,6 +593,7 @@ type compositeAccessValidator struct {
 	oidc *security.OIDCAccessValidator
 }
 
+// AuthorizeToken runs the authorize token operation.
 func (c *compositeAccessValidator) AuthorizeToken(ctx context.Context, rawToken, permission, namespace, dataset string) (*security.TenantContext, error) {
 	if strings.Count(rawToken, ".") == 2 && c.oidc != nil {
 		return c.oidc.AuthorizeToken(ctx, rawToken, permission, namespace, dataset)

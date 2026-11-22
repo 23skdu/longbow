@@ -23,12 +23,16 @@ type captureActionStream struct {
 	results []*flight.Result
 }
 
+// Context runs the context operation.
 func (c *captureActionStream) Context() context.Context { return c.ctx }
+
+// Send runs the send operation.
 func (c *captureActionStream) Send(r *flight.Result) error {
 	c.results = append(c.results, r)
 	return nil
 }
 
+// TestRBACRolesRotationTenantIsolationAndRLS runs the test rbac roles rotation tenant isolation and rls operation.
 func TestRBACRolesRotationTenantIsolationAndRLS(t *testing.T) {
 	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<28, 0, 0)
 	defer func() { _ = s.Close() }()
@@ -155,6 +159,7 @@ func TestRBACRolesRotationTenantIsolationAndRLS(t *testing.T) {
 	require.ErrorIs(t, err, security.ErrUnauthorized)
 }
 
+// FuzzRBACAuthorizeToken runs the fuzz rbac authorize token operation.
 func FuzzRBACAuthorizeToken(f *testing.F) {
 	f.Add("valid-role", "reader", "ns1", "ds1", "read")
 	f.Add("bad-token", "writer", "ns2", "ds2", "admin")
@@ -175,6 +180,7 @@ func FuzzRBACAuthorizeToken(f *testing.F) {
 	})
 }
 
+// TestRBACAllFiveRolesDatasetReadIngestWriteMatrix runs the test rbac all five roles dataset read ingest write matrix operation.
 func TestRBACAllFiveRolesDatasetReadIngestWriteMatrix(t *testing.T) {
 	mgr := NewRBACManager()
 

@@ -31,7 +31,10 @@ type int64FilterOp struct {
 	colIdx   int
 }
 
+// Compound runs the compound operation.
 func (o *int64FilterOp) Compound() bool { return false }
+
+// MatchValue runs the match value operation.
 func (o *int64FilterOp) MatchValue(val interface{}) bool {
 	switch v := val.(type) {
 	case int64:
@@ -66,6 +69,8 @@ func (o *int64FilterOp) compareInt64(v int64) bool {
 	}
 	return false
 }
+
+// Bind runs the bind operation.
 func (o *int64FilterOp) Bind(col arrow.Array) error {
 	if col.DataType().ID() != arrow.INT64 {
 		return fmt.Errorf("expected int64 column, got %s", col.DataType())
@@ -74,6 +79,7 @@ func (o *int64FilterOp) Bind(col arrow.Array) error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (o *int64FilterOp) Reset(rec arrow.RecordBatch) error {
 	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
 		return fmt.Errorf("column index %d out of bounds", o.colIdx)
@@ -81,6 +87,7 @@ func (o *int64FilterOp) Reset(rec arrow.RecordBatch) error {
 	return o.Bind(rec.Column(o.colIdx))
 }
 
+// Match runs the match operation.
 func (o *int64FilterOp) Match(rowIdx int) bool {
 	if o.col.IsNull(rowIdx) {
 		return false
@@ -106,6 +113,7 @@ func (o *int64FilterOp) Match(rowIdx int) bool {
 	return false
 }
 
+// MatchBitmap runs the match bitmap operation.
 func (o *int64FilterOp) MatchBitmap(dst []byte) {
 	var op simd.CompareOp
 	switch o.operator {
@@ -144,6 +152,7 @@ func (o *int64FilterOp) MatchBitmap(dst []byte) {
 	}
 }
 
+// FilterBatch runs the filter batch operation.
 func (o *int64FilterOp) FilterBatch(indices []int) []int {
 	if len(indices) == 0 {
 		return nil
@@ -202,7 +211,10 @@ type int32FilterOp struct {
 	colIdx   int
 }
 
+// Compound runs the compound operation.
 func (o *int32FilterOp) Compound() bool { return false }
+
+// MatchValue runs the match value operation.
 func (o *int32FilterOp) MatchValue(val interface{}) bool {
 	switch v := val.(type) {
 	case int32:
@@ -229,6 +241,8 @@ func (o *int32FilterOp) compareInt32(v int32) bool {
 	}
 	return false
 }
+
+// Bind runs the bind operation.
 func (o *int32FilterOp) Bind(col arrow.Array) error {
 	if col.DataType().ID() != arrow.INT32 {
 		return fmt.Errorf("expected int32 column, got %s", col.DataType())
@@ -237,12 +251,15 @@ func (o *int32FilterOp) Bind(col arrow.Array) error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (o *int32FilterOp) Reset(rec arrow.RecordBatch) error {
 	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
 		return fmt.Errorf("column index %d out of bounds", o.colIdx)
 	}
 	return o.Bind(rec.Column(o.colIdx))
 }
+
+// Match runs the match operation.
 func (o *int32FilterOp) Match(rowIdx int) bool {
 	if o.col.IsNull(rowIdx) {
 		return false
@@ -250,6 +267,8 @@ func (o *int32FilterOp) Match(rowIdx int) bool {
 	v := o.col.Value(rowIdx)
 	return o.compareInt32(v)
 }
+
+// MatchBitmap runs the match bitmap operation.
 func (o *int32FilterOp) MatchBitmap(dst []byte) {
 	for i := range dst {
 		if o.Match(i) {
@@ -259,6 +278,8 @@ func (o *int32FilterOp) MatchBitmap(dst []byte) {
 		}
 	}
 }
+
+// FilterBatch runs the filter batch operation.
 func (o *int32FilterOp) FilterBatch(indices []int) []int {
 	result := make([]int, 0, len(indices))
 	for _, idx := range indices {
@@ -276,7 +297,10 @@ type uint64FilterOp struct {
 	colIdx   int
 }
 
+// Compound runs the compound operation.
 func (o *uint64FilterOp) Compound() bool { return false }
+
+// MatchValue runs the match value operation.
 func (o *uint64FilterOp) MatchValue(val interface{}) bool {
 	switch v := val.(type) {
 	case uint64:
@@ -301,6 +325,8 @@ func (o *uint64FilterOp) compareUint64(v uint64) bool {
 	}
 	return false
 }
+
+// Bind runs the bind operation.
 func (o *uint64FilterOp) Bind(col arrow.Array) error {
 	if col.DataType().ID() != arrow.UINT64 {
 		return fmt.Errorf("expected uint64 column, got %s", col.DataType())
@@ -309,12 +335,15 @@ func (o *uint64FilterOp) Bind(col arrow.Array) error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (o *uint64FilterOp) Reset(rec arrow.RecordBatch) error {
 	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
 		return fmt.Errorf("column index %d out of bounds", o.colIdx)
 	}
 	return o.Bind(rec.Column(o.colIdx))
 }
+
+// Match runs the match operation.
 func (o *uint64FilterOp) Match(rowIdx int) bool {
 	if o.col.IsNull(rowIdx) {
 		return false
@@ -322,6 +351,8 @@ func (o *uint64FilterOp) Match(rowIdx int) bool {
 	v := o.col.Value(rowIdx)
 	return o.compareUint64(v)
 }
+
+// MatchBitmap runs the match bitmap operation.
 func (o *uint64FilterOp) MatchBitmap(dst []byte) {
 	for i := range dst {
 		if o.Match(i) {
@@ -331,6 +362,8 @@ func (o *uint64FilterOp) MatchBitmap(dst []byte) {
 		}
 	}
 }
+
+// FilterBatch runs the filter batch operation.
 func (o *uint64FilterOp) FilterBatch(indices []int) []int {
 	result := make([]int, 0, len(indices))
 	for _, idx := range indices {
@@ -348,7 +381,10 @@ type float32FilterOp struct {
 	colIdx   int
 }
 
+// Compound runs the compound operation.
 func (o *float32FilterOp) Compound() bool { return false }
+
+// MatchValue runs the match value operation.
 func (o *float32FilterOp) MatchValue(val interface{}) bool {
 	switch v := val.(type) {
 	case float64:
@@ -377,6 +413,8 @@ func (o *float32FilterOp) compareFloat32(v float32) bool {
 	}
 	return false
 }
+
+// Bind runs the bind operation.
 func (o *float32FilterOp) Bind(col arrow.Array) error {
 	if col.DataType().ID() != arrow.FLOAT32 {
 		return fmt.Errorf("expected float32 column, got %s", col.DataType())
@@ -385,6 +423,7 @@ func (o *float32FilterOp) Bind(col arrow.Array) error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (o *float32FilterOp) Reset(rec arrow.RecordBatch) error {
 	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
 		return fmt.Errorf("column index %d out of bounds", o.colIdx)
@@ -392,6 +431,7 @@ func (o *float32FilterOp) Reset(rec arrow.RecordBatch) error {
 	return o.Bind(rec.Column(o.colIdx))
 }
 
+// Match runs the match operation.
 func (o *float32FilterOp) Match(rowIdx int) bool {
 	if o.col.IsNull(rowIdx) {
 		return false
@@ -399,6 +439,7 @@ func (o *float32FilterOp) Match(rowIdx int) bool {
 	return o.compareFloat32(o.col.Value(rowIdx))
 }
 
+// MatchBitmap runs the match bitmap operation.
 func (o *float32FilterOp) MatchBitmap(dst []byte) {
 	var op simd.CompareOp
 	switch o.operator {
@@ -437,6 +478,7 @@ func (o *float32FilterOp) MatchBitmap(dst []byte) {
 	}
 }
 
+// FilterBatch runs the filter batch operation.
 func (o *float32FilterOp) FilterBatch(indices []int) []int {
 	if len(indices) == 0 {
 		return nil
@@ -495,7 +537,10 @@ type float64FilterOp struct {
 	colIdx   int
 }
 
+// Compound runs the compound operation.
 func (o *float64FilterOp) Compound() bool { return false }
+
+// MatchValue runs the match value operation.
 func (o *float64FilterOp) MatchValue(val interface{}) bool {
 	switch v := val.(type) {
 	case float64:
@@ -524,6 +569,8 @@ func (o *float64FilterOp) compareFloat64(v float64) bool {
 	}
 	return false
 }
+
+// Bind runs the bind operation.
 func (o *float64FilterOp) Bind(col arrow.Array) error {
 	if col.DataType().ID() != arrow.FLOAT64 {
 		return fmt.Errorf("expected float64 column, got %s", col.DataType())
@@ -532,6 +579,7 @@ func (o *float64FilterOp) Bind(col arrow.Array) error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (o *float64FilterOp) Reset(rec arrow.RecordBatch) error {
 	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
 		return fmt.Errorf("column index %d out of bounds", o.colIdx)
@@ -539,6 +587,7 @@ func (o *float64FilterOp) Reset(rec arrow.RecordBatch) error {
 	return o.Bind(rec.Column(o.colIdx))
 }
 
+// Match runs the match operation.
 func (o *float64FilterOp) Match(rowIdx int) bool {
 	if o.col.IsNull(rowIdx) {
 		return false
@@ -561,6 +610,7 @@ func (o *float64FilterOp) Match(rowIdx int) bool {
 	return false
 }
 
+// MatchBitmap runs the match bitmap operation.
 func (o *float64FilterOp) MatchBitmap(dst []byte) {
 	if len(dst) == 0 {
 		return
@@ -612,6 +662,7 @@ func (o *float64FilterOp) MatchBitmap(dst []byte) {
 	}
 }
 
+// FilterBatch runs the filter batch operation.
 func (o *float64FilterOp) FilterBatch(indices []int) []int {
 	result := make([]int, 0, len(indices))
 	for _, idx := range indices {

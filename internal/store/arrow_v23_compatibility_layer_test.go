@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestMigrationHelper runs the test migration helper operation.
 func TestMigrationHelper(t *testing.T) {
 	mh := NewMigrationHelper()
 
@@ -44,6 +45,7 @@ func TestMigrationHelper(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestFlightCompatibilityLayerBasics runs the test flight compatibility layer basics operation.
 func TestFlightCompatibilityLayerBasics(t *testing.T) {
 	fcl := NewFlightCompatibilityLayer()
 	assert.NotNil(t, fcl)

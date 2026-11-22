@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+// TestGemmCorrectness runs the test gemm correctness operation.
 func TestGemmCorrectness(t *testing.T) {
 	sizes := []struct{ m, n, k int }{
 		{4, 8, 1},

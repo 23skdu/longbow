@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestTQGPUParity runs the test tqgpu parity operation.
 func TestTQGPUParity(t *testing.T) {
 	dims := 128
 	bits := 4
@@ -109,6 +110,7 @@ func TestTQGPUParity(t *testing.T) {
 	}
 }
 
+// TestTQGreedyGPUParity runs the test tq greedy gpu parity operation.
 func TestTQGreedyGPUParity(t *testing.T) {
 	dims := 128
 	bits := 4

@@ -463,6 +463,7 @@ func (c *ChangeDataCapture) EventToJSON(event CDCEvent) ([]byte, error) {
 		}
 	}
 
+	// EventJSON represents a event json value.
 	type EventJSON struct {
 		EventType  string                   `json:"event_type"`
 		Dataset    string                   `json:"dataset"`

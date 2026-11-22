@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestLeviCivita3D runs the test levi civita3 d operation.
 func TestLeviCivita3D(t *testing.T) {
 	lc, err := LeviCivita(3, DtypeFloat64)
 	if err != nil {
@@ -50,6 +51,7 @@ func TestLeviCivita3D(t *testing.T) {
 	}
 }
 
+// TestLeviCivita4D runs the test levi civita4 d operation.
 func TestLeviCivita4D(t *testing.T) {
 	lc, err := LeviCivita(4, DtypeFloat64)
 	if err != nil {
@@ -85,6 +87,7 @@ func TestLeviCivita4D(t *testing.T) {
 	}
 }
 
+// TestMetricRaiseLower runs the test metric raise lower operation.
 func TestMetricRaiseLower(t *testing.T) {
 	// Minkowski spacetime metric eta_mu_nu = diag(-1, 1, 1, 1)
 	eta := New(DtypeFloat64, Shape{4, 4})
@@ -135,6 +138,7 @@ func TestMetricRaiseLower(t *testing.T) {
 	}
 }
 
+// TestChristoffelAndRiemannFlatSpace runs the test christoffel and riemann flat space operation.
 func TestChristoffelAndRiemannFlatSpace(t *testing.T) {
 	dim := 4
 	// Constant Minkowski metric
@@ -195,6 +199,7 @@ func TestChristoffelAndRiemannFlatSpace(t *testing.T) {
 	}
 }
 
+// TestWedgeProductAntisymmetry runs the test wedge product antisymmetry operation.
 func TestWedgeProductAntisymmetry(t *testing.T) {
 	dim := 3
 	// 1-form A = (1, 2, 3)

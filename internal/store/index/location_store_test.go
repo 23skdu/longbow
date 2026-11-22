@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestChunkedLocationStore_ReverseIndex runs the test chunked location store_reverse index operation.
 func TestChunkedLocationStore_ReverseIndex(t *testing.T) {
 	s := NewChunkedLocationStore()
 
@@ -59,6 +60,7 @@ func TestChunkedLocationStore_ReverseIndex(t *testing.T) {
 	assert.False(t, okMissing)
 }
 
+// TestChunkedLocationStore_Concurrency runs the test chunked location store_concurrency operation.
 func TestChunkedLocationStore_Concurrency(t *testing.T) {
 	s := NewChunkedLocationStore()
 	iter := 1000

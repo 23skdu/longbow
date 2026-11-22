@@ -10,8 +10,10 @@ import (
 )
 
 var (
+	// ErrVersionRequested is a err version requested value.
 	ErrVersionRequested = errors.New("version requested")
-	ErrHelpRequested    = errors.New("help requested")
+	// ErrHelpRequested is a err help requested value.
+	ErrHelpRequested = errors.New("help requested")
 )
 
 // parseCLIFlags defines and parses CLI flags, overlaying matching Config fields.

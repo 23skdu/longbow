@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/pq"
 )
 
+// SearchPQ runs the search pq operation.
 func (idx *MetalIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
 	// Flush any pending batches before search
 	if err := idx.Flush(); err != nil {
@@ -63,6 +64,7 @@ func (idx *MetalIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, [
 	return resultIDs, resultDistances, nil
 }
 
+// TrainPQ runs the train pq operation.
 func (idx *MetalIndex) TrainPQ(vectors []float32, m int, k int) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -113,6 +115,7 @@ func (idx *MetalIndex) TrainPQ(vectors []float32, m int, k int) error {
 	return nil
 }
 
+// EncodePQ runs the encode pq operation.
 func (idx *MetalIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

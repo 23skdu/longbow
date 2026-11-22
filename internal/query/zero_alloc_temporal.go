@@ -9,6 +9,7 @@ import (
 type ZeroAllocTemporalParser struct {
 }
 
+// NewZeroAllocTemporalParser constructs a new ZeroAllocTemporalParser.
 func NewZeroAllocTemporalParser() *ZeroAllocTemporalParser {
 	return &ZeroAllocTemporalParser{}
 }

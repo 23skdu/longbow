@@ -11,11 +11,13 @@ var (
 		Name: "longbow_hnsw_repair_total",
 		Help: "Total number of tombstone repairs performed",
 	})
+	// HNSWRepairDuration is a hnsw repair duration value.
 	HNSWRepairDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "longbow_hnsw_repair_duration_seconds",
 		Help:    "Duration of tombstone repair cycles",
 		Buckets: prometheus.ExponentialBuckets(0.001, 2, 10),
 	})
+	// HNSWRepairedConnections is a hnsw repaired connections value.
 	HNSWRepairedConnections = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_hnsw_repaired_connections_total",
 		Help: "Number of connections re-wired from tombstones to valid nodes",

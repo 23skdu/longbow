@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_PQ_Integration runs the test arrow hnsw_pq_integration operation.
 func TestArrowHNSW_PQ_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping PQ integration test in short mode")

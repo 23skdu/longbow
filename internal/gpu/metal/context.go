@@ -97,12 +97,14 @@ void* create_pipeline_state(MetalContextHandle* handle, void* function) {
 */
 import "C"
 
+// ShaderCache represents a shader cache value.
 type ShaderCache struct {
 	mu        sync.RWMutex
 	functions map[string]unsafe.Pointer
 	pipelines map[string]unsafe.Pointer
 }
 
+// NewShaderCache constructs a new ShaderCache.
 func NewShaderCache() *ShaderCache {
 	return &ShaderCache{
 		functions: make(map[string]unsafe.Pointer),
@@ -110,6 +112,7 @@ func NewShaderCache() *ShaderCache {
 	}
 }
 
+// MetalContext represents a metal context value.
 type MetalContext struct {
 	handle *C.MetalContextHandle
 	cache  *ShaderCache
@@ -120,7 +123,7 @@ var (
 	contextMu     sync.Mutex
 )
 
-// Initialize the global Metal context from embedded library data
+// InitGlobalContext the global Metal context from embedded library data
 func InitGlobalContext(libData []byte) error {
 	contextMu.Lock()
 	defer contextMu.Unlock()
@@ -196,18 +199,22 @@ func ResetGlobalContextFromSource(source []byte) error {
 	return nil
 }
 
+// GetContext returns the context.
 func GetContext() *MetalContext {
 	return globalContext
 }
 
+// GetDevice returns the device.
 func (c *MetalContext) GetDevice() unsafe.Pointer {
 	return c.handle.device
 }
 
+// GetCommandQueue returns the command queue.
 func (c *MetalContext) GetCommandQueue() unsafe.Pointer {
 	return c.handle.commandQueue
 }
 
+// GetPipelineState returns the pipeline state.
 func (c *MetalContext) GetPipelineState(kernelName string) (unsafe.Pointer, error) {
 	c.cache.mu.RLock()
 	if p, ok := c.cache.pipelines[kernelName]; ok {

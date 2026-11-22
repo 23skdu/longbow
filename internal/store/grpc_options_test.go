@@ -262,7 +262,7 @@ func TestGRPCConfigString(t *testing.T) {
 	assert.Contains(t, str, "initial_window_size")
 }
 
-// Benchmark tests for option building
+// BenchmarkBuildServerOptions tests for option building
 func BenchmarkBuildServerOptions(b *testing.B) {
 	cfg := DefaultGRPCConfig()
 	b.ResetTimer()
@@ -271,6 +271,7 @@ func BenchmarkBuildServerOptions(b *testing.B) {
 	}
 }
 
+// BenchmarkBuildClientOptions runs the benchmark build client options operation.
 func BenchmarkBuildClientOptions(b *testing.B) {
 	cfg := DefaultGRPCConfig()
 	b.ResetTimer()

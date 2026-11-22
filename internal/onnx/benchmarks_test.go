@@ -17,6 +17,7 @@ import (
 // Note: Requires a valid model file at LONGBOW_BENCHMARK_MODEL_PATH.
 // If no model is provided, it skips.
 
+// BenchmarkONNX_Score runs the benchmark onnx_score operation.
 func BenchmarkONNX_Score(b *testing.B) {
 	modelPath := os.Getenv("LONGBOW_BENCHMARK_MODEL_PATH")
 	if modelPath == "" {
@@ -47,6 +48,7 @@ func BenchmarkONNX_Score(b *testing.B) {
 	}
 }
 
+// BenchmarkONNX_Score_BatchSizes runs the benchmark onnx_score_batch sizes operation.
 func BenchmarkONNX_Score_BatchSizes(b *testing.B) {
 	modelPath := os.Getenv("LONGBOW_BENCHMARK_MODEL_PATH")
 	if modelPath == "" {
@@ -80,6 +82,7 @@ func BenchmarkONNX_Score_BatchSizes(b *testing.B) {
 	}
 }
 
+// BenchmarkMetal_Direct runs the benchmark metal_direct operation.
 func BenchmarkMetal_Direct(b *testing.B) {
 	if !metal.IsAvailable() {
 		b.Skip("Metal not available")
@@ -105,6 +108,7 @@ func BenchmarkMetal_Direct(b *testing.B) {
 	}
 }
 
+// BenchmarkONNX_Parallel runs the benchmark onnx_parallel operation.
 func BenchmarkONNX_Parallel(b *testing.B) {
 	modelPath := os.Getenv("LONGBOW_BENCHMARK_MODEL_PATH")
 	if modelPath == "" {

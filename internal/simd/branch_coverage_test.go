@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestBranchCoverage runs the test branch coverage operation.
 func TestBranchCoverage(t *testing.T) {
 	initializeDispatch()
 

@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// TestDeleteVectorByIDConcurrency runs the test delete vector by id concurrency operation.
 func TestDeleteVectorByIDConcurrency(t *testing.T) {
 	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1024*1024*1024, 0, 0)
 	s.StartIndexingWorkers(2)
@@ -87,6 +88,7 @@ func TestDeleteVectorByIDConcurrency(t *testing.T) {
 	}
 }
 
+// FuzzSetTombstone runs the fuzz set tombstone operation.
 func FuzzSetTombstone(f *testing.F) {
 	f.Add(0, 0)
 	f.Fuzz(func(t *testing.T, batch, row int) {

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestNUMATopology_GetNodeForCPU runs the test numa topology_get node for cpu operation.
 func TestNUMATopology_GetNodeForCPU(t *testing.T) {
 	topo := &NUMATopology{
 		NumNodes: 2,

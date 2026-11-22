@@ -25,6 +25,7 @@ func (c *int8Computer) uint8Mode() bool {
 	return c.isUint8 || (c.data != nil && c.data.Type == types.VectorTypeUint8)
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 	if c.sctx != nil {
 		v8 := c.sctx.GetVectorInt8(c.data, id, c.dims, c.maxGen)
@@ -178,6 +179,7 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *int8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	if cap(dst) < len(ids) {
 		dst = make([]float32, len(ids))
@@ -227,6 +229,7 @@ func (c *int8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, err
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *int8Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsInt8ChunkFast(cID)
@@ -334,6 +337,7 @@ func (c *sharedInt8Computer) uint8Mode() bool {
 	return c.isUint8 || (c.data != nil && c.data.Type == types.VectorTypeUint8)
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
 	if id >= c.startID && id < c.startID+uint32(c.n) { // #nosec G115
 		idx := int(id - c.startID)
@@ -386,6 +390,7 @@ func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *sharedInt8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	dst = dst[:0]
 	for _, id := range ids {
@@ -398,6 +403,7 @@ func (c *sharedInt8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *sharedInt8Computer) Prefetch(id uint32) {
 	if id >= c.startID && id < c.startID+uint32(c.n) { // #nosec G115
 		idx := int(id - c.startID)

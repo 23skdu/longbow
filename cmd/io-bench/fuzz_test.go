@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// FuzzParseFloats runs the fuzz parse floats operation.
 func FuzzParseFloats(f *testing.F) {
 	f.Fuzz(func(t *testing.T, s string) {
 		result, _ := fuzzParseFloats(s)
@@ -41,6 +42,7 @@ func isNumericString(s string) bool {
 	return true
 }
 
+// FuzzSearchModes runs the fuzz search modes operation.
 func FuzzSearchModes(f *testing.F) {
 	f.Fuzz(func(t *testing.T, s string) {
 		validModes := map[string]bool{
@@ -50,6 +52,7 @@ func FuzzSearchModes(f *testing.F) {
 	})
 }
 
+// FuzzDimensions runs the fuzz dimensions operation.
 func FuzzDimensions(f *testing.F) {
 	f.Fuzz(func(t *testing.T, dim int) {
 		if dim < 1 || dim > 65536 {
@@ -60,6 +63,7 @@ func FuzzDimensions(f *testing.F) {
 	})
 }
 
+// FuzzVectorCounts runs the fuzz vector counts operation.
 func FuzzVectorCounts(f *testing.F) {
 	f.Fuzz(func(t *testing.T, count int) {
 		if count < 0 {
@@ -68,6 +72,7 @@ func FuzzVectorCounts(f *testing.F) {
 	})
 }
 
+// FuzzFilterExpression runs the fuzz filter expression operation.
 func FuzzFilterExpression(f *testing.F) {
 	f.Fuzz(func(t *testing.T, s string) {
 		result, _ := fuzzParseFilter(s)
@@ -110,6 +115,7 @@ func isValidFilter(s string) bool {
 	return true
 }
 
+// FuzzGeoSearchParams runs the fuzz geo search params operation.
 func FuzzGeoSearchParams(f *testing.F) {
 	f.Fuzz(func(t *testing.T, lat, lon, radius float64) {
 		isValid := lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 && radius > 0
@@ -117,6 +123,7 @@ func FuzzGeoSearchParams(f *testing.F) {
 	})
 }
 
+// FuzzTemporalSearch runs the fuzz temporal search operation.
 func FuzzTemporalSearch(f *testing.F) {
 	f.Fuzz(func(t *testing.T, s string) {
 		valid := s == "as_of" || s == "range" || s == "window" || s == "latest"
@@ -124,12 +131,14 @@ func FuzzTemporalSearch(f *testing.F) {
 	})
 }
 
+// TestBenchIOIntegration runs the test bench io integration operation.
 func TestBenchIOIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
 }
 
+// TestVecModeIntegration runs the test vec mode integration operation.
 func TestVecModeIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestUnpackTQ4_MatchesGeneric runs the test unpack tq4_matches generic operation.
 func TestUnpackTQ4_MatchesGeneric(t *testing.T) {
 	for _, n := range []int{8, 16, 32, 64, 128, 256, 512, 1024} {
 		src := make([]byte, n/2)
@@ -29,6 +30,7 @@ func TestUnpackTQ4_MatchesGeneric(t *testing.T) {
 	}
 }
 
+// TestUnpackTQ2_MatchesGeneric runs the test unpack tq2_matches generic operation.
 func TestUnpackTQ2_MatchesGeneric(t *testing.T) {
 	for _, n := range []int{8, 16, 32, 64, 128, 256, 512, 1024} {
 		src := make([]byte, n/4)
@@ -50,6 +52,7 @@ func TestUnpackTQ2_MatchesGeneric(t *testing.T) {
 	}
 }
 
+// TestUnpackTQ8_MatchesGeneric runs the test unpack tq8_matches generic operation.
 func TestUnpackTQ8_MatchesGeneric(t *testing.T) {
 	for _, n := range []int{8, 16, 32, 64, 128, 256, 512, 1024} {
 		src := make([]byte, n)
@@ -71,6 +74,7 @@ func TestUnpackTQ8_MatchesGeneric(t *testing.T) {
 	}
 }
 
+// BenchmarkUnpackTQ4 runs the benchmark unpack tq4 operation.
 func BenchmarkUnpackTQ4(b *testing.B) {
 	dim := 128
 	src := make([]byte, dim/2)
@@ -84,6 +88,7 @@ func BenchmarkUnpackTQ4(b *testing.B) {
 	}
 }
 
+// BenchmarkUnpackTQ2 runs the benchmark unpack tq2 operation.
 func BenchmarkUnpackTQ2(b *testing.B) {
 	dim := 128
 	src := make([]byte, dim/4)

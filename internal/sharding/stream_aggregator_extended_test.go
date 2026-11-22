@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestStreamAggregator_MergeAndSort runs the test stream aggregator_merge and sort operation.
 func TestStreamAggregator_MergeAndSort(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(

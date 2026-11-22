@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCastRecordToSchema_MissingStruct runs the test cast record to schema_missing struct operation.
 func TestCastRecordToSchema_MissingStruct(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

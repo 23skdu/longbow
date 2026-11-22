@@ -12,10 +12,14 @@ import (
 // internal VectorDataType constants. These are the values accepted in
 // VectorSearchRequest metadata and CreateDataset parameters.
 const (
-	VectorTypeAPIFloat32    = "float32"
+	// VectorTypeAPIFloat32 is a vector type api float32 constant.
+	VectorTypeAPIFloat32 = "float32"
+	// VectorTypeAPITurboQuant is a vector type api turbo quant constant.
 	VectorTypeAPITurboQuant = "turboquant"
-	VectorTypeAPIInt8       = "int8"
-	VectorTypeAPIBinary     = "binary"
+	// VectorTypeAPIInt8 is a vector type api int8 constant.
+	VectorTypeAPIInt8 = "int8"
+	// VectorTypeAPIBinary is a vector type api binary constant.
+	VectorTypeAPIBinary = "binary"
 )
 
 // ParseVectorType maps an API vector_type string to the internal

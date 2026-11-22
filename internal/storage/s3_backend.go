@@ -209,31 +209,44 @@ func (b *S3Backend) GetHTTPClient() *http.Client {
 	return b.httpClient
 }
 
-func (b *AsyncS3Backend) Bucket() string                    { return b.S3Backend.Bucket() }
-func (b *AsyncS3Backend) Prefix() string                    { return b.S3Backend.Prefix() }
-func (b *AsyncS3Backend) GetHTTPTransport() *http.Transport { return b.S3Backend.GetHTTPTransport() }
-func (b *AsyncS3Backend) GetHTTPClient() *http.Client       { return b.S3Backend.GetHTTPClient() }
+// Bucket runs the bucket operation.
+func (b *AsyncS3Backend) Bucket() string { return b.S3Backend.Bucket() }
 
+// Prefix runs the prefix operation.
+func (b *AsyncS3Backend) Prefix() string { return b.S3Backend.Prefix() }
+
+// GetHTTPTransport returns the http transport.
+func (b *AsyncS3Backend) GetHTTPTransport() *http.Transport { return b.S3Backend.GetHTTPTransport() }
+
+// GetHTTPClient returns the http client.
+func (b *AsyncS3Backend) GetHTTPClient() *http.Client { return b.S3Backend.GetHTTPClient() }
+
+// WriteSnapshot runs the write snapshot operation.
 func (b *AsyncS3Backend) WriteSnapshot(ctx context.Context, name string, data []byte) error {
 	return b.S3Backend.WriteSnapshot(ctx, name, data)
 }
 
+// ReadSnapshot runs the read snapshot operation.
 func (b *AsyncS3Backend) ReadSnapshot(ctx context.Context, name string) (io.ReadCloser, error) {
 	return b.S3Backend.ReadSnapshot(ctx, name)
 }
 
+// WriteSnapshotFile runs the write snapshot file operation.
 func (b *AsyncS3Backend) WriteSnapshotFile(ctx context.Context, name, ext string, r io.Reader) error {
 	return b.S3Backend.WriteSnapshotFile(ctx, name, ext, r)
 }
 
+// ReadSnapshotFile runs the read snapshot file operation.
 func (b *AsyncS3Backend) ReadSnapshotFile(ctx context.Context, name, ext string) (io.ReadCloser, error) {
 	return b.S3Backend.ReadSnapshotFile(ctx, name, ext)
 }
 
+// ListSnapshots runs the list snapshots operation.
 func (b *AsyncS3Backend) ListSnapshots(ctx context.Context) ([]string, error) {
 	return b.S3Backend.ListSnapshots(ctx)
 }
 
+// DeleteSnapshot runs the delete snapshot operation.
 func (b *AsyncS3Backend) DeleteSnapshot(ctx context.Context, name string) error {
 	return b.S3Backend.DeleteSnapshot(ctx, name)
 }

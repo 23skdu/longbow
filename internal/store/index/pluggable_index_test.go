@@ -324,24 +324,29 @@ type mockPluggableIndex struct {
 	built     bool
 }
 
+// Type runs the type operation.
 func (m *mockPluggableIndex) Type() IndexType {
 	return m.idxType
 }
 
+// Dimension runs the dimension operation.
 func (m *mockPluggableIndex) Dimension() int {
 	return m.dimension
 }
 
+// Size runs the size operation.
 func (m *mockPluggableIndex) Size() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.vectors)
 }
 
+// NeedsBuild runs the needs build operation.
 func (m *mockPluggableIndex) NeedsBuild() bool {
 	return m.idxType == IndexTypeIVFFlat // IVF needs training
 }
 
+// Add runs the add operation.
 func (m *mockPluggableIndex) Add(id uint64, vector []float32) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -349,6 +354,7 @@ func (m *mockPluggableIndex) Add(id uint64, vector []float32) error {
 	return nil
 }
 
+// AddBatchRaw runs the add batch raw operation.
 func (m *mockPluggableIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -358,6 +364,7 @@ func (m *mockPluggableIndex) AddBatchRaw(ids []uint64, vectors [][]float32) erro
 	return nil
 }
 
+// Search runs the search operation.
 func (m *mockPluggableIndex) Search(query []float32, k int) ([]IndexSearchResult, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -396,6 +403,7 @@ func (m *mockPluggableIndex) Search(query []float32, k int) ([]IndexSearchResult
 	return finalResults, nil
 }
 
+// SearchBatch runs the search batch operation.
 func (m *mockPluggableIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error) {
 	results := make([][]IndexSearchResult, len(queries))
 	for i, q := range queries {
@@ -405,6 +413,7 @@ func (m *mockPluggableIndex) SearchBatch(queries [][]float32, k int) ([][]IndexS
 	return results, nil
 }
 
+// GetNeighbors returns the neighbors.
 func (m *mockPluggableIndex) GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -424,37 +433,44 @@ func (m *mockPluggableIndex) GetNeighbors(ctx context.Context, id types.VectorID
 	return results, nil
 }
 
+// Build runs the build operation.
 func (m *mockPluggableIndex) Build() error {
 	m.built = true
 	return nil
 }
 
+// Save runs the save operation.
 func (m *mockPluggableIndex) Save(path string) error {
 	return os.WriteFile(path, []byte("mock"), 0o600)
 }
 
+// Load runs the load operation.
 func (m *mockPluggableIndex) Load(path string) error {
 	_, err := os.ReadFile(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	return err
 }
 
+// Close runs the close operation.
 func (m *mockPluggableIndex) Close() error {
 	return nil
 }
 
+// ExportState runs the export state operation.
 func (m *mockPluggableIndex) ExportState() ([]byte, error) {
 	return []byte("mock_state"), nil
 }
 
+// ImportState runs the import state operation.
 func (m *mockPluggableIndex) ImportState(data []byte) error {
 	return nil
 }
 
-// Legacy interface compatibility
+// AddByLocation interface compatibility
 func (m *mockPluggableIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }
 
+// SearchVectors runs the search vectors operation.
 func (m *mockPluggableIndex) SearchVectors(query []float32, k int, options types.SearchOptions) []SearchResult {
 	results, _ := m.Search(query, k)
 	searchResults := make([]SearchResult, len(results))
@@ -464,14 +480,17 @@ func (m *mockPluggableIndex) SearchVectors(query []float32, k int, options types
 	return searchResults
 }
 
+// GetVectorID returns the vector id.
 func (m *mockPluggableIndex) GetVectorID(loc Location) (uint64, bool) {
 	return 0, false
 }
 
+// Len runs the len operation.
 func (m *mockPluggableIndex) Len() int {
 	return m.Size()
 }
 
+// TestIVFFlatIndex_AddAndSearch runs the test ivf flat index_add and search operation.
 func TestIVFFlatIndex_AddAndSearch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -531,6 +550,7 @@ func TestIVFFlatIndex_AddAndSearch(t *testing.T) {
 	}
 }
 
+// TestIVFFlatIndex_Empty runs the test ivf flat index_empty operation.
 func TestIVFFlatIndex_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -561,6 +581,7 @@ func TestIVFFlatIndex_Empty(t *testing.T) {
 	}
 }
 
+// TestDiskANNIndex_AddAndSearch runs the test disk ann index_add and search operation.
 func TestDiskANNIndex_AddAndSearch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -621,6 +642,7 @@ func TestDiskANNIndex_AddAndSearch(t *testing.T) {
 	}
 }
 
+// TestDiskANNIndex_Empty runs the test disk ann index_empty operation.
 func TestDiskANNIndex_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -651,6 +673,7 @@ func TestDiskANNIndex_Empty(t *testing.T) {
 	}
 }
 
+// TestIndexFactory_IVFFlat runs the test index factory_ivf flat operation.
 func TestIndexFactory_IVFFlat(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -684,6 +707,7 @@ func TestIndexFactory_IVFFlat(t *testing.T) {
 	}
 }
 
+// TestIndexFactory_DiskANN runs the test index factory_disk ann operation.
 func TestIndexFactory_DiskANN(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

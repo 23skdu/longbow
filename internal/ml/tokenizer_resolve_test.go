@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestResolveTokenizerPath runs the test resolve tokenizer path operation.
 func TestResolveTokenizerPath(t *testing.T) {
 	dir := t.TempDir()
 	modelPath := filepath.Join(dir, "model.onnx")

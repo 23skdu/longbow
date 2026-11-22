@@ -6,6 +6,7 @@ import (
 	"github.com/mmcloughlin/avo/reg"
 )
 
+// ImplementEuclideanVertical4AVX2 runs the implement euclidean vertical4 avx2 operation.
 func ImplementEuclideanVertical4AVX2() {
 	TEXT("euclideanVertical4AVX2", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
 	q := Load(Param("q"), GP64())
@@ -114,6 +115,7 @@ func ImplementEuclideanVertical4AVX2() {
 	RET()
 }
 
+// ImplementDotVertical4AVX2 runs the implement dot vertical4 avx2 operation.
 func ImplementDotVertical4AVX2() {
 	TEXT("dotVertical4AVX2", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
 	q := Load(Param("q"), GP64())
@@ -208,6 +210,7 @@ func ImplementDotVertical4AVX2() {
 	RET()
 }
 
+// ImplementEuclideanVertical4AVX512 runs the implement euclidean vertical4 avx512 operation.
 func ImplementEuclideanVertical4AVX512() {
 	TEXT("euclideanVertical4AVX512", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
 	q := Load(Param("q"), GP64())
@@ -319,6 +322,7 @@ func ImplementEuclideanVertical4AVX512() {
 	RET()
 }
 
+// ImplementDotVertical4AVX512 runs the implement dot vertical4 avx512 operation.
 func ImplementDotVertical4AVX512() {
 	TEXT("dotVertical4AVX512", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
 	q := Load(Param("q"), GP64())

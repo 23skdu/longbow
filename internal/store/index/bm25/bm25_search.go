@@ -371,7 +371,7 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 	return results
 }
 
-// tokenize is a simple whitespace tokenizer with basic cleaning
+// Tokenize is a simple whitespace tokenizer with basic cleaning
 func Tokenize(text string) []string {
 	fields := strings.Fields(strings.ToLower(text))
 	tokens := make([]string, 0, len(fields))

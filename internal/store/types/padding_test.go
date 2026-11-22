@@ -5,6 +5,7 @@ import (
 	"unsafe"
 )
 
+// TestPaddedMutexAlignment runs the test padded mutex alignment operation.
 func TestPaddedMutexAlignment(t *testing.T) {
 	var m PaddedMutex
 	size := unsafe.Sizeof(m)

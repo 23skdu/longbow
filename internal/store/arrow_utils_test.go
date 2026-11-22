@@ -9,6 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// TestExtractVectorFromArrow runs the test extract vector from arrow operation.
 func TestExtractVectorFromArrow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -77,6 +78,7 @@ func TestExtractVectorFromArrow(t *testing.T) {
 	}
 }
 
+// TestExtractVectorCopy runs the test extract vector copy operation.
 func TestExtractVectorCopy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -121,6 +123,7 @@ func TestExtractVectorCopy(t *testing.T) {
 	}
 }
 
+// BenchmarkExtractVectorZeroCopy runs the benchmark extract vector zero copy operation.
 func BenchmarkExtractVectorZeroCopy(b *testing.B) {
 	pool := memory.NewGoAllocator()
 
@@ -158,6 +161,7 @@ func BenchmarkExtractVectorZeroCopy(b *testing.B) {
 	}
 }
 
+// BenchmarkExtractVectorCopy runs the benchmark extract vector copy operation.
 func BenchmarkExtractVectorCopy(b *testing.B) {
 	pool := memory.NewGoAllocator()
 
@@ -195,6 +199,7 @@ func BenchmarkExtractVectorCopy(b *testing.B) {
 	}
 }
 
+// TestExtractVectorF16FromArrow runs the test extract vector f16 from arrow operation.
 func TestExtractVectorF16FromArrow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -257,6 +262,7 @@ func TestExtractVectorF16FromArrow(t *testing.T) {
 	}
 }
 
+// TestInferVectorDataType_Float64 runs the test infer vector data type_float64 operation.
 func TestInferVectorDataType_Float64(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -275,6 +281,7 @@ func TestInferVectorDataType_Float64(t *testing.T) {
 	}
 }
 
+// TestExtractVectorFromArrow_Float64 runs the test extract vector from arrow_float64 operation.
 func TestExtractVectorFromArrow_Float64(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

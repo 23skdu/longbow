@@ -13,6 +13,7 @@ func helperLazyMeta(m map[string]interface{}) *lbtypes.LazyMetadata {
 	return lbtypes.NewLazyMetadata(b)
 }
 
+// TestParseFilterAndEvaluate_AST runs the test parse filter and evaluate_ast operation.
 func TestParseFilterAndEvaluate_AST(t *testing.T) {
 	node := map[string]interface{}{
 		"$and": []interface{}{

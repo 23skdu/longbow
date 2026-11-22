@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestHybridQueryDefaults runs the test hybrid query defaults operation.
 func TestHybridQueryDefaults(t *testing.T) {
 	q := DefaultHybridQuery()
 
@@ -21,6 +22,7 @@ func TestHybridQueryDefaults(t *testing.T) {
 	}
 }
 
+// TestHybridQueryValidation runs the test hybrid query validation operation.
 func TestHybridQueryValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -94,6 +96,7 @@ func TestHybridQueryValidation(t *testing.T) {
 	}
 }
 
+// TestSearchHybridPureVector runs the test search hybrid pure vector operation.
 func TestSearchHybridPureVector(t *testing.T) {
 	// Alpha=1.0 means pure vector search
 	query := HybridQuery{
@@ -108,6 +111,7 @@ func TestSearchHybridPureVector(t *testing.T) {
 	}
 }
 
+// TestSearchHybridPureKeyword runs the test search hybrid pure keyword operation.
 func TestSearchHybridPureKeyword(t *testing.T) {
 	// Alpha=0.0 means pure keyword/BM25 search
 	query := HybridQuery{
@@ -122,6 +126,7 @@ func TestSearchHybridPureKeyword(t *testing.T) {
 	}
 }
 
+// TestHybridResultCombination runs the test hybrid result combination operation.
 func TestHybridResultCombination(t *testing.T) {
 	// Test combining vector and BM25 results with alpha weighting
 	vectorResults := []SearchResult{
@@ -145,6 +150,7 @@ func TestHybridResultCombination(t *testing.T) {
 	}
 }
 
+// TestHybridResultRRF runs the test hybrid result rrf operation.
 func TestHybridResultRRF(t *testing.T) {
 	// Test Reciprocal Rank Fusion specifically
 	vectorResults := []SearchResult{

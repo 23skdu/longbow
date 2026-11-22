@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestParallelBFSStrategy_FindPath runs the test parallel bfs strategy_find path operation.
 func TestParallelBFSStrategy_FindPath(t *testing.T) {
 	// Create a larger graph to justify parallel traversal
 	// Grid graph 10x10 = 100 nodes
@@ -93,6 +94,7 @@ func TestParallelBFSStrategy_FindPath(t *testing.T) {
 	}
 }
 
+// TestQueryPlanner_ParallelSelection runs the test query planner_parallel selection operation.
 func TestQueryPlanner_ParallelSelection(t *testing.T) {
 	planner := NewQueryPlanner()
 

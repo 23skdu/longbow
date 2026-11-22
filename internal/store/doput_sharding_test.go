@@ -306,6 +306,7 @@ func TestDoPutConcurrentMigration(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkAddToIndexHNSW runs the benchmark add to index hnsw operation.
 func BenchmarkAddToIndexHNSW(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	rec := createShardingTestRecordBatch(&testing.T{}, mem, 1, 128)
@@ -324,6 +325,7 @@ func BenchmarkAddToIndexHNSW(b *testing.B) {
 	}
 }
 
+// BenchmarkAddToIndexSharded runs the benchmark add to index sharded operation.
 func BenchmarkAddToIndexSharded(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	rec := createShardingTestRecordBatch(&testing.T{}, mem, 1, 128)

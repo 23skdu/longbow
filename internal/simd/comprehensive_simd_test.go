@@ -270,6 +270,7 @@ func TestComprehensiveDistances(t *testing.T) {
 	})
 }
 
+// TestSIMDBitops runs the test simd bitops operation.
 func TestSIMDBitops(t *testing.T) {
 	a := make([]byte, 128)
 	b := make([]byte, 128)
@@ -300,6 +301,7 @@ func TestSIMDBitops(t *testing.T) {
 	})
 }
 
+// TestSIMDCentroidAndMatch runs the test simd centroid and match operation.
 func TestSIMDCentroidAndMatch(t *testing.T) {
 	rand.Seed(42) //nolint:staticcheck
 	dims := 128
@@ -329,6 +331,7 @@ func TestSIMDCentroidAndMatch(t *testing.T) {
 	})
 }
 
+// TestSIMDBatchFlat runs the test simd batch flat operation.
 func TestSIMDBatchFlat(t *testing.T) {
 	dims := 128
 	numVecs := 10
@@ -343,6 +346,7 @@ func TestSIMDBatchFlat(t *testing.T) {
 	})
 }
 
+// TestComprehensiveEdgeCases runs the test comprehensive edge cases operation.
 func TestComprehensiveEdgeCases(t *testing.T) {
 	t.Run("LengthMismatch", func(t *testing.T) {
 		a := []float32{1, 2, 3}
@@ -374,6 +378,7 @@ func TestComprehensiveEdgeCases(t *testing.T) {
 	})
 }
 
+// TestSIMDArchitectureDispatch runs the test simd architecture dispatch operation.
 func TestSIMDArchitectureDispatch(t *testing.T) {
 	// Test the DispatchDistance function directly to exercise all branches
 	a := make([]float32, 128)
@@ -394,6 +399,7 @@ func TestSIMDArchitectureDispatch(t *testing.T) {
 	})
 }
 
+// TestGetDataType runs the test get data type operation.
 func TestGetDataType(t *testing.T) {
 	t.Run("float32", func(t *testing.T) {
 		assert.Equal(t, DataTypeFloat32, GetDataType[float32]())
@@ -406,6 +412,7 @@ func TestGetDataType(t *testing.T) {
 	})
 }
 
+// TestHighDimensionDispatch runs the test high dimension dispatch operation.
 func TestHighDimensionDispatch(t *testing.T) {
 	// Test high-dimension blocking logic
 	dims := 1024

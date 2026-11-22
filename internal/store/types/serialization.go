@@ -124,8 +124,10 @@ func readUint8(r io.Reader) (uint8, error) {
 }
 
 const (
+	// GraphSnapshotVersion is a graph snapshot version constant.
 	GraphSnapshotVersion = 1
-	SerializationMagic   = 0x4C424752 // "LBGR" (LongBow GRaph)
+	// SerializationMagic is a serialization magic constant.
+	SerializationMagic = 0x4C424752 // "LBGR" (LongBow GRaph)
 )
 
 // Serialize writes the GraphData to the writer in a portable binary format.
@@ -538,7 +540,7 @@ func (g *GraphData) writeUint16Vectors(w io.Writer) error {
 	return nil
 }
 
-// Deserialize reads GraphData from the reader.
+// DeserializeGraphData reads GraphData from the reader.
 func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 	magic, err := readUint32(r)
 	if err != nil {

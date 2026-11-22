@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestStreamAggregator_Internal_Coverage runs the test stream aggregator_internal_coverage operation.
 func TestStreamAggregator_Internal_Coverage(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestEuclideanDistanceSQ8 runs the test euclidean distance sq8 operation.
 func TestEuclideanDistanceSQ8(t *testing.T) {
 
 	tests := []struct {
@@ -43,6 +44,7 @@ func TestEuclideanDistanceSQ8(t *testing.T) {
 	}
 }
 
+// BenchmarkEuclideanDistanceSQ8 runs the benchmark euclidean distance sq8 operation.
 func BenchmarkEuclideanDistanceSQ8(b *testing.B) {
 	size := 1024
 	a := make([]byte, size)

@@ -14,6 +14,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// SearchVectorsWithBitmap runs the search vectors with bitmap operation.
 func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *roaring.Bitmap, options any) ([]types.SearchResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

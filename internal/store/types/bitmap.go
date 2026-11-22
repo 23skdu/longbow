@@ -20,6 +20,7 @@ type Bitset struct {
 	pooled bool // if true, bitmap came from pool.GetBitmap and Release returns it
 }
 
+// AsRoaring runs the as roaring operation.
 func (b *Bitset) AsRoaring() *roaring.Bitmap {
 	if b == nil {
 		return nil
@@ -29,6 +30,7 @@ func (b *Bitset) AsRoaring() *roaring.Bitmap {
 	return b.bitmap
 }
 
+// NewBitset constructs a new Bitset.
 func NewBitset() *Bitset {
 	return &Bitset{
 		bitmap: pool.GetBitmap(),
@@ -37,6 +39,7 @@ func NewBitset() *Bitset {
 	}
 }
 
+// NewBitsetFromRoaring constructs a new BitsetFromRoaring.
 func NewBitsetFromRoaring(bm *roaring.Bitmap) *Bitset {
 	if bm == nil {
 		return &Bitset{bitmap: roaring.New(), shared: false, pooled: false}
@@ -55,6 +58,7 @@ func (b *Bitset) ensurePrivateLocked() {
 	}
 }
 
+// And runs the and operation.
 func (b *Bitset) And(other *roaring.Bitmap) {
 	if other == nil {
 		return
@@ -201,6 +205,7 @@ type AtomicBitset struct {
 	writeMu sync.Mutex
 }
 
+// NewAtomicBitset constructs a new AtomicBitset.
 func NewAtomicBitset() *AtomicBitset {
 	ab := &AtomicBitset{}
 	// Initialize with empty bitmap
@@ -208,6 +213,7 @@ func NewAtomicBitset() *AtomicBitset {
 	return ab
 }
 
+// Contains runs the contains operation.
 func (b *AtomicBitset) Contains(i int) bool {
 	bm := b.bitmap.Load()
 	if bm == nil {
@@ -216,6 +222,7 @@ func (b *AtomicBitset) Contains(i int) bool {
 	return bm.Contains(uint32(i)) // #nosec G115
 }
 
+// Set sets the .
 func (b *AtomicBitset) Set(i int) {
 	b.writeMu.Lock()
 	defer b.writeMu.Unlock()
@@ -231,6 +238,7 @@ func (b *AtomicBitset) Set(i int) {
 	b.bitmap.Store(newBm)
 }
 
+// Clear runs the clear operation.
 func (b *AtomicBitset) Clear(i int) {
 	b.writeMu.Lock()
 	defer b.writeMu.Unlock()
@@ -248,6 +256,7 @@ func (b *AtomicBitset) Clear(i int) {
 	b.bitmap.Store(newBm)
 }
 
+// Count runs the count operation.
 func (b *AtomicBitset) Count() uint64 {
 	bm := b.bitmap.Load()
 	if bm == nil {
@@ -256,6 +265,7 @@ func (b *AtomicBitset) Count() uint64 {
 	return bm.GetCardinality()
 }
 
+// ToUint32Array runs the to uint32 array operation.
 func (b *AtomicBitset) ToUint32Array() []uint32 {
 	bm := b.bitmap.Load()
 	if bm == nil {
@@ -264,12 +274,14 @@ func (b *AtomicBitset) ToUint32Array() []uint32 {
 	return bm.ToArray()
 }
 
+// Reset runs the reset operation.
 func (b *AtomicBitset) Reset() {
 	b.writeMu.Lock()
 	defer b.writeMu.Unlock()
 	b.bitmap.Store(roaring.New())
 }
 
+// Clone runs the clone operation.
 func (b *AtomicBitset) Clone() *AtomicBitset {
 	bm := b.bitmap.Load()
 	newAb := NewAtomicBitset()
@@ -279,6 +291,7 @@ func (b *AtomicBitset) Clone() *AtomicBitset {
 	return newAb
 }
 
+// Release runs the release operation.
 func (b *AtomicBitset) Release() {
 	b.writeMu.Lock()
 	defer b.writeMu.Unlock()

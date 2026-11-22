@@ -17,6 +17,7 @@ func newTestPager(t *testing.T) *GPUPager {
 	return NewGPUPager(pool, 64*1024, 4096) // 16 pages of 4KB
 }
 
+// TestNewGPUPager runs the test new gpu pager operation.
 func TestNewGPUPager(t *testing.T) {
 	p := newTestPager(t)
 	defer p.Close()
@@ -24,6 +25,7 @@ func TestNewGPUPager(t *testing.T) {
 	assert.Equal(t, int64(0), p.VRAMUsage())
 }
 
+// TestGPUPager_AllocPromote runs the test gpu pager_alloc promote operation.
 func TestGPUPager_AllocPromote(t *testing.T) {
 	p := newTestPager(t)
 	defer p.Close()
@@ -40,6 +42,7 @@ func TestGPUPager_AllocPromote(t *testing.T) {
 	assert.NotNil(t, p.GetGPUAddr(pi))
 }
 
+// TestGPUPager_DoubleAllocFails runs the test gpu pager_double alloc fails operation.
 func TestGPUPager_DoubleAllocFails(t *testing.T) {
 	p := newTestPager(t)
 	defer p.Close()
@@ -51,6 +54,7 @@ func TestGPUPager_DoubleAllocFails(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestGPUPager_Free runs the test gpu pager_free operation.
 func TestGPUPager_Free(t *testing.T) {
 	p := newTestPager(t)
 	defer p.Close()
@@ -65,6 +69,7 @@ func TestGPUPager_Free(t *testing.T) {
 	assert.Equal(t, 0, p.ResidentPages())
 }
 
+// TestGPUPager_LRUEviction runs the test gpu pager_lru eviction operation.
 func TestGPUPager_LRUEviction(t *testing.T) {
 	pool, err := NewGPUMemPool(types.BackendCPU, 0)
 	require.NoError(t, err)
@@ -96,6 +101,7 @@ func TestGPUPager_LRUEviction(t *testing.T) {
 	assert.Equal(t, int64(0), fails)
 }
 
+// TestGPUPager_Demote runs the test gpu pager_demote operation.
 func TestGPUPager_Demote(t *testing.T) {
 	p := newTestPager(t)
 	defer p.Close()
@@ -109,6 +115,7 @@ func TestGPUPager_Demote(t *testing.T) {
 	assert.Equal(t, 0, p.ResidentPages())
 }
 
+// TestGPUPager_MarkDirty runs the test gpu pager_mark dirty operation.
 func TestGPUPager_MarkDirty(t *testing.T) {
 	p := newTestPager(t)
 	defer p.Close()
@@ -122,6 +129,7 @@ func TestGPUPager_MarkDirty(t *testing.T) {
 	assert.Equal(t, 0, p.ResidentPages())
 }
 
+// TestGPUPager_Restore runs the test gpu pager_restore operation.
 func TestGPUPager_Restore(t *testing.T) {
 	pool, err := NewGPUMemPool(types.BackendCPU, 0)
 	require.NoError(t, err)
@@ -150,6 +158,7 @@ func TestGPUPager_Restore(t *testing.T) {
 	assert.Equal(t, int64(1), restores)
 }
 
+// TestGPUPager_Access runs the test gpu pager_access operation.
 func TestGPUPager_Access(t *testing.T) {
 	pool, err := NewGPUMemPool(types.BackendCPU, 0)
 	require.NoError(t, err)
@@ -181,6 +190,7 @@ func TestGPUPager_Access(t *testing.T) {
 	assert.Equal(t, int64(1), evicts)
 }
 
+// TestGPUPager_Close runs the test gpu pager_close operation.
 func TestGPUPager_Close(t *testing.T) {
 	p := newTestPager(t)
 	defer p.Close()
@@ -193,6 +203,7 @@ func TestGPUPager_Close(t *testing.T) {
 	assert.Equal(t, 0, p.TotalPages())
 }
 
+// TestGPUPager_AllocAfterClose runs the test gpu pager_alloc after close operation.
 func TestGPUPager_AllocAfterClose(t *testing.T) {
 	p := newTestPager(t)
 	p.Close()

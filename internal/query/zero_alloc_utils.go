@@ -5,6 +5,7 @@ import (
 	"strconv"
 )
 
+// SkipWhitespace runs the skip whitespace operation.
 func SkipWhitespace(data []byte, pos int) int {
 	for pos < len(data) && (data[pos] == ' ' || data[pos] == '\t' || data[pos] == '\n' || data[pos] == '\r') {
 		pos++
@@ -12,6 +13,7 @@ func SkipWhitespace(data []byte, pos int) int {
 	return pos
 }
 
+// ParseString runs the parse string operation.
 func ParseString(data []byte, pos int) (string, int, error) {
 	if pos >= len(data) || data[pos] != '"' {
 		return "", pos, errors.New("expected quote")
@@ -112,6 +114,7 @@ func encodeRune(buf []byte, r rune) int {
 	return 0
 }
 
+// ParseInt64 runs the parse int64 operation.
 func ParseInt64(data []byte, pos int) (int64, int, error) {
 	start := pos
 	if pos < len(data) && data[pos] == '-' {
@@ -131,6 +134,7 @@ func ParseInt64(data []byte, pos int) (int64, int, error) {
 	return val, pos, nil
 }
 
+// ParseFloat32 runs the parse float32 operation.
 func ParseFloat32(data []byte, pos int) (float32, int, error) {
 	start := pos
 	if pos < len(data) && data[pos] == '-' {
@@ -164,6 +168,7 @@ func ParseFloat32(data []byte, pos int) (float32, int, error) {
 	return float32(val), pos, nil
 }
 
+// ParseBool runs the parse bool operation.
 func ParseBool(data []byte, pos int) (bool, int, error) {
 	if pos+4 <= len(data) && string(data[pos:pos+4]) == "true" {
 		return true, pos + 4, nil
@@ -174,6 +179,7 @@ func ParseBool(data []byte, pos int) (bool, int, error) {
 	return false, pos, errors.New("expected boolean")
 }
 
+// SkipValue runs the skip value operation.
 func SkipValue(data []byte, pos int) (int, error) {
 	pos = SkipWhitespace(data, pos)
 	if pos >= len(data) {
@@ -194,6 +200,7 @@ func SkipValue(data []byte, pos int) (int, error) {
 	}
 }
 
+// SkipLiteral runs the skip literal operation.
 func SkipLiteral(data []byte, pos int) (int, error) {
 	if pos+4 <= len(data) && string(data[pos:pos+4]) == "true" {
 		return pos + 4, nil
@@ -207,6 +214,7 @@ func SkipLiteral(data []byte, pos int) (int, error) {
 	return pos, errors.New("expected literal")
 }
 
+// SkipNumber runs the skip number operation.
 func SkipNumber(data []byte, pos int) (int, error) {
 	start := pos
 	if pos < len(data) && data[pos] == '-' {
@@ -236,6 +244,7 @@ func SkipNumber(data []byte, pos int) (int, error) {
 	return pos, nil
 }
 
+// SkipObject runs the skip object operation.
 func SkipObject(data []byte, pos int) (int, error) {
 	pos++ // {
 	for pos < len(data) {
@@ -268,6 +277,7 @@ func SkipObject(data []byte, pos int) (int, error) {
 	return pos, errors.New("unclosed object")
 }
 
+// SkipArray runs the skip array operation.
 func SkipArray(data []byte, pos int) (int, error) {
 	pos++ // [
 	for pos < len(data) {

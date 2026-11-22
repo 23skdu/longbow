@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestQuery_EvaluatorBranches runs the test query_evaluator branches operation.
 func TestQuery_EvaluatorBranches(t *testing.T) {
 	pool := memory.NewGoAllocator()
 
@@ -78,6 +79,7 @@ func TestQuery_EvaluatorBranches(t *testing.T) {
 	})
 }
 
+// TestQuery_ZeroAllocParsers runs the test query_zero alloc parsers operation.
 func TestQuery_ZeroAllocParsers(t *testing.T) {
 	logger := zerolog.Nop()
 
@@ -108,6 +110,7 @@ func TestQuery_ZeroAllocParsers(t *testing.T) {
 	})
 }
 
+// TestQuery_FilterOperators runs the test query_filter operators operation.
 func TestQuery_FilterOperators(t *testing.T) {
 	ops := []string{"=", "!=", ">", ">=", "<", "<=", "IN", "NOT IN", "CONTAINS", "LIKE"}
 	for _, op := range ops {
@@ -120,6 +123,7 @@ func TestQuery_FilterOperators(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestQuery_BitmapLarge runs the test query_bitmap large operation.
 func TestQuery_BitmapLarge(t *testing.T) {
 	b := types.NewBitset()
 	for i := 0; i < 1000; i += 2 {
@@ -135,6 +139,7 @@ func TestQuery_BitmapLarge(t *testing.T) {
 	assert.Equal(t, uint64(499), b.Count())
 }
 
+// TestQuery_ProjectionApply runs the test query_projection apply operation.
 func TestQuery_ProjectionApply(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{{Name: "a", Type: arrow.PrimitiveTypes.Int32}}, nil)

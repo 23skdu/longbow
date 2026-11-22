@@ -25,13 +25,20 @@ const (
 )
 
 var (
-	ErrInvalidModule   = errors.New("wasm: invalid module")
-	ErrMissingExport   = errors.New("wasm: missing required export")
-	ErrMemoryBounds    = errors.New("wasm: memory bounds exceeded")
+	// ErrInvalidModule is a err invalid module value.
+	ErrInvalidModule = errors.New("wasm: invalid module")
+	// ErrMissingExport is a err missing export value.
+	ErrMissingExport = errors.New("wasm: missing required export")
+	// ErrMemoryBounds is a err memory bounds value.
+	ErrMemoryBounds = errors.New("wasm: memory bounds exceeded")
+	// ErrInferenceFailed is a err inference failed value.
 	ErrInferenceFailed = errors.New("wasm: inference failed")
-	ErrModuleClosed    = errors.New("wasm: module closed")
-	ErrInputTooLarge   = errors.New("wasm: input too large")
-	ErrOutputTooLarge  = errors.New("wasm: output too large")
+	// ErrModuleClosed is a err module closed value.
+	ErrModuleClosed = errors.New("wasm: module closed")
+	// ErrInputTooLarge is a err input too large value.
+	ErrInputTooLarge = errors.New("wasm: input too large")
+	// ErrOutputTooLarge is a err output too large value.
+	ErrOutputTooLarge = errors.New("wasm: output too large")
 )
 
 // Runner handles WASM model execution
@@ -317,6 +324,7 @@ func (r *Runner) InferenceWithTokens(ctx context.Context, inputIds []int64, mask
 	return output, nil
 }
 
+// Close runs the close operation.
 func (r *Runner) Close(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()

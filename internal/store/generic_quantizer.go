@@ -151,6 +151,7 @@ type ErrUnsupportedVectorType struct {
 	ExpectedTypes []string
 }
 
+// Error runs the error operation.
 func (e *ErrUnsupportedVectorType) Error() string {
 	return fmt.Sprintf("unsupported vector type: %s (expected one of: %v)",
 		e.InputType, e.ExpectedTypes)
@@ -162,6 +163,7 @@ type ErrUnsupportedCodeType struct {
 	ExpectedTypes []string
 }
 
+// Error runs the error operation.
 func (e *ErrUnsupportedCodeType) Error() string {
 	return fmt.Sprintf("unsupported code type: %s (expected one of: %v)",
 		e.CodeType, e.ExpectedTypes)

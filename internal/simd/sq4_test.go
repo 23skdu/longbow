@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestDotInt4 runs the test dot int4 operation.
 func TestDotInt4(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -42,6 +43,7 @@ func TestDotInt4(t *testing.T) {
 	}
 }
 
+// FuzzDotInt4 runs the fuzz dot int4 operation.
 func FuzzDotInt4(f *testing.F) {
 	f.Add([]byte{0x12, 0x34}, []byte{0x12, 0x34})
 	f.Fuzz(func(t *testing.T, a, b []byte) {
@@ -52,6 +54,7 @@ func FuzzDotInt4(f *testing.F) {
 	})
 }
 
+// TestDotInt2 runs the test dot int2 operation.
 func TestDotInt2(t *testing.T) {
 	tests := []struct {
 		name     string

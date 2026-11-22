@@ -25,10 +25,14 @@ import (
 type SchemaCompatibilityMode string
 
 const (
-	CompatNone     SchemaCompatibilityMode = "NONE"
+	// CompatNone is a compat none constant.
+	CompatNone SchemaCompatibilityMode = "NONE"
+	// CompatBackward is a compat backward constant.
 	CompatBackward SchemaCompatibilityMode = "BACKWARD"
-	CompatForward  SchemaCompatibilityMode = "FORWARD"
-	CompatFull     SchemaCompatibilityMode = "FULL"
+	// CompatForward is a compat forward constant.
+	CompatForward SchemaCompatibilityMode = "FORWARD"
+	// CompatFull is a compat full constant.
+	CompatFull SchemaCompatibilityMode = "FULL"
 )
 
 // FieldConstraint defines validation & constraint rules for an Arrow column or metadata key.

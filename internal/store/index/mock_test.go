@@ -28,6 +28,7 @@ type MockDataset struct {
 	Tombstones map[int]*types.Bitset
 }
 
+// Close runs the close operation.
 func (m *MockDataset) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -41,7 +42,10 @@ func (m *MockDataset) Close() {
 	m.Graph = nil
 }
 
+// GetName returns the name.
 func (m *MockDataset) GetName() string { return m.Name }
+
+// GetRecords returns the records.
 func (m *MockDataset) GetRecords() []arrow.RecordBatch {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -49,13 +53,29 @@ func (m *MockDataset) GetRecords() []arrow.RecordBatch {
 	copy(recs, m.Records)
 	return recs
 }
-func (m *MockDataset) GetSchema() *arrow.Schema             { return m.Schema }
+
+// GetSchema returns the schema.
+func (m *MockDataset) GetSchema() *arrow.Schema { return m.Schema }
+
+// GetTombstones returns the tombstones.
 func (m *MockDataset) GetTombstones() map[int]*types.Bitset { return m.Tombstones }
-func (m *MockDataset) GetPQEncoder() *pq.PQEncoder          { return m.PQEncoder }
-func (m *MockDataset) RLockData()                           { m.mu.RLock() }
-func (m *MockDataset) RUnlockData()                         { m.mu.RUnlock() }
-func (m *MockDataset) Lock()                                { m.mu.Lock() }
-func (m *MockDataset) Unlock()                              { m.mu.Unlock() }
+
+// GetPQEncoder returns the pq encoder.
+func (m *MockDataset) GetPQEncoder() *pq.PQEncoder { return m.PQEncoder }
+
+// RLockData runs the r lock data operation.
+func (m *MockDataset) RLockData() { m.mu.RLock() }
+
+// RUnlockData runs the r unlock data operation.
+func (m *MockDataset) RUnlockData() { m.mu.RUnlock() }
+
+// Lock runs the lock operation.
+func (m *MockDataset) Lock() { m.mu.Lock() }
+
+// Unlock runs the unlock operation.
+func (m *MockDataset) Unlock() { m.mu.Unlock() }
+
+// GenerateFilterBitset runs the generate filter bitset operation.
 func (m *MockDataset) GenerateFilterBitset(filters []query.Filter, expr types.FilterExpr) (*types.Bitset, error) {
 	if len(filters) > 0 && len(m.Records) > 0 {
 		for _, f := range filters {
@@ -77,9 +97,14 @@ func (m *MockDataset) GenerateFilterBitset(filters []query.Filter, expr types.Fi
 	}
 	return nil, nil
 }
-func (m *MockDataset) ResetTombstones() {}
-func (m *MockDataset) GetIndex() any    { return nil }
 
+// ResetTombstones runs the reset tombstones operation.
+func (m *MockDataset) ResetTombstones() {}
+
+// GetIndex returns the index.
+func (m *MockDataset) GetIndex() any { return nil }
+
+// NewMockDataset constructs a new MockDataset.
 func NewMockDataset(name string, schema *arrow.Schema) *MockDataset {
 	return &MockDataset{
 		Name:    name,
@@ -88,17 +113,26 @@ func NewMockDataset(name string, schema *arrow.Schema) *MockDataset {
 	}
 }
 
+// GetMetric returns the metric.
 func (m *MockDataset) GetMetric() topcore.DistanceMetric {
 	return topcore.MetricEuclidean
 }
 
+// GetLogger returns the logger.
 func (m *MockDataset) GetLogger() zerolog.Logger {
 	return zerolog.Nop()
 }
 
+// GetTopo returns the topo.
 func (m *MockDataset) GetTopo() *memory.NUMATopology {
 	return nil
 }
-func (m *MockDataset) TurboQuantBits() int     { return 8 }
+
+// TurboQuantBits runs the turbo quant bits operation.
+func (m *MockDataset) TurboQuantBits() int { return 8 }
+
+// GetEvictionManager returns the eviction manager.
 func (m *MockDataset) GetEvictionManager() any { return nil }
-func (m *MockDataset) GetDiskStore() any       { return nil }
+
+// GetDiskStore returns the disk store.
+func (m *MockDataset) GetDiskStore() any { return nil }

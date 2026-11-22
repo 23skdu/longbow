@@ -12,10 +12,14 @@ import (
 const tenantContextKey contextKey = "longbow_tenant_context"
 
 var (
-	ErrUnauthorized    = errors.New("unauthorized")
-	ErrForbidden       = errors.New("forbidden")
+	// ErrUnauthorized is a err unauthorized value.
+	ErrUnauthorized = errors.New("unauthorized")
+	// ErrForbidden is a err forbidden value.
+	ErrForbidden = errors.New("forbidden")
+	// ErrTenantIsolation is a err tenant isolation value.
 	ErrTenantIsolation = errors.New("cross-tenant access denied")
-	ErrRLSValidation   = errors.New("row-level security policy violation")
+	// ErrRLSValidation is a err rls validation value.
+	ErrRLSValidation = errors.New("row-level security policy violation")
 )
 
 // TenantContext holds authenticated identity, tenant boundary, roles, and RLS metadata.
@@ -139,10 +143,14 @@ type AccessValidator interface {
 type RLSOperator string
 
 const (
-	RLSOpEq     RLSOperator = "eq"
-	RLSOpNeq    RLSOperator = "neq"
+	// RLSOpEq is a rls op eq constant.
+	RLSOpEq RLSOperator = "eq"
+	// RLSOpNeq is a rls op neq constant.
+	RLSOpNeq RLSOperator = "neq"
+	// RLSOpPrefix is a rls op prefix constant.
 	RLSOpPrefix RLSOperator = "prefix"
-	RLSOpIn     RLSOperator = "in"
+	// RLSOpIn is a rls op in constant.
+	RLSOpIn RLSOperator = "in"
 )
 
 // RLSRule represents a single predicate on record metadata.

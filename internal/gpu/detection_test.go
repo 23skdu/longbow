@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestDetectTPUs_Mock runs the test detect tp us_mock operation.
 func TestDetectTPUs_Mock(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("detectTPUs is Linux-only")
@@ -45,6 +46,7 @@ func TestDetectTPUs_Mock(t *testing.T) {
 	require.Equal(t, 1, gpus[0].ComputeMajor) // NUMA node
 }
 
+// TestGPUBackend_String runs the test gpu backend_string operation.
 func TestGPUBackend_String(t *testing.T) {
 	require.Equal(t, "TPU", types.BackendTPU.String())
 }

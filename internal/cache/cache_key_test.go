@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestHashQuery runs the test hash query operation.
 func TestHashQuery(t *testing.T) {
 	req := &qry.VectorSearchRequest{
 		Dataset:    "test",

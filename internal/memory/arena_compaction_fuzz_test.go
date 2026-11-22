@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// FuzzCompactableArenaOperations runs the fuzz compactable arena operations operation.
 func FuzzCompactableArenaOperations(f *testing.F) {
 	// Seed corpus
 	f.Add(uint8(10), uint8(5), uint8(100))
@@ -75,6 +76,7 @@ func FuzzCompactableArenaOperations(f *testing.F) {
 	})
 }
 
+// FuzzCompactableArenaConcurrentAccess runs the fuzz compactable arena concurrent access operation.
 func FuzzCompactableArenaConcurrentAccess(f *testing.F) {
 	f.Add(uint8(5), uint8(10))
 

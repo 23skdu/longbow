@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// TestLevelForIsADeterministicFunctionOfNodeID runs the test level for is a deterministic function of node id operation.
 func TestLevelForIsADeterministicFunctionOfNodeID(t *testing.T) {
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.DataType = types.VectorTypeFloat32
@@ -86,6 +87,7 @@ func TestLevelForIsADeterministicFunctionOfNodeID(t *testing.T) {
 	}
 }
 
+// TestLevelUnitStaysInsideTheOpenInterval runs the test level unit stays inside the open interval operation.
 func TestLevelUnitStaysInsideTheOpenInterval(t *testing.T) {
 	// -log(0) is +Inf, and int(+Inf) is implementation-defined. The caller
 	// would need a special case if LevelUnit could return 0.

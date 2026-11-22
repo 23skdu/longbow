@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestZeroCopyRecordBatch runs the test zero copy record batch operation.
 func TestZeroCopyRecordBatch(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
@@ -109,6 +110,7 @@ func TestZeroCopyRecordBatch(t *testing.T) {
 	})
 }
 
+// TestRetainRecordBatch runs the test retain record batch operation.
 func TestRetainRecordBatch(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(

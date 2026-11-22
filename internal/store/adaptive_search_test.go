@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestCalculateAdaptiveLimit runs the test calculate adaptive limit operation.
 func TestCalculateAdaptiveLimit(t *testing.T) {
 	tests := []struct {
 		name    string

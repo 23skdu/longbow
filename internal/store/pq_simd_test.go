@@ -8,6 +8,7 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 )
 
+// TestADCBatchSIMD runs the test adc batch simd operation.
 func TestADCBatchSIMD(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -55,6 +56,7 @@ func TestADCBatchSIMD(t *testing.T) {
 	}
 }
 
+// BenchmarkADCBatchSIMD runs the benchmark adc batch simd operation.
 func BenchmarkADCBatchSIMD(b *testing.B) {
 	m := 32
 	ksub := 256

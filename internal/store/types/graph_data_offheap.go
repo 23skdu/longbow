@@ -6,6 +6,7 @@ import (
 	"github.com/23skdu/longbow/internal/memory"
 )
 
+// PreAllocate runs the pre allocate operation.
 func (g *GraphData) PreAllocate(capacity int) error {
 	if capacity <= 0 || g.Dims <= 0 {
 		return nil
@@ -381,6 +382,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 // This is a helper for legacy tests.
 // NewGraphData creates a new GraphData instance.
 
+// RelocateToOffHeap runs the relocate to off heap operation.
 func (g *GraphData) RelocateToOffHeap() error {
 	alloc := memory.NewOffHeapAllocator()
 

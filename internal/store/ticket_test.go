@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestComplex128_TicketSerialization validates that we can marshal and unmarshal
+// TestComplex128_TicketParsing validates that we can marshal and unmarshal
 // raw vector tickets containing complex128 data (often represented as [][]float or interleaved).
 func TestComplex128_TicketParsing(t *testing.T) {
 	// 1. Simulate a malformed ticket payload (e.g. from Python client sending NaNs or objects)

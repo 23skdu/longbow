@@ -24,6 +24,7 @@ func createTestGraph(t *testing.T) *types.GraphData {
 	return g
 }
 
+// TestGraphNavigator_FindPath_Linear runs the test graph navigator_find path_linear operation.
 func TestGraphNavigator_FindPath_Linear(t *testing.T) {
 	g := createTestGraph(t)
 	// Create linear graph: 0 -> 1 -> 2 -> 3
@@ -49,6 +50,7 @@ func TestGraphNavigator_FindPath_Linear(t *testing.T) {
 	assert.Equal(t, 3, path.Hops)
 }
 
+// TestGraphNavigator_FindPath_Star runs the test graph navigator_find path_star operation.
 func TestGraphNavigator_FindPath_Star(t *testing.T) {
 	g := createTestGraph(t)
 	// Create star graph: 0 -> {1, 2, 3}, 1 -> {4}, 2 -> {4}, 3 -> {4}
@@ -74,6 +76,7 @@ func TestGraphNavigator_FindPath_Star(t *testing.T) {
 	assert.Contains(t, [][]uint32{{0, 1, 4}, {0, 2, 4}, {0, 3, 4}}, path.Path)
 }
 
+// TestGraphNavigator_MaxHops runs the test graph navigator_max hops operation.
 func TestGraphNavigator_MaxHops(t *testing.T) {
 	g := createTestGraph(t)
 	// 0 -> 1 -> 2 -> 3
@@ -97,6 +100,7 @@ func TestGraphNavigator_MaxHops(t *testing.T) {
 	assert.False(t, path.Found)
 }
 
+// TestGraphNavigator_DistancePruning runs the test graph navigator_distance pruning operation.
 func TestGraphNavigator_DistancePruning(t *testing.T) {
 	g := createTestGraph(t)
 	// 0 -> 1 -> 2 -> 3
@@ -129,6 +133,7 @@ func TestGraphNavigator_DistancePruning(t *testing.T) {
 	assert.False(t, path.Found)
 }
 
+// TestGraphNavigator_Metrics runs the test graph navigator_metrics operation.
 func TestGraphNavigator_Metrics(t *testing.T) {
 	g := createTestGraph(t)
 	_ = g.SetNeighbors(0, []uint32{1})
@@ -154,6 +159,7 @@ func TestGraphNavigator_Metrics(t *testing.T) {
 	assert.True(t, nav.IsInitialized())
 }
 
+// TestGraphNavigator_SearchRadius runs the test graph navigator_search radius operation.
 func TestGraphNavigator_SearchRadius(t *testing.T) {
 	g := createTestGraph(t)
 	// 0 -> 1 -> 2 -> 3

@@ -19,6 +19,7 @@ func discardLogger() zerolog.Logger {
 	return zerolog.Nop()
 }
 
+// TestShutdownCompletesWithinTimeout runs the test shutdown completes within timeout operation.
 func TestShutdownCompletesWithinTimeout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -48,6 +49,7 @@ func TestShutdownCompletesWithinTimeout(t *testing.T) {
 	}
 }
 
+// TestShutdownFlushesWAL runs the test shutdown flushes wal operation.
 func TestShutdownFlushesWAL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -84,6 +86,7 @@ func TestShutdownFlushesWAL(t *testing.T) {
 	}
 }
 
+// TestWALTruncationAfterSnapshot runs the test wal truncation after snapshot operation.
 func TestWALTruncationAfterSnapshot(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -125,6 +128,7 @@ func TestWALTruncationAfterSnapshot(t *testing.T) {
 	}
 }
 
+// TestShutdownIdempotent runs the test shutdown idempotent operation.
 func TestShutdownIdempotent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -151,6 +155,7 @@ func TestShutdownIdempotent(t *testing.T) {
 	}
 }
 
+// TestConcurrentShutdown runs the test concurrent shutdown operation.
 func TestConcurrentShutdown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

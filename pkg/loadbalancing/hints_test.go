@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestLoadHints_Serialization runs the test load hints_serialization operation.
 func TestLoadHints_Serialization(t *testing.T) {
 	h := LoadHints{
 		CPULoad:    45,
@@ -34,6 +35,7 @@ func TestLoadHints_Serialization(t *testing.T) {
 	}
 }
 
+// TestDeserialize_Malformed runs the test deserialize_malformed operation.
 func TestDeserialize_Malformed(t *testing.T) {
 	// 1. Too short
 	_, ok := DeserializeLoadHints([]byte{0x01, 0x02})
@@ -50,6 +52,7 @@ func TestDeserialize_Malformed(t *testing.T) {
 	}
 }
 
+// TestLoadHints_ZeroValue runs the test load hints_zero value operation.
 func TestLoadHints_ZeroValue(t *testing.T) {
 	h := LoadHints{}
 	buf := make([]byte, LoadHintsSize)
@@ -64,6 +67,7 @@ func TestLoadHints_ZeroValue(t *testing.T) {
 	}
 }
 
+// TestSerialize_ShortBuffer runs the test serialize_short buffer operation.
 func TestSerialize_ShortBuffer(t *testing.T) {
 	h := LoadHints{CPULoad: 10}
 	buf := make([]byte, 5) // Too short
@@ -71,6 +75,7 @@ func TestSerialize_ShortBuffer(t *testing.T) {
 	// Should return early without panic
 }
 
+// FuzzDeserialize runs the fuzz deserialize operation.
 func FuzzDeserialize(f *testing.F) {
 	f.Add([]byte{0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00, 0x00})
 	f.Fuzz(func(t *testing.T, data []byte) {

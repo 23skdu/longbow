@@ -10,6 +10,7 @@ type BitWidthPredictor struct {
 	seed       int64
 }
 
+// NewBitWidthPredictor constructs a new BitWidthPredictor.
 func NewBitWidthPredictor(sampleSize int) *BitWidthPredictor {
 	return &BitWidthPredictor{
 		sampleSize: sampleSize,

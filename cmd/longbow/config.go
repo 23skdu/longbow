@@ -183,16 +183,26 @@ var globalIsReady atomic.Bool
 
 // Config validation errors
 var (
-	ErrInvalidListenAddr    = errors.New("listen_addr cannot be empty")
-	ErrInvalidMetaAddr      = errors.New("meta_addr cannot be empty")
-	ErrInvalidMetricsAddr   = errors.New("metrics_addr cannot be empty")
-	ErrInvalidMaxMemory     = errors.New("max_memory must be positive")
-	ErrInvalidDataPath      = errors.New("data_path cannot be empty")
-	ErrInvalidMaxWALSize    = errors.New("max_wal_size must be positive")
-	ErrInvalidLogFormat     = errors.New("log_format must be 'json' or 'console'")
-	ErrInvalidLogLevel      = errors.New("log_level must be debug, info, warn, or error")
+	// ErrInvalidListenAddr is a err invalid listen addr value.
+	ErrInvalidListenAddr = errors.New("listen_addr cannot be empty")
+	// ErrInvalidMetaAddr is a err invalid meta addr value.
+	ErrInvalidMetaAddr = errors.New("meta_addr cannot be empty")
+	// ErrInvalidMetricsAddr is a err invalid metrics addr value.
+	ErrInvalidMetricsAddr = errors.New("metrics_addr cannot be empty")
+	// ErrInvalidMaxMemory is a err invalid max memory value.
+	ErrInvalidMaxMemory = errors.New("max_memory must be positive")
+	// ErrInvalidDataPath is a err invalid data path value.
+	ErrInvalidDataPath = errors.New("data_path cannot be empty")
+	// ErrInvalidMaxWALSize is a err invalid max wal size value.
+	ErrInvalidMaxWALSize = errors.New("max_wal_size must be positive")
+	// ErrInvalidLogFormat is a err invalid log format value.
+	ErrInvalidLogFormat = errors.New("log_format must be 'json' or 'console'")
+	// ErrInvalidLogLevel is a err invalid log level value.
+	ErrInvalidLogLevel = errors.New("log_level must be debug, info, warn, or error")
+	// ErrInvalidKeepAliveTime is a err invalid keep alive time value.
 	ErrInvalidKeepAliveTime = errors.New("keepalive_time must be positive")
-	ErrInvalidSecrets       = errors.New("secrets provider configuration is invalid")
+	// ErrInvalidSecrets is a err invalid secrets value.
+	ErrInvalidSecrets = errors.New("secrets provider configuration is invalid")
 )
 
 // ValidateConfig validates the configuration and returns an error if invalid

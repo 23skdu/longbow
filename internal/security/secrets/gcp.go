@@ -57,6 +57,7 @@ func gcpSecretID(prefix, keyID string) (string, error) {
 	return secretID, nil
 }
 
+// NewGCPStore constructs a new GCPStore.
 func NewGCPStore(ctx context.Context, cfg GCPConfig) (*GCPStore, error) {
 	if strings.TrimSpace(cfg.ProjectID) == "" {
 		return nil, fmt.Errorf("secrets: gcp project id must not be empty")
@@ -126,6 +127,7 @@ func (s *GCPStore) do(ctx context.Context, method, path string, body, out any) (
 	return resp.StatusCode, nil
 }
 
+// LoadAll runs the load all operation.
 func (s *GCPStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 	var out []StoredKey
 	page := ""
@@ -181,6 +183,7 @@ func (s *GCPStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 	return out, nil
 }
 
+// Put runs the put operation.
 func (s *GCPStore) Put(ctx context.Context, key StoredKey) error {
 	secretID, err := gcpSecretID(s.prefix, key.KeyID)
 	if err != nil {
@@ -202,6 +205,7 @@ func (s *GCPStore) Put(ctx context.Context, key StoredKey) error {
 	return err
 }
 
+// Delete runs the delete operation.
 func (s *GCPStore) Delete(ctx context.Context, keyID string) error {
 	secretID, err := gcpSecretID(s.prefix, keyID)
 	if err != nil {

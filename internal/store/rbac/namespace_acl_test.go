@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestNamespacePolicyPublicRead runs the test namespace policy public read operation.
 func TestNamespacePolicyPublicRead(t *testing.T) {
 	ctx := context.Background()
 	mgr := NewRBACManager()
@@ -40,6 +41,7 @@ func TestNamespacePolicyPublicRead(t *testing.T) {
 	require.ErrorIs(t, err, security.ErrTenantIsolation)
 }
 
+// TestNamespacePolicyPublicWrite runs the test namespace policy public write operation.
 func TestNamespacePolicyPublicWrite(t *testing.T) {
 	ctx := context.Background()
 	mgr := NewRBACManager()
@@ -62,6 +64,7 @@ func TestNamespacePolicyPublicWrite(t *testing.T) {
 	}
 }
 
+// TestNamespacePolicyAdminAndUsers runs the test namespace policy admin and users operation.
 func TestNamespacePolicyAdminAndUsers(t *testing.T) {
 	ctx := context.Background()
 	mgr := NewRBACManager()
@@ -102,6 +105,7 @@ func TestNamespacePolicyAdminAndUsers(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestNamespacePolicyRotationFollowsKeyID runs the test namespace policy rotation follows key id operation.
 func TestNamespacePolicyRotationFollowsKeyID(t *testing.T) {
 	ctx := context.Background()
 	store := secrets.NewMemoryStore()
@@ -127,6 +131,7 @@ func TestNamespacePolicyRotationFollowsKeyID(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestNamespacePolicyDurableAndEphemeralPersistence runs the test namespace policy durable and ephemeral persistence operation.
 func TestNamespacePolicyDurableAndEphemeralPersistence(t *testing.T) {
 	ctx := context.Background()
 	store := secrets.NewMemoryStore()
@@ -167,6 +172,7 @@ func TestNamespacePolicyDurableAndEphemeralPersistence(t *testing.T) {
 	require.Error(t, err, "ephemeral grant must disappear with the process")
 }
 
+// TestEphemeralPolicyReplacesDurableRecord runs the test ephemeral policy replaces durable record operation.
 func TestEphemeralPolicyReplacesDurableRecord(t *testing.T) {
 	ctx := context.Background()
 	store := secrets.NewMemoryStore()
@@ -188,6 +194,7 @@ func TestEphemeralPolicyReplacesDurableRecord(t *testing.T) {
 	require.Nil(t, reloaded.GetNamespacePolicy("switching-team"))
 }
 
+// TestNamespacePolicyDeleteRemovesDurableRecord runs the test namespace policy delete removes durable record operation.
 func TestNamespacePolicyDeleteRemovesDurableRecord(t *testing.T) {
 	ctx := context.Background()
 	store := secrets.NewMemoryStore()
@@ -205,6 +212,7 @@ func TestNamespacePolicyDeleteRemovesDurableRecord(t *testing.T) {
 	require.Nil(t, reloaded.GetNamespacePolicy("public-team"))
 }
 
+// TestNamespacePolicyRotationPersistsUpdatedKeyID runs the test namespace policy rotation persists updated key id operation.
 func TestNamespacePolicyRotationPersistsUpdatedKeyID(t *testing.T) {
 	ctx := context.Background()
 	store := secrets.NewMemoryStore()
@@ -233,6 +241,7 @@ func TestNamespacePolicyRotationPersistsUpdatedKeyID(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestLegacyAPIKeyRecordStillLoads runs the test legacy api key record still loads operation.
 func TestLegacyAPIKeyRecordStillLoads(t *testing.T) {
 	ctx := context.Background()
 	store := secrets.NewMemoryStore()
@@ -255,6 +264,7 @@ func TestLegacyAPIKeyRecordStillLoads(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestAPIKeyCannotUseNamespacePolicyKeyID runs the test api key cannot use namespace policy key id operation.
 func TestAPIKeyCannotUseNamespacePolicyKeyID(t *testing.T) {
 	mgr := NewRBACManager()
 	reserved := secrets.NamespacePolicyKeyID("team-a")
@@ -266,6 +276,7 @@ func TestAPIKeyCannotUseNamespacePolicyKeyID(t *testing.T) {
 	require.ErrorContains(t, err, "reserved for namespace policies")
 }
 
+// TestRBACManagerPersistsKeysInSecretStore runs the test rbac manager persists keys in secret store operation.
 func TestRBACManagerPersistsKeysInSecretStore(t *testing.T) {
 	ctx := context.Background()
 	store := secrets.NewMemoryStore()

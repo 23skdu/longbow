@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// FuzzPolymorphicIngestion runs the fuzz polymorphic ingestion operation.
 func FuzzPolymorphicIngestion(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

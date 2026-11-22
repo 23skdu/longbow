@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCUDAIndex_TurboQuantSearch runs the test cuda index_turbo quant search operation.
 func TestCUDAIndex_TurboQuantSearch(t *testing.T) {
 	dim := 128
 	count := 1000
@@ -69,6 +70,7 @@ func TestCUDAIndex_TurboQuantSearch(t *testing.T) {
 	fmt.Printf("TurboQuant search found %d results\n", len(results))
 }
 
+// FuzzCUDAIndex_TurboQuantSearch runs the fuzz cuda index_turbo quant search operation.
 func FuzzCUDAIndex_TurboQuantSearch(f *testing.F) {
 	f.Add(128, 100, 16, 8)
 	f.Fuzz(func(t *testing.T, dim, count, pow2, bitsPerAngle int) {

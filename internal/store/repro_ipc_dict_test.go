@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestCastRecordToSchema_MissingDictionary runs the test cast record to schema_missing dictionary operation.
 func TestCastRecordToSchema_MissingDictionary(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

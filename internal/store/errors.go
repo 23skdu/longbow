@@ -14,6 +14,7 @@ type ConfigError struct {
 	Timestamp time.Time
 }
 
+// Error runs the error operation.
 func (e *ConfigError) Error() string {
 	return fmt.Sprintf("config error in %s: %s=%s: %s", e.Component, e.Field, e.Value, e.Message)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestEdgeIndexSearchExportAndOfflineSync runs the test edge index search export and offline sync operation.
 func TestEdgeIndexSearchExportAndOfflineSync(t *testing.T) {
 	ctx := context.Background()
 	syncedBatches := 0
@@ -106,6 +107,7 @@ func TestEdgeIndexSearchExportAndOfflineSync(t *testing.T) {
 	require.Contains(t, trailer, "grpc-status: 0")
 }
 
+// FuzzEdgeIndexAndSync runs the fuzz edge index and sync operation.
 func FuzzEdgeIndexAndSync(f *testing.F) {
 	f.Add("id-1", float32(0.5), float32(0.5), int64(100))
 	f.Add("id-2", float32(-1.0), float32(0.0), int64(200))

@@ -316,6 +316,7 @@ type openAIError struct {
 	Type    string `json:"type"`
 }
 
+// Generate runs the generate operation.
 func (g *openAIEmbeddingGenerator) Generate(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
@@ -367,6 +368,7 @@ func (g *openAIEmbeddingGenerator) Generate(ctx context.Context, texts []string)
 	return results, nil
 }
 
+// GenerateSingle runs the generate single operation.
 func (g *openAIEmbeddingGenerator) GenerateSingle(ctx context.Context, text string) ([]float32, error) {
 	results, err := g.Generate(ctx, []string{text})
 	if err != nil {
@@ -378,10 +380,12 @@ func (g *openAIEmbeddingGenerator) GenerateSingle(ctx context.Context, text stri
 	return results[0], nil
 }
 
+// Dimension runs the dimension operation.
 func (g *openAIEmbeddingGenerator) Dimension() int {
 	return g.dimension
 }
 
+// Close runs the close operation.
 func (g *openAIEmbeddingGenerator) Close() error {
 	return nil
 }
@@ -437,6 +441,7 @@ type cohereAPIVersion struct {
 	Version string `json:"version"`
 }
 
+// Generate runs the generate operation.
 func (g *cohereEmbeddingGenerator) Generate(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
@@ -475,6 +480,7 @@ func (g *cohereEmbeddingGenerator) Generate(ctx context.Context, texts []string)
 	return embResp.Embeddings, nil
 }
 
+// GenerateSingle runs the generate single operation.
 func (g *cohereEmbeddingGenerator) GenerateSingle(ctx context.Context, text string) ([]float32, error) {
 	results, err := g.Generate(ctx, []string{text})
 	if err != nil {
@@ -486,10 +492,12 @@ func (g *cohereEmbeddingGenerator) GenerateSingle(ctx context.Context, text stri
 	return results[0], nil
 }
 
+// Dimension runs the dimension operation.
 func (g *cohereEmbeddingGenerator) Dimension() int {
 	return g.dimension
 }
 
+// Close runs the close operation.
 func (g *cohereEmbeddingGenerator) Close() error {
 	return nil
 }
@@ -531,6 +539,7 @@ type hfEmbeddingRequest struct {
 
 type hfEmbeddingResponse [][]float32
 
+// Generate runs the generate operation.
 func (g *huggingFaceEmbeddingGenerator) Generate(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
@@ -568,6 +577,7 @@ func (g *huggingFaceEmbeddingGenerator) Generate(ctx context.Context, texts []st
 	return embResp, nil
 }
 
+// GenerateSingle runs the generate single operation.
 func (g *huggingFaceEmbeddingGenerator) GenerateSingle(ctx context.Context, text string) ([]float32, error) {
 	results, err := g.Generate(ctx, []string{text})
 	if err != nil {
@@ -579,10 +589,12 @@ func (g *huggingFaceEmbeddingGenerator) GenerateSingle(ctx context.Context, text
 	return results[0], nil
 }
 
+// Dimension runs the dimension operation.
 func (g *huggingFaceEmbeddingGenerator) Dimension() int {
 	return g.dimension
 }
 
+// Close runs the close operation.
 func (g *huggingFaceEmbeddingGenerator) Close() error {
 	return nil
 }
@@ -613,8 +625,13 @@ var _ EmbeddingLogger = noopLogger{}
 
 type noopLogger struct{}
 
+// Debug runs the debug operation.
 func (l noopLogger) Debug(msg string, keysAndValues ...interface{}) {}
-func (l noopLogger) Info(msg string, keysAndValues ...interface{})  {}
+
+// Info runs the info operation.
+func (l noopLogger) Info(msg string, keysAndValues ...interface{}) {}
+
+// Error runs the error operation.
 func (l noopLogger) Error(msg string, keysAndValues ...interface{}) {}
 
 // NewLocalEmbeddingGenerator creates a local embedding generator using ONNX or WASM.
@@ -660,6 +677,7 @@ func (le *localEmbeddingGenerator) initModel() error {
 	return nil
 }
 
+// Generate runs the generate operation.
 func (le *localEmbeddingGenerator) Generate(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
@@ -690,6 +708,7 @@ func (le *localEmbeddingGenerator) Generate(ctx context.Context, texts []string)
 	return results, nil
 }
 
+// GenerateSingle runs the generate single operation.
 func (le *localEmbeddingGenerator) GenerateSingle(ctx context.Context, text string) ([]float32, error) {
 	results, err := le.Generate(ctx, []string{text})
 	if err != nil {
@@ -701,10 +720,12 @@ func (le *localEmbeddingGenerator) GenerateSingle(ctx context.Context, text stri
 	return results[0], nil
 }
 
+// Dimension runs the dimension operation.
 func (le *localEmbeddingGenerator) Dimension() int {
 	return le.dimension
 }
 
+// Close runs the close operation.
 func (le *localEmbeddingGenerator) Close() error {
 	if le.backend != nil {
 		return le.backend.Close()

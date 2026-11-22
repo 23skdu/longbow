@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestRollingWindow runs the test rolling window operation.
 func TestRollingWindow(t *testing.T) {
 	rw := NewRollingWindow(100*time.Millisecond, 5) // 500ms total window
 
@@ -28,6 +29,7 @@ func TestRollingWindow(t *testing.T) {
 	assert.Equal(t, int64(0), rw.Sum())
 }
 
+// TestAutoScalerQPS runs the test auto scaler qps operation.
 func TestAutoScalerQPS(t *testing.T) {
 	as := NewAutoScaler(zerolog.Nop())
 	// Overwrite interval for faster testing
@@ -46,16 +48,19 @@ func TestAutoScalerQPS(t *testing.T) {
 	assert.True(t, load.SearchQPS > 0)
 }
 
+// MockReconciler represents a mock reconciler value.
 type MockReconciler struct {
 	indexing  int
 	ingestion int
 }
 
+// AdjustWorkerCounts runs the adjust worker counts operation.
 func (m *MockReconciler) AdjustWorkerCounts(indexing, ingestion int) {
 	m.indexing = indexing
 	m.ingestion = ingestion
 }
 
+// TestAutoScalerScaling runs the test auto scaler scaling operation.
 func TestAutoScalerScaling(t *testing.T) {
 	as := NewAutoScaler(zerolog.Nop())
 	as.cooldown = 0 // Disable cooldown for test
@@ -82,6 +87,7 @@ func TestAutoScalerScaling(t *testing.T) {
 	assert.Equal(t, as.config.MinIndexingWorkers, mock.indexing, "Should scale down indexing when search load is high")
 }
 
+// TestClusterHealthString runs the test cluster health string operation.
 func TestClusterHealthString(t *testing.T) {
 	assert.Equal(t, "HEALTHY", HealthHealthy.String())
 	assert.Equal(t, "DEGRADED", HealthDegraded.String())
@@ -89,12 +95,14 @@ func TestClusterHealthString(t *testing.T) {
 	assert.Equal(t, "UNKNOWN", ClusterHealth(99).String())
 }
 
+// TestRollingWindowAverage runs the test rolling window average operation.
 func TestRollingWindowAverage(t *testing.T) {
 	rw := NewRollingWindow(100*time.Millisecond, 10)
 	rw.Add(100)
 	assert.Equal(t, 10.0, rw.Average())
 }
 
+// TestRollingWindowAdvanceFullReset runs the test rolling window advance full reset operation.
 func TestRollingWindowAdvanceFullReset(t *testing.T) {
 	rw := NewRollingWindow(10*time.Millisecond, 5)
 	rw.Add(42)
@@ -103,6 +111,7 @@ func TestRollingWindowAdvanceFullReset(t *testing.T) {
 	assert.Equal(t, int64(7), rw.Sum())
 }
 
+// TestAutoScalerReconcileCooldown runs the test auto scaler reconcile cooldown operation.
 func TestAutoScalerReconcileCooldown(t *testing.T) {
 	as := NewAutoScaler(zerolog.Nop())
 	as.monitorInterval = 50 * time.Millisecond
@@ -123,6 +132,7 @@ func TestAutoScalerReconcileCooldown(t *testing.T) {
 	assert.Equal(t, firstCall, secondCall, "Reconcile should be skipped during cooldown")
 }
 
+// TestAutoScalerGetLoadSnapshotDegraded runs the test auto scaler get load snapshot degraded operation.
 func TestAutoScalerGetLoadSnapshotDegraded(t *testing.T) {
 	as := NewAutoScaler(zerolog.Nop())
 	as.monitorInterval = 50 * time.Millisecond
@@ -137,6 +147,7 @@ func TestAutoScalerGetLoadSnapshotDegraded(t *testing.T) {
 	assert.Equal(t, HealthDegraded, snapshot.Health)
 }
 
+// TestAutoScalerStart runs the test auto scaler start operation.
 func TestAutoScalerStart(t *testing.T) {
 	as := NewAutoScaler(zerolog.Nop())
 	as.monitorInterval = 10 * time.Millisecond

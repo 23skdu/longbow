@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestMaxHeap runs the test max heap operation.
 func TestMaxHeap(t *testing.T) {
 	capacity := 10
 	h := NewMaxHeap(capacity)

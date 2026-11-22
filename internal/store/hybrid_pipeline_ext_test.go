@@ -9,6 +9,7 @@ import (
 
 // ========== Search Method Tests ==========
 
+// TestHybridSearchPipeline_SearchInvalidQuery runs the test hybrid search pipeline_search invalid query operation.
 func TestHybridSearchPipeline_SearchInvalidQuery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -23,6 +24,7 @@ func TestHybridSearchPipeline_SearchInvalidQuery(t *testing.T) {
 	}
 }
 
+// TestHybridSearchPipeline_SearchEmptyIndexes runs the test hybrid search pipeline_search empty indexes operation.
 func TestHybridSearchPipeline_SearchEmptyIndexes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -45,6 +47,7 @@ func TestHybridSearchPipeline_SearchEmptyIndexes(t *testing.T) {
 	}
 }
 
+// TestHybridSearchPipeline_AlphaOverride runs the test hybrid search pipeline_alpha override operation.
 func TestHybridSearchPipeline_AlphaOverride(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -68,6 +71,7 @@ func TestHybridSearchPipeline_AlphaOverride(t *testing.T) {
 	// Test passes if no panic - alpha override handled
 }
 
+// TestHybridSearchPipeline_SearchVectorOnly runs the test hybrid search pipeline_search vector only operation.
 func TestHybridSearchPipeline_SearchVectorOnly(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -87,6 +91,7 @@ func TestHybridSearchPipeline_SearchVectorOnly(t *testing.T) {
 	}
 }
 
+// TestHybridSearchPipeline_SearchKeywordOnly runs the test hybrid search pipeline_search keyword only operation.
 func TestHybridSearchPipeline_SearchKeywordOnly(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -106,6 +111,7 @@ func TestHybridSearchPipeline_SearchKeywordOnly(t *testing.T) {
 	}
 }
 
+// TestHybridSearchPipeline_FusionModes runs the test hybrid search pipeline_fusion modes operation.
 func TestHybridSearchPipeline_FusionModes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -132,7 +138,7 @@ func TestHybridSearchPipeline_FusionModes(t *testing.T) {
 	}
 }
 
-// FusionMode.String helper for test names
+// String helper for test names
 func (m FusionMode) String() string {
 	switch m {
 	case FusionModeRRF:
@@ -148,6 +154,7 @@ func (m FusionMode) String() string {
 
 // ========== Fusion Edge Cases ==========
 
+// TestFuseRRF_LimitTruncation runs the test fuse rrf_limit truncation operation.
 func TestFuseRRF_LimitTruncation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -163,6 +170,7 @@ func TestFuseRRF_LimitTruncation(t *testing.T) {
 	}
 }
 
+// TestFuseRRF_SingleSource runs the test fuse rrf_single source operation.
 func TestFuseRRF_SingleSource(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -185,6 +193,7 @@ func TestFuseRRF_SingleSource(t *testing.T) {
 	}
 }
 
+// TestFuseLinear_Empty runs the test fuse linear_empty operation.
 func TestFuseLinear_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -195,6 +204,7 @@ func TestFuseLinear_Empty(t *testing.T) {
 	}
 }
 
+// TestFuseLinear_PureKeyword runs the test fuse linear_pure keyword operation.
 func TestFuseLinear_PureKeyword(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -222,6 +232,7 @@ func TestFuseLinear_PureKeyword(t *testing.T) {
 	}
 }
 
+// TestFuseLinear_LimitTruncation runs the test fuse linear_limit truncation operation.
 func TestFuseLinear_LimitTruncation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -239,6 +250,7 @@ func TestFuseLinear_LimitTruncation(t *testing.T) {
 	}
 }
 
+// TestFuseCascade_EmptyExact runs the test fuse cascade_empty exact operation.
 func TestFuseCascade_EmptyExact(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -253,6 +265,7 @@ func TestFuseCascade_EmptyExact(t *testing.T) {
 	}
 }
 
+// TestFuseCascade_NoMatches runs the test fuse cascade_no matches operation.
 func TestFuseCascade_NoMatches(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -269,6 +282,7 @@ func TestFuseCascade_NoMatches(t *testing.T) {
 	}
 }
 
+// TestFuseCascade_Duplicates runs the test fuse cascade_duplicates operation.
 func TestFuseCascade_Duplicates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -293,6 +307,7 @@ func TestFuseCascade_Duplicates(t *testing.T) {
 
 // ========== dedupeAndSort Tests ==========
 
+// TestDedupeAndSort_Empty runs the test dedupe and sort_empty operation.
 func TestDedupeAndSort_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -303,6 +318,7 @@ func TestDedupeAndSort_Empty(t *testing.T) {
 	}
 }
 
+// TestDedupeAndSort_NoDuplicates runs the test dedupe and sort_no duplicates operation.
 func TestDedupeAndSort_NoDuplicates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -325,6 +341,7 @@ func TestDedupeAndSort_NoDuplicates(t *testing.T) {
 	}
 }
 
+// TestDedupeAndSort_WithDuplicates runs the test dedupe and sort_with duplicates operation.
 func TestDedupeAndSort_WithDuplicates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -349,6 +366,7 @@ func TestDedupeAndSort_WithDuplicates(t *testing.T) {
 	}
 }
 
+// TestDedupeAndSort_LimitTruncation runs the test dedupe and sort_limit truncation operation.
 func TestDedupeAndSort_LimitTruncation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -366,6 +384,7 @@ func TestDedupeAndSort_LimitTruncation(t *testing.T) {
 
 // ========== applyExactFilters Tests ==========
 
+// TestApplyExactFilters_Empty runs the test apply exact filters_empty operation.
 func TestApplyExactFilters_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -385,6 +404,7 @@ func TestApplyExactFilters_Empty(t *testing.T) {
 
 // ========== Benchmarks ==========
 
+// BenchmarkFuseCascade runs the benchmark fuse cascade operation.
 func BenchmarkFuseCascade(b *testing.B) {
 	exactIDs := roaring.New()
 	for i := uint32(0); i < 50; i++ {
@@ -404,6 +424,7 @@ func BenchmarkFuseCascade(b *testing.B) {
 	}
 }
 
+// BenchmarkDedupeAndSort runs the benchmark dedupe and sort operation.
 func BenchmarkDedupeAndSort(b *testing.B) {
 	input := make([]SearchResult, 200)
 	for i := 0; i < 200; i++ {

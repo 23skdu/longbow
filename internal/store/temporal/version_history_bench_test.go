@@ -34,6 +34,7 @@ func versionHistoryAPIQuery(nIDs, versionsPerID int) int64 {
 	return int64(versionsPerID/2)*int64(nIDs) + int64(nIDs-1)
 }
 
+// BenchmarkVersionHistory_API_Batch runs the benchmark version history_api_batch operation.
 func BenchmarkVersionHistory_API_Batch(b *testing.B) {
 	for _, nIDs := range []int{1000, 10000, 100000} {
 		for _, versions := range []int{1, 10, 100} {
@@ -58,6 +59,7 @@ func BenchmarkVersionHistory_API_Batch(b *testing.B) {
 	}
 }
 
+// BenchmarkVersionHistory_API_Add runs the benchmark version history_api_add operation.
 func BenchmarkVersionHistory_API_Add(b *testing.B) {
 	vec := []float32{0.5, 0.25, 0.125}
 	const nIDs = 1000

@@ -270,18 +270,22 @@ func dot768Uint8(a, b []uint8) float32 {
 	return float32(sum)
 }
 
+// Euclidean384Uint8 runs the euclidean384 uint8 operation.
 func Euclidean384Uint8(a, b []uint8) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared384Uint8(a, b)))), nil
 }
 
+// Euclidean768Uint8 runs the euclidean768 uint8 operation.
 func Euclidean768Uint8(a, b []uint8) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared768Uint8(a, b)))), nil
 }
 
+// Dot384Uint8 runs the dot384 uint8 operation.
 func Dot384Uint8(a, b []uint8) (float32, error) {
 	return dot384Uint8(a, b), nil
 }
 
+// Dot768Uint8 runs the dot768 uint8 operation.
 func Dot768Uint8(a, b []uint8) (float32, error) {
 	return dot768Uint8(a, b), nil
 }
@@ -328,18 +332,22 @@ func dot768Uint16(a, b []uint16) float32 {
 	return float32(sum)
 }
 
+// Euclidean384Uint16 runs the euclidean384 uint16 operation.
 func Euclidean384Uint16(a, b []uint16) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared384Uint16(a, b)))), nil
 }
 
+// Euclidean768Uint16 runs the euclidean768 uint16 operation.
 func Euclidean768Uint16(a, b []uint16) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared768Uint16(a, b)))), nil
 }
 
+// Dot384Uint16 runs the dot384 uint16 operation.
 func Dot384Uint16(a, b []uint16) (float32, error) {
 	return dot384Uint16(a, b), nil
 }
 
+// Dot768Uint16 runs the dot768 uint16 operation.
 func Dot768Uint16(a, b []uint16) (float32, error) {
 	return dot768Uint16(a, b), nil
 }
@@ -391,18 +399,22 @@ func dot1024Uint16(a, b []uint16) float32 {
 	return float32(sum)
 }
 
+// Euclidean1024Uint8 runs the euclidean1024 uint8 operation.
 func Euclidean1024Uint8(a, b []uint8) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared1024Uint8(a, b)))), nil
 }
 
+// Dot1024Uint8 runs the dot1024 uint8 operation.
 func Dot1024Uint8(a, b []uint8) (float32, error) {
 	return dot1024Uint8(a, b), nil
 }
 
+// Euclidean1024Uint16 runs the euclidean1024 uint16 operation.
 func Euclidean1024Uint16(a, b []uint16) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared1024Uint16(a, b)))), nil
 }
 
+// Dot1024Uint16 runs the dot1024 uint16 operation.
 func Dot1024Uint16(a, b []uint16) (float32, error) {
 	return dot1024Uint16(a, b), nil
 }
@@ -429,10 +441,12 @@ func dot128Uint32(a, b []uint32) float32 {
 	return float32(sum)
 }
 
+// Euclidean128Uint32 runs the euclidean128 uint32 operation.
 func Euclidean128Uint32(a, b []uint32) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared128Uint32(a, b)))), nil
 }
 
+// Dot128Uint32 runs the dot128 uint32 operation.
 func Dot128Uint32(a, b []uint32) (float32, error) {
 	return dot128Uint32(a, b), nil
 }
@@ -497,26 +511,32 @@ func dot1024Uint32(a, b []uint32) float32 {
 	return float32(sum)
 }
 
+// Euclidean384Uint32 runs the euclidean384 uint32 operation.
 func Euclidean384Uint32(a, b []uint32) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared384Uint32(a, b)))), nil
 }
 
+// Euclidean768Uint32 runs the euclidean768 uint32 operation.
 func Euclidean768Uint32(a, b []uint32) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared768Uint32(a, b)))), nil
 }
 
+// Euclidean1024Uint32 runs the euclidean1024 uint32 operation.
 func Euclidean1024Uint32(a, b []uint32) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared1024Uint32(a, b)))), nil
 }
 
+// Dot384Uint32 runs the dot384 uint32 operation.
 func Dot384Uint32(a, b []uint32) (float32, error) {
 	return dot384Uint32(a, b), nil
 }
 
+// Dot768Uint32 runs the dot768 uint32 operation.
 func Dot768Uint32(a, b []uint32) (float32, error) {
 	return dot768Uint32(a, b), nil
 }
 
+// Dot1024Uint32 runs the dot1024 uint32 operation.
 func Dot1024Uint32(a, b []uint32) (float32, error) {
 	return dot1024Uint32(a, b), nil
 }
@@ -583,26 +603,32 @@ func dot1024Uint64(a, b []uint64) float32 {
 	return float32(sum)
 }
 
+// Euclidean384Uint64 runs the euclidean384 uint64 operation.
 func Euclidean384Uint64(a, b []uint64) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared384Uint64(a, b)))), nil
 }
 
+// Euclidean768Uint64 runs the euclidean768 uint64 operation.
 func Euclidean768Uint64(a, b []uint64) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared768Uint64(a, b)))), nil
 }
 
+// Euclidean1024Uint64 runs the euclidean1024 uint64 operation.
 func Euclidean1024Uint64(a, b []uint64) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared1024Uint64(a, b)))), nil
 }
 
+// Dot384Uint64 runs the dot384 uint64 operation.
 func Dot384Uint64(a, b []uint64) (float32, error) {
 	return dot384Uint64(a, b), nil
 }
 
+// Dot768Uint64 runs the dot768 uint64 operation.
 func Dot768Uint64(a, b []uint64) (float32, error) {
 	return dot768Uint64(a, b), nil
 }
 
+// Dot1024Uint64 runs the dot1024 uint64 operation.
 func Dot1024Uint64(a, b []uint64) (float32, error) {
 	return dot1024Uint64(a, b), nil
 }

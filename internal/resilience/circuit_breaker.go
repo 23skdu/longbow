@@ -8,14 +8,19 @@ import (
 	"time"
 )
 
+// CircuitState represents a circuit state value.
 type CircuitState int
 
 const (
+	// StateClosed is a state closed constant.
 	StateClosed CircuitState = iota
+	// StateHalfOpen is a state half open constant.
 	StateHalfOpen
+	// StateOpen is a state open constant.
 	StateOpen
 )
 
+// CircuitBreakerMetrics represents a circuit breaker metrics value.
 type CircuitBreakerMetrics struct {
 	Requests            uint64
 	Successes           uint64
@@ -26,6 +31,7 @@ type CircuitBreakerMetrics struct {
 	ConsecutiveFailures uint64
 }
 
+// CircuitBreaker represents a circuit breaker value.
 type CircuitBreaker struct {
 	name          string
 	maxRequests   uint32
@@ -41,6 +47,7 @@ type CircuitBreaker struct {
 	mu         sync.Mutex
 }
 
+// CircuitBreakerSettings represents a circuit breaker settings value.
 type CircuitBreakerSettings struct {
 	Name          string
 	MaxRequests   uint32
@@ -50,6 +57,7 @@ type CircuitBreakerSettings struct {
 	OnStateChange func(name string, from, to CircuitState)
 }
 
+// NewCircuitBreaker constructs a new CircuitBreaker.
 func NewCircuitBreaker(settings CircuitBreakerSettings) *CircuitBreaker {
 	if settings.MaxRequests == 0 {
 		settings.MaxRequests = 1
@@ -75,11 +83,13 @@ func NewCircuitBreaker(settings CircuitBreakerSettings) *CircuitBreaker {
 	}
 }
 
+// DefaultReadyToTrip returns the default ReadyToTrip.
 func DefaultReadyToTrip(counts CircuitBreakerMetrics) bool {
 	return counts.ConsecutiveFailures > 5 ||
 		(counts.Failures > 10 && float64(counts.Failures)/float64(counts.Requests) > 0.6)
 }
 
+// Execute runs the execute operation.
 func (cb *CircuitBreaker) Execute(ctx context.Context, req func() (any, error)) (any, error) {
 	generation, err := cb.beforeRequest()
 	if err != nil {
@@ -91,6 +101,7 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, req func() (any, error)) 
 	return result, err
 }
 
+// ExecuteWithCircuitBreaker runs the execute with circuit breaker operation.
 func ExecuteWithCircuitBreaker[T any](cb *CircuitBreaker, ctx context.Context, req func() (T, error)) (T, error) {
 	generation, err := cb.beforeRequest()
 	if err != nil {
@@ -103,10 +114,12 @@ func ExecuteWithCircuitBreaker[T any](cb *CircuitBreaker, ctx context.Context, r
 	return result, err
 }
 
+// Name runs the name operation.
 func (cb *CircuitBreaker) Name() string {
 	return cb.name
 }
 
+// State runs the state operation.
 func (cb *CircuitBreaker) State() CircuitState {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -116,6 +129,7 @@ func (cb *CircuitBreaker) State() CircuitState {
 	return state
 }
 
+// Metrics runs the metrics operation.
 func (cb *CircuitBreaker) Metrics() CircuitBreakerMetrics {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -238,6 +252,7 @@ func (cb *CircuitBreaker) toNewGeneration(now time.Time) {
 	}
 }
 
+// Reset runs the reset operation.
 func (cb *CircuitBreaker) Reset() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -246,12 +261,14 @@ func (cb *CircuitBreaker) Reset() {
 	cb.counts = CircuitBreakerMetrics{}
 }
 
+// CircuitBreakerGroup represents a circuit breaker group value.
 type CircuitBreakerGroup struct {
 	breakers map[string]*CircuitBreaker
 	mu       sync.RWMutex
 	settings CircuitBreakerSettings
 }
 
+// NewCircuitBreakerGroup constructs a new CircuitBreakerGroup.
 func NewCircuitBreakerGroup(settings CircuitBreakerSettings) *CircuitBreakerGroup {
 	return &CircuitBreakerGroup{
 		breakers: make(map[string]*CircuitBreaker),
@@ -259,6 +276,7 @@ func NewCircuitBreakerGroup(settings CircuitBreakerSettings) *CircuitBreakerGrou
 	}
 }
 
+// GetBreaker returns the breaker.
 func (cbg *CircuitBreakerGroup) GetBreaker(name string) *CircuitBreaker {
 	cbg.mu.RLock()
 	breaker, exists := cbg.breakers[name]
@@ -283,16 +301,19 @@ func (cbg *CircuitBreakerGroup) GetBreaker(name string) *CircuitBreaker {
 	return breaker
 }
 
+// Execute runs the execute operation.
 func (cbg *CircuitBreakerGroup) Execute(ctx context.Context, name string, req func() (any, error)) (any, error) {
 	breaker := cbg.GetBreaker(name)
 	return breaker.Execute(ctx, req)
 }
 
+// ExecuteWithCircuitBreakerGroup runs the execute with circuit breaker group operation.
 func ExecuteWithCircuitBreakerGroup[T any](cbg *CircuitBreakerGroup, ctx context.Context, name string, req func() (T, error)) (T, error) {
 	breaker := cbg.GetBreaker(name)
 	return ExecuteWithCircuitBreaker(breaker, ctx, req)
 }
 
+// GetAllMetrics returns the all metrics.
 func (cbg *CircuitBreakerGroup) GetAllMetrics() map[string]CircuitBreakerMetrics {
 	cbg.mu.RLock()
 	defer cbg.mu.RUnlock()
@@ -305,6 +326,7 @@ func (cbg *CircuitBreakerGroup) GetAllMetrics() map[string]CircuitBreakerMetrics
 	return metrics
 }
 
+// ResetAll runs the reset all operation.
 func (cbg *CircuitBreakerGroup) ResetAll() {
 	cbg.mu.Lock()
 	defer cbg.mu.Unlock()
@@ -314,6 +336,7 @@ func (cbg *CircuitBreakerGroup) ResetAll() {
 	}
 }
 
+// RemoveBreaker runs the remove breaker operation.
 func (cbg *CircuitBreakerGroup) RemoveBreaker(name string) {
 	cbg.mu.Lock()
 	defer cbg.mu.Unlock()

@@ -11,8 +11,11 @@ import (
 type SegmentTier int
 
 const (
+	// TierHot is a tier hot constant.
 	TierHot SegmentTier = iota
+	// TierWarm is a tier warm constant.
 	TierWarm
+	// TierCold is a tier cold constant.
 	TierCold
 )
 
@@ -293,6 +296,7 @@ func (sa *SegmentedArena) locateTier(offset uint64) SegmentTier {
 	return -1
 }
 
+// Close runs the close operation.
 func (sa *SegmentedArena) Close() {
 	close(sa.stopCh)
 	for _, ts := range sa.tiers {
@@ -332,4 +336,5 @@ type SlabAllocError struct {
 	msg string
 }
 
+// Error runs the error operation.
 func (e *SlabAllocError) Error() string { return e.msg }

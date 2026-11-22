@@ -30,6 +30,7 @@ type spreadingActivationError struct {
 	value float64
 }
 
+// Error runs the error operation.
 func (e *spreadingActivationError) Error() string {
 	return e.msg
 }

@@ -82,30 +82,35 @@ var (
 			Help: "Total number of replication failures",
 		},
 	)
+	// ReplicationSuccessTotal is a replication success total value.
 	ReplicationSuccessTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_replication_success_total",
 			Help: "Total number of successful replication operations",
 		},
 	)
+	// ReplicationRetriesTotal is a replication retries total value.
 	ReplicationRetriesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_replication_retries_total",
 			Help: "Total number of replication retries",
 		},
 	)
+	// ReplicationQueuedTotal is a replication queued total value.
 	ReplicationQueuedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_replication_queued_total",
 			Help: "Total number of operations queued for replication",
 		},
 	)
+	// ReplicationQueueDropped is a replication queue dropped value.
 	ReplicationQueueDropped = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_replication_queue_dropped_total",
 			Help: "Total number of operations dropped from replication queue",
 		},
 	)
+	// ReplicationLagSeconds is a replication lag seconds value.
 	ReplicationLagSeconds = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_replication_lag_seconds",
@@ -127,18 +132,21 @@ var (
 			Help: "Total number of split brain detector heartbeats",
 		},
 	)
+	// SplitBrainHealthyPeers is a split brain healthy peers value.
 	SplitBrainHealthyPeers = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_split_brain_healthy_peers",
 			Help: "Current number of healthy peers seen by detector",
 		},
 	)
+	// SplitBrainPartitionsTotal is a split brain partitions total value.
 	SplitBrainPartitionsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_split_brain_partitions_total",
 			Help: "Total number of partition events detected",
 		},
 	)
+	// SplitBrainFenced is a split brain fenced value.
 	SplitBrainFenced = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_split_brain_fenced_state",
@@ -146,6 +154,7 @@ var (
 		},
 	)
 
+	// QuorumOperationDuration is a quorum operation duration value.
 	QuorumOperationDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_quorum_operation_duration_seconds",
@@ -154,6 +163,7 @@ var (
 		},
 		[]string{"operation", "consistency"},
 	)
+	// QuorumSuccessTotal is a quorum success total value.
 	QuorumSuccessTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_quorum_success_total",
@@ -161,6 +171,7 @@ var (
 		},
 		[]string{"operation", "consistency"},
 	)
+	// QuorumFailureTotal is a quorum failure total value.
 	QuorumFailureTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_quorum_failure_total",
@@ -182,12 +193,14 @@ var (
 			Help: "Total number of replicas tracked by load balancer",
 		},
 	)
+	// LoadBalancerUnhealthyTotal is a load balancer unhealthy total value.
 	LoadBalancerUnhealthyTotal = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_load_balancer_unhealthy_total",
 			Help: "Total number of unhealthy replicas",
 		},
 	)
+	// LoadBalancerSelectionsTotal is a load balancer selections total value.
 	LoadBalancerSelectionsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_load_balancer_selections_total",
@@ -196,6 +209,7 @@ var (
 		[]string{"strategy"},
 	)
 
+	// DoExchangeCallsTotal is a do exchange calls total value.
 	DoExchangeCallsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_do_exchange_calls_total",
@@ -203,6 +217,7 @@ var (
 		},
 	)
 
+	// DoExchangeErrorsTotal is a do exchange errors total value.
 	DoExchangeErrorsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_do_exchange_errors_total",
@@ -210,6 +225,7 @@ var (
 		},
 	)
 
+	// DoExchangeBatchesReceivedTotal is a do exchange batches received total value.
 	DoExchangeBatchesReceivedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_do_exchange_batches_received_total",
@@ -217,6 +233,7 @@ var (
 		},
 	)
 
+	// DoExchangeBatchesSentTotal is a do exchange batches sent total value.
 	DoExchangeBatchesSentTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_do_exchange_batches_sent_total",
@@ -224,6 +241,7 @@ var (
 		},
 	)
 
+	// DoExchangeDurationSeconds is a do exchange duration seconds value.
 	DoExchangeDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_do_exchange_duration_seconds",
@@ -263,27 +281,32 @@ var (
 		Help:    "Latency of global search operations",
 		Buckets: prometheus.DefBuckets,
 	})
+	// GlobalSearchFanoutSize is a global search fanout size value.
 	GlobalSearchFanoutSize = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "longbow_global_search_fanout_size",
 		Help:    "Number of peers queried during global search",
 		Buckets: []float64{1, 2, 3, 5, 10, 20, 50, 100},
 	})
+	// GlobalSearchPartialFailures is a global search partial failures value.
 	GlobalSearchPartialFailures = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_global_search_partial_failures_total",
 		Help: "Total number of failed peer queries during global search",
 	})
+	// IDResolutionDuration is a id resolution duration value.
 	IDResolutionDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "longbow_id_resolution_duration_seconds",
 		Help:    "Latency of resolving internal IDs to user IDs",
 		Buckets: prometheus.DefBuckets,
 	})
 
+	// VectorClockMergesTotal is a vector clock merges total value.
 	VectorClockMergesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_clock_merges_total",
 			Help: "Total number of vector clock merges",
 		},
 	)
+	// VectorClockConflictsTotal is a vector clock conflicts total value.
 	VectorClockConflictsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_clock_conflicts_total",
@@ -300,6 +323,7 @@ var (
 		[]string{"worker_node", "data_node"},
 	)
 
+	// NumaWorkerDistribution is a numa worker distribution value.
 	NumaWorkerDistribution = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_numa_worker_distribution",

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestGPUBackendString runs the test gpu backend string operation.
 func TestGPUBackendString(t *testing.T) {
 	assert.Equal(t, "CPU", BackendCPU.String())
 	assert.Equal(t, "CUDA", BackendCUDA.String())
@@ -15,6 +16,7 @@ func TestGPUBackendString(t *testing.T) {
 	assert.Equal(t, "Unknown", GPUBackend(99).String())
 }
 
+// TestDefaultGPUConfig runs the test default gpu config operation.
 func TestDefaultGPUConfig(t *testing.T) {
 	t.Setenv("LONGBOW_MAX_MEMORY", "8589934592")
 	t.Setenv("CUDA_HOME", "/usr/local/cuda")
@@ -31,27 +33,32 @@ func TestDefaultGPUConfig(t *testing.T) {
 	assert.Equal(t, "/usr/local/faiss", cfg.FAISSHome)
 }
 
+// TestDefaultGPUConfigNoEnv runs the test default gpu config no env operation.
 func TestDefaultGPUConfigNoEnv(t *testing.T) {
 	cfg := DefaultGPUConfig()
 	assert.Equal(t, int64(0), cfg.MaxMemory)
 }
 
+// TestDetectGPUBackend runs the test detect gpu backend operation.
 func TestDetectGPUBackend(t *testing.T) {
 	backend := DetectGPUBackend()
 	assert.NotNil(t, backend)
 }
 
+// TestGetDeviceCount runs the test get device count operation.
 func TestGetDeviceCount(t *testing.T) {
 	count := GetDeviceCount()
 	assert.GreaterOrEqual(t, count, int32(0))
 }
 
+// TestGetGlobalGPUUtilization runs the test get global gpu utilization operation.
 func TestGetGlobalGPUUtilization(t *testing.T) {
 	util, err := GetGlobalGPUUtilization()
 	assert.NoError(t, err)
 	assert.Equal(t, float32(0), util)
 }
 
+// TestGPUNotAvailableError runs the test gpu not available error operation.
 func TestGPUNotAvailableError(t *testing.T) {
 	err := &GPUNotAvailableError{Reason: "no GPU found"}
 	assert.Contains(t, err.Error(), "GPU not available")
@@ -60,6 +67,7 @@ func TestGPUNotAvailableError(t *testing.T) {
 	assert.False(t, IsGPUNotAvailableError(errors.New("other error")))
 }
 
+// TestGPUMemoryError runs the test gpu memory error operation.
 func TestGPUMemoryError(t *testing.T) {
 	err := &GPUMemoryError{Requested: 1024, Available: 512, DeviceID: 0}
 	assert.Contains(t, err.Error(), "GPU memory error")
@@ -67,6 +75,7 @@ func TestGPUMemoryError(t *testing.T) {
 	assert.True(t, IsGPUMemoryError(err))
 }
 
+// TestGPUInitializationError runs the test gpu initialization error operation.
 func TestGPUInitializationError(t *testing.T) {
 	cause := errors.New("driver not found")
 	err := &GPUInitializationError{DeviceID: 1, Backend: BackendCUDA, Cause: cause}
@@ -75,6 +84,7 @@ func TestGPUInitializationError(t *testing.T) {
 	assert.True(t, IsGPUInitializationError(err))
 }
 
+// TestGPUComputeError runs the test gpu compute error operation.
 func TestGPUComputeError(t *testing.T) {
 	cause := errors.New("kernel crash")
 	err := &GPUComputeError{Operation: "conv2d", DeviceID: 0, Cause: cause}
@@ -83,6 +93,7 @@ func TestGPUComputeError(t *testing.T) {
 	assert.True(t, IsGPUComputeError(err))
 }
 
+// TestGPUSyncError runs the test gpu sync error operation.
 func TestGPUSyncError(t *testing.T) {
 	cause := errors.New("sync failed")
 	err := &GPUSyncError{BatchSize: 64, DeviceID: 0, Cause: cause}
@@ -91,6 +102,7 @@ func TestGPUSyncError(t *testing.T) {
 	assert.True(t, IsGPUSyncError(err))
 }
 
+// TestIsGPUError runs the test is gpu error operation.
 func TestIsGPUError(t *testing.T) {
 	assert.True(t, IsGPUError(&GPUNotAvailableError{}))
 	assert.True(t, IsGPUError(&GPUMemoryError{}))
@@ -100,6 +112,7 @@ func TestIsGPUError(t *testing.T) {
 	assert.False(t, IsGPUError(errors.New("generic")))
 }
 
+// TestIsRetriableGPUError runs the test is retriable gpu error operation.
 func TestIsRetriableGPUError(t *testing.T) {
 	assert.True(t, IsRetriableGPUError(&GPUMemoryError{}))
 	assert.True(t, IsRetriableGPUError(&GPUSyncError{}))

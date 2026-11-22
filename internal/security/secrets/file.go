@@ -18,6 +18,7 @@ type FileStore struct {
 
 var _ Store = (*FileStore)(nil)
 
+// NewFileStore constructs a new FileStore.
 func NewFileStore(dir string) (*FileStore, error) {
 	if strings.TrimSpace(dir) == "" {
 		return nil, fmt.Errorf("secrets: file store path must not be empty")
@@ -36,6 +37,7 @@ func (s *FileStore) path(keyID string) (string, error) {
 	return filepath.Join(s.dir, keyID+".json"), nil
 }
 
+// LoadAll runs the load all operation.
 func (s *FileStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
@@ -66,6 +68,7 @@ func (s *FileStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 	return out, nil
 }
 
+// Put runs the put operation.
 func (s *FileStore) Put(ctx context.Context, key StoredKey) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -111,6 +114,7 @@ func (s *FileStore) Put(ctx context.Context, key StoredKey) error {
 	return ctx.Err()
 }
 
+// Delete runs the delete operation.
 func (s *FileStore) Delete(ctx context.Context, keyID string) error {
 	path, err := s.path(keyID)
 	if err != nil {

@@ -124,6 +124,7 @@ func TestShardedHNSW_ShardRouting(t *testing.T) {
 	}
 }
 
+// TestShardedHNSW_RingRouting runs the test sharded hnsw_ring routing operation.
 func TestShardedHNSW_RingRouting(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -440,6 +441,7 @@ func TestShardedHNSW_ConcurrentAddAndSearch(t *testing.T) {
 	close(done)
 }
 
+// BenchmarkHNSW_SingleAdd runs the benchmark hnsw_single add operation.
 func BenchmarkHNSW_SingleAdd(b *testing.B) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 1
@@ -455,6 +457,7 @@ func BenchmarkHNSW_SingleAdd(b *testing.B) {
 	}
 }
 
+// BenchmarkHNSW_ShardedParallelAdd runs the benchmark hnsw_sharded parallel add operation.
 func BenchmarkHNSW_ShardedParallelAdd(b *testing.B) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = runtime.NumCPU()
@@ -473,6 +476,7 @@ func BenchmarkHNSW_ShardedParallelAdd(b *testing.B) {
 	})
 }
 
+// BenchmarkHNSW_ShardedSearch runs the benchmark hnsw_sharded search operation.
 func BenchmarkHNSW_ShardedSearch(b *testing.B) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = runtime.NumCPU()
@@ -493,6 +497,7 @@ func BenchmarkHNSW_ShardedSearch(b *testing.B) {
 	}
 }
 
+// TestShardedHNSW_SearchByID runs the test sharded hnsw_search by id operation.
 func TestShardedHNSW_SearchByID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -534,6 +539,7 @@ func TestShardedHNSW_SearchByID(t *testing.T) {
 	}
 }
 
+// TestShardedHNSW_GetDimension runs the test sharded hnsw_get dimension operation.
 func TestShardedHNSW_GetDimension(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

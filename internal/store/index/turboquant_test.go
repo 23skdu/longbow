@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestTurboQuant_EncoderDecoder runs the test turbo quant_encoder decoder operation.
 func TestTurboQuant_EncoderDecoder(t *testing.T) {
 	dims := 128
 	encoder := NewTurboQuantEncoder(dims, 4, 42)
@@ -54,6 +55,7 @@ func TestTurboQuant_EncoderDecoder(t *testing.T) {
 	assert.Greater(t, cosine, float32(0.90), "Reconstructed vector must maintain high cosine similarity (>0.90)")
 }
 
+// TestTurboQuant_CompressionRatio runs the test turbo quant_compression ratio operation.
 func TestTurboQuant_CompressionRatio(t *testing.T) {
 	dims := 768
 	bits := 3
@@ -75,6 +77,8 @@ func TestTurboQuant_CompressionRatio(t *testing.T) {
 		t.Errorf("Compression ratio too low: %.2fx", ratio)
 	}
 }
+
+// TestTurboQuant_ZeroVector runs the test turbo quant_zero vector operation.
 func TestTurboQuant_ZeroVector(t *testing.T) {
 	dims := 128
 	encoder := NewTurboQuantEncoder(dims, 4, 42)
@@ -88,6 +92,7 @@ func TestTurboQuant_ZeroVector(t *testing.T) {
 	assert.Equal(t, len(vec), len(decoded))
 }
 
+// TestTurboQuant_VaryingBitDepths runs the test turbo quant_varying bit depths operation.
 func TestTurboQuant_VaryingBitDepths(t *testing.T) {
 	dims := 64
 	for _, bits := range []int{1, 2, 4, 8} {
@@ -145,6 +150,7 @@ func TestTurboQuant_OddBitPackUnpack(t *testing.T) {
 	}
 }
 
+// TestTurboQuant_LargeDimensions runs the test turbo quant_large dimensions operation.
 func TestTurboQuant_LargeDimensions(t *testing.T) {
 	dims := 1536
 	encoder := NewTurboQuantEncoder(dims, 4, 42)
@@ -158,6 +164,7 @@ func TestTurboQuant_LargeDimensions(t *testing.T) {
 	assert.True(t, len(encoded) > 0)
 }
 
+// FuzzTurboQuantEncodeDecode runs the fuzz turbo quant encode decode operation.
 func FuzzTurboQuantEncodeDecode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, dim int, bits int, seed int64) {
 		if dim <= 0 || dim > 8192 || bits < 2 || bits > 8 {
@@ -188,6 +195,7 @@ func FuzzTurboQuantEncodeDecode(f *testing.F) {
 	})
 }
 
+// FuzzTurboQuantCompression runs the fuzz turbo quant compression operation.
 func FuzzTurboQuantCompression(f *testing.F) {
 	f.Fuzz(func(t *testing.T, dim int, bits int) {
 		if dim <= 0 || dim > 8192 || bits < 2 || bits > 8 {
@@ -212,6 +220,7 @@ func FuzzTurboQuantCompression(f *testing.F) {
 	})
 }
 
+// BenchmarkTurboQuant_Encode runs the benchmark turbo quant_encode operation.
 func BenchmarkTurboQuant_Encode(b *testing.B) {
 	dims := 128
 	for _, bits := range []int{4, 3} {
@@ -232,6 +241,7 @@ func BenchmarkTurboQuant_Encode(b *testing.B) {
 	}
 }
 
+// BenchmarkTurboQuant_Decode runs the benchmark turbo quant_decode operation.
 func BenchmarkTurboQuant_Decode(b *testing.B) {
 	dims := 128
 	for _, bits := range []int{4, 3} {
@@ -256,6 +266,7 @@ func BenchmarkTurboQuant_Decode(b *testing.B) {
 	}
 }
 
+// TestTurboQuant_DecodeInto runs the test turbo quant_decode into operation.
 func TestTurboQuant_DecodeInto(t *testing.T) {
 	dims := 128
 	encoder := NewTurboQuantEncoder(dims, 4, 42)
@@ -276,6 +287,7 @@ func TestTurboQuant_DecodeInto(t *testing.T) {
 	assert.Equal(t, decodedAlloc, decodedInto)
 }
 
+// BenchmarkTurboQuant_DecodeInto runs the benchmark turbo quant_decode into operation.
 func BenchmarkTurboQuant_DecodeInto(b *testing.B) {
 	dims := 128
 	enc := NewTurboQuantEncoder(dims, 4, 42)

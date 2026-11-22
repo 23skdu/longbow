@@ -7,6 +7,7 @@ import (
 	. "github.com/mmcloughlin/avo/operand"
 )
 
+// ImplementL2SquaredAVX2 runs the implement l2 squared avx2 operation.
 func ImplementL2SquaredAVX2() {
 	TEXT("l2SquaredAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")
 	a := Load(Param("a"), GP64())
@@ -70,6 +71,7 @@ func ImplementL2SquaredAVX2() {
 	RET()
 }
 
+// ImplementDotAVX2 runs the implement dot avx2 operation.
 func ImplementDotAVX2() {
 	TEXT("dotAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")
 	a := Load(Param("a"), GP64())
@@ -129,6 +131,7 @@ func ImplementDotAVX2() {
 	RET()
 }
 
+// ImplementL2SquaredAVX512 runs the implement l2 squared avx512 operation.
 func ImplementL2SquaredAVX512() {
 	TEXT("l2SquaredAVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
 	a := Load(Param("a"), GP64())
@@ -195,6 +198,7 @@ func ImplementL2SquaredAVX512() {
 	RET()
 }
 
+// ImplementDotAVX512 runs the implement dot avx512 operation.
 func ImplementDotAVX512() {
 	TEXT("dotAVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
 	a := Load(Param("a"), GP64())
@@ -259,6 +263,7 @@ func ImplementDotAVX512() {
 	RET()
 }
 
+// ImplementSpecializedAVX2 runs the implement specialized avx2 operation.
 func ImplementSpecializedAVX2(dim int) {
 	// L2Squared specialized
 	TEXT(fmt.Sprintf("l2Squared%dAVX2Kernel", dim), NOSPLIT, "func(a, b uintptr) float32")
@@ -363,6 +368,7 @@ func ImplementSpecializedAVX2(dim int) {
 	RET()
 }
 
+// ImplementSpecializedAVX512 runs the implement specialized avx512 operation.
 func ImplementSpecializedAVX512(dim int) {
 	// L2Squared specialized
 	TEXT(fmt.Sprintf("l2Squared%dAVX512Kernel", dim), NOSPLIT, "func(a, b uintptr) float32")

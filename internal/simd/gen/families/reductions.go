@@ -147,6 +147,7 @@ func EmitReductionKernels() {
 	ImplementSigmoidAVX2()
 }
 
+// ImplementArgMaxAVX2 runs the implement arg max avx2 operation.
 func ImplementArgMaxAVX2(negInf Op) {
 	TEXT("argMaxAVX2Kernel", NOSPLIT, "func(src uintptr, n int) (val float32, idx int)")
 	src := Load(Param("src"), GP64())
@@ -235,6 +236,7 @@ func ImplementArgMaxAVX2(negInf Op) {
 	RET()
 }
 
+// ImplementArgMinAVX2 runs the implement arg min avx2 operation.
 func ImplementArgMinAVX2(posInf Op) {
 	TEXT("argMinAVX2Kernel", NOSPLIT, "func(src uintptr, n int) (val float32, idx int)")
 	src := Load(Param("src"), GP64())
@@ -323,6 +325,7 @@ func ImplementArgMinAVX2(posInf Op) {
 	RET()
 }
 
+// ImplementArgMaxAVX512 runs the implement arg max avx512 operation.
 func ImplementArgMaxAVX512() {
 	TEXT("argMaxAVX512Kernel", NOSPLIT, "func(src uintptr, n int) (val float32, idx int)")
 	Store(XMM(), ReturnIndex(0))
@@ -330,6 +333,7 @@ func ImplementArgMaxAVX512() {
 	RET()
 }
 
+// ImplementArgMinAVX512 runs the implement arg min avx512 operation.
 func ImplementArgMinAVX512() {
 	TEXT("argMinAVX512Kernel", NOSPLIT, "func(src uintptr, n int) (val float32, idx int)")
 	Store(XMM(), ReturnIndex(0))
@@ -337,11 +341,13 @@ func ImplementArgMinAVX512() {
 	RET()
 }
 
+// ImplementSoftmaxAVX2 runs the implement softmax avx2 operation.
 func ImplementSoftmaxAVX2() {
 	TEXT("softmaxAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
 	RET()
 }
 
+// ImplementSigmoidAVX2 runs the implement sigmoid avx2 operation.
 func ImplementSigmoidAVX2() {
 	TEXT("sigmoidAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
 	RET()

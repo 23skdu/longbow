@@ -25,24 +25,36 @@ const hotpathFlushInterval = DefaultShardedFlushInterval
 // resolved in init, label sets that depend on the dataset are resolved on first
 // use and then read with a single atomic load (see index.hotpathMetrics).
 var (
-	// Plain counters with no label set.
-	HNSWSearchPoolGetSharded  = NewShardedCounter(HNSWSearchPoolGetTotal, ShardedCounterOptions{Name: "longbow_hnsw_search_pool_get_total", FlushInterval: hotpathFlushInterval})
-	HNSWSearchPoolPutSharded  = NewShardedCounter(HNSWSearchPoolPutTotal, ShardedCounterOptions{Name: "longbow_hnsw_search_pool_put_total", FlushInterval: hotpathFlushInterval})
-	HnswContextCheckSharded   = NewShardedCounter(HnswContextCheckTotal, ShardedCounterOptions{Name: "longbow_hnsw_context_check_total", FlushInterval: hotpathFlushInterval})
+	// HNSWSearchPoolGetSharded counters with no label set.
+	HNSWSearchPoolGetSharded = NewShardedCounter(HNSWSearchPoolGetTotal, ShardedCounterOptions{Name: "longbow_hnsw_search_pool_get_total", FlushInterval: hotpathFlushInterval})
+	// HNSWSearchPoolPutSharded is a hnsw search pool put sharded value.
+	HNSWSearchPoolPutSharded = NewShardedCounter(HNSWSearchPoolPutTotal, ShardedCounterOptions{Name: "longbow_hnsw_search_pool_put_total", FlushInterval: hotpathFlushInterval})
+	// HnswContextCheckSharded is a hnsw context check sharded value.
+	HnswContextCheckSharded = NewShardedCounter(HnswContextCheckTotal, ShardedCounterOptions{Name: "longbow_hnsw_context_check_total", FlushInterval: hotpathFlushInterval})
+	// PrefetchOperationsSharded is a prefetch operations sharded value.
 	PrefetchOperationsSharded = NewShardedCounter(PrefetchOperationsTotal, ShardedCounterOptions{Name: "longbow_prefetch_operations_total", FlushInterval: hotpathFlushInterval})
 
+	// CacheBlockedTraversalChunksSharded is a cache blocked traversal chunks sharded value.
 	CacheBlockedTraversalChunksSharded = NewShardedCounter(CacheBlockedTraversalChunksTotal, ShardedCounterOptions{Name: "longbow_cache_blocked_traversal_chunks_total", FlushInterval: hotpathFlushInterval})
 
-	// Labelled counters of the search traversal and of the result pool.
-	HnswBranchPredictionSharded    = newHotpathCounterVec("longbow_hnsw_branch_prediction_total", HnswBranchPredictionTotal)
-	HNSWNodesSkippedSharded        = newHotpathCounterVec("longbow_hnsw_nodes_skipped_total", HNSWNodesSkippedTotal)
-	HnswSearchEarlyExitsSharded    = newHotpathCounterVec("longbow_hnsw_search_early_exits_total", HnswSearchEarlyExitsTotal)
-	HNSWEarlyTerminationSharded    = newHotpathCounterVec("longbow_hnsw_early_termination_total", HNSWEarlyTerminationTotal)
+	// HnswBranchPredictionSharded counters of the search traversal and of the result pool.
+	HnswBranchPredictionSharded = newHotpathCounterVec("longbow_hnsw_branch_prediction_total", HnswBranchPredictionTotal)
+	// HNSWNodesSkippedSharded is a hnsw nodes skipped sharded value.
+	HNSWNodesSkippedSharded = newHotpathCounterVec("longbow_hnsw_nodes_skipped_total", HNSWNodesSkippedTotal)
+	// HnswSearchEarlyExitsSharded is a hnsw search early exits sharded value.
+	HnswSearchEarlyExitsSharded = newHotpathCounterVec("longbow_hnsw_search_early_exits_total", HnswSearchEarlyExitsTotal)
+	// HNSWEarlyTerminationSharded is a hnsw early termination sharded value.
+	HNSWEarlyTerminationSharded = newHotpathCounterVec("longbow_hnsw_early_termination_total", HNSWEarlyTerminationTotal)
+	// HNSWPreFilteredSearchesSharded is a hnsw pre filtered searches sharded value.
 	HNSWPreFilteredSearchesSharded = newHotpathCounterVec("longbow_hnsw_prefiltered_searches_total", HNSWPreFilteredSearchesTotal)
-	HNSWFilterEarlyExitSharded     = newHotpathCounterVec("longbow_filter_early_exit_total", HNSWFilterEarlyExitTotal)
-	SearchResultPoolGetSharded     = newHotpathCounterVec("longbow_search_result_pool_get_total", SearchResultPoolGetTotal)
-	SearchResultPoolHitsSharded    = newHotpathCounterVec("longbow_search_result_pool_hits_total", SearchResultPoolHitsTotal)
-	SearchResultPoolPutSharded     = newHotpathCounterVec("longbow_search_result_pool_put_total", SearchResultPoolPutTotal)
+	// HNSWFilterEarlyExitSharded is a hnsw filter early exit sharded value.
+	HNSWFilterEarlyExitSharded = newHotpathCounterVec("longbow_filter_early_exit_total", HNSWFilterEarlyExitTotal)
+	// SearchResultPoolGetSharded is a search result pool get sharded value.
+	SearchResultPoolGetSharded = newHotpathCounterVec("longbow_search_result_pool_get_total", SearchResultPoolGetTotal)
+	// SearchResultPoolHitsSharded is a search result pool hits sharded value.
+	SearchResultPoolHitsSharded = newHotpathCounterVec("longbow_search_result_pool_hits_total", SearchResultPoolHitsTotal)
+	// SearchResultPoolPutSharded is a search result pool put sharded value.
+	SearchResultPoolPutSharded = newHotpathCounterVec("longbow_search_result_pool_put_total", SearchResultPoolPutTotal)
 )
 
 // newHotpathCounterVec binds a sharded accumulator per label combination to an

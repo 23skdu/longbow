@@ -14,6 +14,7 @@ func softmaxSIMD(src, dst []float32) {
 	Softmax(src, dst)
 }
 
+// TestExpSIMD runs the test exp simd operation.
 func TestExpSIMD(t *testing.T) {
 	testSizes := []int{1, 4, 15, 16, 17, 31, 32, 33, 100, 128}
 	for _, n := range testSizes {
@@ -40,6 +41,7 @@ func TestExpSIMD(t *testing.T) {
 	}
 }
 
+// TestSoftmaxSIMD runs the test softmax simd operation.
 func TestSoftmaxSIMD(t *testing.T) {
 	testSizes := []int{1, 4, 15, 16, 17, 31, 32, 33, 100, 128}
 	for _, n := range testSizes {
@@ -70,6 +72,7 @@ func TestSoftmaxSIMD(t *testing.T) {
 	}
 }
 
+// TestExpSIMDNegative runs the test exp simd negative operation.
 func TestExpSIMDNegative(t *testing.T) {
 	// Ensure negative inputs and large inputs don't produce NaN/Inf
 	src := []float32{-10, -1, 0, 1, 5, 10}
@@ -88,6 +91,7 @@ func TestExpSIMDNegative(t *testing.T) {
 	}
 }
 
+// BenchmarkExpSIMD runs the benchmark exp simd operation.
 func BenchmarkExpSIMD(b *testing.B) {
 	const n = 1024
 	src := make([]float32, n)
@@ -102,6 +106,7 @@ func BenchmarkExpSIMD(b *testing.B) {
 	b.SetBytes(int64(n * 4))
 }
 
+// BenchmarkExpGeneric runs the benchmark exp generic operation.
 func BenchmarkExpGeneric(b *testing.B) {
 	const n = 1024
 	src := make([]float32, n)
@@ -116,6 +121,7 @@ func BenchmarkExpGeneric(b *testing.B) {
 	b.SetBytes(int64(n * 4))
 }
 
+// BenchmarkSoftmaxSIMD runs the benchmark softmax simd operation.
 func BenchmarkSoftmaxSIMD(b *testing.B) {
 	const n = 1024
 	src := make([]float32, n)
@@ -130,6 +136,7 @@ func BenchmarkSoftmaxSIMD(b *testing.B) {
 	b.SetBytes(int64(n * 4))
 }
 
+// BenchmarkSoftmaxGeneric runs the benchmark softmax generic operation.
 func BenchmarkSoftmaxGeneric(b *testing.B) {
 	const n = 1024
 	src := make([]float32, n)
@@ -144,6 +151,7 @@ func BenchmarkSoftmaxGeneric(b *testing.B) {
 	b.SetBytes(int64(n * 4))
 }
 
+// TestSigmoidSIMD runs the test sigmoid simd operation.
 func TestSigmoidSIMD(t *testing.T) {
 	testSizes := []int{1, 4, 15, 16, 17, 31, 32, 33, 100, 128}
 	for _, n := range testSizes {
@@ -169,6 +177,7 @@ func TestSigmoidSIMD(t *testing.T) {
 	}
 }
 
+// TestLogSIMD runs the test log simd operation.
 func TestLogSIMD(t *testing.T) {
 	testSizes := []int{1, 4, 15, 16, 17, 31, 32, 33, 100, 128}
 	for _, n := range testSizes {

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestPQEncoder_Configuration runs the test pq encoder_configuration operation.
 func TestPQEncoder_Configuration(t *testing.T) {
 	_, err := NewPQEncoder(128, 16, 256)
 	assert.NoError(t, err)
@@ -19,6 +20,7 @@ func TestPQEncoder_Configuration(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestPQEncoder_TrainAndEncode runs the test pq encoder_train and encode operation.
 func TestPQEncoder_TrainAndEncode(t *testing.T) {
 	dims := 32
 	M := 4
@@ -67,6 +69,7 @@ func TestPQEncoder_TrainAndEncode(t *testing.T) {
 	assert.Less(t, mse, float32(0.05), "MSE should be reasonably low")
 }
 
+// TestPQEncoder_EncodeConsistency runs the test pq encoder_encode consistency operation.
 func TestPQEncoder_EncodeConsistency(t *testing.T) {
 	dims := 128
 	M := 16
@@ -100,6 +103,7 @@ func TestPQEncoder_EncodeConsistency(t *testing.T) {
 	assert.Equal(t, codes1, codes2, "Encoding should be deterministic")
 }
 
+// TestPQEncoder_EncodeWithSmallK runs the test pq encoder_encode with small k operation.
 func TestPQEncoder_EncodeWithSmallK(t *testing.T) {
 	// Test that sequential encoding path works for small K
 	dims := 64
@@ -128,6 +132,7 @@ func TestPQEncoder_EncodeWithSmallK(t *testing.T) {
 	assert.Equal(t, M, len(codes))
 }
 
+// TestFindNearestCentroid runs the test find nearest centroid operation.
 func TestFindNearestCentroid(t *testing.T) {
 	subDim := 16
 	K := 256
@@ -167,6 +172,7 @@ func TestFindNearestCentroid(t *testing.T) {
 	assert.InDelta(t, float64(bestDist), float64(dist), float64(bestDist)*0.02, "Distance should be approximately equal")
 }
 
+// TestFindNearestCentroidSmallK runs the test find nearest centroid small k operation.
 func TestFindNearestCentroidSmallK(t *testing.T) {
 	// Test small K path
 	subDim := 8
@@ -204,6 +210,7 @@ func TestFindNearestCentroidSmallK(t *testing.T) {
 	assert.Equal(t, bestIdx, idx)
 }
 
+// BenchmarkPQEncoder_Encode runs the benchmark pq encoder_encode operation.
 func BenchmarkPQEncoder_Encode(b *testing.B) {
 	testCases := []struct {
 		name string
@@ -256,6 +263,7 @@ func BenchmarkPQEncoder_Encode(b *testing.B) {
 	}
 }
 
+// BenchmarkFindNearestCentroid runs the benchmark find nearest centroid operation.
 func BenchmarkFindNearestCentroid(b *testing.B) {
 	testCases := []struct {
 		name   string

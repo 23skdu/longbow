@@ -12,16 +12,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestStubIsUnavailable runs the test stub is unavailable operation.
 func TestStubIsUnavailable(t *testing.T) {
 	assert.False(t, IsAvailable())
 }
 
+// TestStubNewEngine runs the test stub new engine operation.
 func TestStubNewEngine(t *testing.T) {
 	engine, err := NewEngine()
 	require.NoError(t, err)
 	require.NotNil(t, engine)
 }
 
+// TestStubLoadModel runs the test stub load model operation.
 func TestStubLoadModel(t *testing.T) {
 	engine, err := NewEngine()
 	require.NoError(t, err)
@@ -31,6 +34,7 @@ func TestStubLoadModel(t *testing.T) {
 	assert.Contains(t, err.Error(), "Metal not available")
 }
 
+// TestStubScore runs the test stub score operation.
 func TestStubScore(t *testing.T) {
 	engine, err := NewEngine()
 	require.NoError(t, err)
@@ -41,6 +45,7 @@ func TestStubScore(t *testing.T) {
 	assert.Contains(t, err.Error(), "Metal not available")
 }
 
+// TestStubScoreBatch runs the test stub score batch operation.
 func TestStubScoreBatch(t *testing.T) {
 	engine, err := NewEngine()
 	require.NoError(t, err)
@@ -51,6 +56,7 @@ func TestStubScoreBatch(t *testing.T) {
 	assert.Contains(t, err.Error(), "Metal not available")
 }
 
+// TestStubEmbed runs the test stub embed operation.
 func TestStubEmbed(t *testing.T) {
 	engine, err := NewEngine()
 	require.NoError(t, err)
@@ -61,12 +67,14 @@ func TestStubEmbed(t *testing.T) {
 	assert.Contains(t, err.Error(), "Metal not available")
 }
 
+// TestStubWarmupIsNoop runs the test stub warmup is noop operation.
 func TestStubWarmupIsNoop(t *testing.T) {
 	engine, err := NewEngine()
 	require.NoError(t, err)
 	assert.NoError(t, engine.Warmup())
 }
 
+// TestStubModelInfo runs the test stub model info operation.
 func TestStubModelInfo(t *testing.T) {
 	engine, err := NewEngine()
 	require.NoError(t, err)
@@ -77,6 +85,7 @@ func TestStubModelInfo(t *testing.T) {
 	assert.Contains(t, err.Error(), "Metal not available")
 }
 
+// TestStubCloseIsIdempotent runs the test stub close is idempotent operation.
 func TestStubCloseIsIdempotent(t *testing.T) {
 	engine, err := NewEngine()
 	require.NoError(t, err)
@@ -84,6 +93,7 @@ func TestStubCloseIsIdempotent(t *testing.T) {
 	assert.NoError(t, engine.Close())
 }
 
+// TestStubEngineConcurrentAccess runs the test stub engine concurrent access operation.
 func TestStubEngineConcurrentAccess(t *testing.T) {
 	engine, err := NewEngine()
 	require.NoError(t, err)
@@ -104,6 +114,7 @@ func TestStubEngineConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
+// TestStubNewMetalReranker runs the test stub new metal reranker operation.
 func TestStubNewMetalReranker(t *testing.T) {
 	reranker, err := NewMetalReranker("/fake/path")
 	assert.Error(t, err)
@@ -111,6 +122,7 @@ func TestStubNewMetalReranker(t *testing.T) {
 	assert.Contains(t, err.Error(), "Metal is not available")
 }
 
+// TestStubMetalRerankerRerank runs the test stub metal reranker rerank operation.
 func TestStubMetalRerankerRerank(t *testing.T) {
 	reranker := &MetalReranker{modelPath: "/fake/path"}
 
@@ -121,6 +133,7 @@ func TestStubMetalRerankerRerank(t *testing.T) {
 	assert.Contains(t, err.Error(), "Metal is not available")
 }
 
+// TestStubMetalRerankerClose runs the test stub metal reranker close operation.
 func TestStubMetalRerankerClose(t *testing.T) {
 	reranker := &MetalReranker{modelPath: "/fake/path"}
 	assert.NoError(t, reranker.Close())

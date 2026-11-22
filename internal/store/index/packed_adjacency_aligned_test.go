@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestPackedAdjacency_Alignment runs the test packed adjacency_alignment operation.
 func TestPackedAdjacency_Alignment(t *testing.T) {
 	// Arena (large enough)
 	arena := memory.NewSlabArena(1024 * 1024)

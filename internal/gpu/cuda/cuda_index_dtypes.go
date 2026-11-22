@@ -18,6 +18,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// SearchInt8 runs the search int8 operation.
 func (idx *CUDAIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
 	if len(vector) != idx.dim {
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
@@ -30,6 +31,7 @@ func (idx *CUDAIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, erro
 	return idx.Search(f32Vec, k)
 }
 
+// SearchUint8 runs the search uint8 operation.
 func (idx *CUDAIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
 	if len(vector) != idx.dim {
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
@@ -42,6 +44,7 @@ func (idx *CUDAIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, er
 	return idx.Search(f32Vec, k)
 }
 
+// SearchInt16 runs the search int16 operation.
 func (idx *CUDAIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
 	if len(vector) != idx.dim {
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
@@ -54,6 +57,7 @@ func (idx *CUDAIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, er
 	return idx.Search(f32Vec, k)
 }
 
+// SearchUint16 runs the search uint16 operation.
 func (idx *CUDAIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
 	if len(vector) != idx.dim {
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
@@ -66,6 +70,7 @@ func (idx *CUDAIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, 
 	return idx.Search(f32Vec, k)
 }
 
+// SearchFloat16 runs the search float16 operation.
 func (idx *CUDAIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	if len(vector) != idx.dim {
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
@@ -78,6 +83,7 @@ func (idx *CUDAIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32,
 	return idx.Search(f32Vec, k)
 }
 
+// SearchComplex64 runs the search complex64 operation.
 func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -228,6 +234,7 @@ func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float3
 	return resultIDs, resultDistances, nil
 }
 
+// SearchComplex128 runs the search complex128 operation.
 func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

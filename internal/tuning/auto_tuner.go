@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// AutoTuner represents a auto tuner value.
 type AutoTuner struct {
 	logger *zerolog.Logger
 
@@ -25,6 +26,7 @@ type AutoTuner struct {
 	wg     sync.WaitGroup
 }
 
+// AutoTunerConfig represents a auto tuner config value.
 type AutoTunerConfig struct {
 	Enabled        bool
 	SampleInterval time.Duration
@@ -33,6 +35,7 @@ type AutoTunerConfig struct {
 	LearningRate   float64
 }
 
+// TuningParameter represents a tuning parameter value.
 type TuningParameter struct {
 	Name     string
 	MinValue float64
@@ -45,13 +48,17 @@ type TuningParameter struct {
 	value atomic.Value
 }
 
+// TuningType represents a tuning type value.
 type TuningType int
 
 const (
+	// TuningTypeContinuous is a tuning type continuous constant.
 	TuningTypeContinuous TuningType = iota
+	// TuningTypeDiscrete is a tuning type discrete constant.
 	TuningTypeDiscrete
 )
 
+// Measurement represents a measurement value.
 type Measurement struct {
 	Timestamp time.Time
 	Parameter string
@@ -59,6 +66,7 @@ type Measurement struct {
 	Metric    float64
 }
 
+// NewAutoTuner constructs a new AutoTuner.
 func NewAutoTuner(config AutoTunerConfig, logger *zerolog.Logger) *AutoTuner {
 	if config.SampleInterval == 0 {
 		config.SampleInterval = 10 * time.Second
@@ -81,6 +89,7 @@ func NewAutoTuner(config AutoTunerConfig, logger *zerolog.Logger) *AutoTuner {
 	}
 }
 
+// RegisterParameter runs the register parameter operation.
 func (a *AutoTuner) RegisterParameter(name string, minVal, maxVal float64, tType TuningType) *TuningParameter {
 	param := &TuningParameter{
 		Name:       name,
@@ -98,6 +107,7 @@ func (a *AutoTuner) RegisterParameter(name string, minVal, maxVal float64, tType
 	return param
 }
 
+// Start runs the start operation.
 func (a *AutoTuner) Start(ctx context.Context) error {
 	if !a.config.Enabled {
 		a.logger.Info().Msg("Auto-tuner disabled")
@@ -115,6 +125,7 @@ func (a *AutoTuner) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop runs the stop operation.
 func (a *AutoTuner) Stop() error {
 	if !a.enabled.CompareAndSwap(true, false) {
 		return nil
@@ -239,6 +250,7 @@ func calculateStdDev(values []float64, mean float64) float64 {
 	return math.Sqrt(variance)
 }
 
+// RecordMeasurement runs the record measurement operation.
 func (a *AutoTuner) RecordMeasurement(paramName string, value, metric float64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -255,6 +267,7 @@ func (a *AutoTuner) RecordMeasurement(paramName string, value, metric float64) {
 	}
 }
 
+// GetParameterValue returns the parameter value.
 func (a *AutoTuner) GetParameterValue(name string) float64 {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -265,6 +278,7 @@ func (a *AutoTuner) GetParameterValue(name string) float64 {
 	return 0
 }
 
+// GetAllTunings returns the all tunings.
 func (a *AutoTuner) GetAllTunings() map[string]float64 {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -276,12 +290,14 @@ func (a *AutoTuner) GetAllTunings() map[string]float64 {
 	return result
 }
 
+// WorkloadAnalyzer represents a workload analyzer value.
 type WorkloadAnalyzer struct {
 	mu         sync.RWMutex
 	samples    []WorkloadSample
 	maxSamples int
 }
 
+// WorkloadSample represents a workload sample value.
 type WorkloadSample struct {
 	Timestamp  time.Time
 	QueryRate  float64
@@ -290,6 +306,7 @@ type WorkloadSample struct {
 	CPUUsage   float64
 }
 
+// NewWorkloadAnalyzer constructs a new WorkloadAnalyzer.
 func NewWorkloadAnalyzer(maxSamples int) *WorkloadAnalyzer {
 	if maxSamples == 0 {
 		maxSamples = 1000
@@ -300,6 +317,7 @@ func NewWorkloadAnalyzer(maxSamples int) *WorkloadAnalyzer {
 	}
 }
 
+// RecordSample runs the record sample operation.
 func (w *WorkloadAnalyzer) RecordSample(rate, latP50, latP99, cpu float64) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -317,11 +335,13 @@ func (w *WorkloadAnalyzer) RecordSample(rate, latP50, latP99, cpu float64) {
 	}
 }
 
+// WorkloadProfile represents a workload profile value.
 type WorkloadProfile struct {
 	Classification   string
 	AverageQueryRate float64
 }
 
+// Analyze runs the analyze operation.
 func (w *WorkloadAnalyzer) Analyze() WorkloadProfile {
 	w.mu.RLock()
 	defer w.mu.RUnlock()

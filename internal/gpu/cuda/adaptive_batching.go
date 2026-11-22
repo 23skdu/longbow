@@ -7,7 +7,9 @@ import (
 )
 
 const (
-	CUDAWarpSize  = 32
+	// CUDAWarpSize is a cuda warp size constant.
+	CUDAWarpSize = 32
+	// CUDABlockSize is a cuda block size constant.
 	CUDABlockSize = 256
 )
 

@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// BenchmarkMeshStatus runs the benchmark mesh status operation.
 func BenchmarkMeshStatus(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

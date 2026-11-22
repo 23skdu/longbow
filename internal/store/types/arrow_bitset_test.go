@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowBitset_FilterAndMarkUnvisited runs the test arrow bitset_filter and mark unvisited operation.
 func TestArrowBitset_FilterAndMarkUnvisited(t *testing.T) {
 	bs := NewArrowBitset(1024)
 

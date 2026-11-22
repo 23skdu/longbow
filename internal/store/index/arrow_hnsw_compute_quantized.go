@@ -20,6 +20,7 @@ type pqComputer struct {
 	codesBuf  []byte
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
 	code := c.data.GetVectorPQWithGen(id, c.maxGen)
 	if code == nil {
@@ -60,6 +61,7 @@ func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
 	return distSq, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *pqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	n := len(ids)
 	if n == 0 {
@@ -126,6 +128,7 @@ func (c *pqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *pqComputer) Prefetch(id uint32) {
 	cID := int(id) / types.ChunkSize
 	chunk := c.data.GetVectorsPQChunkFast(cID)
@@ -188,6 +191,7 @@ type tqChunkCacheEntry struct {
 	data []byte
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 	if c.sctx != nil {
 		if d, ok := c.sctx.ProbeTQRecon(id); ok {
@@ -403,6 +407,7 @@ type float32ToSQ8Computer struct {
 	scale   float32
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *float32ToSQ8Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsSQ8ChunkFast(cID)
@@ -423,6 +428,7 @@ func (c *float32ToSQ8Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *float32ToSQ8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	dst = dst[:0]
 	for _, id := range ids {
@@ -435,6 +441,7 @@ func (c *float32ToSQ8Computer) ComputeBatch(ids []uint32, dst []float32) ([]floa
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *float32ToSQ8Computer) Prefetch(id uint32) {
 	cID := int(id) / types.ChunkSize
 	chunk := c.data.GetVectorsSQ8ChunkFast(cID)

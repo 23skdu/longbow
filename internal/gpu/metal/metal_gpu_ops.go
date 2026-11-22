@@ -15,14 +15,17 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// AddTurboQuant runs the add turbo quant operation.
 func (idx *MetalIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
 	return fmt.Errorf("AddTurboQuant not implemented for standard Metal index, use optimized Metal index")
 }
 
+// SearchTurboQuant runs the search turbo quant operation.
 func (idx *MetalIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	return nil, nil, fmt.Errorf("SearchTurboQuant not implemented for standard Metal index, use optimized Metal index")
 }
 
+// UpdateGraph runs the update graph operation.
 func (idx *MetalIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -52,11 +55,13 @@ func (idx *MetalIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights
 	return nil
 }
 
+// SearchGreedy runs the search greedy operation.
 func (idx *MetalIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
 	// Standard MetalIndex doesn't support GPU-side greedy search yet, fallback to CPU handled by caller
 	return entryPoint, entryDist, fmt.Errorf("SearchGreedy not implemented for standard MetalIndex")
 }
 
+// GraphExpand runs the graph expand operation.
 func (idx *MetalIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -93,6 +98,7 @@ func (idx *MetalIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]
 	return outIDs[:n], outScores[:n], nil
 }
 
+// AddPQ runs the add pq operation.
 func (idx *MetalIndex) AddPQ(ids []int64, codes []byte, m int) error {
 	return fmt.Errorf("AddPQ not supported in basic MetalIndex")
 }
@@ -125,10 +131,13 @@ func (idx *MetalIndex) Sigmoid(src []float32, dst []float32) error {
 	// I'll leave this as a stub that calls a C function we'll add.
 	return nil
 }
+
+// SearchBatchDistances runs the search batch distances operation.
 func (idx *MetalIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
 	return nil, fmt.Errorf("SearchBatchDistances not implemented for standard MetalIndex")
 }
 
+// HaversineSearch runs the haversine search operation.
 func (idx *MetalIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	idx.mu.RLock()
 	closed := idx.closed
@@ -164,6 +173,7 @@ func (idx *MetalIndex) HaversineSearch(centerLat, centerLon float32, points []fl
 	return results, nil
 }
 
+// NormBatch runs the norm batch operation.
 func (idx *MetalIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	idx.mu.RLock()
 	closed := idx.closed
@@ -196,6 +206,8 @@ func (idx *MetalIndex) NormBatch(vectors []float32, dims int) ([]float32, error)
 	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "norm_batch").Observe(time.Since(start).Seconds())
 	return results, nil
 }
+
+// PruneNeighbors runs the prune neighbors operation.
 func (m *MetalIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -232,10 +244,12 @@ func (m *MetalIndex) PruneNeighbors(candidateIds []uint32, candidateDists []floa
 	return selectedIds[:selectedCount], nil
 }
 
+// Sync runs the sync operation.
 func (idx *MetalIndex) Sync() error {
 	return nil
 }
 
+// Clear runs the clear operation.
 func (idx *MetalIndex) Clear() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -246,6 +260,7 @@ func (idx *MetalIndex) Clear() error {
 	return nil
 }
 
+// Reset runs the reset operation.
 func (idx *MetalIndex) Reset() error {
 	return idx.Clear()
 }

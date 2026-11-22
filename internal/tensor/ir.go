@@ -8,13 +8,20 @@ import (
 type OpKind int
 
 const (
-	OpContract    OpKind = iota // tensor contraction (sum over shared indices)
-	OpTranspose                 // axis permutation
-	OpReshape                   // shape change (no data movement)
-	OpElementwise               // element-wise unary/binary operation
-	OpReduce                    // reduction along axis (sum, max, min)
-	OpConstant                  // constant tensor (leaf)
-	OpInput                     // input tensor (leaf)
+	// OpContract is a op contract constant.
+	OpContract OpKind = iota // tensor contraction (sum over shared indices)
+	// OpTranspose is a op transpose constant.
+	OpTranspose // axis permutation
+	// OpReshape is a op reshape constant.
+	OpReshape // shape change (no data movement)
+	// OpElementwise is a op elementwise constant.
+	OpElementwise // element-wise unary/binary operation
+	// OpReduce is a op reduce constant.
+	OpReduce // reduction along axis (sum, max, min)
+	// OpConstant is a op constant constant.
+	OpConstant // constant tensor (leaf)
+	// OpInput is a op input constant.
+	OpInput // input tensor (leaf)
 )
 
 // IRNode is a node in the tensor expression DAG.

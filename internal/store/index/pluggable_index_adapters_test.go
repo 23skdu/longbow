@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHNSWPluggableAdapter_Functional runs the test hnsw pluggable adapter_functional operation.
 func TestHNSWPluggableAdapter_Functional(t *testing.T) {
 	adapter := &HNSWPluggableAdapter{
 		dimension: 4,

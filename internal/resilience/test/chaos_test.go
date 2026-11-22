@@ -12,17 +12,25 @@ import (
 	"github.com/23skdu/longbow/internal/resilience"
 )
 
+// ChaosType represents a chaos type value.
 type ChaosType int
 
 const (
+	// ChaosLatency is a chaos latency constant.
 	ChaosLatency ChaosType = iota
+	// ChaosError is a chaos error constant.
 	ChaosError
+	// ChaosTimeout is a chaos timeout constant.
 	ChaosTimeout
+	// ChaosCircuitBreak is a chaos circuit break constant.
 	ChaosCircuitBreak
+	// ChaosMemoryPressure is a chaos memory pressure constant.
 	ChaosMemoryPressure
+	// ChaosNetworkPartition is a chaos network partition constant.
 	ChaosNetworkPartition
 )
 
+// ChaosConfig represents a chaos config value.
 type ChaosConfig struct {
 	Type            ChaosType
 	Probability     float64
@@ -33,6 +41,7 @@ type ChaosConfig struct {
 	TargetComponent string
 }
 
+// ChaosInjector represents a chaos injector value.
 type ChaosInjector struct {
 	configs       []ChaosConfig
 	running       int32
@@ -40,6 +49,7 @@ type ChaosInjector struct {
 	injectedCount int64
 }
 
+// NewChaosInjector constructs a new ChaosInjector.
 func NewChaosInjector() *ChaosInjector {
 	return &ChaosInjector{
 		configs: make([]ChaosConfig, 0),
@@ -47,12 +57,14 @@ func NewChaosInjector() *ChaosInjector {
 	}
 }
 
+// AddConfig runs the add config operation.
 func (ci *ChaosInjector) AddConfig(config ChaosConfig) {
 	ci.mu.Lock()
 	defer ci.mu.Unlock()
 	ci.configs = append(ci.configs, config)
 }
 
+// ShouldInject runs the should inject operation.
 func (ci *ChaosInjector) ShouldInject(target string) (bool, ChaosConfig) {
 	ci.mu.RLock()
 	defer ci.mu.RUnlock()
@@ -73,27 +85,33 @@ func (ci *ChaosInjector) ShouldInject(target string) (bool, ChaosConfig) {
 	return false, ChaosConfig{}
 }
 
+// Start runs the start operation.
 func (ci *ChaosInjector) Start() {
 	atomic.StoreInt32(&ci.running, 1)
 }
 
+// Stop runs the stop operation.
 func (ci *ChaosInjector) Stop() {
 	atomic.StoreInt32(&ci.running, 0)
 }
 
+// GetInjectedCount returns the injected count.
 func (ci *ChaosInjector) GetInjectedCount() int64 {
 	return atomic.LoadInt64(&ci.injectedCount)
 }
 
+// Reset runs the reset operation.
 func (ci *ChaosInjector) Reset() {
 	atomic.StoreInt64(&ci.injectedCount, 0)
 }
 
+// ChaosProxy represents a chaos proxy value.
 type ChaosProxy struct {
 	injector *ChaosInjector
 	name     string
 }
 
+// NewChaosProxy constructs a new ChaosProxy.
 func NewChaosProxy(name string, injector *ChaosInjector) *ChaosProxy {
 	return &ChaosProxy{
 		injector: injector,
@@ -101,6 +119,7 @@ func NewChaosProxy(name string, injector *ChaosInjector) *ChaosProxy {
 	}
 }
 
+// ExecuteWithChaos runs the execute with chaos operation.
 func (cp *ChaosProxy) ExecuteWithChaos(fn func() (interface{}, error)) (interface{}, error) {
 	shouldInject, config := cp.injector.ShouldInject(cp.name)
 	if !shouldInject {
@@ -127,6 +146,7 @@ func (cp *ChaosProxy) ExecuteWithChaos(fn func() (interface{}, error)) (interfac
 	}
 }
 
+// ResilienceTestSuite represents a resilience test suite value.
 type ResilienceTestSuite struct {
 	injector *ChaosInjector
 	manager  *resilience.ResilienceManager
@@ -135,6 +155,7 @@ type ResilienceTestSuite struct {
 	mu       sync.RWMutex
 }
 
+// TestMetrics represents a test metrics value.
 type TestMetrics struct {
 	TotalRequests       int64
 	SuccessfulRequests  int64
@@ -146,6 +167,7 @@ type TestMetrics struct {
 	mu                  sync.RWMutex
 }
 
+// NewResilienceTestSuite constructs a new ResilienceTestSuite.
 func NewResilienceTestSuite() *ResilienceTestSuite {
 	config := resilience.DefaultResilienceConfig()
 	manager := resilience.NewResilienceManager(config)
@@ -159,6 +181,7 @@ func NewResilienceTestSuite() *ResilienceTestSuite {
 	}
 }
 
+// GetProxy returns the proxy.
 func (rts *ResilienceTestSuite) GetProxy(name string) *ChaosProxy {
 	rts.mu.RLock()
 	proxy, exists := rts.proxies[name]
@@ -180,6 +203,7 @@ func (rts *ResilienceTestSuite) GetProxy(name string) *ChaosProxy {
 	return proxy
 }
 
+// RunLoadTest runs the run load test operation.
 func (rts *ResilienceTestSuite) RunLoadTest(ctx context.Context, duration time.Duration, concurrency int, operation func() (interface{}, error)) *TestResults {
 	start := time.Now()
 	end := start.Add(duration)
@@ -295,6 +319,7 @@ func (rts *ResilienceTestSuite) collectResults(results <-chan *TestResult) *Test
 	return testResults
 }
 
+// TestResult represents a test result value.
 type TestResult struct {
 	WorkerID  int
 	RequestID int
@@ -304,6 +329,7 @@ type TestResult struct {
 	Timestamp time.Time
 }
 
+// TestResults represents a test results value.
 type TestResults struct {
 	TotalRequests      int
 	SuccessfulRequests int
@@ -318,6 +344,7 @@ type TestResults struct {
 	Results            []*TestResult
 }
 
+// TestCircuitBreaker runs the test circuit breaker operation.
 func (rts *ResilienceTestSuite) TestCircuitBreaker(ctx context.Context, testName string, faultRate float64) *TestResults {
 	rts.injector.AddConfig(ChaosConfig{
 		Type:            ChaosError,
@@ -340,6 +367,7 @@ func (rts *ResilienceTestSuite) TestCircuitBreaker(ctx context.Context, testName
 	return rts.RunLoadTest(ctx, 30*time.Second, 10, operation)
 }
 
+// TestRetryLogic runs the test retry logic operation.
 func (rts *ResilienceTestSuite) TestRetryLogic(ctx context.Context, testName string, faultRate float64) *TestResults {
 	rts.injector.AddConfig(ChaosConfig{
 		Type:            ChaosLatency,
@@ -365,6 +393,7 @@ func (rts *ResilienceTestSuite) TestRetryLogic(ctx context.Context, testName str
 	return rts.RunLoadTest(ctx, 30*time.Second, 5, operation)
 }
 
+// TestBulkhead runs the test bulkhead operation.
 func (rts *ResilienceTestSuite) TestBulkhead(ctx context.Context, testName string, concurrency int) *TestResults {
 	config := resilience.DefaultResilienceConfig()
 	config.Bulkheads[testName] = concurrency / 2
@@ -381,6 +410,7 @@ func (rts *ResilienceTestSuite) TestBulkhead(ctx context.Context, testName strin
 	return rts.RunLoadTest(ctx, 30*time.Second, concurrency, operation)
 }
 
+// TestGracefulDegradation runs the test graceful degradation operation.
 func (rts *ResilienceTestSuite) TestGracefulDegradation(ctx context.Context, testName string) *TestResults {
 	rts.manager.AddFallbackStrategy(testName+"_fallback", resilience.DegradationModerate, func(ctx context.Context) (interface{}, error) {
 		return "fallback_result", nil
@@ -409,6 +439,7 @@ func (rts *ResilienceTestSuite) TestGracefulDegradation(ctx context.Context, tes
 	return rts.RunLoadTest(ctx, 30*time.Second, 10, operation)
 }
 
+// GetMetrics returns the metrics.
 func (rts *ResilienceTestSuite) GetMetrics() *TestMetrics {
 	rts.metrics.mu.RLock()
 	defer rts.metrics.mu.RUnlock()
@@ -424,11 +455,13 @@ func (rts *ResilienceTestSuite) GetMetrics() *TestMetrics {
 	}
 }
 
+// Reset runs the reset operation.
 func (rts *ResilienceTestSuite) Reset() {
 	rts.injector.Reset()
 	rts.metrics = &TestMetrics{}
 }
 
+// PrintSummary runs the print summary operation.
 func (tr *TestResults) PrintSummary() {
 	fmt.Printf("Test Results Summary:\n")
 	fmt.Printf("Total Requests: %d\n", tr.TotalRequests)
@@ -440,6 +473,7 @@ func (tr *TestResults) PrintSummary() {
 	fmt.Printf("Duration: %v\n", tr.EndTime.Sub(tr.StartTime))
 }
 
+// TestChaosInjectorSmoke runs the test chaos injector smoke operation.
 func TestChaosInjectorSmoke(t *testing.T) {
 	injector := NewChaosInjector()
 	if injector == nil {
@@ -468,6 +502,7 @@ func TestChaosInjectorSmoke(t *testing.T) {
 	injector.Reset()
 }
 
+// TestResilienceSuiteSmoke runs the test resilience suite smoke operation.
 func TestResilienceSuiteSmoke(t *testing.T) {
 	suite := NewResilienceTestSuite()
 	if suite == nil {

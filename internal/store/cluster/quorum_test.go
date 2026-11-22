@@ -11,6 +11,7 @@ import (
 // ConsistencyLevel Tests
 // =============================================================================
 
+// TestConsistencyLevel_String runs the test consistency level_string operation.
 func TestConsistencyLevel_String(t *testing.T) {
 	tests := []struct {
 		level    ConsistencyLevel
@@ -28,6 +29,7 @@ func TestConsistencyLevel_String(t *testing.T) {
 	}
 }
 
+// TestParseConsistencyLevel runs the test parse consistency level operation.
 func TestParseConsistencyLevel(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -58,6 +60,7 @@ func TestParseConsistencyLevel(t *testing.T) {
 // QuorumCalculator Tests
 // =============================================================================
 
+// TestQuorumCalculator_RequiredNodes runs the test quorum calculator_required nodes operation.
 func TestQuorumCalculator_RequiredNodes(t *testing.T) {
 	tests := []struct {
 		totalNodes int
@@ -92,6 +95,7 @@ func TestQuorumCalculator_RequiredNodes(t *testing.T) {
 	}
 }
 
+// TestQuorumCalculator_IsSatisfied runs the test quorum calculator_is satisfied operation.
 func TestQuorumCalculator_IsSatisfied(t *testing.T) {
 	calc := NewQuorumCalculator()
 
@@ -116,6 +120,7 @@ func TestQuorumCalculator_IsSatisfied(t *testing.T) {
 // QuorumManager Tests
 // =============================================================================
 
+// TestQuorumManager_NewQuorumManager runs the test quorum manager_new quorum manager operation.
 func TestQuorumManager_NewQuorumManager(t *testing.T) {
 	cfg := QuorumConfig{
 		DefaultReadLevel:  ConsistencyQuorum,
@@ -135,6 +140,7 @@ func TestQuorumManager_NewQuorumManager(t *testing.T) {
 	}
 }
 
+// TestQuorumManager_ExecuteWrite_One runs the test quorum manager_execute write_one operation.
 func TestQuorumManager_ExecuteWrite_One(t *testing.T) {
 	cfg := QuorumConfig{
 		DefaultWriteLevel: ConsistencyOne,
@@ -166,6 +172,7 @@ func TestQuorumManager_ExecuteWrite_One(t *testing.T) {
 	}
 }
 
+// TestQuorumManager_ExecuteWrite_Quorum runs the test quorum manager_execute write_quorum operation.
 func TestQuorumManager_ExecuteWrite_Quorum(t *testing.T) {
 	cfg := QuorumConfig{
 		DefaultWriteLevel: ConsistencyQuorum,
@@ -192,6 +199,7 @@ func TestQuorumManager_ExecuteWrite_Quorum(t *testing.T) {
 	}
 }
 
+// TestQuorumManager_ExecuteWrite_All runs the test quorum manager_execute write_all operation.
 func TestQuorumManager_ExecuteWrite_All(t *testing.T) {
 	cfg := QuorumConfig{
 		DefaultWriteLevel: ConsistencyAll,
@@ -218,6 +226,7 @@ func TestQuorumManager_ExecuteWrite_All(t *testing.T) {
 	}
 }
 
+// TestQuorumManager_ExecuteWrite_QuorumFailed runs the test quorum manager_execute write_quorum failed operation.
 func TestQuorumManager_ExecuteWrite_QuorumFailed(t *testing.T) {
 	cfg := QuorumConfig{
 		DefaultWriteLevel: ConsistencyQuorum,
@@ -251,6 +260,7 @@ func TestQuorumManager_ExecuteWrite_QuorumFailed(t *testing.T) {
 	}
 }
 
+// TestQuorumManager_ExecuteRead_Quorum runs the test quorum manager_execute read_quorum operation.
 func TestQuorumManager_ExecuteRead_Quorum(t *testing.T) {
 	cfg := QuorumConfig{
 		DefaultReadLevel: ConsistencyQuorum,
@@ -280,6 +290,7 @@ func TestQuorumManager_ExecuteRead_Quorum(t *testing.T) {
 	}
 }
 
+// TestQuorumManager_Metrics runs the test quorum manager_metrics operation.
 func TestQuorumManager_Metrics(t *testing.T) {
 	cfg := QuorumConfig{
 		DefaultWriteLevel: ConsistencyQuorum,
@@ -300,6 +311,7 @@ func TestQuorumManager_Metrics(t *testing.T) {
 	// Metrics should be incremented - no panic means success
 }
 
+// TestQuorumManager_Timeout runs the test quorum manager_timeout operation.
 func TestQuorumManager_Timeout(t *testing.T) {
 	cfg := QuorumConfig{
 		DefaultWriteLevel: ConsistencyAll,

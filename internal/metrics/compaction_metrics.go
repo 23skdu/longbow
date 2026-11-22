@@ -62,6 +62,7 @@ var (
 		},
 	)
 
+	// SnapshotTotal is a snapshot total value.
 	SnapshotTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_snapshot_operations_total",
@@ -69,6 +70,7 @@ var (
 		},
 		[]string{"status"},
 	)
+	// SnapshotDurationSeconds is a snapshot duration seconds value.
 	SnapshotDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_snapshot_duration_seconds",
@@ -76,6 +78,7 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 	)
+	// SnapshotWriteDurationSeconds is a snapshot write duration seconds value.
 	SnapshotWriteDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_snapshot_write_duration_seconds",
@@ -83,6 +86,7 @@ var (
 			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 120},
 		},
 	)
+	// SnapshotSizeBytes is a snapshot size bytes value.
 	SnapshotSizeBytes = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_snapshot_size_bytes",
@@ -179,18 +183,21 @@ var (
 			Help: "Current checkpoint epoch",
 		},
 	)
+	// CheckpointsTotal is a checkpoints total value.
 	CheckpointsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_checkpoints_total",
 			Help: "Total number of checkpoints created",
 		},
 	)
+	// CheckpointBarrierReached is a checkpoint barrier reached value.
 	CheckpointBarrierReached = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_checkpoint_barrier_reached_total",
 			Help: "Total number of checkpoint barriers reached",
 		},
 	)
+	// CheckpointTimeoutsTotal is a checkpoint timeouts total value.
 	CheckpointTimeoutsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_checkpoint_timeouts_total",
@@ -206,18 +213,21 @@ var (
 		},
 		[]string{"name", "from", "to"},
 	)
+	// CircuitBreakerRejections is a circuit breaker rejections value.
 	CircuitBreakerRejections = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_store_circuit_breaker_rejections_total",
 			Help: "Total number of requests rejected by store circuit breaker",
 		},
 	)
+	// CircuitBreakerSuccesses is a circuit breaker successes value.
 	CircuitBreakerSuccesses = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_store_circuit_breaker_successes_total",
 			Help: "Total number of successful requests passing through breaker",
 		},
 	)
+	// CircuitBreakerFailures is a circuit breaker failures value.
 	CircuitBreakerFailures = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_store_circuit_breaker_failures_total",
@@ -277,6 +287,7 @@ var (
 			Help: "Total number of hybrid searches triggered by vector query",
 		},
 	)
+	// HybridSearchKeywordTotal is a hybrid search keyword total value.
 	HybridSearchKeywordTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hybrid_search_keyword_total",
@@ -299,6 +310,7 @@ var (
 			Help: "Number of requests waiting for semaphore",
 		},
 	)
+	// SemaphoreQueueDurationSeconds is a semaphore queue duration seconds value.
 	SemaphoreQueueDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_semaphore_queue_duration_seconds",
@@ -306,18 +318,21 @@ var (
 			Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1},
 		},
 	)
+	// SemaphoreTimeoutsTotal is a semaphore timeouts total value.
 	SemaphoreTimeoutsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_semaphore_timeouts_total",
 			Help: "Total number of semaphore acquisition timeouts",
 		},
 	)
+	// SemaphoreAcquiredTotal is a semaphore acquired total value.
 	SemaphoreAcquiredTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_semaphore_acquired_total",
 			Help: "Total number of semaphore acquisitions",
 		},
 	)
+	// SemaphoreActiveRequests is a semaphore active requests value.
 	SemaphoreActiveRequests = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_semaphore_active_requests",
@@ -333,6 +348,7 @@ var (
 		},
 		[]string{"dataset"},
 	)
+	// SchemaEvolutionDuration is a schema evolution duration value.
 	SchemaEvolutionDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_schema_evolution_duration_seconds",
@@ -340,12 +356,14 @@ var (
 			Buckets: []float64{0.001, 0.01, 0.1, 1, 5},
 		},
 	)
+	// SchemaColumnsAddedTotal is a schema columns added total value.
 	SchemaColumnsAddedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_schema_columns_added_total",
 			Help: "Total number of columns added via schema evolution",
 		},
 	)
+	// SchemaColumnsDroppedTotal is a schema columns dropped total value.
 	SchemaColumnsDroppedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_schema_columns_dropped_total",
@@ -361,6 +379,7 @@ var (
 			Buckets: []float64{1024, 4096, 16384, 65536, 262144, 1048576, 4194304},
 		},
 	)
+	// FlightRowsProcessed is a flight rows processed value.
 	FlightRowsProcessed = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_flight_rows_processed_total",
@@ -368,6 +387,7 @@ var (
 		},
 		[]string{"operation", "status"},
 	)
+	// DoGetPipelineStepsTotal is a do get pipeline steps total value.
 	DoGetPipelineStepsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_do_get_pipeline_steps_total",
@@ -384,6 +404,7 @@ var (
 		[]string{"dataset", "field"},
 	)
 
+	// BM25DocumentsIndexedTotal is a bm25 documents indexed total value.
 	BM25DocumentsIndexedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bm25_documents_indexed_total",
@@ -415,24 +436,28 @@ var (
 			Help: "Total number of vector search parse fallbacks",
 		},
 	)
+	// VectorSearchActionErrors is a vector search action errors value.
 	VectorSearchActionErrors = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_search_action_errors_total",
 			Help: "Total number of vector search action errors",
 		},
 	)
+	// ZeroAllocVectorSearchParseTotal is a zero alloc vector search parse total value.
 	ZeroAllocVectorSearchParseTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_zero_alloc_vector_search_parse_total",
 			Help: "Total number of zero-alloc vector search parses",
 		},
 	)
+	// VectorSearchActionTotal is a vector search action total value.
 	VectorSearchActionTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_search_action_total",
 			Help: "Total number of vector search actions executed",
 		},
 	)
+	// VectorSearchActionDuration is a vector search action duration value.
 	VectorSearchActionDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_vector_search_action_duration_seconds",
@@ -441,6 +466,7 @@ var (
 		},
 	)
 
+	// VectorSearchEfSearch is a vector search ef search value.
 	VectorSearchEfSearch = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_vector_search_ef_search",
@@ -457,6 +483,7 @@ var (
 		},
 		[]string{"logic"},
 	)
+	// CompoundFilterDepth is a compound filter depth value.
 	CompoundFilterDepth = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_compound_filter_depth",
@@ -464,6 +491,7 @@ var (
 			Buckets: []float64{1, 2, 3, 4, 5, 10},
 		},
 	)
+	// NestedFieldFilterOpsTotal is a nested field filter ops total value.
 	NestedFieldFilterOpsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_nested_field_filter_ops_total",
@@ -478,18 +506,21 @@ var (
 			Help: "Total number of parser pool retrievals",
 		},
 	)
+	// ParserPoolHits is a parser pool hits value.
 	ParserPoolHits = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_parser_pool_hits_total",
 			Help: "Total number of parser pool hits (reused)",
 		},
 	)
+	// ParserPoolMisses is a parser pool misses value.
 	ParserPoolMisses = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_parser_pool_misses_total",
 			Help: "Total number of parser pool misses (allocations)",
 		},
 	)
+	// ParserPoolPuts is a parser pool puts value.
 	ParserPoolPuts = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_parser_pool_puts_total",
@@ -504,24 +535,28 @@ var (
 			Help: "Configured gRPC maximum receive message size",
 		},
 	)
+	// GRPCMaxSendMsgSizeBytes is a grpc max send msg size bytes value.
 	GRPCMaxSendMsgSizeBytes = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_grpc_max_send_msg_size_bytes",
 			Help: "Configured gRPC maximum send message size",
 		},
 	)
+	// GRPCInitialWindowSizeBytes is a grpc initial window size bytes value.
 	GRPCInitialWindowSizeBytes = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_grpc_initial_window_size_bytes",
 			Help: "Configured gRPC initial window size",
 		},
 	)
+	// GRPCInitialConnWindowSizeBytes is a grpc initial conn window size bytes value.
 	GRPCInitialConnWindowSizeBytes = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_grpc_initial_conn_window_size_bytes",
 			Help: "Configured gRPC initial connection window size",
 		},
 	)
+	// GRPCMaxConcurrentStreams is a grpc max concurrent streams value.
 	GRPCMaxConcurrentStreams = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_grpc_max_concurrent_streams",

@@ -39,6 +39,7 @@ func makeTestRecordWithID(mem memory.Allocator, id int64, category string, value
 	return bldr.NewRecordBatch()
 }
 
+// TestFilterRecordsParallel_Basic runs the test filter records parallel_basic operation.
 func TestFilterRecordsParallel_Basic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -83,6 +84,7 @@ func TestFilterRecordsParallel_Basic(t *testing.T) {
 	}
 }
 
+// TestFilterRecordsParallel_OrderPreserved runs the test filter records parallel_order preserved operation.
 func TestFilterRecordsParallel_OrderPreserved(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -125,6 +127,7 @@ func TestFilterRecordsParallel_OrderPreserved(t *testing.T) {
 	}
 }
 
+// TestFilterRecordsParallel_EmptyInput runs the test filter records parallel_empty input operation.
 func TestFilterRecordsParallel_EmptyInput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -145,6 +148,7 @@ func TestFilterRecordsParallel_EmptyInput(t *testing.T) {
 	}
 }
 
+// TestFilterRecordsParallel_AllFiltered runs the test filter records parallel_all filtered operation.
 func TestFilterRecordsParallel_AllFiltered(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -179,6 +183,7 @@ func TestFilterRecordsParallel_AllFiltered(t *testing.T) {
 	}
 }
 
+// TestFilterRecordsParallel_ContextCancellation runs the test filter records parallel_context cancellation operation.
 func TestFilterRecordsParallel_ContextCancellation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -219,6 +224,7 @@ func TestFilterRecordsParallel_ContextCancellation(t *testing.T) {
 	}
 }
 
+// TestFilterRecordsParallel_ConcurrentSafety runs the test filter records parallel_concurrent safety operation.
 func TestFilterRecordsParallel_ConcurrentSafety(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -253,6 +259,7 @@ func TestFilterRecordsParallel_ConcurrentSafety(t *testing.T) {
 	wg.Wait()
 }
 
+// TestFilterRecordsParallel_MultipleFilters runs the test filter records parallel_multiple filters operation.
 func TestFilterRecordsParallel_MultipleFilters(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -307,7 +314,7 @@ func createBenchStore(b *testing.B) *VectorStore {
 	return NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
 }
 
-// Benchmark: Sequential vs Parallel
+// BenchmarkFilterRecords_Sequential Sequential vs Parallel
 func BenchmarkFilterRecords_Sequential(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	store := createBenchStore(b)
@@ -337,6 +344,7 @@ func BenchmarkFilterRecords_Sequential(b *testing.B) {
 	}
 }
 
+// BenchmarkFilterRecords_Parallel runs the benchmark filter records_parallel operation.
 func BenchmarkFilterRecords_Parallel(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	store := createBenchStore(b)
@@ -364,6 +372,7 @@ func BenchmarkFilterRecords_Parallel(b *testing.B) {
 	}
 }
 
+// BenchmarkFilterRecords_Parallel_LargeDataset runs the benchmark filter records_parallel_large dataset operation.
 func BenchmarkFilterRecords_Parallel_LargeDataset(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	store := createBenchStore(b)

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSearchResultPool_Basic runs the test search result pool_basic operation.
 func TestSearchResultPool_Basic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -33,6 +34,7 @@ func TestSearchResultPool_Basic(t *testing.T) {
 	assert.Equal(t, 0, len(result2)) // Should be empty (reset)
 }
 
+// TestSearchResultPool_CapacityBuckets runs the test search result pool_capacity buckets operation.
 func TestSearchResultPool_CapacityBuckets(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -58,6 +60,7 @@ func TestSearchResultPool_CapacityBuckets(t *testing.T) {
 	}
 }
 
+// TestSearchResultPool_PutNil runs the test search result pool_put nil operation.
 func TestSearchResultPool_PutNil(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -66,6 +69,7 @@ func TestSearchResultPool_PutNil(t *testing.T) {
 	pool.Put(nil)
 }
 
+// TestSearchResultPool_Concurrent runs the test search result pool_concurrent operation.
 func TestSearchResultPool_Concurrent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

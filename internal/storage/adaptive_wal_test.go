@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestAdaptiveWAL_Calculator runs the test adaptive wal_calculator operation.
 func TestAdaptiveWAL_Calculator(t *testing.T) {
 	cfg := NewAdaptiveWALConfig()
 	cfg.MinInterval = 1 * time.Millisecond
@@ -37,6 +38,7 @@ func TestAdaptiveWAL_Calculator(t *testing.T) {
 	})
 }
 
+// TestAdaptiveWAL_Tracker runs the test adaptive wal_tracker operation.
 func TestAdaptiveWAL_Tracker(t *testing.T) {
 	tracker := NewWriteRateTracker(1 * time.Second)
 
@@ -56,6 +58,7 @@ func TestAdaptiveWAL_Tracker(t *testing.T) {
 	assert.True(t, rate > 0)
 }
 
+// TestWALBatcher_FlushLogic runs the test wal batcher_flush logic operation.
 func TestWALBatcher_FlushLogic(t *testing.T) {
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()

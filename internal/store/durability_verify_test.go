@@ -241,7 +241,7 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	require.InDelta(t, 0.0, results[0].Distance, 0.0001)
 }
 
-// Verify cleaning up of WAL files after snapshot? (Optional advanced)
+// TestDurability_WALTruncation cleaning up of WAL files after snapshot? (Optional advanced)
 func TestDurability_WALTruncation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

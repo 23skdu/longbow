@@ -13,6 +13,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// SearchVectorsInRange runs the search vectors in range operation.
 func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, threshold float32, filters []query.Filter, options any) ([]types.SearchResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

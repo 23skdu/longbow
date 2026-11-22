@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestPackTQ2AVX512VBMI runs the test pack tq2 avx512 vbmi operation.
 func TestPackTQ2AVX512VBMI(t *testing.T) {
 	if !GetCPUFeatures().HasAVX512 || !GetCPUFeatures().HasVBMI {
 		t.Skip("AVX-512 VBMI not supported")
@@ -71,6 +72,7 @@ func TestPackTQ2AVX512VBMI(t *testing.T) {
 	}
 }
 
+// BenchmarkPackTQ2AVX512VBMI runs the benchmark pack tq2 avx512 vbmi operation.
 func BenchmarkPackTQ2AVX512VBMI(b *testing.B) {
 	if !GetCPUFeatures().HasAVX512 || !GetCPUFeatures().HasVBMI {
 		b.Skip("AVX-512 VBMI not supported")
@@ -86,6 +88,7 @@ func BenchmarkPackTQ2AVX512VBMI(b *testing.B) {
 	}
 }
 
+// BenchmarkPackTQ2AVX2 runs the benchmark pack tq2 avx2 operation.
 func BenchmarkPackTQ2AVX2(b *testing.B) {
 	dim := 1536
 	src := make([]float32, dim)

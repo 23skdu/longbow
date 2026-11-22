@@ -6,6 +6,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// FuzzZeroAllocTicketParser_Parse runs the fuzz zero alloc ticket parser_parse operation.
 func FuzzZeroAllocTicketParser_Parse(f *testing.F) {
 	// Seed corpus with valid simple and nested examples
 	f.Add([]byte(`{"name": "test", "limit": 10}`))

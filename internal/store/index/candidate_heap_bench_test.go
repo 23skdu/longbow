@@ -11,9 +11,14 @@ import (
 // binaryMinAdapter is the pre-4ary binary heap, kept as a benchmark baseline only.
 type binaryMinAdapter []types.Candidate
 
-func (h binaryMinAdapter) Len() int           { return len(h) }
+// Len runs the len operation.
+func (h binaryMinAdapter) Len() int { return len(h) }
+
+// Less runs the less operation.
 func (h binaryMinAdapter) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
-func (h binaryMinAdapter) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+// Swap runs the swap operation.
+func (h binaryMinAdapter) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 func (h *binaryMinAdapter) pushCandidate(c types.Candidate) {
 	*h = append(*h, c)
@@ -65,9 +70,14 @@ func (h *binaryMinAdapter) binaryDown(i0, n int) bool {
 // binaryMaxAdapter is the pre-4ary binary heap, kept as a benchmark baseline only.
 type binaryMaxAdapter []types.Candidate
 
-func (h binaryMaxAdapter) Len() int           { return len(h) }
+// Len runs the len operation.
+func (h binaryMaxAdapter) Len() int { return len(h) }
+
+// Less runs the less operation.
 func (h binaryMaxAdapter) Less(i, j int) bool { return h[i].Dist > h[j].Dist }
-func (h binaryMaxAdapter) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+// Swap runs the swap operation.
+func (h binaryMaxAdapter) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 func (h *binaryMaxAdapter) pushCandidate(c types.Candidate) {
 	*h = append(*h, c)
@@ -127,6 +137,7 @@ func benchPool(n int, seed int64) []types.Candidate {
 	return uniqueShuffledCands(rand.New(rand.NewSource(seed)), n)
 }
 
+// BenchmarkMinCandidateHeapAdapter_PushPop runs the benchmark min candidate heap adapter_push pop operation.
 func BenchmarkMinCandidateHeapAdapter_PushPop(b *testing.B) {
 	for _, n := range []int{16, 64, 256, 1024} {
 		pool := benchPool(n, int64(n)*31+7)
@@ -163,6 +174,7 @@ func BenchmarkMinCandidateHeapAdapter_PushPop(b *testing.B) {
 	}
 }
 
+// BenchmarkMaxCandidateHeapAdapter_PushPop runs the benchmark max candidate heap adapter_push pop operation.
 func BenchmarkMaxCandidateHeapAdapter_PushPop(b *testing.B) {
 	for _, n := range []int{16, 64, 256, 1024} {
 		pool := benchPool(n, int64(n)*13+3)
@@ -199,6 +211,7 @@ func BenchmarkMaxCandidateHeapAdapter_PushPop(b *testing.B) {
 	}
 }
 
+// BenchmarkCandidateHeapAdapter_Drain runs the benchmark candidate heap adapter_drain operation.
 func BenchmarkCandidateHeapAdapter_Drain(b *testing.B) {
 	for _, ef := range []int{64, 256} {
 		pool := benchPool(ef, int64(ef)*17+11)
@@ -267,6 +280,7 @@ func BenchmarkCandidateHeapAdapter_Drain(b *testing.B) {
 	}
 }
 
+// BenchmarkCandidateHeapAdapter_SearchLayerTrim runs the benchmark candidate heap adapter_search layer trim operation.
 func BenchmarkCandidateHeapAdapter_SearchLayerTrim(b *testing.B) {
 	const poolN = 4096
 	for _, ef := range []int{64, 256} {

@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// FuzzLoadHints_Roundtrip runs the fuzz load hints_roundtrip operation.
 func FuzzLoadHints_Roundtrip(f *testing.F) {
 	f.Add(uint32(0), uint32(0), int64(0), uint32(0))
 	f.Add(uint32(100), uint32(100), int64(10000), uint32(100))

@@ -124,6 +124,7 @@ type wrappedAuthStream struct {
 	ctx context.Context
 }
 
+// Context runs the context operation.
 func (w *wrappedAuthStream) Context() context.Context {
 	return w.ctx
 }

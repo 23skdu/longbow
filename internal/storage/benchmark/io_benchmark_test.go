@@ -74,6 +74,7 @@ func writeWALEntries(backend storage.WALBackend, count int) error {
 	return nil
 }
 
+// BenchmarkWALStandard runs the benchmark wal standard operation.
 func BenchmarkWALStandard(b *testing.B) {
 	tmpDir, err := os.MkdirTemp("", "longbow-benchmark-std-*")
 	if err != nil {
@@ -107,6 +108,7 @@ func BenchmarkWALStandard(b *testing.B) {
 	}
 }
 
+// BenchmarkWALIOUring runs the benchmark walio uring operation.
 func BenchmarkWALIOUring(b *testing.B) {
 	tmpDir, err := os.MkdirTemp("", "longbow-benchmark-iouring-*")
 	if err != nil {
@@ -135,6 +137,7 @@ func BenchmarkWALIOUring(b *testing.B) {
 	}
 }
 
+// TestStorageBenchmarkSmoke runs the test storage benchmark smoke operation.
 func TestStorageBenchmarkSmoke(t *testing.T) {
 	tmpDir := t.TempDir()
 	backend, err := storage.NewFSBackend(filepath.Join(tmpDir, "wal.log"))

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_Coverage_ExtractVectorByIDForParallel runs the test arrow hnsw_coverage_extract vector by id for parallel operation.
 func TestArrowHNSW_Coverage_ExtractVectorByIDForParallel(t *testing.T) {
 	dims := 4
 	config := types.DefaultArrowHNSWConfig()
@@ -98,6 +99,7 @@ func TestArrowHNSW_Coverage_ExtractVectorByIDForParallel(t *testing.T) {
 	}
 }
 
+// TestArrowHNSW_Coverage_ComputeSingle runs the test arrow hnsw_coverage_compute single operation.
 func TestArrowHNSW_Coverage_ComputeSingle(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 
@@ -187,6 +189,7 @@ func TestArrowHNSW_Coverage_ComputeSingle(t *testing.T) {
 	}
 }
 
+// TestComplexComputers runs the test complex computers operation.
 func TestComplexComputers(t *testing.T) {
 	dims := 2
 	config := types.DefaultArrowHNSWConfig()
@@ -240,6 +243,7 @@ func TestComplexComputers(t *testing.T) {
 	assert.Equal(t, float32(0), dists[0])
 }
 
+// TestMoreComputers runs the test more computers operation.
 func TestMoreComputers(t *testing.T) {
 	dims := 4
 	config := types.DefaultArrowHNSWConfig()
@@ -305,6 +309,7 @@ func TestMoreComputers(t *testing.T) {
 	assert.Equal(t, float32(0), dist)
 }
 
+// TestSQ8Computers runs the test sq8 computers operation.
 func TestSQ8Computers(t *testing.T) {
 	t.Skip("Skipping: test has incorrect expected values (pre-existing bug)")
 	dims := 16

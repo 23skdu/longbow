@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestTemporalAggregator_Aggregate runs the test temporal aggregator_aggregate operation.
 func TestTemporalAggregator_Aggregate(t *testing.T) {
 	aggregator := NewTemporalAggregator(100)
 

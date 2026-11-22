@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// FuzzEfSearchParameter runs the fuzz ef search parameter operation.
 func FuzzEfSearchParameter(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -40,6 +41,7 @@ func FuzzEfSearchParameter(f *testing.F) {
 	})
 }
 
+// FuzzVectorSearchRequestParsing runs the fuzz vector search request parsing operation.
 func FuzzVectorSearchRequestParsing(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

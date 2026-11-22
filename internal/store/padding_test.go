@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHNSW_SearchPadding runs the test hnsw_search padding operation.
 func TestHNSW_SearchPadding(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

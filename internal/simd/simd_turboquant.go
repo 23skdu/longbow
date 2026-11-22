@@ -29,6 +29,7 @@ func UnpackTQ8(src []byte, dst []float32, scale, bias float32) {
 	}
 }
 
+// UnpackTQ2Generic runs the unpack tq2 generic operation.
 func UnpackTQ2Generic(src []byte, dst []float32, scale, bias float32) {
 	n := len(dst)
 	if n == 0 {
@@ -57,6 +58,7 @@ func UnpackTQ2Generic(src []byte, dst []float32, scale, bias float32) {
 	}
 }
 
+// UnpackTQ4Generic runs the unpack tq4 generic operation.
 func UnpackTQ4Generic(src []byte, dst []float32, scale, bias float32) {
 	n := len(dst)
 	if n == 0 {
@@ -92,6 +94,7 @@ func UnpackTQ4Generic(src []byte, dst []float32, scale, bias float32) {
 	}
 }
 
+// UnpackTQ8Generic runs the unpack tq8 generic operation.
 func UnpackTQ8Generic(src []byte, dst []float32, scale, bias float32) {
 	n := len(dst)
 	if n == 0 {
@@ -144,6 +147,7 @@ func PackTQ8(src []float32, dst []byte) {
 	}
 }
 
+// PackTQ2Generic runs the pack tq2 generic operation.
 func PackTQ2Generic(src []float32, dst []byte) {
 	// New grid: theta = q*pi/2 - 3*pi/4  =>  q = (theta + 3*pi/4) * 2/pi
 	invScale := float32(2.0 / math.Pi)
@@ -166,6 +170,7 @@ func PackTQ2Generic(src []float32, dst []byte) {
 	}
 }
 
+// PackTQ4Generic runs the pack tq4 generic operation.
 func PackTQ4Generic(src []float32, dst []byte) {
 	maxVal := float32(15)
 	inv2Pi := float32(1.0 / (2 * math.Pi))
@@ -192,6 +197,7 @@ func PackTQ4Generic(src []float32, dst []byte) {
 	}
 }
 
+// PackTQ8Generic runs the pack tq8 generic operation.
 func PackTQ8Generic(src []float32, dst []byte) {
 	maxVal := float32(255)
 	inv2Pi := float32(1.0 / (2 * math.Pi))

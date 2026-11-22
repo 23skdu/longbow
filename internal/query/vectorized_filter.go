@@ -18,14 +18,23 @@ import (
 type FilterOperator int
 
 const (
+	// FilterOpEqual is a filter op equal constant.
 	FilterOpEqual FilterOperator = iota
+	// FilterOpNotEqual is a filter op not equal constant.
 	FilterOpNotEqual
+	// FilterOpGreater is a filter op greater constant.
 	FilterOpGreater
+	// FilterOpLess is a filter op less constant.
 	FilterOpLess
+	// FilterOpGreaterEqual is a filter op greater equal constant.
 	FilterOpGreaterEqual
+	// FilterOpLessEqual is a filter op less equal constant.
 	FilterOpLessEqual
+	// FilterOpIn is a filter op in constant.
 	FilterOpIn
+	// FilterOpNotIn is a filter op not in constant.
 	FilterOpNotIn
+	// FilterOpContains is a filter op contains constant.
 	FilterOpContains
 )
 

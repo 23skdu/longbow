@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestMemoryBackpressure_NewController runs the test memory backpressure_new controller operation.
 func TestMemoryBackpressure_NewController(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -27,6 +28,7 @@ func TestMemoryBackpressure_NewController(t *testing.T) {
 	}
 }
 
+// TestMemoryBackpressure_CheckPressure runs the test memory backpressure_check pressure operation.
 func TestMemoryBackpressure_CheckPressure(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -44,6 +46,7 @@ func TestMemoryBackpressure_CheckPressure(t *testing.T) {
 	}
 }
 
+// TestMemoryBackpressure_Acquire runs the test memory backpressure_acquire operation.
 func TestMemoryBackpressure_Acquire(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -63,6 +66,7 @@ func TestMemoryBackpressure_Acquire(t *testing.T) {
 	ctrl.Release()
 }
 
+// TestMemoryBackpressure_AcquireTimeout runs the test memory backpressure_acquire timeout operation.
 func TestMemoryBackpressure_AcquireTimeout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -82,6 +86,7 @@ func TestMemoryBackpressure_AcquireTimeout(t *testing.T) {
 	}
 }
 
+// TestMemoryBackpressure_Metrics runs the test memory backpressure_metrics operation.
 func TestMemoryBackpressure_Metrics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -100,6 +105,7 @@ func TestMemoryBackpressure_Metrics(t *testing.T) {
 	}
 }
 
+// TestMemoryBackpressure_ConcurrentAccess runs the test memory backpressure_concurrent access operation.
 func TestMemoryBackpressure_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -131,6 +137,7 @@ func TestMemoryBackpressure_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+// TestMemoryBackpressure_PressureLevels runs the test memory backpressure_pressure levels operation.
 func TestMemoryBackpressure_PressureLevels(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -158,6 +165,7 @@ func TestMemoryBackpressure_PressureLevels(t *testing.T) {
 	}
 }
 
+// TestMemoryBackpressure_SoftPressureSlowdown runs the test memory backpressure_soft pressure slowdown operation.
 func TestMemoryBackpressure_SoftPressureSlowdown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -182,6 +190,7 @@ func TestMemoryBackpressure_SoftPressureSlowdown(t *testing.T) {
 	}
 }
 
+// TestMemoryBackpressure_BackgroundUpdate runs the test memory backpressure_background update operation.
 func TestMemoryBackpressure_BackgroundUpdate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

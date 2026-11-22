@@ -12,6 +12,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// GetNeighborsBulk returns the neighbors bulk.
 func (d *Dataset) GetNeighborsBulk(ctx context.Context, dataset string, nodeIDs []uint32) (map[uint32][]uint32, error) {
 	res := make(map[uint32][]uint32, len(nodeIDs))
 	for _, id := range nodeIDs {
@@ -21,6 +22,7 @@ func (d *Dataset) GetNeighborsBulk(ctx context.Context, dataset string, nodeIDs 
 	return res, nil
 }
 
+// TestReproGraphRAGSearchRace runs the test repro graph rag search race operation.
 func TestReproGraphRAGSearchRace(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

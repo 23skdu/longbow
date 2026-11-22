@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestHNSWPQ_Integration runs the test hnswpq_integration operation.
 func TestHNSWPQ_Integration(t *testing.T) {
 	// Setup
 	dim := 128
@@ -35,6 +36,7 @@ func TestHNSWPQ_Integration(t *testing.T) {
 	t.Skip("Skipping HSNP PQ Integration test - requires Arrow record setup")
 }
 
+// TestPQEncoder_Correctness runs the test pq encoder_correctness operation.
 func TestPQEncoder_Correctness(t *testing.T) {
 	// Test the Encoder logic itself with HNSW integration logic side-by-side
 	dim := 32

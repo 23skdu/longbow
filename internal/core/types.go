@@ -29,7 +29,7 @@ func UnpackLocation(val uint64) Location {
 	}
 }
 
-// Uint32FromFloat32 bits helper (commonly used in packing)
+// PackBytesToFloat32s bits helper (commonly used in packing)
 func PackBytesToFloat32s(b []byte) []float32 {
 	n := len(b)
 	numFloats := (n + 3) / 4

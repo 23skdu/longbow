@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestExtractTrigrams runs the test extract trigrams operation.
 func TestExtractTrigrams(t *testing.T) {
 	tests := []struct {
 		input string
@@ -32,6 +33,7 @@ func TestExtractTrigrams(t *testing.T) {
 	}
 }
 
+// TestTrigramIndex_ContainsLookup runs the test trigram index_contains lookup operation.
 func TestTrigramIndex_ContainsLookup(t *testing.T) {
 	idx := newTrigramIndex()
 
@@ -74,6 +76,7 @@ func TestTrigramIndex_ContainsLookup(t *testing.T) {
 	}
 }
 
+// TestStringContainsIndex_Integration runs the test string contains index_integration operation.
 func TestStringContainsIndex_Integration(t *testing.T) {
 	idx := NewStringContainsIndex()
 
@@ -95,6 +98,7 @@ func TestStringContainsIndex_Integration(t *testing.T) {
 	}
 }
 
+// TestTrigramIndex_Empty runs the test trigram index_empty operation.
 func TestTrigramIndex_Empty(t *testing.T) {
 	idx := newTrigramIndex()
 	result := idx.containsLookup("anything")
@@ -103,6 +107,7 @@ func TestTrigramIndex_Empty(t *testing.T) {
 	}
 }
 
+// TestTrigramIndex_Duplicates runs the test trigram index_duplicates operation.
 func TestTrigramIndex_Duplicates(t *testing.T) {
 	idx := newTrigramIndex()
 
@@ -127,6 +132,7 @@ func TestTrigramIndex_Duplicates(t *testing.T) {
 	}
 }
 
+// TestExtractTrigrams_Deduplicates runs the test extract trigrams_deduplicates operation.
 func TestExtractTrigrams_Deduplicates(t *testing.T) {
 	trigrams := extractTrigrams("aaaaa")
 	// "aaa" appears 3 times but should be deduplicated to 1
@@ -135,6 +141,7 @@ func TestExtractTrigrams_Deduplicates(t *testing.T) {
 	}
 }
 
+// TestTrigramIndex_NoFalsePositives runs the test trigram index_no false positives operation.
 func TestTrigramIndex_NoFalsePositives(t *testing.T) {
 	idx := newTrigramIndex()
 
@@ -150,6 +157,7 @@ func TestTrigramIndex_NoFalsePositives(t *testing.T) {
 	}
 }
 
+// TestStringContainsIndex_SortedResults runs the test string contains index_sorted results operation.
 func TestStringContainsIndex_SortedResults(t *testing.T) {
 	idx := newTrigramIndex()
 
@@ -184,6 +192,7 @@ func TestStringContainsIndex_SortedResults(t *testing.T) {
 	}
 }
 
+// TestExtractPrefixGrams runs the test extract prefix grams operation.
 func TestExtractPrefixGrams(t *testing.T) {
 	tests := []struct {
 		input string
@@ -208,6 +217,7 @@ func TestExtractPrefixGrams(t *testing.T) {
 	}
 }
 
+// TestStringContainsIndex_RemoveRecord runs the test string contains index_remove record operation.
 func TestStringContainsIndex_RemoveRecord(t *testing.T) {
 	idx := NewStringContainsIndex()
 
@@ -246,6 +256,7 @@ func TestStringContainsIndex_RemoveRecord(t *testing.T) {
 	}
 }
 
+// TestTrigramIndex_LookupIsSupersetAndSorted runs the test trigram index_lookup is superset and sorted operation.
 func TestTrigramIndex_LookupIsSupersetAndSorted(t *testing.T) {
 	docs := []string{
 		"the quick brown fox",
@@ -293,6 +304,7 @@ func TestTrigramIndex_LookupIsSupersetAndSorted(t *testing.T) {
 	}
 }
 
+// TestTrigramIndex_EmptyAndMissing runs the test trigram index_empty and missing operation.
 func TestTrigramIndex_EmptyAndMissing(t *testing.T) {
 	idx := NewTrigramIndex()
 	if got := idx.Lookup("anything"); got != nil {

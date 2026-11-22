@@ -41,6 +41,7 @@ func assertNotImplemented(t *testing.T, err error, ctx string) {
 	}
 }
 
+// TestConnection_Close runs the test connection_close operation.
 func TestConnection_Close(t *testing.T) {
 	conn := newTestConnection(t)
 	if err := conn.Close(); err != nil {
@@ -48,6 +49,7 @@ func TestConnection_Close(t *testing.T) {
 	}
 }
 
+// TestConnection_SetOption_NotImplemented runs the test connection_set option_not implemented operation.
 func TestConnection_SetOption_NotImplemented(t *testing.T) {
 	conn := newTestConnection(t)
 	concrete, ok := conn.(*longbowadbc.Connection)
@@ -57,6 +59,7 @@ func TestConnection_SetOption_NotImplemented(t *testing.T) {
 	assertNotImplemented(t, concrete.SetOption("k", "v"), "SetOption")
 }
 
+// TestConnection_NewStatement runs the test connection_new statement operation.
 func TestConnection_NewStatement(t *testing.T) {
 	conn := newTestConnection(t)
 	stmt, err := conn.NewStatement()
@@ -71,6 +74,7 @@ func TestConnection_NewStatement(t *testing.T) {
 	}
 }
 
+// TestConnection_GetInfo runs the test connection_get info operation.
 func TestConnection_GetInfo(t *testing.T) {
 	conn := newTestConnection(t)
 	reader, err := conn.GetInfo(context.Background(), nil)
@@ -107,6 +111,7 @@ func TestConnection_GetInfo(t *testing.T) {
 	}
 }
 
+// TestConnection_GetObjects runs the test connection_get objects operation.
 func TestConnection_GetObjects(t *testing.T) {
 	conn := newTestConnection(t)
 	reader, err := conn.GetObjects(context.Background(),
@@ -120,6 +125,7 @@ func TestConnection_GetObjects(t *testing.T) {
 	reader.Release()
 }
 
+// TestConnection_GetTableSchema_NotFound runs the test connection_get table schema_not found operation.
 func TestConnection_GetTableSchema_NotFound(t *testing.T) {
 	conn := newTestConnection(t)
 	_, err := conn.GetTableSchema(context.Background(), nil, nil, "nonexistent_dataset")
@@ -128,6 +134,7 @@ func TestConnection_GetTableSchema_NotFound(t *testing.T) {
 	}
 }
 
+// TestConnection_GetTableTypes runs the test connection_get table types operation.
 func TestConnection_GetTableTypes(t *testing.T) {
 	conn := newTestConnection(t)
 	reader, err := conn.GetTableTypes(context.Background())
@@ -140,6 +147,7 @@ func TestConnection_GetTableTypes(t *testing.T) {
 	reader.Release()
 }
 
+// TestConnection_ReadPartition_NotImplemented runs the test connection_read partition_not implemented operation.
 func TestConnection_ReadPartition_NotImplemented(t *testing.T) {
 	conn := newTestConnection(t)
 	reader, err := conn.ReadPartition(context.Background(), []byte("partition"))
@@ -149,11 +157,13 @@ func TestConnection_ReadPartition_NotImplemented(t *testing.T) {
 	}
 }
 
+// TestConnection_Commit_NotImplemented runs the test connection_commit_not implemented operation.
 func TestConnection_Commit_NotImplemented(t *testing.T) {
 	conn := newTestConnection(t)
 	assertNotImplemented(t, conn.Commit(context.Background()), "Commit")
 }
 
+// TestConnection_Rollback_NotImplemented runs the test connection_rollback_not implemented operation.
 func TestConnection_Rollback_NotImplemented(t *testing.T) {
 	conn := newTestConnection(t)
 	assertNotImplemented(t, conn.Rollback(context.Background()), "Rollback")

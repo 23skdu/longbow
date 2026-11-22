@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestMergeKWay runs the test merge k way operation.
 func TestMergeKWay(t *testing.T) {
 	agg := NewShardedResultAggregator()
 
@@ -47,6 +48,7 @@ func TestMergeKWay(t *testing.T) {
 	assert.Equal(t, 8, len(merged))
 }
 
+// TestMergeKWayEmptyshards runs the test merge k way emptyshards operation.
 func TestMergeKWayEmptyshards(t *testing.T) {
 	agg := NewShardedResultAggregator()
 	shardResults := [][]SearchResult{

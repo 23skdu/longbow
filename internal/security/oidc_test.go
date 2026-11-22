@@ -59,6 +59,7 @@ func signToken(t *testing.T, priv *rsa.PrivateKey, claims jwt.MapClaims) string 
 	return s
 }
 
+// TestOIDCValidateTokenSuccess runs the test oidc validate token success operation.
 func TestOIDCValidateTokenSuccess(t *testing.T) {
 	m, priv, _ := testOIDCSetup(t)
 	now := time.Now()
@@ -93,6 +94,7 @@ func TestOIDCValidateTokenSuccess(t *testing.T) {
 	}
 }
 
+// TestOIDCValidateTokenFailures runs the test oidc validate token failures operation.
 func TestOIDCValidateTokenFailures(t *testing.T) {
 	m, priv, _ := testOIDCSetup(t)
 	now := time.Now()
@@ -128,6 +130,7 @@ func TestOIDCValidateTokenFailures(t *testing.T) {
 	}
 }
 
+// TestOIDCReplayProtection runs the test oidc replay protection operation.
 func TestOIDCReplayProtection(t *testing.T) {
 	m, priv, _ := testOIDCSetup(t)
 	now := time.Now()
@@ -148,6 +151,7 @@ func TestOIDCReplayProtection(t *testing.T) {
 	}
 }
 
+// TestOIDCAlgorithmConfusionRejected runs the test oidc algorithm confusion rejected operation.
 func TestOIDCAlgorithmConfusionRejected(t *testing.T) {
 	m, priv, _ := testOIDCSetup(t)
 	// Sign with HS256 using RSA key bytes is not valid; instead craft token with alg none.
@@ -168,6 +172,7 @@ func TestOIDCAlgorithmConfusionRejected(t *testing.T) {
 	_ = priv
 }
 
+// FuzzOIDCValidateToken runs the fuzz oidc validate token operation.
 func FuzzOIDCValidateToken(f *testing.F) {
 	f.Add([]byte("not-a-token"))
 	mgr := NewOIDCManager(OIDCConfig{Enabled: true})
@@ -176,6 +181,7 @@ func FuzzOIDCValidateToken(f *testing.F) {
 	})
 }
 
+// TestOIDCRowFiltersAndHelpers runs the test oidc row filters and helpers operation.
 func TestOIDCRowFiltersAndHelpers(t *testing.T) {
 	cfg := AWSOIDCIssuerConfig("https://issuer.example", "aud")
 	if cfg.Provider != OIDCProviderAWS {
@@ -217,6 +223,7 @@ func TestOIDCRowFiltersAndHelpers(t *testing.T) {
 	}
 }
 
+// TestOIDCToTenantContextAllRoles runs the test oidc to tenant context all roles operation.
 func TestOIDCToTenantContextAllRoles(t *testing.T) {
 	issuerCfg := OIDCIssuerConfig{
 		TenantClaim:    "tenant_id",
@@ -325,6 +332,7 @@ func TestOIDCToTenantContextAllRoles(t *testing.T) {
 	}
 }
 
+// FuzzOIDCToTenantContextRoles runs the fuzz oidc to tenant context roles operation.
 func FuzzOIDCToTenantContextRoles(f *testing.F) {
 	f.Add("reader", "t1", "ns1", "ds1", false)
 	f.Add("ingest-only", "t1", "ns1", "ds1", false)

@@ -19,6 +19,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// TestGraphAPI_GetGraphStats runs the test graph api_get graph stats operation.
 func TestGraphAPI_GetGraphStats(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -69,6 +70,7 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 	require.Equal(t, []string{"knows"}, resp.Predicates)
 }
 
+// TestGraphAPI_GetGraphStats_NotFound runs the test graph api_get graph stats_not found operation.
 func TestGraphAPI_GetGraphStats_NotFound(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -182,11 +184,13 @@ type mockFlightServer struct {
 	results []*flight.Result
 }
 
+// Send runs the send operation.
 func (m *mockFlightServer) Send(r *flight.Result) error {
 	m.results = append(m.results, r)
 	return nil
 }
 
+// Context runs the context operation.
 func (m *mockFlightServer) Context() context.Context {
 	return context.Background()
 }

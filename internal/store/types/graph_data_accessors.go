@@ -9,6 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// GetVectorsChunk returns the vectors chunk.
 func (g *GraphData) GetVectorsChunk(chunkID int) []float32 {
 	return g.GetVectorsChunkWithGen(chunkID, math.MaxUint64)
 }
@@ -362,10 +363,12 @@ func (g *GraphData) GetVersionsChunkFast(layer, chunkID int) []uint32 {
 
 // PackedSize returns the byte size of a TurboQuant packed vector.
 
+// GetVectorsTQChunk returns the vectors tq chunk.
 func (g *GraphData) GetVectorsTQChunk(chunkID int) []byte {
 	return g.GetVectorsTQChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsTQChunkWithGen returns the vectors tq chunk with gen.
 func (g *GraphData) GetVectorsTQChunkWithGen(chunkID int, maxGen uint64) []byte {
 	if chunkID < len(g.VectorsTQ) && g.Uint8Arena != nil {
 		stride := g.PackedSize()
@@ -383,6 +386,7 @@ func (g *GraphData) GetVectorsFloat64Chunk(chunkID int) []float64 {
 	return g.GetVectorsFloat64ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsFloat64ChunkWithGen returns the vectors float64 chunk with gen.
 func (g *GraphData) GetVectorsFloat64ChunkWithGen(chunkID int, maxGen uint64) []float64 {
 	if chunkID < len(g.VectorsFloat64Offsets) && g.Float64Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeFloat64)
@@ -403,6 +407,7 @@ func (g *GraphData) GetVectorsComplex64Chunk(chunkID int) []complex64 {
 	return g.GetVectorsComplex64ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsComplex64ChunkWithGen returns the vectors complex64 chunk with gen.
 func (g *GraphData) GetVectorsComplex64ChunkWithGen(chunkID int, maxGen uint64) []complex64 {
 	if chunkID < len(g.VectorsComplex64Offsets) && g.Complex64Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeComplex64)
@@ -423,6 +428,7 @@ func (g *GraphData) GetVectorsComplex128Chunk(chunkID int) []complex128 {
 	return g.GetVectorsComplex128ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsComplex128ChunkWithGen returns the vectors complex128 chunk with gen.
 func (g *GraphData) GetVectorsComplex128ChunkWithGen(chunkID int, maxGen uint64) []complex128 {
 	if chunkID < len(g.VectorsComplex128Offsets) && g.Complex128Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeComplex128)
@@ -443,6 +449,7 @@ func (g *GraphData) GetVectorsInt64Chunk(chunkID int) []int64 {
 	return g.GetVectorsInt64ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsInt64ChunkWithGen returns the vectors int64 chunk with gen.
 func (g *GraphData) GetVectorsInt64ChunkWithGen(chunkID int, maxGen uint64) []int64 {
 	if chunkID < len(g.VectorsInt64) && g.Int64Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeInt64)
@@ -460,6 +467,7 @@ func (g *GraphData) GetVectorsUint64Chunk(chunkID int) []uint64 {
 	return g.GetVectorsUint64ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsUint64ChunkWithGen returns the vectors uint64 chunk with gen.
 func (g *GraphData) GetVectorsUint64ChunkWithGen(chunkID int, maxGen uint64) []uint64 {
 	if chunkID < len(g.VectorsUint64) && g.Uint64Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeUint64)
@@ -477,6 +485,7 @@ func (g *GraphData) GetVectorsInt32Chunk(chunkID int) []int32 {
 	return g.GetVectorsInt32ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsInt32ChunkWithGen returns the vectors int32 chunk with gen.
 func (g *GraphData) GetVectorsInt32ChunkWithGen(chunkID int, maxGen uint64) []int32 {
 	if chunkID < len(g.VectorsInt32) && g.Int32Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeInt32)
@@ -494,6 +503,7 @@ func (g *GraphData) GetVectorsUint32Chunk(chunkID int) []uint32 {
 	return g.GetVectorsUint32ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsUint32ChunkWithGen returns the vectors uint32 chunk with gen.
 func (g *GraphData) GetVectorsUint32ChunkWithGen(chunkID int, maxGen uint64) []uint32 {
 	if chunkID < len(g.VectorsUint32) && g.Uint32Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeUint32)
@@ -508,10 +518,12 @@ func (g *GraphData) GetVectorsUint32ChunkWithGen(chunkID int, maxGen uint64) []u
 
 // GetPaddedDims returns the padded dimension for the primary vector type.
 
+// GetVectorsSQ8Chunk returns the vectors sq8 chunk.
 func (g *GraphData) GetVectorsSQ8Chunk(chunkID int) []byte {
 	return g.GetVectorsSQ8ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsSQ8ChunkWithGen returns the vectors sq8 chunk with gen.
 func (g *GraphData) GetVectorsSQ8ChunkWithGen(chunkID int, maxGen uint64) []byte {
 	if chunkID < len(g.VectorsSQ8) && g.Uint8Arena != nil {
 		paddedDims := (g.Dims + 63) & ^63
@@ -524,10 +536,12 @@ func (g *GraphData) GetVectorsSQ8ChunkWithGen(chunkID int, maxGen uint64) []byte
 	return nil
 }
 
+// GetVectorsBQChunk returns the vectors bq chunk.
 func (g *GraphData) GetVectorsBQChunk(chunkID int) []uint64 {
 	return g.GetVectorsBQChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsBQChunkWithGen returns the vectors bq chunk with gen.
 func (g *GraphData) GetVectorsBQChunkWithGen(chunkID int, maxGen uint64) []uint64 {
 	if g.Uint64Arena != nil && chunkID < len(g.VectorsBQ) {
 		paddedDims := (g.Dims + 63) & ^63
@@ -555,6 +569,7 @@ func (g *GraphData) GetVectorsPQChunk(chunkID int) []byte {
 	return g.GetVectorsPQChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsPQChunkWithGen returns the vectors pq chunk with gen.
 func (g *GraphData) GetVectorsPQChunkWithGen(chunkID int, maxGen uint64) []byte {
 	if g.Uint64Arena != nil && chunkID < len(g.VectorsPQ) && g.PQM > 0 {
 		numWordsPerNode := (g.PQM + 7) / 8
@@ -581,10 +596,12 @@ func (g *GraphData) GetVectorsPQChunkWithGen(chunkID int, maxGen uint64) []byte 
 	return nil
 }
 
+// GetCountsChunk returns the counts chunk.
 func (g *GraphData) GetCountsChunk(layer, chunkID int) []int32 {
 	return g.GetCountsChunkWithGen(layer, chunkID, math.MaxUint64)
 }
 
+// GetCountsChunkWithGen returns the counts chunk with gen.
 func (g *GraphData) GetCountsChunkWithGen(layer, chunkID int, maxGen uint64) []int32 {
 	if layer < len(g.Counts) && chunkID < len(g.Counts[layer]) && g.Int32Arena != nil {
 		offset := atomic.LoadUint64(&g.Counts[layer][chunkID])
@@ -596,10 +613,12 @@ func (g *GraphData) GetCountsChunkWithGen(layer, chunkID int, maxGen uint64) []i
 	return nil
 }
 
+// GetNeighborsChunk returns the neighbors chunk.
 func (g *GraphData) GetNeighborsChunk(layer, chunkID int) []uint32 {
 	return g.GetNeighborsChunkWithGen(layer, chunkID, math.MaxUint64)
 }
 
+// GetNeighborsChunkWithGen returns the neighbors chunk with gen.
 func (g *GraphData) GetNeighborsChunkWithGen(layer, chunkID int, maxGen uint64) []uint32 {
 	if layer < len(g.Neighbors) && chunkID < len(g.Neighbors[layer]) && g.Uint32Arena != nil {
 		offset := atomic.LoadUint64(&g.Neighbors[layer][chunkID])
@@ -615,10 +634,12 @@ func (g *GraphData) GetNeighborsChunkWithGen(layer, chunkID int, maxGen uint64) 
 	return nil
 }
 
+// GetVersionsChunk returns the versions chunk.
 func (g *GraphData) GetVersionsChunk(layer, chunkID int) []uint32 {
 	return g.GetVersionsChunkWithGen(layer, chunkID, math.MaxUint64)
 }
 
+// GetVersionsChunkWithGen returns the versions chunk with gen.
 func (g *GraphData) GetVersionsChunkWithGen(layer, chunkID int, maxGen uint64) []uint32 {
 	if layer < len(g.Versions) && chunkID < len(g.Versions[layer]) && g.Uint32Arena != nil {
 		offset := atomic.LoadUint64(&g.Versions[layer][chunkID])
@@ -630,10 +651,12 @@ func (g *GraphData) GetVersionsChunkWithGen(layer, chunkID int, maxGen uint64) [
 	return nil
 }
 
+// GetVectorsInt8Chunk returns the vectors int8 chunk.
 func (g *GraphData) GetVectorsInt8Chunk(chunkID int) []int8 {
 	return g.GetVectorsInt8ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsInt8ChunkWithGen returns the vectors int8 chunk with gen.
 func (g *GraphData) GetVectorsInt8ChunkWithGen(chunkID int, maxGen uint64) []int8 {
 	if chunkID < len(g.VectorsInt8) && g.Int8Arena != nil {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeInt8)
@@ -646,10 +669,12 @@ func (g *GraphData) GetVectorsInt8ChunkWithGen(chunkID int, maxGen uint64) []int
 	return nil
 }
 
+// GetVectorsUint8Chunk returns the vectors uint8 chunk.
 func (g *GraphData) GetVectorsUint8Chunk(chunkID int) []uint8 {
 	return g.GetVectorsUint8ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsUint8ChunkWithGen returns the vectors uint8 chunk with gen.
 func (g *GraphData) GetVectorsUint8ChunkWithGen(chunkID int, maxGen uint64) []uint8 {
 	chunk := g.GetVectorsInt8ChunkWithGen(chunkID, maxGen)
 	if chunk == nil {
@@ -659,10 +684,12 @@ func (g *GraphData) GetVectorsUint8ChunkWithGen(chunkID int, maxGen uint64) []ui
 	return unsafe.Slice((*uint8)(ptr), len(chunk)) // #nosec G103
 }
 
+// GetVectorsInt16Chunk returns the vectors int16 chunk.
 func (g *GraphData) GetVectorsInt16Chunk(chunkID int) []int16 {
 	return g.GetVectorsInt16ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsInt16ChunkWithGen returns the vectors int16 chunk with gen.
 func (g *GraphData) GetVectorsInt16ChunkWithGen(chunkID int, maxGen uint64) []int16 {
 	if chunkID < len(g.VectorsInt16) && g.Int16Arena != nil {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
@@ -675,10 +702,12 @@ func (g *GraphData) GetVectorsInt16ChunkWithGen(chunkID int, maxGen uint64) []in
 	return nil
 }
 
+// GetVectorsUint16Chunk returns the vectors uint16 chunk.
 func (g *GraphData) GetVectorsUint16Chunk(chunkID int) []uint16 {
 	return g.GetVectorsUint16ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsUint16ChunkWithGen returns the vectors uint16 chunk with gen.
 func (g *GraphData) GetVectorsUint16ChunkWithGen(chunkID int, maxGen uint64) []uint16 {
 	if chunkID < len(g.VectorsUint16) && g.Uint16Arena != nil {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
@@ -687,10 +716,12 @@ func (g *GraphData) GetVectorsUint16ChunkWithGen(chunkID int, maxGen uint64) []u
 	return nil
 }
 
+// GetVectorsF16Chunk returns the vectors f16 chunk.
 func (g *GraphData) GetVectorsF16Chunk(chunkID int) []float16.Num {
 	return g.GetVectorsF16ChunkWithGen(chunkID, math.MaxUint64)
 }
 
+// GetVectorsF16ChunkWithGen returns the vectors f16 chunk with gen.
 func (g *GraphData) GetVectorsF16ChunkWithGen(chunkID int, maxGen uint64) []float16.Num {
 	if chunkID < len(g.VectorsF16) && g.Float16Arena != nil {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
@@ -705,6 +736,7 @@ func (g *GraphData) GetVectorsF16ChunkWithGen(chunkID int, maxGen uint64) []floa
 
 // GetVector returns the vector for the given ID.
 
+// GetLevelsChunk returns the levels chunk.
 func (g *GraphData) GetLevelsChunk(chunkID int) []uint32 {
 	if chunkID < len(g.Levels) {
 		return g.Levels[chunkID]

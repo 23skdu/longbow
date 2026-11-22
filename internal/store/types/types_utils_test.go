@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// grpc_status.go tests
+// TestToGRPCStatus tests
 func TestToGRPCStatus(t *testing.T) {
 	// nil error
 	assert.Nil(t, ToGRPCStatus(nil))
@@ -62,7 +62,7 @@ func TestToGRPCStatus(t *testing.T) {
 	assert.Equal(t, codes.Internal, st5.Code())
 }
 
-// logging_helper.go tests
+// TestLogClientAction tests
 func TestLogClientAction(t *testing.T) {
 	var buf bytes.Buffer
 	logger := zerolog.New(&buf)
@@ -90,7 +90,7 @@ func TestLogClientAction(t *testing.T) {
 	assert.Contains(t, buf.String(), "test_mesh")
 }
 
-// lazy_metadata.go tests
+// TestLazyMetadata tests
 func TestLazyMetadata(t *testing.T) {
 	dataMap := map[string]interface{}{
 		"key1": "value1",
@@ -123,6 +123,7 @@ func TestLazyMetadata(t *testing.T) {
 	assert.Equal(t, int64(123), val3)
 }
 
+// TestLazyMetadata_Invalid runs the test lazy metadata_invalid operation.
 func TestLazyMetadata_Invalid(t *testing.T) {
 	lm := NewLazyMetadata([]byte("invalid binary data"))
 	m, err := lm.Get()

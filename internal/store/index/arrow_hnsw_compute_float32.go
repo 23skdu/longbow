@@ -25,6 +25,7 @@ type float32Computer struct {
 	batchVecs [][]float32
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 	if c.sctx != nil {
 		if v := c.sctx.GetVectorF32(c.data, id, c.dims, c.maxGen); v != nil {
@@ -239,6 +240,7 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *float32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	if cap(dst) < len(ids) {
 		dst = make([]float32, len(ids))
@@ -329,6 +331,7 @@ func (c *float32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *float32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsChunkFast(cID)
@@ -360,6 +363,7 @@ type float32ToFloat32Computer struct {
 	batchVecs [][]float32
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	if c.sctx != nil {
 		if v := c.sctx.GetVectorF32(c.data, id, c.dims, c.maxGen); v != nil {
@@ -403,6 +407,7 @@ func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	if c.h.gpuEnabled && c.h.gpuIndex != nil && len(ids) >= 256 {
 		gpuDists, err := c.h.ComputeDistancesBatch(c.q, ids)
@@ -489,6 +494,7 @@ func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]
 	return dst, err
 }
 
+// Prefetch runs the prefetch operation.
 func (c *float32ToFloat32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	// Use the generation-checked path for race-safe reads. Prefetch is a
@@ -539,6 +545,7 @@ type sharedFloat32Computer struct {
 	n         int
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *sharedFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	if id >= c.startID && id < c.startID+uint32(c.n) { // #nosec G115
 		idx := int(id - c.startID)
@@ -564,6 +571,7 @@ func (c *sharedFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *sharedFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	dst = dst[:0]
 	for _, id := range ids {
@@ -576,6 +584,7 @@ func (c *sharedFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]flo
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *sharedFloat32Computer) Prefetch(id uint32) {
 	if id >= c.startID && id < c.startID+uint32(c.n) { // #nosec G115
 		idx := int(id - c.startID)

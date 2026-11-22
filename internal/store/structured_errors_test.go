@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestStructuredErrors runs the test structured errors operation.
 func TestStructuredErrors(t *testing.T) {
 	t.Run("ConfigError", func(t *testing.T) {
 		err := NewConfigError("test-component", "field", "bad-value", "field must be positive")

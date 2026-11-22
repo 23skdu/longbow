@@ -13,6 +13,7 @@ type metricsReader struct {
 	provider string
 }
 
+// Read runs the read operation.
 func (m *metricsReader) Read(p []byte) (n int, err error) {
 	n, err = m.r.Read(p)
 	if n > 0 {
@@ -21,6 +22,7 @@ func (m *metricsReader) Read(p []byte) (n int, err error) {
 	return n, err
 }
 
+// Close runs the close operation.
 func (m *metricsReader) Close() error {
 	return m.r.Close()
 }

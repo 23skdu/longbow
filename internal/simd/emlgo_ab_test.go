@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/mathutil"
 )
 
+// TestEmlgoParity_DistancesFloat64 runs the test emlgo parity_distances float64 operation.
 func TestEmlgoParity_DistancesFloat64(t *testing.T) {
 	dimsList := []int{128, 384, 768, 1536}
 	rng := rand.New(rand.NewSource(12345))
@@ -83,9 +84,16 @@ func benchmarkEuclideanFloat64(b *testing.B, dims int) {
 	})
 }
 
-func BenchmarkAB_Distance_Euclidean_128(b *testing.B)  { benchmarkEuclideanFloat64(b, 128) }
-func BenchmarkAB_Distance_Euclidean_384(b *testing.B)  { benchmarkEuclideanFloat64(b, 384) }
-func BenchmarkAB_Distance_Euclidean_768(b *testing.B)  { benchmarkEuclideanFloat64(b, 768) }
+// BenchmarkAB_Distance_Euclidean_128 runs the benchmark ab_distance_euclidean_128 operation.
+func BenchmarkAB_Distance_Euclidean_128(b *testing.B) { benchmarkEuclideanFloat64(b, 128) }
+
+// BenchmarkAB_Distance_Euclidean_384 runs the benchmark ab_distance_euclidean_384 operation.
+func BenchmarkAB_Distance_Euclidean_384(b *testing.B) { benchmarkEuclideanFloat64(b, 384) }
+
+// BenchmarkAB_Distance_Euclidean_768 runs the benchmark ab_distance_euclidean_768 operation.
+func BenchmarkAB_Distance_Euclidean_768(b *testing.B) { benchmarkEuclideanFloat64(b, 768) }
+
+// BenchmarkAB_Distance_Euclidean_1536 runs the benchmark ab_distance_euclidean_1536 operation.
 func BenchmarkAB_Distance_Euclidean_1536(b *testing.B) { benchmarkEuclideanFloat64(b, 1536) }
 
 func benchmarkCosineFloat64(b *testing.B, dims int) {
@@ -114,7 +122,14 @@ func benchmarkCosineFloat64(b *testing.B, dims int) {
 	})
 }
 
-func BenchmarkAB_Distance_Cosine_128(b *testing.B)  { benchmarkCosineFloat64(b, 128) }
-func BenchmarkAB_Distance_Cosine_384(b *testing.B)  { benchmarkCosineFloat64(b, 384) }
-func BenchmarkAB_Distance_Cosine_768(b *testing.B)  { benchmarkCosineFloat64(b, 768) }
+// BenchmarkAB_Distance_Cosine_128 runs the benchmark ab_distance_cosine_128 operation.
+func BenchmarkAB_Distance_Cosine_128(b *testing.B) { benchmarkCosineFloat64(b, 128) }
+
+// BenchmarkAB_Distance_Cosine_384 runs the benchmark ab_distance_cosine_384 operation.
+func BenchmarkAB_Distance_Cosine_384(b *testing.B) { benchmarkCosineFloat64(b, 384) }
+
+// BenchmarkAB_Distance_Cosine_768 runs the benchmark ab_distance_cosine_768 operation.
+func BenchmarkAB_Distance_Cosine_768(b *testing.B) { benchmarkCosineFloat64(b, 768) }
+
+// BenchmarkAB_Distance_Cosine_1536 runs the benchmark ab_distance_cosine_1536 operation.
 func BenchmarkAB_Distance_Cosine_1536(b *testing.B) { benchmarkCosineFloat64(b, 1536) }

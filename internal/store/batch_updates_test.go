@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestBatchNeighborUpdater_Basic runs the test batch neighbor updater_basic operation.
 func TestBatchNeighborUpdater_Basic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -52,6 +53,7 @@ func TestBatchNeighborUpdater_Basic(t *testing.T) {
 	assert.Equal(t, 0, bu.PendingCount())
 }
 
+// TestBatchNeighborUpdater_Interval runs the test batch neighbor updater_interval operation.
 func TestBatchNeighborUpdater_Interval(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -84,6 +86,7 @@ func TestBatchNeighborUpdater_Interval(t *testing.T) {
 	assert.Equal(t, int32(1), flushCount.Load())
 }
 
+// TestBatchNeighborUpdater_Stop runs the test batch neighbor updater_stop operation.
 func TestBatchNeighborUpdater_Stop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

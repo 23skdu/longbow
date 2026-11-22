@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// TestRace_ConcurrentSearchAndInsert runs the test race_concurrent search and insert operation.
 func TestRace_ConcurrentSearchAndInsert(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping race test in short mode")

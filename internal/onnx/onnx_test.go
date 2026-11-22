@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestSession_Initialization_ErrorPaths runs the test session_initialization_error paths operation.
 func TestSession_Initialization_ErrorPaths(t *testing.T) {
 	// Test with a non-existent model path
 	_, err := NewSession("non_existent_model.onnx")
@@ -25,6 +26,7 @@ func TestSession_Initialization_ErrorPaths(t *testing.T) {
 	assert.False(t, s.isMetal)
 }
 
+// TestSession_Score_Reordering runs the test session_score_reordering operation.
 func TestSession_Score_Reordering(t *testing.T) {
 	// Mock re-ordering logic
 	s := &Session{
@@ -46,6 +48,7 @@ func TestSession_Score_Reordering(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestSession_MetalEngine_Fallback runs the test session_metal engine_fallback operation.
 func TestSession_MetalEngine_Fallback(t *testing.T) {
 	// If metal is not available, should fallback to ORT
 	// (Already covered by NewSession structure, but we can call it explicitly)
@@ -54,6 +57,7 @@ func TestSession_MetalEngine_Fallback(t *testing.T) {
 	}
 }
 
+// TestScore_InputValidation runs the test score_input validation operation.
 func TestScore_InputValidation(t *testing.T) {
 	s := &Session{}
 	ctx := context.Background()
@@ -67,11 +71,13 @@ func TestScore_InputValidation(t *testing.T) {
 	}
 }
 
+// TestONNX_Close runs the test onnx_close operation.
 func TestONNX_Close(t *testing.T) {
 	s := &Session{}
 	assert.NoError(t, s.Close())
 }
 
+// TestSession_MeanPooling runs the test session_mean pooling operation.
 func TestSession_MeanPooling(t *testing.T) {
 	s := &Session{poolingMode: PoolingMean}
 

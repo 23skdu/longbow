@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSearchContextPoolDoesNotPinGraphData runs the test search context pool does not pin graph data operation.
 func TestSearchContextPoolDoesNotPinGraphData(t *testing.T) {
 	pool := NewArrowSearchContextPool()
 	ctx := pool.Get()

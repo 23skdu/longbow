@@ -16,6 +16,7 @@ import (
 
 // --- Config Tests ---
 
+// TestShardedDatasetConfigDefaults runs the test sharded dataset config defaults operation.
 func TestShardedDatasetConfigDefaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -30,6 +31,7 @@ func TestShardedDatasetConfigDefaults(t *testing.T) {
 	}
 }
 
+// TestShardedDatasetConfigValidation runs the test sharded dataset config validation operation.
 func TestShardedDatasetConfigValidation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -57,6 +59,7 @@ func TestShardedDatasetConfigValidation(t *testing.T) {
 
 // --- Creation Tests ---
 
+// TestNewShardedDataset runs the test new sharded dataset operation.
 func TestNewShardedDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -78,6 +81,7 @@ func TestNewShardedDataset(t *testing.T) {
 	}
 }
 
+// TestNewShardedDatasetDefault runs the test new sharded dataset default operation.
 func TestNewShardedDatasetDefault(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -108,6 +112,7 @@ func createTestBatch(t *testing.T, id int64) arrow.RecordBatch {
 
 // --- Append Tests ---
 
+// TestShardedDatasetAppend runs the test sharded dataset append operation.
 func TestShardedDatasetAppend(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -125,6 +130,7 @@ func TestShardedDatasetAppend(t *testing.T) {
 	}
 }
 
+// TestShardedDatasetAppendToShard runs the test sharded dataset append to shard operation.
 func TestShardedDatasetAppendToShard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -145,6 +151,7 @@ func TestShardedDatasetAppendToShard(t *testing.T) {
 
 // --- GetAllRecords Tests ---
 
+// TestShardedDatasetGetAllRecords runs the test sharded dataset get all records operation.
 func TestShardedDatasetGetAllRecords(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -164,6 +171,7 @@ func TestShardedDatasetGetAllRecords(t *testing.T) {
 	}
 }
 
+// TestShardedDatasetGetShardRecords runs the test sharded dataset get shard records operation.
 func TestShardedDatasetGetShardRecords(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -185,6 +193,7 @@ func TestShardedDatasetGetShardRecords(t *testing.T) {
 
 // --- Concurrent Access Tests ---
 
+// TestShardedDatasetConcurrentAppends runs the test sharded dataset concurrent appends operation.
 func TestShardedDatasetConcurrentAppends(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -215,6 +224,7 @@ func TestShardedDatasetConcurrentAppends(t *testing.T) {
 	}
 }
 
+// TestShardedDatasetConcurrentReadsWrites runs the test sharded dataset concurrent reads writes operation.
 func TestShardedDatasetConcurrentReadsWrites(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -260,6 +270,7 @@ func TestShardedDatasetConcurrentReadsWrites(t *testing.T) {
 
 // --- ForEach Iteration Tests ---
 
+// TestShardedDatasetForEach runs the test sharded dataset for each operation.
 func TestShardedDatasetForEach(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -285,6 +296,7 @@ func TestShardedDatasetForEach(t *testing.T) {
 
 // --- Compatibility with Dataset Tests ---
 
+// TestShardedDatasetToLegacyRecords runs the test sharded dataset to legacy records operation.
 func TestShardedDatasetToLegacyRecords(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -306,6 +318,7 @@ func TestShardedDatasetToLegacyRecords(t *testing.T) {
 
 // --- Stats Tests ---
 
+// TestShardedDatasetStats runs the test sharded dataset stats operation.
 func TestShardedDatasetStats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -330,6 +343,7 @@ func TestShardedDatasetStats(t *testing.T) {
 
 // --- Benchmark ---
 
+// BenchmarkShardedDatasetAppend runs the benchmark sharded dataset append operation.
 func BenchmarkShardedDatasetAppend(b *testing.B) {
 	sd := NewShardedDatasetDefault("bench_test")
 	mem := memory.NewGoAllocator()
@@ -352,6 +366,7 @@ func BenchmarkShardedDatasetAppend(b *testing.B) {
 	})
 }
 
+// BenchmarkShardedVsLegacyDataset runs the benchmark sharded vs legacy dataset operation.
 func BenchmarkShardedVsLegacyDataset(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{

@@ -52,6 +52,7 @@ func makeTestVectorF16(dim int) []float16.Num {
 	return res
 }
 
+// TestEuclideanDistanceF16 runs the test euclidean distance f16 operation.
 func TestEuclideanDistanceF16(t *testing.T) {
 	dims := []int{1, 4, 8, 16, 32, 64, 128, 384, 768, 1536}
 	for _, dim := range dims {
@@ -74,6 +75,7 @@ func TestEuclideanDistanceF16(t *testing.T) {
 	}
 }
 
+// TestDotProductF16 runs the test dot product f16 operation.
 func TestDotProductF16(t *testing.T) {
 	dims := []int{1, 4, 8, 16, 32, 64, 128, 384, 768, 1536}
 	for _, dim := range dims {
@@ -94,6 +96,7 @@ func TestDotProductF16(t *testing.T) {
 	}
 }
 
+// TestCosineDistanceF16 runs the test cosine distance f16 operation.
 func TestCosineDistanceF16(t *testing.T) {
 	dims := []int{1, 4, 8, 16, 32, 64, 128, 384, 768, 1536}
 	for _, dim := range dims {
@@ -114,6 +117,7 @@ func TestCosineDistanceF16(t *testing.T) {
 	}
 }
 
+// BenchmarkEuclideanDistanceF16_384 runs the benchmark euclidean distance f16_384 operation.
 func BenchmarkEuclideanDistanceF16_384(b *testing.B) {
 	dim := 384
 	v1 := makeTestVectorF16(dim)
@@ -124,6 +128,7 @@ func BenchmarkEuclideanDistanceF16_384(b *testing.B) {
 	}
 }
 
+// BenchmarkDotProductF16_384 runs the benchmark dot product f16_384 operation.
 func BenchmarkDotProductF16_384(b *testing.B) {
 	dim := 384
 	v1 := makeTestVectorF16(dim)

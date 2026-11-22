@@ -451,19 +451,26 @@ func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration
 // so ties on norm are broken deterministically by keeping the smaller id.
 type temporalMaxHeap []temporalScoredResult
 
+// Len runs the len operation.
 func (h temporalMaxHeap) Len() int { return len(h) }
+
+// Less runs the less operation.
 func (h temporalMaxHeap) Less(i, j int) bool {
 	if h[i].distance != h[j].distance {
 		return h[i].distance > h[j].distance
 	}
 	return h[i].id > h[j].id
 }
+
+// Swap runs the swap operation.
 func (h temporalMaxHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
+// Push runs the push operation.
 func (h *temporalMaxHeap) Push(x any) {
 	*h = append(*h, x.(temporalScoredResult))
 }
 
+// Pop runs the pop operation.
 func (h *temporalMaxHeap) Pop() any {
 	old := *h
 	n := len(old)

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowBitset runs the test arrow bitset operation.
 func TestArrowBitset(t *testing.T) {
 	b := NewArrowBitset(100)
 	require.NotNil(t, b)
@@ -45,6 +46,7 @@ func TestArrowBitset(t *testing.T) {
 	assert.GreaterOrEqual(t, b2.Capacity(), 64)
 }
 
+// TestBitVector runs the test bit vector operation.
 func TestBitVector(t *testing.T) {
 	bv := NewBitVector(100)
 	require.NotNil(t, bv)
@@ -70,6 +72,7 @@ func TestBitVector(t *testing.T) {
 	assert.Equal(t, 1, bv.Count())
 }
 
+// TestBitset_Roaring runs the test bitset_roaring operation.
 func TestBitset_Roaring(t *testing.T) {
 	b := NewBitset()
 	require.NotNil(t, b)
@@ -111,6 +114,7 @@ func TestBitset_Roaring(t *testing.T) {
 	b3.Release()
 }
 
+// TestBitset_Slice runs the test bitset_slice operation.
 func TestBitset_Slice(t *testing.T) {
 	b := NewBitset()
 	b.Set(1)
@@ -134,6 +138,7 @@ func TestBitset_Slice(t *testing.T) {
 	slice2.Release()
 }
 
+// TestAtomicBitset runs the test atomic bitset operation.
 func TestAtomicBitset(t *testing.T) {
 	ab := NewAtomicBitset()
 	require.NotNil(t, ab)
@@ -165,6 +170,7 @@ func TestAtomicBitset(t *testing.T) {
 	ab2.Release()
 }
 
+// TestBQEncoder runs the test bq encoder operation.
 func TestBQEncoder(t *testing.T) {
 	encoder := NewBQEncoder(128)
 	require.NotNil(t, encoder)

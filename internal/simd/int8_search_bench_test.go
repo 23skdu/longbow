@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// BenchmarkInt8DenseLoop_50k runs the benchmark int8 dense loop_50k operation.
 func BenchmarkInt8DenseLoop_50k(b *testing.B) {
 	dim := 128
 	n := 50000
@@ -32,6 +33,7 @@ func BenchmarkInt8DenseLoop_50k(b *testing.B) {
 	}
 }
 
+// BenchmarkInt8DotProductLoop_50k runs the benchmark int8 dot product loop_50k operation.
 func BenchmarkInt8DotProductLoop_50k(b *testing.B) {
 	dim := 128
 	n := 50000
@@ -59,6 +61,7 @@ func BenchmarkInt8DotProductLoop_50k(b *testing.B) {
 	}
 }
 
+// BenchmarkFloat32Euclidean_128 runs the benchmark float32 euclidean_128 operation.
 func BenchmarkFloat32Euclidean_128(b *testing.B) {
 	dim := 128
 	a := make([]float32, dim)

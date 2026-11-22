@@ -16,6 +16,7 @@ import (
 
 // Mocks are now in mock_flight_streams_test.go
 
+// TestFlight_ZeroCopyAllocator runs the test flight_zero copy allocator operation.
 func TestFlight_ZeroCopyAllocator(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

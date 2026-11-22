@@ -9,6 +9,7 @@ import (
 	"unicode"
 )
 
+// BM25TuningParams represents a bm25 tuning params value.
 type BM25TuningParams struct {
 	K1 float64 `json:"k1"`
 	B  float64 `json:"b"`

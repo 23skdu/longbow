@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestNewDoubleBuffer runs the test new double buffer operation.
 func TestNewDoubleBuffer(t *testing.T) {
 	db := NewDoubleBuffer(1024)
 	assert.NotNil(t, db)
@@ -16,6 +17,7 @@ func TestNewDoubleBuffer(t *testing.T) {
 	assert.Equal(t, 0, db.ActiveSize())
 }
 
+// TestDoubleBufferActiveInactive runs the test double buffer active inactive operation.
 func TestDoubleBufferActiveInactive(t *testing.T) {
 	db := NewDoubleBuffer(64)
 	active := db.GetActive()
@@ -27,6 +29,7 @@ func TestDoubleBufferActiveInactive(t *testing.T) {
 	assert.False(t, &active[0] == &inactive[0])
 }
 
+// TestDoubleBufferSwap runs the test double buffer swap operation.
 func TestDoubleBufferSwap(t *testing.T) {
 	db := NewDoubleBuffer(64)
 	before := db.GetActive()
@@ -36,6 +39,7 @@ func TestDoubleBufferSwap(t *testing.T) {
 	assert.Equal(t, 0, db.ActiveSize())
 }
 
+// TestDoubleBufferWrite runs the test double buffer write operation.
 func TestDoubleBufferWrite(t *testing.T) {
 	db := NewDoubleBuffer(64)
 	n, err := db.Write([]byte("hello"))
@@ -44,6 +48,7 @@ func TestDoubleBufferWrite(t *testing.T) {
 	assert.Equal(t, 5, db.ActiveSize())
 }
 
+// TestDoubleBufferWriteCapacityExceeded runs the test double buffer write capacity exceeded operation.
 func TestDoubleBufferWriteCapacityExceeded(t *testing.T) {
 	db := NewDoubleBuffer(10)
 	_, err := db.Write(make([]byte, 11))
@@ -51,6 +56,7 @@ func TestDoubleBufferWriteCapacityExceeded(t *testing.T) {
 	assert.Contains(t, err.Error(), "capacity exceeded")
 }
 
+// TestDoubleBufferWriteAcrossSwap runs the test double buffer write across swap operation.
 func TestDoubleBufferWriteAcrossSwap(t *testing.T) {
 	db := NewDoubleBuffer(64)
 	_, _ = db.Write([]byte("first"))
@@ -65,6 +71,7 @@ func TestDoubleBufferWriteAcrossSwap(t *testing.T) {
 	assert.NotNil(t, ok)
 }
 
+// TestDoubleBufferReset runs the test double buffer reset operation.
 func TestDoubleBufferReset(t *testing.T) {
 	db := NewDoubleBuffer(64)
 	_, _ = db.Write([]byte("data"))
@@ -72,11 +79,13 @@ func TestDoubleBufferReset(t *testing.T) {
 	assert.Equal(t, 0, db.ActiveSize())
 }
 
+// TestDoubleBufferCapacity runs the test double buffer capacity operation.
 func TestDoubleBufferCapacity(t *testing.T) {
 	db := NewDoubleBuffer(256)
 	assert.Equal(t, 256, db.Capacity())
 }
 
+// TestDoubleBufferRoundTrip runs the test double buffer round trip operation.
 func TestDoubleBufferRoundTrip(t *testing.T) {
 	db := NewDoubleBuffer(32)
 	data := []byte("test-data-here")
@@ -88,12 +97,14 @@ func TestDoubleBufferRoundTrip(t *testing.T) {
 	assert.Equal(t, data, buf[:len(data)])
 }
 
+// TestDoubleBufferZeroCapacity runs the test double buffer zero capacity operation.
 func TestDoubleBufferZeroCapacity(t *testing.T) {
 	db := NewDoubleBuffer(0)
 	_, err := db.Write([]byte{1})
 	assert.Error(t, err)
 }
 
+// TestDoubleBufferWithHeadroom runs the test double buffer with headroom operation.
 func TestDoubleBufferWithHeadroom(t *testing.T) {
 	pool := &GPUMemPool{
 		totalBytes:  1000,
@@ -123,6 +134,7 @@ func TestDoubleBufferWithHeadroom(t *testing.T) {
 	assert.Contains(t, err.Error(), "insufficient GPU memory headroom")
 }
 
+// TestDoubleBuffer_HighVRAM_Stress runs the test double buffer_high vram_stress operation.
 func TestDoubleBuffer_HighVRAM_Stress(t *testing.T) {
 	// Simulate 16GB total VRAM pool with 1GB headroom and 1M vector operations (128 dims * 4 bytes = 512MB per batch)
 	const totalVRAM = 16 * 1024 * 1024 * 1024

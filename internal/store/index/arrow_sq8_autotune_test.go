@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSQ8AutoTuning runs the test sq8 auto tuning operation.
 func TestSQ8AutoTuning(t *testing.T) {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	mem := memory.NewGoAllocator()

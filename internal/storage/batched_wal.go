@@ -597,7 +597,7 @@ func (w *WALBatcher) GetCurrentInterval() time.Duration {
 	return w.intervalCalc.CalculateInterval(rate)
 }
 
-// QueueDepth returns the current number of pending entries and the capacity.
+// QueueStatus returns the current number of pending entries and the capacity.
 func (w *WALBatcher) QueueStatus() (pending, batchSize int) {
 	return len(w.entries), cap(w.entries)
 }

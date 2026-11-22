@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// RemoteStorage represents a remote storage value.
 type RemoteStorage interface {
 	Put(ctx context.Context, key string, r io.Reader) error
 	Get(ctx context.Context, key string) (io.ReadCloser, error)
@@ -17,17 +18,24 @@ type RemoteStorage interface {
 	Exists(ctx context.Context, key string) (bool, error)
 }
 
+// Tier represents a tier value.
 type Tier string
 
 const (
-	TierHot  Tier = "hot"
+	// TierHot is a tier hot constant.
+	TierHot Tier = "hot"
+	// TierWarm is a tier warm constant.
 	TierWarm Tier = "warm"
+	// TierCold is a tier cold constant.
 	TierCold Tier = "cold"
-	TierGPU  Tier = "gpu"
+	// TierGPU is a tier gpu constant.
+	TierGPU Tier = "gpu"
 )
 
+// StorageTier represents a storage tier value.
 type StorageTier = Tier
 
+// TierAccessStats represents a tier access stats value.
 type TierAccessStats struct {
 	AccessCount     int64
 	LastAccess      time.Time
@@ -35,6 +43,7 @@ type TierAccessStats struct {
 	TotalWriteBytes int64
 }
 
+// TierManager represents a tier manager value.
 type TierManager struct {
 	mu sync.RWMutex
 
@@ -47,6 +56,7 @@ type TierManager struct {
 	statsMu     sync.RWMutex
 }
 
+// TierStorage represents a tier storage value.
 type TierStorage struct {
 	tier        Tier
 	directory   string
@@ -56,6 +66,7 @@ type TierStorage struct {
 	keys map[string]bool
 }
 
+// TieredStorageConfig represents a tiered storage config value.
 type TieredStorageConfig struct {
 	HotDirectory    string
 	WarmDirectory   string
@@ -66,6 +77,7 @@ type TieredStorageConfig struct {
 	EvictBatchSize  int
 }
 
+// NewTierManager constructs a new TierManager.
 func NewTierManager(config TieredStorageConfig, logger *zerolog.Logger) (*TierManager, error) {
 	tm := &TierManager{
 		tiers:       make(map[Tier]*TierStorage),
@@ -111,6 +123,7 @@ func NewTierManager(config TieredStorageConfig, logger *zerolog.Logger) (*TierMa
 	return tm, nil
 }
 
+// GetTier returns the tier.
 func (tm *TierManager) GetTier(key string) Tier {
 	tm.statsMu.RLock()
 	stats, ok := tm.accessStats[key]
@@ -132,6 +145,7 @@ func (tm *TierManager) GetTier(key string) Tier {
 	return TierCold
 }
 
+// RecordAccess runs the record access operation.
 func (tm *TierManager) RecordAccess(key string, bytesRead int64) {
 	tm.statsMu.Lock()
 	defer tm.statsMu.Unlock()
@@ -147,6 +161,7 @@ func (tm *TierManager) RecordAccess(key string, bytesRead int64) {
 	stats.TotalReadBytes += bytesRead
 }
 
+// RecordWrite runs the record write operation.
 func (tm *TierManager) RecordWrite(key string, bytesWritten int64) {
 	tm.statsMu.Lock()
 	defer tm.statsMu.Unlock()
@@ -160,6 +175,7 @@ func (tm *TierManager) RecordWrite(key string, bytesWritten int64) {
 	stats.TotalWriteBytes += bytesWritten
 }
 
+// MigrateToTier runs the migrate to tier operation.
 func (tm *TierManager) MigrateToTier(key string, targetTier Tier) error {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
@@ -194,10 +210,12 @@ func (tm *TierManager) MigrateToTier(key string, targetTier Tier) error {
 	return nil
 }
 
+// GetStorage returns the storage.
 func (tm *TierManager) GetStorage(tier Tier) *TierStorage {
 	return tm.tiers[tier]
 }
 
+// RunTierMigration runs the run tier migration operation.
 func (tm *TierManager) RunTierMigration(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
@@ -248,12 +266,14 @@ func (tm *TierManager) migrateWarmToHot() {
 	}
 }
 
+// TieredVectorStore represents a tiered vector store value.
 type TieredVectorStore struct {
 	tierManager *TierManager
 	gpuEnabled  bool
 	gpuMemLimit int64
 }
 
+// NewTieredVectorStore constructs a new TieredVectorStore.
 func NewTieredVectorStore(tierManager *TierManager, gpuEnabled bool, gpuMemLimit int64) *TieredVectorStore {
 	return &TieredVectorStore{
 		tierManager: tierManager,
@@ -262,6 +282,7 @@ func NewTieredVectorStore(tierManager *TierManager, gpuEnabled bool, gpuMemLimit
 	}
 }
 
+// ShouldUseGPU runs the should use gpu operation.
 func (tv *TieredVectorStore) ShouldUseGPU(vectorSize int) bool {
 	if !tv.gpuEnabled {
 		return false
@@ -271,6 +292,7 @@ func (tv *TieredVectorStore) ShouldUseGPU(vectorSize int) bool {
 	return estimatedGPUmem < tv.gpuMemLimit
 }
 
+// GetTierForVector returns the tier for vector.
 func (tv *TieredVectorStore) GetTierForVector(id string, vectorSize int) Tier {
 	stats := tv.tierManager.accessStats[id]
 	if stats == nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestDoPut_AdaptiveBatchingAlignment runs the test do put_adaptive batching alignment operation.
 func TestDoPut_AdaptiveBatchingAlignment(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

@@ -12,10 +12,12 @@ type mockMemStatsReader struct {
 	heapInUse uint64
 }
 
+// ReadMemStats runs the read mem stats operation.
 func (m *mockMemStatsReader) ReadMemStats(stats *runtime.MemStats) {
 	stats.HeapAlloc = m.heapInUse
 }
 
+// TestGCTuner_Logic runs the test gc tuner_logic operation.
 func TestGCTuner_Logic(t *testing.T) {
 	// Setup: Limit 100MB, High 100, Low 10
 	limit := int64(100 * 1024 * 1024)

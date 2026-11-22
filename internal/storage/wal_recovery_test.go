@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestWALRecovery_CorruptedTail runs the test wal recovery_corrupted tail operation.
 func TestWALRecovery_CorruptedTail(t *testing.T) {
 	tmpDir := t.TempDir()
 	walPath := filepath.Join(tmpDir, "wal.log")
@@ -51,6 +52,7 @@ func TestWALRecovery_CorruptedTail(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestWALRecovery_ChecksumMismatch runs the test wal recovery_checksum mismatch operation.
 func TestWALRecovery_ChecksumMismatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	walPath := filepath.Join(tmpDir, "wal.log")

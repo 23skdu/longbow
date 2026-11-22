@@ -166,7 +166,7 @@ func (idx *AutoShardingIndex) mergeSearchResults(res1, res2 []SearchResult, k in
 	return combined
 }
 
-// IsSharded returns true if the index has been upgraded to a sharded implementation.
+// Search returns true if the index has been upgraded to a sharded implementation.
 func (idx *AutoShardingIndex) Search(ctx context.Context, q any, k int, options any) ([]types.Candidate, error) {
 	idx.mu.RLock()
 	sharded := idx.sharded
@@ -242,7 +242,7 @@ func (idx *AutoShardingIndex) mergeCandidates(res1, res2 []types.Candidate, k in
 	return unique
 }
 
-// Warmup delegates to the current index.
+// GetRawNeighbors delegates to the current index.
 func (idx *AutoShardingIndex) GetRawNeighbors(id uint32) ([]uint32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -280,7 +280,7 @@ func (idx *AutoShardingIndex) GetNeighbors(ctx context.Context, id uint32, k int
 	return nil, err
 }
 
-// EstimateMemory implements VectorIndex.
+// ExportState implements VectorIndex.
 func (idx *AutoShardingIndex) ExportState() ([]byte, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

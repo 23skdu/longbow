@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestGraphData_Serialization runs the test graph data_serialization operation.
 func TestGraphData_Serialization(t *testing.T) {
 	if raceEnabled {
 		t.Skip("skipping serialization test under race detector")

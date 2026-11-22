@@ -20,10 +20,15 @@ import (
 )
 
 var (
-	ErrInvalidToken      = errors.New("invalid token")
-	ErrTokenExpired      = errors.New("token expired")
-	ErrInvalidProvider   = errors.New("invalid OAuth provider")
-	ErrMissingCode       = errors.New("authorization code missing")
+	// ErrInvalidToken is a err invalid token value.
+	ErrInvalidToken = errors.New("invalid token")
+	// ErrTokenExpired is a err token expired value.
+	ErrTokenExpired = errors.New("token expired")
+	// ErrInvalidProvider is a err invalid provider value.
+	ErrInvalidProvider = errors.New("invalid OAuth provider")
+	// ErrMissingCode is a err missing code value.
+	ErrMissingCode = errors.New("authorization code missing")
+	// ErrUserNotAuthorized is a err user not authorized value.
 	ErrUserNotAuthorized = errors.New("user not authorized")
 )
 
@@ -33,15 +38,21 @@ const (
 	sessionContextKey contextKey = "session"
 )
 
+// OAuthProvider represents a o auth provider value.
 type OAuthProvider string
 
 const (
-	ProviderGitHub    OAuthProvider = "github"
-	ProviderGoogle    OAuthProvider = "google"
+	// ProviderGitHub is a provider git hub constant.
+	ProviderGitHub OAuthProvider = "github"
+	// ProviderGoogle is a provider google constant.
+	ProviderGoogle OAuthProvider = "google"
+	// ProviderMicrosoft is a provider microsoft constant.
 	ProviderMicrosoft OAuthProvider = "microsoft"
-	ProviderOIDC      OAuthProvider = "oidc"
+	// ProviderOIDC is a provider oidc constant.
+	ProviderOIDC OAuthProvider = "oidc"
 )
 
+// SSOConfig represents a sso config value.
 type SSOConfig struct {
 	Enabled         bool            `json:"enabled"`
 	Providers       []OAuthProvider `json:"providers"`
@@ -54,12 +65,14 @@ type SSOConfig struct {
 	JWKSPort        int             `json:"jwks_port"`
 }
 
+// OAuthState represents a o auth state value.
 type OAuthState struct {
 	State    string
 	Provider OAuthProvider
 	Expiry   time.Time
 }
 
+// JWTClaims represents a jwt claims value.
 type JWTClaims struct {
 	Sub      string   `json:"sub"`
 	Iss      string   `json:"iss"`
@@ -73,6 +86,7 @@ type JWTClaims struct {
 	Provider string   `json:"provider"`
 }
 
+// SSOToken represents a sso token value.
 type SSOToken struct {
 	AccessToken  string
 	RefreshToken string
@@ -80,6 +94,7 @@ type SSOToken struct {
 	Claims       *JWTClaims
 }
 
+// OAuthManager represents a o auth manager value.
 type OAuthManager struct {
 	mu           sync.RWMutex
 	config       SSOConfig
@@ -90,11 +105,13 @@ type OAuthManager struct {
 	key          *rsa.PrivateKey
 }
 
+// SessionStore represents a session store value.
 type SessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
 }
 
+// Session represents a session value.
 type Session struct {
 	ID        string
 	UserID    string
@@ -106,6 +123,7 @@ type Session struct {
 	Data      map[string]interface{}
 }
 
+// NewOAuthManager constructs a new OAuthManager.
 func NewOAuthManager(config SSOConfig) (*OAuthManager, error) {
 	if config.ClientID == "" || config.ClientSecret == "" {
 		return nil, errors.New("OAuth client ID and secret are required")
@@ -157,6 +175,7 @@ func (m *OAuthManager) createOAuth2Config(provider OAuthProvider) *oauth2.Config
 	return baseCfg
 }
 
+// GetAuthURL returns the auth url.
 func (m *OAuthManager) GetAuthURL(provider OAuthProvider, state string) (string, error) {
 	cfg, ok := m.oauth2Config[provider]
 	if !ok {
@@ -174,6 +193,7 @@ func (m *OAuthManager) GetAuthURL(provider OAuthProvider, state string) (string,
 	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline), nil
 }
 
+// ExchangeCode runs the exchange code operation.
 func (m *OAuthManager) ExchangeCode(ctx context.Context, provider OAuthProvider, code string) (*SSOToken, error) {
 	cfg, ok := m.oauth2Config[provider]
 	if !ok {
@@ -194,6 +214,7 @@ func (m *OAuthManager) ExchangeCode(ctx context.Context, provider OAuthProvider,
 	return ssotoken, nil
 }
 
+// ValidateToken runs the validate token operation.
 func (m *OAuthManager) ValidateToken(ctx context.Context, tokenString string) (*JWTClaims, error) {
 	m.mu.RLock()
 	token := m.tokens[tokenString]
@@ -210,6 +231,7 @@ func (m *OAuthManager) ValidateToken(ctx context.Context, tokenString string) (*
 	return token.Claims, nil
 }
 
+// CreateSession runs the create session operation.
 func (m *OAuthManager) CreateSession(token *SSOToken, userInfo UserInfo) (*Session, error) {
 	session := &Session{
 		ID:        generateSessionID(),
@@ -226,14 +248,17 @@ func (m *OAuthManager) CreateSession(token *SSOToken, userInfo UserInfo) (*Sessi
 	return session, nil
 }
 
+// GetSession returns the session.
 func (m *OAuthManager) GetSession(sessionID string) (*Session, error) {
 	return m.sessionStore.Get(sessionID)
 }
 
+// DeleteSession runs the delete session operation.
 func (m *OAuthManager) DeleteSession(sessionID string) {
 	m.sessionStore.Delete(sessionID)
 }
 
+// RefreshToken runs the refresh token operation.
 func (m *OAuthManager) RefreshToken(ctx context.Context, refreshToken string) (*SSOToken, error) {
 	m.mu.RLock()
 	var cfg *oauth2.Config
@@ -260,6 +285,7 @@ func (m *OAuthManager) RefreshToken(ctx context.Context, refreshToken string) (*
 	}, nil
 }
 
+// NewSessionStore constructs a new SessionStore.
 func NewSessionStore() *SessionStore {
 	store := &SessionStore{
 		sessions: make(map[string]*Session),
@@ -268,12 +294,14 @@ func NewSessionStore() *SessionStore {
 	return store
 }
 
+// Store runs the store operation.
 func (s *SessionStore) Store(session *Session) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[session.ID] = session
 }
 
+// Get returns the .
 func (s *SessionStore) Get(id string) (*Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -287,6 +315,7 @@ func (s *SessionStore) Get(id string) (*Session, error) {
 	return session, nil
 }
 
+// Delete runs the delete operation.
 func (s *SessionStore) Delete(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -307,6 +336,7 @@ func (s *SessionStore) cleanupExpired() {
 	}
 }
 
+// UserInfo represents a user info value.
 type UserInfo struct {
 	ID       string
 	Name     string
@@ -315,6 +345,7 @@ type UserInfo struct {
 	Provider string
 }
 
+// GetUserInfo returns the user info.
 func (m *OAuthManager) GetUserInfo(ctx context.Context, provider OAuthProvider, token *SSOToken) (*UserInfo, error) {
 	switch provider {
 	case ProviderGitHub:
@@ -430,6 +461,7 @@ func generateSessionID() string {
 	return base64.URLEncoding.EncodeToString(b)
 }
 
+// Middleware runs the middleware operation.
 func (m *OAuthManager) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -459,6 +491,7 @@ func (m *OAuthManager) Middleware() func(http.Handler) http.Handler {
 	}
 }
 
+// Claims represents a claims value.
 type Claims struct {
 	Sub   string `json:"sub"`
 	Email string `json:"email"`
@@ -471,6 +504,7 @@ type Claims struct {
 	Nbf   int64  `json:"nbf"`
 }
 
+// Valid runs the valid operation.
 func (c *Claims) Valid() error {
 	now := time.Now().Unix()
 	if c.Exp < now {
@@ -482,12 +516,14 @@ func (c *Claims) Valid() error {
 	return nil
 }
 
+// TokenGenerator represents a token generator value.
 type TokenGenerator struct {
 	privateKey *rsa.PrivateKey
 	issuer     string
 	audience   string
 }
 
+// NewTokenGenerator constructs a new TokenGenerator.
 func NewTokenGenerator(issuer, audience string) (*TokenGenerator, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -500,6 +536,7 @@ func NewTokenGenerator(issuer, audience string) (*TokenGenerator, error) {
 	}, nil
 }
 
+// GenerateToken runs the generate token operation.
 func (g *TokenGenerator) GenerateToken(claims Claims) (string, error) {
 	claims.Iss = g.issuer
 	claims.Aud = g.audience
@@ -516,6 +553,7 @@ func (g *TokenGenerator) GenerateToken(claims Claims) (string, error) {
 	return encoded, nil
 }
 
+// ValidateToken runs the validate token operation.
 func (g *TokenGenerator) ValidateToken(tokenString string) (*Claims, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(tokenString)
 	if err != nil {
@@ -534,6 +572,7 @@ func (g *TokenGenerator) ValidateToken(tokenString string) (*Claims, error) {
 	return &claims, nil
 }
 
+// IsDomainAllowed reports whether the condition holds.
 func (m *OAuthManager) IsDomainAllowed(email string) bool {
 	if len(m.config.AllowedDomains) == 0 {
 		return true
@@ -563,6 +602,7 @@ func getSessionFromContext(ctx context.Context) *Session {
 	return nil
 }
 
+// RequireAuth runs the require auth operation.
 func (m *OAuthManager) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := getSessionFromContext(r.Context())
@@ -574,6 +614,7 @@ func (m *OAuthManager) RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// RequireAdmin runs the require admin operation.
 func (m *OAuthManager) RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := getSessionFromContext(r.Context())

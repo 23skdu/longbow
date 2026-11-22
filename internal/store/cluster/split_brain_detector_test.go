@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// TestSplitBrainDetector_New runs the test split brain detector_new operation.
 func TestSplitBrainDetector_New(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -25,6 +26,7 @@ func TestSplitBrainDetector_New(t *testing.T) {
 	}
 }
 
+// TestSplitBrainDetector_RegisterPeer runs the test split brain detector_register peer operation.
 func TestSplitBrainDetector_RegisterPeer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -43,6 +45,7 @@ func TestSplitBrainDetector_RegisterPeer(t *testing.T) {
 	}
 }
 
+// TestSplitBrainDetector_Heartbeat runs the test split brain detector_heartbeat operation.
 func TestSplitBrainDetector_Heartbeat(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -60,6 +63,7 @@ func TestSplitBrainDetector_Heartbeat(t *testing.T) {
 	}
 }
 
+// TestSplitBrainDetector_HeartbeatTimeout runs the test split brain detector_heartbeat timeout operation.
 func TestSplitBrainDetector_HeartbeatTimeout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -78,6 +82,7 @@ func TestSplitBrainDetector_HeartbeatTimeout(t *testing.T) {
 	}
 }
 
+// TestSplitBrainDetector_QuorumLoss runs the test split brain detector_quorum loss operation.
 func TestSplitBrainDetector_QuorumLoss(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -100,6 +105,7 @@ func TestSplitBrainDetector_QuorumLoss(t *testing.T) {
 	}
 }
 
+// TestSplitBrainDetector_QuorumRecovery runs the test split brain detector_quorum recovery operation.
 func TestSplitBrainDetector_QuorumRecovery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -127,6 +133,7 @@ func TestSplitBrainDetector_QuorumRecovery(t *testing.T) {
 	}
 }
 
+// TestSplitBrainDetector_Metrics runs the test split brain detector_metrics operation.
 func TestSplitBrainDetector_Metrics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -144,6 +151,7 @@ func TestSplitBrainDetector_Metrics(t *testing.T) {
 	}
 }
 
+// TestSplitBrainDetector_ConcurrentHeartbeats runs the test split brain detector_concurrent heartbeats operation.
 func TestSplitBrainDetector_ConcurrentHeartbeats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -175,6 +183,7 @@ func TestSplitBrainDetector_ConcurrentHeartbeats(t *testing.T) {
 	}
 }
 
+// TestSplitBrainDetector_PartitionCount runs the test split brain detector_partition count operation.
 func TestSplitBrainDetector_PartitionCount(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

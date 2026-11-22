@@ -7,8 +7,10 @@ import (
 	"sync/atomic"
 )
 
+// WorkItem represents a work item value.
 type WorkItem interface{}
 
+// WorkQueue represents a work queue value.
 type WorkQueue struct {
 	items   chan WorkItem
 	workers int
@@ -19,6 +21,7 @@ type WorkQueue struct {
 	backlog atomic.Int64
 }
 
+// NewWorkQueue constructs a new WorkQueue.
 func NewWorkQueue(bufferSize int, workers int) *WorkQueue {
 	if workers <= 0 {
 		workers = runtime.NumCPU()
@@ -36,6 +39,7 @@ func NewWorkQueue(bufferSize int, workers int) *WorkQueue {
 	}
 }
 
+// Start runs the start operation.
 func (wq *WorkQueue) Start(handler func(ctx context.Context, item WorkItem)) {
 	for i := 0; i < wq.workers; i++ {
 		wq.wg.Add(1)
@@ -60,6 +64,7 @@ func (wq *WorkQueue) worker(handler func(ctx context.Context, item WorkItem)) {
 	}
 }
 
+// Submit runs the submit operation.
 func (wq *WorkQueue) Submit(item WorkItem) bool {
 	select {
 	case wq.items <- item:
@@ -70,11 +75,13 @@ func (wq *WorkQueue) Submit(item WorkItem) bool {
 	}
 }
 
+// SubmitBlocking runs the submit blocking operation.
 func (wq *WorkQueue) SubmitBlocking(item WorkItem) {
 	wq.items <- item
 	wq.backlog.Add(1)
 }
 
+// Close runs the close operation.
 func (wq *WorkQueue) Close() error {
 	if wq.closed.Swap(true) {
 		return nil
@@ -86,27 +93,35 @@ func (wq *WorkQueue) Close() error {
 	return nil
 }
 
+// Backlog runs the backlog operation.
 func (wq *WorkQueue) Backlog() int64 {
 	return wq.backlog.Load()
 }
 
+// Len runs the len operation.
 func (wq *WorkQueue) Len() int {
 	return len(wq.items)
 }
 
+// Priority represents a priority value.
 type Priority int
 
 const (
+	// PriorityLow is a priority low constant.
 	PriorityLow Priority = iota
+	// PriorityNormal is a priority normal constant.
 	PriorityNormal
+	// PriorityHigh is a priority high constant.
 	PriorityHigh
 )
 
+// PrioritizedWorkItem represents a prioritized work item value.
 type PrioritizedWorkItem struct {
 	Item     WorkItem
 	Priority Priority
 }
 
+// PriorityWorkQueue represents a priority work queue value.
 type PriorityWorkQueue struct {
 	queues  [3]chan PrioritizedWorkItem
 	workers int
@@ -116,6 +131,7 @@ type PriorityWorkQueue struct {
 	closed  atomic.Bool
 }
 
+// NewPriorityWorkQueue constructs a new PriorityWorkQueue.
 func NewPriorityWorkQueue(bufferSize int, workers int) *PriorityWorkQueue {
 	if workers <= 0 {
 		workers = runtime.NumCPU()
@@ -138,6 +154,7 @@ func NewPriorityWorkQueue(bufferSize int, workers int) *PriorityWorkQueue {
 	return pwq
 }
 
+// Start runs the start operation.
 func (pwq *PriorityWorkQueue) Start(handler func(ctx context.Context, item WorkItem)) {
 	for i := 0; i < pwq.workers; i++ {
 		pwq.wg.Add(1)
@@ -162,6 +179,7 @@ func (pwq *PriorityWorkQueue) worker(handler func(ctx context.Context, item Work
 	}
 }
 
+// Submit runs the submit operation.
 func (pwq *PriorityWorkQueue) Submit(item WorkItem, priority Priority) bool {
 	if priority < PriorityLow {
 		priority = PriorityLow
@@ -178,6 +196,7 @@ func (pwq *PriorityWorkQueue) Submit(item WorkItem, priority Priority) bool {
 	}
 }
 
+// Close runs the close operation.
 func (pwq *PriorityWorkQueue) Close() error {
 	if pwq.closed.Swap(true) {
 		return nil

@@ -66,6 +66,7 @@ func signStoreTestJWT(t *testing.T, priv *rsa.PrivateKey, claims jwt.MapClaims) 
 	return s
 }
 
+// TestVectorStoreOIDCAuthorizeAndComposite runs the test vector store oidc authorize and composite operation.
 func TestVectorStoreOIDCAuthorizeAndComposite(t *testing.T) {
 	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<28, 0, 0)
 	defer func() { _ = s.Close() }()
@@ -195,6 +196,7 @@ func TestVectorStoreOIDCAuthorizeAndComposite(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, unauthRR.Code)
 }
 
+// TestVectorStoreOIDCRESTAndActions runs the test vector store oidcrest and actions operation.
 func TestVectorStoreOIDCRESTAndActions(t *testing.T) {
 	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<28, 0, 0)
 	defer func() { _ = s.Close() }()
@@ -315,6 +317,7 @@ func TestVectorStoreOIDCRESTAndActions(t *testing.T) {
 	require.Len(t, exStream.results, 1)
 }
 
+// TestOIDC_DynamicAccessValidatorAndNoDoubleReplayOnFlightExchange runs the test oidc_dynamic access validator and no double replay on flight exchange operation.
 func TestOIDC_DynamicAccessValidatorAndNoDoubleReplayOnFlightExchange(t *testing.T) {
 	oidcMgr, priv := setupStoreOIDCTest(t)
 

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestCollectionRegistry_RegisterCollection runs the test collection registry_register collection operation.
 func TestCollectionRegistry_RegisterCollection(t *testing.T) {
 	registry := NewCollectionRegistry()
 
@@ -27,6 +28,7 @@ func TestCollectionRegistry_RegisterCollection(t *testing.T) {
 	assert.Equal(t, 128, retrieved.Dimension)
 }
 
+// TestCollectionRegistry_DuplicateCollection runs the test collection registry_duplicate collection operation.
 func TestCollectionRegistry_DuplicateCollection(t *testing.T) {
 	registry := NewCollectionRegistry()
 
@@ -43,6 +45,7 @@ func TestCollectionRegistry_DuplicateCollection(t *testing.T) {
 	assert.Contains(t, err.Error(), "already exists")
 }
 
+// TestCollectionRegistry_DeleteCollection runs the test collection registry_delete collection operation.
 func TestCollectionRegistry_DeleteCollection(t *testing.T) {
 	registry := NewCollectionRegistry()
 
@@ -59,6 +62,7 @@ func TestCollectionRegistry_DeleteCollection(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestCollectionRegistry_ListCollections runs the test collection registry_list collections operation.
 func TestCollectionRegistry_ListCollections(t *testing.T) {
 	registry := NewCollectionRegistry()
 
@@ -70,6 +74,7 @@ func TestCollectionRegistry_ListCollections(t *testing.T) {
 	assert.Len(t, collections, 3)
 }
 
+// TestCollectionRegistry_RegisterRoutingRule runs the test collection registry_register routing rule operation.
 func TestCollectionRegistry_RegisterRoutingRule(t *testing.T) {
 	registry := NewCollectionRegistry()
 
@@ -89,6 +94,7 @@ func TestCollectionRegistry_RegisterRoutingRule(t *testing.T) {
 	assert.Equal(t, 1, retrieved.Priority)
 }
 
+// TestReciprocalRankFusion runs the test reciprocal rank fusion operation.
 func TestReciprocalRankFusion(t *testing.T) {
 	results1 := []lbtypes.SearchResult{
 		{ID: 1, Distance: 1.0, Score: 1.0},
@@ -110,6 +116,7 @@ func TestReciprocalRankFusion(t *testing.T) {
 	}
 }
 
+// TestFederatedQueryRouter_RegisterCollection runs the test federated query router_register collection operation.
 func TestFederatedQueryRouter_RegisterCollection(t *testing.T) {
 	router := NewFederatedQueryRouter()
 
@@ -126,6 +133,7 @@ func TestFederatedQueryRouter_RegisterCollection(t *testing.T) {
 	assert.Equal(t, 128, coll.Dimension)
 }
 
+// TestCollectionRegistry_RouteQuery runs the test collection registry_route query operation.
 func TestCollectionRegistry_RouteQuery(t *testing.T) {
 	registry := NewCollectionRegistry()
 	_ = registry.RegisterCollection(&CollectionInfo{
@@ -152,6 +160,7 @@ func TestCollectionRegistry_RouteQuery(t *testing.T) {
 	assert.Equal(t, "prod-collection", rule.Collection)
 }
 
+// TestCollectionRegistry_RouteByTag runs the test collection registry_route by tag operation.
 func TestCollectionRegistry_RouteByTag(t *testing.T) {
 	registry := NewCollectionRegistry()
 	_ = registry.RegisterCollection(&CollectionInfo{

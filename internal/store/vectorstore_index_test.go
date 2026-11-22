@@ -12,6 +12,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// TestVectorStore_IndexRecordColumns runs the test vector store_index record columns operation.
 func TestVectorStore_IndexRecordColumns(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -57,6 +58,7 @@ func TestVectorStore_IndexRecordColumns(t *testing.T) {
 	}
 }
 
+// TestVectorStore_IndexRecordColumns_NoIndexedColumns runs the test vector store_index record columns_no indexed columns operation.
 func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -91,6 +93,7 @@ func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
 	}
 }
 
+// TestVectorStore_GetSetIndexedColumns runs the test vector store_get set indexed columns operation.
 func TestVectorStore_GetSetIndexedColumns(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -112,6 +115,7 @@ func TestVectorStore_GetSetIndexedColumns(t *testing.T) {
 	}
 }
 
+// TestVectorStore_FilterRecordOptimized_NoFilters runs the test vector store_filter record optimized_no filters operation.
 func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -148,6 +152,7 @@ func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
 	}
 }
 
+// TestVectorStore_FilterRecordOptimized_WithIndex runs the test vector store_filter record optimized_with index operation.
 func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -193,6 +198,7 @@ func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 	}
 }
 
+// TestVectorStore_FilterRecordOptimized_FallbackToCompute runs the test vector store_filter record optimized_fallback to compute operation.
 func TestVectorStore_FilterRecordOptimized_FallbackToCompute(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -234,6 +240,7 @@ func TestVectorStore_FilterRecordOptimized_FallbackToCompute(t *testing.T) {
 	}
 }
 
+// BenchmarkFilterRecordOptimized_WithIndex runs the benchmark filter record optimized_with index operation.
 func BenchmarkFilterRecordOptimized_WithIndex(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
@@ -282,6 +289,7 @@ func BenchmarkFilterRecordOptimized_WithIndex(b *testing.B) {
 	}
 }
 
+// BenchmarkFilterRecord_WithoutIndex runs the benchmark filter record_without index operation.
 func BenchmarkFilterRecord_WithoutIndex(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)

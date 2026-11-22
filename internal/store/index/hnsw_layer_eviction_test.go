@@ -37,6 +37,7 @@ func newTestGraphData(t *testing.T, name string, layers, chunksPerLayer int) *ty
 	return gd
 }
 
+// TestGraphLayerEvictionManager runs the test graph layer eviction manager operation.
 func TestGraphLayerEvictionManager(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.1, logger)
@@ -119,6 +120,7 @@ func TestGraphLayerEvictionManager(t *testing.T) {
 	mgr.maybeEvictAll()
 }
 
+// TestGraphLayerEvictionManager_RegisterDuplicate runs the test graph layer eviction manager_register duplicate operation.
 func TestGraphLayerEvictionManager_RegisterDuplicate(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -132,6 +134,7 @@ func TestGraphLayerEvictionManager_RegisterDuplicate(t *testing.T) {
 	require.Len(t, mgr.targets, 1)
 }
 
+// TestGraphLayerEvictionManager_RegisterNil runs the test graph layer eviction manager_register nil operation.
 func TestGraphLayerEvictionManager_RegisterNil(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -141,6 +144,7 @@ func TestGraphLayerEvictionManager_RegisterNil(t *testing.T) {
 	require.Empty(t, mgr.targets)
 }
 
+// TestGraphLayerEvictionManager_Unregister runs the test graph layer eviction manager_unregister operation.
 func TestGraphLayerEvictionManager_Unregister(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -153,6 +157,7 @@ func TestGraphLayerEvictionManager_Unregister(t *testing.T) {
 	require.Empty(t, mgr.targets)
 }
 
+// TestGraphLayerEvictionManager_UnregisterNil runs the test graph layer eviction manager_unregister nil operation.
 func TestGraphLayerEvictionManager_UnregisterNil(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -162,6 +167,7 @@ func TestGraphLayerEvictionManager_UnregisterNil(t *testing.T) {
 	require.Empty(t, mgr.targets)
 }
 
+// TestGraphLayerEvictionManager_SwapTargetNilOld runs the test graph layer eviction manager_swap target nil old operation.
 func TestGraphLayerEvictionManager_SwapTargetNilOld(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -173,6 +179,7 @@ func TestGraphLayerEvictionManager_SwapTargetNilOld(t *testing.T) {
 	require.Equal(t, gd, mgr.targets[0].gd)
 }
 
+// TestGraphLayerEvictionManager_SwapTargetSame runs the test graph layer eviction manager_swap target same operation.
 func TestGraphLayerEvictionManager_SwapTargetSame(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -186,6 +193,7 @@ func TestGraphLayerEvictionManager_SwapTargetSame(t *testing.T) {
 	require.Len(t, mgr.targets, 1)
 }
 
+// TestGraphLayerEvictionManager_SwapTargetNilNew runs the test graph layer eviction manager_swap target nil new operation.
 func TestGraphLayerEvictionManager_SwapTargetNilNew(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -200,6 +208,7 @@ func TestGraphLayerEvictionManager_SwapTargetNilNew(t *testing.T) {
 	require.Nil(t, mgr.targets[0].gd)
 }
 
+// TestGraphLayerEvictionManager_RestoreNonEvicted runs the test graph layer eviction manager_restore non evicted operation.
 func TestGraphLayerEvictionManager_RestoreNonEvicted(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -212,6 +221,7 @@ func TestGraphLayerEvictionManager_RestoreNonEvicted(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestGraphLayerEvictionManager_RestoreNilGD runs the test graph layer eviction manager_restore nil gd operation.
 func TestGraphLayerEvictionManager_RestoreNilGD(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -230,6 +240,7 @@ func TestGraphLayerEvictionManager_RestoreNilGD(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestGraphLayerEvictionManager_ForceEvictNoTargets runs the test graph layer eviction manager_force evict no targets operation.
 func TestGraphLayerEvictionManager_ForceEvictNoTargets(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -238,6 +249,7 @@ func TestGraphLayerEvictionManager_ForceEvictNoTargets(t *testing.T) {
 	mgr.ForceEvictAll()
 }
 
+// TestGraphLayerEvictionManager_StopIdempotent runs the test graph layer eviction manager_stop idempotent operation.
 func TestGraphLayerEvictionManager_StopIdempotent(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -247,6 +259,7 @@ func TestGraphLayerEvictionManager_StopIdempotent(t *testing.T) {
 	mgr.Stop()
 }
 
+// TestGraphLayerEvictionManager_EmptyNeighbors runs the test graph layer eviction manager_empty neighbors operation.
 func TestGraphLayerEvictionManager_EmptyNeighbors(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.1, logger)
@@ -259,6 +272,7 @@ func TestGraphLayerEvictionManager_EmptyNeighbors(t *testing.T) {
 	mgr.ForceEvictAll()
 }
 
+// TestGraphLayerEvictionManager_SwapTargetUnregisteredOld runs the test graph layer eviction manager_swap target unregistered old operation.
 func TestGraphLayerEvictionManager_SwapTargetUnregisteredOld(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.75, logger)
@@ -297,6 +311,7 @@ func newTestGraphDataWithPackedNeighbors(t *testing.T, name string, numLayers in
 	return gd
 }
 
+// TestGraphLayerEvictionManager_PackedNeighborsEvictionAndRestore runs the test graph layer eviction manager_packed neighbors eviction and restore operation.
 func TestGraphLayerEvictionManager_PackedNeighborsEvictionAndRestore(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.1, logger)
@@ -343,6 +358,7 @@ func TestGraphLayerEvictionManager_PackedNeighborsEvictionAndRestore(t *testing.
 	mgr.Stop()
 }
 
+// TestGraphLayerEvictionManager_PackedNeighborsSwapTarget runs the test graph layer eviction manager_packed neighbors swap target operation.
 func TestGraphLayerEvictionManager_PackedNeighborsSwapTarget(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.1, logger)
@@ -367,6 +383,7 @@ func TestGraphLayerEvictionManager_PackedNeighborsSwapTarget(t *testing.T) {
 	mgr.Stop()
 }
 
+// TestGraphLayerEvictionManager_EvictTargetNilGD runs the test graph layer eviction manager_evict target nil gd operation.
 func TestGraphLayerEvictionManager_EvictTargetNilGD(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.1, logger)
@@ -382,6 +399,7 @@ func TestGraphLayerEvictionManager_EvictTargetNilGD(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestGraphLayerEvictionManager_MaybeEvictAllWithTargets runs the test graph layer eviction manager_maybe evict all with targets operation.
 func TestGraphLayerEvictionManager_MaybeEvictAllWithTargets(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.1, logger)
@@ -399,6 +417,7 @@ func TestGraphLayerEvictionManager_MaybeEvictAllWithTargets(t *testing.T) {
 	require.Equal(t, ^uint64(0), (*chunks)[0])
 }
 
+// TestGraphLayerEvictionManager_ConcurrentEvictAndRestore runs the test graph layer eviction manager_concurrent evict and restore operation.
 func TestGraphLayerEvictionManager_ConcurrentEvictAndRestore(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.1, logger)
@@ -444,6 +463,7 @@ func TestGraphLayerEvictionManager_ConcurrentEvictAndRestore(t *testing.T) {
 	mgr.Stop()
 }
 
+// TestGraphLayerEvictionManager_RestoreLayerRemovesDiskFile runs the test graph layer eviction manager_restore layer removes disk file operation.
 func TestGraphLayerEvictionManager_RestoreLayerRemovesDiskFile(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.1, logger)
@@ -471,6 +491,7 @@ func TestGraphLayerEvictionManager_RestoreLayerRemovesDiskFile(t *testing.T) {
 	mgr.Stop()
 }
 
+// TestGraphLayerEvictionManager_UnregisterCleansUpDiskFiles runs the test graph layer eviction manager_unregister cleans up disk files operation.
 func TestGraphLayerEvictionManager_UnregisterCleansUpDiskFiles(t *testing.T) {
 	logger := zerolog.New(os.Stderr)
 	mgr := NewGraphLayerEvictionManager(0.1, logger)

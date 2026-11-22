@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestDiskVectorStore_Compression runs the test disk vector store_compression operation.
 func TestDiskVectorStore_Compression(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -55,6 +56,7 @@ func TestDiskVectorStore_Compression(t *testing.T) {
 	t.Logf("LZ4 compressed size for 10 vectors: %d bytes", fi2.Size())
 }
 
+// TestDiskVectorStore_Read runs the test disk vector store_read operation.
 func TestDiskVectorStore_Read(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -103,6 +105,7 @@ func TestDiskVectorStore_Read(t *testing.T) {
 	require.Equal(t, float32(4), results2[1][0])
 }
 
+// TestDiskVectorStore_Uint8 runs the test disk vector store_uint8 operation.
 func TestDiskVectorStore_Uint8(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "uint8_vectors.bin")
@@ -147,6 +150,7 @@ func TestDiskVectorStore_Uint8(t *testing.T) {
 	require.Equal(t, []uint8{90, 100, 110, 120}, u8Results[2])
 }
 
+// BenchmarkDiskVectorStore_Read runs the benchmark disk vector store_read operation.
 func BenchmarkDiskVectorStore_Read(b *testing.B) {
 	tmpDir := b.TempDir()
 	path := filepath.Join(tmpDir, "bench.bin")
@@ -260,6 +264,7 @@ func mustGet(t *testing.T, dvs *DiskVectorStore, key string) []byte {
 	return data
 }
 
+// TestDiskVectorStore_OutOfBounds runs the test disk vector store_out of bounds operation.
 func TestDiskVectorStore_OutOfBounds(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "oob.bin")
@@ -306,6 +311,7 @@ func TestDiskVectorStore_OutOfBounds(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestDiskVectorStore_BatchAppendAny_AllTypes runs the test disk vector store_batch append any_all types operation.
 func TestDiskVectorStore_BatchAppendAny_AllTypes(t *testing.T) {
 	dim := 4
 

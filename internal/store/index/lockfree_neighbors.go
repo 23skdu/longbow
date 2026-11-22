@@ -27,6 +27,7 @@ type typedNeighborMap struct {
 // syncMapShim is maintained as a type alias for typedNeighborMap for backward compatibility.
 type syncMapShim = typedNeighborMap
 
+// Load runs the load operation.
 func (m *typedNeighborMap) Load(key uint32) (*LockFreeNeighborList, bool) {
 	dPtr := m.dir.Load()
 	if dPtr == nil {
@@ -90,6 +91,7 @@ func (m *typedNeighborMap) getOrCreateChunk(chunkIdx int) *neighborChunk {
 	return newD[chunkIdx]
 }
 
+// Store runs the store operation.
 func (m *typedNeighborMap) Store(key uint32, value *LockFreeNeighborList) {
 	c := m.getOrCreateChunk(int(key >> neighborChunkShift))
 	offset := key & neighborChunkMask
@@ -99,6 +101,7 @@ func (m *typedNeighborMap) Store(key uint32, value *LockFreeNeighborList) {
 	}
 }
 
+// LoadOrStore runs the load or store operation.
 func (m *typedNeighborMap) LoadOrStore(key uint32, value *LockFreeNeighborList) (*LockFreeNeighborList, bool) {
 	chunkIdx := int(key >> neighborChunkShift)
 	offset := key & neighborChunkMask
@@ -118,6 +121,7 @@ func (m *typedNeighborMap) LoadOrStore(key uint32, value *LockFreeNeighborList) 
 	}
 }
 
+// Delete runs the delete operation.
 func (m *typedNeighborMap) Delete(key uint32) {
 	dPtr := m.dir.Load()
 	if dPtr == nil {
@@ -134,6 +138,7 @@ func (m *typedNeighborMap) Delete(key uint32) {
 	}
 }
 
+// Len runs the len operation.
 func (m *typedNeighborMap) Len() int {
 	n := m.count.Load()
 	if n < 0 {
@@ -142,6 +147,7 @@ func (m *typedNeighborMap) Len() int {
 	return int(n)
 }
 
+// Clear runs the clear operation.
 func (m *typedNeighborMap) Clear() {
 	m.growMu.Lock()
 	defer m.growMu.Unlock()

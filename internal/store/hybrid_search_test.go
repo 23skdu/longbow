@@ -21,6 +21,7 @@ func addToIndex(idx *InvertedIndex, id VectorID, text string) {
 	}
 }
 
+// TestInvertedIndex_AddAndGet runs the test inverted index_add and get operation.
 func TestInvertedIndex_AddAndGet(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -54,6 +55,7 @@ func TestInvertedIndex_AddAndGet(t *testing.T) {
 	}
 }
 
+// TestInvertedIndex_Delete runs the test inverted index_delete operation.
 func TestInvertedIndex_Delete(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -64,6 +66,7 @@ func TestInvertedIndex_Delete(t *testing.T) {
 	// Skipping Delete test as it's not in the interface.
 }
 
+// TestInvertedIndex_EmptyGet runs the test inverted index_empty get operation.
 func TestInvertedIndex_EmptyGet(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -81,6 +84,7 @@ func TestInvertedIndex_EmptyGet(t *testing.T) {
 // Reciprocal Rank Fusion Tests
 // =============================================================================
 
+// TestRRF_BasicFusion runs the test rrf_basic fusion operation.
 func TestRRF_BasicFusion(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -120,6 +124,7 @@ func TestRRF_BasicFusion(t *testing.T) {
 	}
 }
 
+// TestRRF_EmptyInputs runs the test rrf_empty inputs operation.
 func TestRRF_EmptyInputs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -138,6 +143,7 @@ func TestRRF_EmptyInputs(t *testing.T) {
 	}
 }
 
+// TestRRF_KParameter runs the test rrf_k parameter operation.
 func TestRRF_KParameter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -171,6 +177,7 @@ func TestRRF_KParameter(t *testing.T) {
 // Hybrid Search Tests
 // =============================================================================
 
+// HybridSearcher represents a hybrid searcher value.
 type HybridSearcher struct {
 	hnsw    *ArrowHNSW
 	bm25    *InvertedIndex
@@ -178,6 +185,7 @@ type HybridSearcher struct {
 	dataset *Dataset
 }
 
+// NewHybridSearcher constructs a new HybridSearcher.
 func NewHybridSearcher() *HybridSearcher {
 	ds := &Dataset{Records: NewLockFreeSlice[arrow.RecordBatch]()}
 	return &HybridSearcher{
@@ -188,6 +196,7 @@ func NewHybridSearcher() *HybridSearcher {
 	}
 }
 
+// Add runs the add operation.
 func (hs *HybridSearcher) Add(id VectorID, vector []float32, text string) {
 	if hs.deleted[id] {
 		delete(hs.deleted, id)
@@ -229,11 +238,13 @@ func (hs *HybridSearcher) Add(id VectorID, vector []float32, text string) {
 // But we want to pass go vet.
 // Defining minimal stub methods to satisfy the compiler.
 
+// SearchDense runs the search dense operation.
 func (hs *HybridSearcher) SearchDense(query []float32, k int) []SearchResult {
 	res, _ := hs.hnsw.SearchVectors(context.Background(), query, k, nil, SearchOptions{})
 	return res
 }
 
+// SearchSparse runs the search sparse operation.
 func (hs *HybridSearcher) SearchSparse(query string, k int) []SearchResult {
 	// Our mock HybridSearcher's bm25 field is an InvertedIndex
 	// But it doesn't have SearchBM25 (which is on BM25InvertedIndex).
@@ -263,6 +274,7 @@ func (hs *HybridSearcher) SearchSparse(query string, k int) []SearchResult {
 	return results
 }
 
+// SearchHybrid runs the search hybrid operation.
 func (hs *HybridSearcher) SearchHybrid(query []float32, textQuery string, k int, alpha float32, rrfK int, rawHybrid bool) []SearchResult {
 	dense := hs.SearchDense(query, k*2)
 	sparse := hs.SearchSparse(textQuery, k*2)
@@ -286,14 +298,17 @@ func (hs *HybridSearcher) SearchHybrid(query []float32, textQuery string, k int,
 	return ReciprocalRankFusion("test_dataset", dense, sparse, rrfK, k, nil)
 }
 
+// SearchHybridWeighted runs the search hybrid weighted operation.
 func (hs *HybridSearcher) SearchHybridWeighted(query []float32, textQuery string, k int, alpha float32, rrfK int) []SearchResult {
 	return hs.SearchHybrid(query, textQuery, k, alpha, rrfK, false)
 }
 
+// Delete runs the delete operation.
 func (hs *HybridSearcher) Delete(id VectorID) {
 	hs.deleted[id] = true
 }
 
+// TestHybridSearch_Integration runs the test hybrid search_integration operation.
 func TestHybridSearch_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -345,6 +360,7 @@ func TestHybridSearch_Integration(t *testing.T) {
 	}
 }
 
+// TestHybridSearch_WeightedFusion runs the test hybrid search_weighted fusion operation.
 func TestHybridSearch_WeightedFusion(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -373,6 +389,7 @@ func TestHybridSearch_WeightedFusion(t *testing.T) {
 	}
 }
 
+// TestHybridSearch_Delete runs the test hybrid search_delete operation.
 func TestHybridSearch_Delete(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -399,6 +416,7 @@ func TestHybridSearch_Delete(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkInvertedIndex_Add runs the benchmark inverted index_add operation.
 func BenchmarkInvertedIndex_Add(b *testing.B) {
 	idx := NewInvertedIndex()
 	text := "this is a sample document with several words for indexing"
@@ -411,6 +429,7 @@ func BenchmarkInvertedIndex_Add(b *testing.B) {
 	}
 }
 
+// BenchmarkInvertedIndex_Search runs the benchmark inverted index_search operation.
 func BenchmarkInvertedIndex_Search(b *testing.B) {
 	idx := NewInvertedIndex()
 	// Pre-populate with 10k documents
@@ -424,6 +443,7 @@ func BenchmarkInvertedIndex_Search(b *testing.B) {
 	}
 }
 
+// BenchmarkRRF runs the benchmark rrf operation.
 func BenchmarkRRF(b *testing.B) {
 	dense := make([]SearchResult, 100)
 	sparse := make([]SearchResult, 100)

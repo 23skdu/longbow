@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// BenchmarkWAL_Write runs the benchmark wal_write operation.
 func BenchmarkWAL_Write(b *testing.B) {
 	// Setup temp dir
 	tmpDir, err := os.MkdirTemp("", "wal_bench")
@@ -39,6 +40,7 @@ func BenchmarkWAL_Write(b *testing.B) {
 	}
 }
 
+// BenchmarkWAL_Write_Sync runs the benchmark wal_write_sync operation.
 func BenchmarkWAL_Write_Sync(b *testing.B) {
 	tmpDir, err := os.MkdirTemp("", "wal_bench_sync")
 	require.NoError(b, err)

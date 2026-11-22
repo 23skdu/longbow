@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestRepairAgent_DetectOrphans_Simple runs the test repair agent_detect orphans_simple operation.
 func TestRepairAgent_DetectOrphans_Simple(t *testing.T) {
 	config := RepairAgentConfig{
 		Enabled:            true,
@@ -42,6 +43,7 @@ func TestRepairAgent_DetectOrphans_Simple(t *testing.T) {
 	assert.Len(t, orphans, 0, "Should have no orphans in connected graph")
 }
 
+// TestRepairAgent_RepairAfterDeletion runs the test repair agent_repair after deletion operation.
 func TestRepairAgent_RepairAfterDeletion(t *testing.T) {
 	config := RepairAgentConfig{
 		Enabled:            true,
@@ -78,6 +80,7 @@ func TestRepairAgent_RepairAfterDeletion(t *testing.T) {
 	assert.GreaterOrEqual(t, repaired, 0, "Should run repair cycle")
 }
 
+// TestRepairAgent_Lifecycle runs the test repair agent_lifecycle operation.
 func TestRepairAgent_Lifecycle(t *testing.T) {
 	config := RepairAgentConfig{
 		Enabled:            true,
@@ -104,6 +107,7 @@ func TestRepairAgent_Lifecycle(t *testing.T) {
 	agent.Stop()
 }
 
+// TestRepairAgent_Disabled runs the test repair agent_disabled operation.
 func TestRepairAgent_Disabled(t *testing.T) {
 	config := RepairAgentConfig{
 		Enabled: false,
@@ -122,6 +126,7 @@ func TestRepairAgent_Disabled(t *testing.T) {
 	assert.True(t, true, "Disabled agent should not panic")
 }
 
+// TestRepairAgent_MaxRepairsLimit runs the test repair agent_max repairs limit operation.
 func TestRepairAgent_MaxRepairsLimit(t *testing.T) {
 	config := RepairAgentConfig{
 		Enabled:            true,
@@ -155,6 +160,7 @@ func TestRepairAgent_MaxRepairsLimit(t *testing.T) {
 		"Should not exceed MaxRepairsPerCycle")
 }
 
+// TestRepairAgent_EmptyGraph runs the test repair agent_empty graph operation.
 func TestRepairAgent_EmptyGraph(t *testing.T) {
 	config := RepairAgentConfig{
 		Enabled:            true,
@@ -175,6 +181,7 @@ func TestRepairAgent_EmptyGraph(t *testing.T) {
 	assert.Equal(t, 0, repaired, "Empty graph should have no repairs")
 }
 
+// TestRepairAgent_SingleNode runs the test repair agent_single node operation.
 func TestRepairAgent_SingleNode(t *testing.T) {
 	config := RepairAgentConfig{
 		Enabled:            true,
@@ -197,6 +204,7 @@ func TestRepairAgent_SingleNode(t *testing.T) {
 	assert.Len(t, orphans, 0, "Single node should not be orphan")
 }
 
+// BenchmarkRepairAgent_DetectOrphans runs the benchmark repair agent_detect orphans operation.
 func BenchmarkRepairAgent_DetectOrphans(b *testing.B) {
 	config := RepairAgentConfig{
 		Enabled:            true,
@@ -221,6 +229,7 @@ func BenchmarkRepairAgent_DetectOrphans(b *testing.B) {
 	}
 }
 
+// BenchmarkRepairAgent_RepairCycle runs the benchmark repair agent_repair cycle operation.
 func BenchmarkRepairAgent_RepairCycle(b *testing.B) {
 	config := RepairAgentConfig{
 		Enabled:            true,

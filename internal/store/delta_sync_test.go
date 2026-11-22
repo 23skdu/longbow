@@ -26,15 +26,18 @@ type mockExchangeServer struct {
 	ctx      context.Context
 }
 
+// Context runs the context operation.
 func (m *mockExchangeServer) Context() context.Context {
 	return m.ctx
 }
 
+// Send runs the send operation.
 func (m *mockExchangeServer) Send(d *flight.FlightData) error {
 	m.sendChan <- d
 	return nil
 }
 
+// Recv runs the recv operation.
 func (m *mockExchangeServer) Recv() (*flight.FlightData, error) {
 	d, ok := <-m.recvChan
 	if !ok {
@@ -43,6 +46,7 @@ func (m *mockExchangeServer) Recv() (*flight.FlightData, error) {
 	return d, nil
 }
 
+// TestDeltaSync_Integration runs the test delta sync_integration operation.
 func TestDeltaSync_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping broken integration test in short mode")

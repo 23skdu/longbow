@@ -208,6 +208,7 @@ func (h *ArrowHNSW) bfsDiameter(data *types.GraphData, layer int, startNode uint
 	return maxDepth - 1 // Depth 1 is just the start node
 }
 
+// String runs the string operation.
 func (m GraphMetrics) String() string {
 	return fmt.Sprintf(
 		"Nodes: %d, Edges: %d, AvgDegree: %.2f, ZeroDeg: %d, Components: %d, MaxComp: %d (%.2f%%), EstDiameter: %d",

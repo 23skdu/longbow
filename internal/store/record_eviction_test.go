@@ -16,7 +16,7 @@ import (
 // Subtask 4: TDD Red Phase - TTL Per-Record Tests
 // ============================================================================
 
-// Test 1: RecordMetadata tracks creation time and TTL
+// TestRecordMetadata_TTL 1: RecordMetadata tracks creation time and TTL
 func TestRecordMetadata_TTL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -32,7 +32,7 @@ func TestRecordMetadata_TTL(t *testing.T) {
 	assert.True(t, meta.IsExpired(), "should be expired after TTL")
 }
 
-// Test 2: Zero TTL means no expiration
+// TestRecordMetadata_ZeroTTL_NoExpiration 2: Zero TTL means no expiration
 func TestRecordMetadata_ZeroTTL_NoExpiration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -46,7 +46,7 @@ func TestRecordMetadata_ZeroTTL_NoExpiration(t *testing.T) {
 	assert.False(t, meta.IsExpired(), "zero TTL should never expire")
 }
 
-// Test 3: RecordEvictionManager tracks records by pointer identity
+// TestRecordEvictionManager_PointerIdentity 3: RecordEvictionManager tracks records by pointer identity
 func TestRecordEvictionManager_PointerIdentity(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -74,7 +74,7 @@ func TestRecordEvictionManager_PointerIdentity(t *testing.T) {
 	assert.Equal(t, 1*time.Hour, meta.TTL)
 }
 
-// Test 4: Evict expired records from manager
+// TestRecordEvictionManager_EvictExpired 4: Evict expired records from manager
 func TestRecordEvictionManager_EvictExpired(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -112,7 +112,7 @@ func TestRecordEvictionManager_EvictExpired(t *testing.T) {
 // Subtask 5: TDD Red Phase - LRU Per-Record Tests
 // ============================================================================
 
-// Test 5: RecordMetadata tracks last access atomically
+// TestRecordMetadata_LRU_LastAccess 5: RecordMetadata tracks last access atomically
 func TestRecordMetadata_LRU_LastAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -127,7 +127,7 @@ func TestRecordMetadata_LRU_LastAccess(t *testing.T) {
 	assert.True(t, meta.GetLastAccess().After(initialAccess), "access time should be updated")
 }
 
-// Test 6: LRU eviction selects oldest accessed records
+// TestRecordEvictionManager_LRU_SelectVictims 6: LRU eviction selects oldest accessed records
 func TestRecordEvictionManager_LRU_SelectVictims(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -175,7 +175,7 @@ func TestRecordEvictionManager_LRU_SelectVictims(t *testing.T) {
 // Subtask 6: TDD Red Phase - LFU Per-Record Tests
 // ============================================================================
 
-// Test 7: RecordMetadata tracks access frequency atomically
+// TestRecordMetadata_LFU_AccessCount 7: RecordMetadata tracks access frequency atomically
 func TestRecordMetadata_LFU_AccessCount(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -191,7 +191,7 @@ func TestRecordMetadata_LFU_AccessCount(t *testing.T) {
 	assert.Equal(t, int64(10), meta.GetAccessCount(), "access count should be 10")
 }
 
-// Test 8: LFU eviction selects least frequently accessed records
+// TestRecordEvictionManager_LFU_SelectVictims 8: LFU eviction selects least frequently accessed records
 func TestRecordEvictionManager_LFU_SelectVictims(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -231,7 +231,7 @@ func TestRecordEvictionManager_LFU_SelectVictims(t *testing.T) {
 	assert.Len(t, victims, 2, "should select 2 victims")
 }
 
-// Test 9: Concurrent access is safe (zero-lock via atomics)
+// TestRecordMetadata_ConcurrentAccess 9: Concurrent access is safe (zero-lock via atomics)
 func TestRecordMetadata_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -262,7 +262,7 @@ func TestRecordMetadata_ConcurrentAccess(t *testing.T) {
 	assert.Equal(t, expected, meta.GetAccessCount(), "concurrent access count should be accurate")
 }
 
-// Test 10: Prometheus metrics for evictions
+// TestRecordEvictionManager_Metrics 10: Prometheus metrics for evictions
 func TestRecordEvictionManager_Metrics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -290,7 +290,7 @@ func TestRecordEvictionManager_Metrics(t *testing.T) {
 	assert.GreaterOrEqual(t, count, int64(1), "eviction count should be >= 1")
 }
 
-// Test 11: Integration - per-record eviction within Dataset
+// TestDataset_PerRecordEviction 11: Integration - per-record eviction within Dataset
 func TestDataset_PerRecordEviction(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

@@ -7,6 +7,7 @@ import (
 	"github.com/23skdu/longbow/internal/memory"
 )
 
+// BenchmarkTemporalTree_GetRange runs the benchmark temporal tree_get range operation.
 func BenchmarkTemporalTree_GetRange(b *testing.B) {
 	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
@@ -22,6 +23,7 @@ func BenchmarkTemporalTree_GetRange(b *testing.B) {
 	}
 }
 
+// BenchmarkTemporalTree_GetLatest runs the benchmark temporal tree_get latest operation.
 func BenchmarkTemporalTree_GetLatest(b *testing.B) {
 	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)

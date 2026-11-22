@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_SearchEarlyTermination runs the test arrow hnsw_search early termination operation.
 func TestArrowHNSW_SearchEarlyTermination(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -61,6 +62,7 @@ func TestArrowHNSW_SearchEarlyTermination(t *testing.T) {
 	}
 }
 
+// TestArrowHNSW_SearchWithEfGreaterThanResults runs the test arrow hnsw_search with ef greater than results operation.
 func TestArrowHNSW_SearchWithEfGreaterThanResults(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -115,6 +117,7 @@ func TestArrowHNSW_SearchWithEfGreaterThanResults(t *testing.T) {
 	assert.LessOrEqual(t, len(results), 10)
 }
 
+// TestArrowHNSW_NeedsCompaction_Empty runs the test arrow hnsw_needs compaction_empty operation.
 func TestArrowHNSW_NeedsCompaction_Empty(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -136,6 +139,7 @@ func TestArrowHNSW_NeedsCompaction_Empty(t *testing.T) {
 	assert.False(t, idx.NeedsCompaction())
 }
 
+// TestArrowHNSW_NeedsCompaction_NoDeleted runs the test arrow hnsw_needs compaction_no deleted operation.
 func TestArrowHNSW_NeedsCompaction_NoDeleted(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -168,6 +172,7 @@ func TestArrowHNSW_NeedsCompaction_NoDeleted(t *testing.T) {
 	assert.False(t, idx.NeedsCompaction())
 }
 
+// TestArrowHNSW_VisitedListGrowth runs the test arrow hnsw_visited list growth operation.
 func TestArrowHNSW_VisitedListGrowth(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -215,6 +220,7 @@ func TestArrowHNSW_VisitedListGrowth(t *testing.T) {
 	assert.Len(t, results, 5)
 }
 
+// TestArrowHNSW_SearchEmptyIndex runs the test arrow hnsw_search empty index operation.
 func TestArrowHNSW_SearchEmptyIndex(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -238,6 +244,7 @@ func TestArrowHNSW_SearchEmptyIndex(t *testing.T) {
 	assert.Len(t, results, 0)
 }
 
+// TestArrowHNSW_SearchSingleVector runs the test arrow hnsw_search single vector operation.
 func TestArrowHNSW_SearchSingleVector(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -271,6 +278,7 @@ func TestArrowHNSW_SearchSingleVector(t *testing.T) {
 	assert.InDelta(t, 0.0, results[0].Dist, 0.001)
 }
 
+// TestArrowHNSW_EstimateMemory runs the test arrow hnsw_estimate memory operation.
 func TestArrowHNSW_EstimateMemory(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -318,6 +326,7 @@ func TestArrowHNSW_EstimateMemory(t *testing.T) {
 	assert.Greater(t, memAfter, memBefore)
 }
 
+// TestArrowHNSW_SearchVectors_Empty runs the test arrow hnsw_search vectors_empty operation.
 func TestArrowHNSW_SearchVectors_Empty(t *testing.T) {
 	mem := memory.NewGoAllocator()
 

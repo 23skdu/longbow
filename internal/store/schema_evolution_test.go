@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSchemaEvolution_Additive runs the test schema evolution_additive operation.
 func TestSchemaEvolution_Additive(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -47,6 +48,7 @@ func TestSchemaEvolution_Additive(t *testing.T) {
 	assert.Equal(t, uint64(3), manager.GetCurrentVersion())
 }
 
+// TestSchemaEvolution_TypeMismatch runs the test schema evolution_type mismatch operation.
 func TestSchemaEvolution_TypeMismatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -69,6 +71,7 @@ func TestSchemaEvolution_TypeMismatch(t *testing.T) {
 	assert.Contains(t, err.Error(), "type mismatch")
 }
 
+// TestSchemaEvolution_DroppedColumnReused runs the test schema evolution_dropped column reused operation.
 func TestSchemaEvolution_DroppedColumnReused(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -101,6 +104,7 @@ func TestSchemaEvolution_DroppedColumnReused(t *testing.T) {
 	assert.Contains(t, err.Error(), "was dropped")
 }
 
+// TestSchemaEvolution_Concurrent runs the test schema evolution_concurrent operation.
 func TestSchemaEvolution_Concurrent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

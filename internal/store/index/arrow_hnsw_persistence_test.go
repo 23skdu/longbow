@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestArrowHNSW_PersistenceRefactor runs the test arrow hnsw_persistence refactor operation.
 func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(

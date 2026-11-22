@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestDefaultResilienceConfig runs the test default resilience config operation.
 func TestDefaultResilienceConfig(t *testing.T) {
 	cfg := DefaultResilienceConfig()
 	assert.NotNil(t, cfg.Retry)
@@ -19,17 +20,20 @@ func TestDefaultResilienceConfig(t *testing.T) {
 	assert.Equal(t, 50, cfg.Bulkheads["storage"])
 }
 
+// TestNewResilienceManager runs the test new resilience manager operation.
 func TestNewResilienceManager(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	assert.NotNil(t, rm)
 }
 
+// TestNewResilienceManagerWithConfig runs the test new resilience manager with config operation.
 func TestNewResilienceManagerWithConfig(t *testing.T) {
 	cfg := DefaultResilienceConfig()
 	rm := NewResilienceManager(cfg)
 	assert.NotNil(t, rm)
 }
 
+// TestExecuteWithResilience runs the test execute with resilience operation.
 func TestExecuteWithResilience(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	result, err := rm.ExecuteWithResilience(context.Background(), "search", "test", func() (any, error) {
@@ -39,6 +43,7 @@ func TestExecuteWithResilience(t *testing.T) {
 	assert.Equal(t, "ok", result)
 }
 
+// TestExecuteWithResilienceError runs the test execute with resilience error operation.
 func TestExecuteWithResilienceError(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	_, err := rm.ExecuteWithResilience(context.Background(), "search", "test", func() (any, error) {
@@ -47,6 +52,7 @@ func TestExecuteWithResilienceError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestExecuteWithResilienceGeneric runs the test execute with resilience generic operation.
 func TestExecuteWithResilienceGeneric(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	result, err := ExecuteWithResilience(rm, context.Background(), "search", "test", func() (string, error) {
@@ -56,6 +62,7 @@ func TestExecuteWithResilienceGeneric(t *testing.T) {
 	assert.Equal(t, "hello", result)
 }
 
+// TestExecuteWithRetry runs the test execute with retry operation.
 func TestExecuteWithRetry(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	result, err := rm.ExecuteWithRetry(context.Background(), "network", "svc", func() (any, error) {
@@ -65,6 +72,7 @@ func TestExecuteWithRetry(t *testing.T) {
 	assert.Equal(t, "retried", result)
 }
 
+// TestExecuteWithRetryGeneric runs the test execute with retry generic operation.
 func TestExecuteWithRetryGeneric(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	result, err := ExecuteWithRetry(rm, context.Background(), "storage", "svc", func() (string, error) {
@@ -74,6 +82,7 @@ func TestExecuteWithRetryGeneric(t *testing.T) {
 	assert.Equal(t, "data", result)
 }
 
+// TestExecuteWithDegradation runs the test execute with degradation operation.
 func TestExecuteWithDegradation(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	result, err := rm.ExecuteWithDegradation(context.Background(), "search", "test", "fallback", func() (any, error) {
@@ -83,6 +92,7 @@ func TestExecuteWithDegradation(t *testing.T) {
 	assert.Equal(t, "primary", result)
 }
 
+// TestGetCircuitBreaker runs the test get circuit breaker operation.
 func TestGetCircuitBreaker(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	cb := rm.GetCircuitBreaker("test")
@@ -90,18 +100,21 @@ func TestGetCircuitBreaker(t *testing.T) {
 	assert.Equal(t, "test", cb.Name())
 }
 
+// TestGetTimeoutManager runs the test get timeout manager operation.
 func TestGetTimeoutManager(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	tm := rm.GetTimeoutManager("search")
 	assert.NotNil(t, tm)
 }
 
+// TestGetBulkhead runs the test get bulkhead operation.
 func TestGetBulkhead(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	b := rm.GetBulkhead("search")
 	assert.NotNil(t, b)
 }
 
+// TestGetBulkheadUnknown runs the test get bulkhead unknown operation.
 func TestGetBulkheadUnknown(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	b := rm.GetBulkhead("unknown")
@@ -109,6 +122,7 @@ func TestGetBulkheadUnknown(t *testing.T) {
 	assert.Equal(t, 50, b.AvailableSlots())
 }
 
+// TestAddFallbackStrategy runs the test add fallback strategy operation.
 func TestAddFallbackStrategy(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	rm.AddFallbackStrategy("stale", DegradationModerate, func(ctx context.Context) (interface{}, error) {
@@ -117,18 +131,21 @@ func TestAddFallbackStrategy(t *testing.T) {
 	assert.NotPanics(t, func() { rm.AddFallbackStrategy("s", DegradationNone, nil, true) })
 }
 
+// TestResilienceManagerAddHealthCheck runs the test resilience manager add health check operation.
 func TestResilienceManagerAddHealthCheck(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	rm.AddHealthCheck("db", func() error { return nil })
 	assert.NotPanics(t, func() { rm.AddHealthCheck("h", func() error { return nil }) })
 }
 
+// TestGetFallbackCache runs the test get fallback cache operation.
 func TestGetFallbackCache(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	fc := rm.GetFallbackCache()
 	assert.NotNil(t, fc)
 }
 
+// TestGetMetrics runs the test get metrics operation.
 func TestGetMetrics(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	metrics := rm.GetMetrics()
@@ -138,12 +155,14 @@ func TestGetMetrics(t *testing.T) {
 	assert.Contains(t, metrics, "bulkheads")
 }
 
+// TestResetAll runs the test reset all operation.
 func TestResetAll(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	rm.ResetAll()
 	assert.NotPanics(t, rm.ResetAll)
 }
 
+// TestNewResilienceInterceptor runs the test new resilience interceptor operation.
 func TestNewResilienceInterceptor(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	ri := NewResilienceInterceptor(rm)
@@ -151,6 +170,7 @@ func TestNewResilienceInterceptor(t *testing.T) {
 	assert.Same(t, rm, ri.GetManager())
 }
 
+// TestInterceptNetworkCall runs the test intercept network call operation.
 func TestInterceptNetworkCall(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	ri := NewResilienceInterceptor(rm)
@@ -161,6 +181,7 @@ func TestInterceptNetworkCall(t *testing.T) {
 	assert.Equal(t, "ok", result)
 }
 
+// TestInterceptStorageCall runs the test intercept storage call operation.
 func TestInterceptStorageCall(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	ri := NewResilienceInterceptor(rm)
@@ -171,6 +192,7 @@ func TestInterceptStorageCall(t *testing.T) {
 	assert.Equal(t, "stored", result)
 }
 
+// TestInterceptSearchCall runs the test intercept search call operation.
 func TestInterceptSearchCall(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	ri := NewResilienceInterceptor(rm)
@@ -181,6 +203,7 @@ func TestInterceptSearchCall(t *testing.T) {
 	assert.Equal(t, "found", result)
 }
 
+// TestInterceptReplicationCall runs the test intercept replication call operation.
 func TestInterceptReplicationCall(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	ri := NewResilienceInterceptor(rm)
@@ -191,6 +214,7 @@ func TestInterceptReplicationCall(t *testing.T) {
 	assert.Equal(t, "replicated", result)
 }
 
+// TestInterceptCallWithFallback runs the test intercept call with fallback operation.
 func TestInterceptCallWithFallback(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	ri := NewResilienceInterceptor(rm)
@@ -201,6 +225,7 @@ func TestInterceptCallWithFallback(t *testing.T) {
 	assert.Equal(t, "primary", result)
 }
 
+// TestInterceptCallWithFallbackErrorPath runs the test intercept call with fallback error path operation.
 func TestInterceptCallWithFallbackErrorPath(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	ri := NewResilienceInterceptor(rm)
@@ -211,6 +236,7 @@ func TestInterceptCallWithFallbackErrorPath(t *testing.T) {
 	assert.Nil(t, result)
 }
 
+// TestExecuteWithRetryNetwork runs the test execute with retry network operation.
 func TestExecuteWithRetryNetwork(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	result, err := ExecuteWithRetry(rm, context.Background(), "network", "svc", func() (string, error) {
@@ -220,6 +246,7 @@ func TestExecuteWithRetryNetwork(t *testing.T) {
 	assert.Equal(t, "net-result", result)
 }
 
+// TestExecuteWithRetryReplication runs the test execute with retry replication operation.
 func TestExecuteWithRetryReplication(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	result, err := ExecuteWithRetry(rm, context.Background(), "replication", "svc", func() (string, error) {
@@ -229,6 +256,7 @@ func TestExecuteWithRetryReplication(t *testing.T) {
 	assert.Equal(t, "repl-result", result)
 }
 
+// TestExecuteWithRetryDefaultOpType runs the test execute with retry default op type operation.
 func TestExecuteWithRetryDefaultOpType(t *testing.T) {
 	cfg := DefaultResilienceConfig()
 	cfg.Bulkheads["default_op"] = 50
@@ -240,6 +268,7 @@ func TestExecuteWithRetryDefaultOpType(t *testing.T) {
 	assert.Equal(t, "default-result", result)
 }
 
+// TestExecuteWithResilienceSearch runs the test execute with resilience search operation.
 func TestExecuteWithResilienceSearch(t *testing.T) {
 	rm := NewResilienceManager(nil)
 	result, err := ExecuteWithResilience(rm, context.Background(), "storage", "svc", func() (string, error) {
@@ -249,6 +278,7 @@ func TestExecuteWithResilienceSearch(t *testing.T) {
 	assert.Equal(t, "stored", result)
 }
 
+// TestGetGlobalResilienceAutoInit runs the test get global resilience auto init operation.
 func TestGetGlobalResilienceAutoInit(t *testing.T) {
 	oldMgr := GlobalResilienceManager
 	oldInt := GlobalResilienceInterceptor
@@ -268,6 +298,7 @@ func TestGetGlobalResilienceAutoInit(t *testing.T) {
 	once = *new(sync.Once)
 }
 
+// TestGlobalResilience runs the test global resilience operation.
 func TestGlobalResilience(t *testing.T) {
 	InitializeGlobalResilience(nil)
 	assert.NotNil(t, GlobalResilienceManager)

@@ -197,6 +197,7 @@ func isRuleLabelSelector(name string) bool {
 	return name == "AND" || strings.HasPrefix(name, "ONGBOW_")
 }
 
+// TestAlertRulesReferenceRegisteredMetrics runs the test alert rules reference registered metrics operation.
 func TestAlertRulesReferenceRegisteredMetrics(t *testing.T) {
 	reg := registeredMetrics(t)
 	refs := referencedMetrics(t)

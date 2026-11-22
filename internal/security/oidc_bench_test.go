@@ -16,6 +16,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// TestOIDCRedTeamSecurityVectors runs the test oidc red team security vectors operation.
 func TestOIDCRedTeamSecurityVectors(t *testing.T) {
 	m, priv, _ := testOIDCSetup(t)
 	now := time.Now()
@@ -99,6 +100,7 @@ func TestOIDCRedTeamSecurityVectors(t *testing.T) {
 	}
 }
 
+// BenchmarkOIDCValidateToken runs the benchmark oidc validate token operation.
 func BenchmarkOIDCValidateToken(b *testing.B) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -156,6 +158,7 @@ func BenchmarkOIDCValidateToken(b *testing.B) {
 	}
 }
 
+// BenchmarkOIDCAccessValidator runs the benchmark oidc access validator operation.
 func BenchmarkOIDCAccessValidator(b *testing.B) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

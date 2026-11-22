@@ -11,6 +11,7 @@ import (
 // MetalIndexOptimized is a stub when Metal or CGO is unavailable.
 type MetalIndexOptimized struct{}
 
+// AddTurboQuant runs the add turbo quant operation.
 func (m *MetalIndexOptimized) AddTurboQuant(ids []int64, tqData []byte, bits int) error {
 	return errors.New("metal: not supported without cgo on darwin/arm64")
 }

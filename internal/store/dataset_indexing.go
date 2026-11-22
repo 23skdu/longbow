@@ -54,7 +54,7 @@ var idMapPool = sync.Pool{
 	},
 }
 
-// Dataset wraps records with metadata for eviction and tombstones.
+// SearchDataset wraps records with metadata for eviction and tombstones.
 // SearchDataset delegates to the vector index if available
 // SearchDataset delegates to the vector index if available.
 func (d *Dataset) SearchDataset(ctx context.Context, queryVec []float32, k int) ([]SearchResult, error) {

@@ -15,6 +15,7 @@ import (
 // SearchArena Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestArenaAllocBytesTotal_Exists runs the test arena alloc bytes total_exists operation.
 func TestArenaAllocBytesTotal_Exists(t *testing.T) {
 	if ArenaAllocBytesTotal == nil {
 		t.Fatal("ArenaAllocBytesTotal metric should not be nil")
@@ -23,6 +24,7 @@ func TestArenaAllocBytesTotal_Exists(t *testing.T) {
 	ArenaAllocBytesTotal.Add(1024)
 }
 
+// TestArenaOverflowTotal_Exists runs the test arena overflow total_exists operation.
 func TestArenaOverflowTotal_Exists(t *testing.T) {
 	if ArenaOverflowTotal == nil {
 		t.Fatal("ArenaOverflowTotal metric should not be nil")
@@ -31,6 +33,7 @@ func TestArenaOverflowTotal_Exists(t *testing.T) {
 	ArenaOverflowTotal.Inc()
 }
 
+// TestArenaResetsTotal_Exists runs the test arena resets total_exists operation.
 func TestArenaResetsTotal_Exists(t *testing.T) {
 	if ArenaResetsTotal == nil {
 		t.Fatal("ArenaResetsTotal metric should not be nil")
@@ -43,6 +46,7 @@ func TestArenaResetsTotal_Exists(t *testing.T) {
 // Result Pool Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestResultPoolHitsTotal_Exists runs the test result pool hits total_exists operation.
 func TestResultPoolHitsTotal_Exists(t *testing.T) {
 	if ResultPoolHitsTotal == nil {
 		t.Fatal("ResultPoolHitsTotal metric should not be nil")
@@ -56,6 +60,7 @@ func TestResultPoolHitsTotal_Exists(t *testing.T) {
 	ResultPoolHitsTotal.WithLabelValues("1000").Inc()
 }
 
+// TestResultPoolMissesTotal_Exists runs the test result pool misses total_exists operation.
 func TestResultPoolMissesTotal_Exists(t *testing.T) {
 	if ResultPoolMissesTotal == nil {
 		t.Fatal("ResultPoolMissesTotal metric should not be nil")
@@ -69,6 +74,7 @@ func TestResultPoolMissesTotal_Exists(t *testing.T) {
 // Bloom Filter Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestBloomLookupsTotal_Exists runs the test bloom lookups total_exists operation.
 func TestBloomLookupsTotal_Exists(t *testing.T) {
 	if BloomLookupsTotal == nil {
 		t.Fatal("BloomLookupsTotal metric should not be nil")
@@ -78,6 +84,7 @@ func TestBloomLookupsTotal_Exists(t *testing.T) {
 	BloomLookupsTotal.WithLabelValues("miss").Inc()
 }
 
+// TestBloomFalsePositiveRate_Exists runs the test bloom false positive rate_exists operation.
 func TestBloomFalsePositiveRate_Exists(t *testing.T) {
 	if BloomFalsePositiveRate == nil {
 		t.Fatal("BloomFalsePositiveRate metric should not be nil")
@@ -90,6 +97,7 @@ func TestBloomFalsePositiveRate_Exists(t *testing.T) {
 // Column Index Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestColumnIndexSize_Exists runs the test column index size_exists operation.
 func TestColumnIndexSize_Exists(t *testing.T) {
 	if ColumnIndexSize == nil {
 		t.Fatal("ColumnIndexSize metric should not be nil")
@@ -99,6 +107,7 @@ func TestColumnIndexSize_Exists(t *testing.T) {
 	ColumnIndexSize.WithLabelValues("dataset1", "category").Set(500)
 }
 
+// TestColumnIndexLookupDuration_Exists runs the test column index lookup duration_exists operation.
 func TestColumnIndexLookupDuration_Exists(t *testing.T) {
 	if ColumnIndexLookupDuration == nil {
 		t.Fatal("ColumnIndexLookupDuration metric should not be nil")
@@ -112,6 +121,7 @@ func TestColumnIndexLookupDuration_Exists(t *testing.T) {
 // HNSW Search Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestHnswNodesVisited_Exists runs the test hnsw nodes visited_exists operation.
 func TestHnswNodesVisited_Exists(t *testing.T) {
 	if HnswNodesVisited == nil {
 		t.Fatal("HnswNodesVisited metric should not be nil")
@@ -121,6 +131,7 @@ func TestHnswNodesVisited_Exists(t *testing.T) {
 	HnswNodesVisited.WithLabelValues("embeddings").Observe(200)
 }
 
+// TestHnswDistanceCalculations_Exists runs the test hnsw distance calculations_exists operation.
 func TestHnswDistanceCalculations_Exists(t *testing.T) {
 	if HnswDistanceCalculations == nil {
 		t.Fatal("HnswDistanceCalculations metric should not be nil")
@@ -133,6 +144,7 @@ func TestHnswDistanceCalculations_Exists(t *testing.T) {
 // Peer Replication Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestReplicationLagSeconds_Exists runs the test replication lag seconds_exists operation.
 func TestReplicationLagSeconds_Exists(t *testing.T) {
 	if ReplicationLagSeconds == nil {
 		t.Fatal("ReplicationLagSeconds metric should not be nil")
@@ -142,6 +154,7 @@ func TestReplicationLagSeconds_Exists(t *testing.T) {
 	ReplicationLagSeconds.WithLabelValues("peer2:8080").Set(1.2)
 }
 
+// TestPeerHealthStatus_Exists runs the test peer health status_exists operation.
 func TestPeerHealthStatus_Exists(t *testing.T) {
 	if PeerHealthStatus == nil {
 		t.Fatal("PeerHealthStatus metric should not be nil")
@@ -155,6 +168,7 @@ func TestPeerHealthStatus_Exists(t *testing.T) {
 // Flight Client Pool Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestFlightPoolConnectionsActive_Exists runs the test flight pool connections active_exists operation.
 func TestFlightPoolConnectionsActive_Exists(t *testing.T) {
 	if FlightPoolConnectionsActive == nil {
 		t.Fatal("FlightPoolConnectionsActive metric should not be nil")
@@ -164,6 +178,7 @@ func TestFlightPoolConnectionsActive_Exists(t *testing.T) {
 	FlightPoolConnectionsActive.WithLabelValues("host2:8080").Set(3)
 }
 
+// TestFlightPoolWaitDuration_Exists runs the test flight pool wait duration_exists operation.
 func TestFlightPoolWaitDuration_Exists(t *testing.T) {
 	if FlightPoolWaitDuration == nil {
 		t.Fatal("FlightPoolWaitDuration metric should not be nil")
@@ -177,6 +192,7 @@ func TestFlightPoolWaitDuration_Exists(t *testing.T) {
 // DoGet Pipeline Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestPipelineBatchesPerSecond_Exists runs the test pipeline batches per second_exists operation.
 func TestPipelineBatchesPerSecond_Exists(t *testing.T) {
 	if PipelineBatchesPerSecond == nil {
 		t.Fatal("PipelineBatchesPerSecond metric should not be nil")
@@ -185,6 +201,7 @@ func TestPipelineBatchesPerSecond_Exists(t *testing.T) {
 	PipelineBatchesPerSecond.Set(4200000)
 }
 
+// TestPipelineWorkerUtilization_Exists runs the test pipeline worker utilization_exists operation.
 func TestPipelineWorkerUtilization_Exists(t *testing.T) {
 	if PipelineWorkerUtilization == nil {
 		t.Fatal("PipelineWorkerUtilization metric should not be nil")
@@ -198,6 +215,7 @@ func TestPipelineWorkerUtilization_Exists(t *testing.T) {
 // Adaptive WAL Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestWalAdaptiveIntervalMs_Exists runs the test wal adaptive interval ms_exists operation.
 func TestWalAdaptiveIntervalMs_Exists(t *testing.T) {
 	if WalAdaptiveIntervalMs == nil {
 		t.Fatal("WalAdaptiveIntervalMs metric should not be nil")
@@ -206,6 +224,7 @@ func TestWalAdaptiveIntervalMs_Exists(t *testing.T) {
 	WalAdaptiveIntervalMs.Set(15) // 15ms
 }
 
+// TestWalWriteRatePerSecond_Exists runs the test wal write rate per second_exists operation.
 func TestWalWriteRatePerSecond_Exists(t *testing.T) {
 	if WalWriteRatePerSecond == nil {
 		t.Fatal("WalWriteRatePerSecond metric should not be nil")
@@ -218,6 +237,7 @@ func TestWalWriteRatePerSecond_Exists(t *testing.T) {
 // Zero-Copy / HNSW Epoch Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestHnswEpochTransitions_Exists runs the test hnsw epoch transitions_exists operation.
 func TestHnswEpochTransitions_Exists(t *testing.T) {
 	if HnswEpochTransitions == nil {
 		t.Fatal("HnswEpochTransitions metric should not be nil")
@@ -230,6 +250,7 @@ func TestHnswEpochTransitions_Exists(t *testing.T) {
 // Fast Path Filter Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestFastPathUsageTotal_Exists runs the test fast path usage total_exists operation.
 func TestFastPathUsageTotal_Exists(t *testing.T) {
 	if FastPathUsageTotal == nil {
 		t.Fatal("FastPathUsageTotal metric should not be nil")
@@ -243,6 +264,7 @@ func TestFastPathUsageTotal_Exists(t *testing.T) {
 // IPC Buffer Pool Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestIpcBufferPoolUtilization_Exists runs the test ipc buffer pool utilization_exists operation.
 func TestIpcBufferPoolUtilization_Exists(t *testing.T) {
 	if IpcBufferPoolUtilization == nil {
 		t.Fatal("IpcBufferPoolUtilization metric should not be nil")
@@ -251,6 +273,7 @@ func TestIpcBufferPoolUtilization_Exists(t *testing.T) {
 	IpcBufferPoolUtilization.Set(0.75)
 }
 
+// TestIpcBufferPoolHits_Exists runs the test ipc buffer pool hits_exists operation.
 func TestIpcBufferPoolHits_Exists(t *testing.T) {
 	if IpcBufferPoolHits == nil {
 		t.Fatal("IpcBufferPoolHits metric should not be nil")
@@ -259,6 +282,7 @@ func TestIpcBufferPoolHits_Exists(t *testing.T) {
 	IpcBufferPoolHits.Inc()
 }
 
+// TestIpcBufferPoolMisses_Exists runs the test ipc buffer pool misses_exists operation.
 func TestIpcBufferPoolMisses_Exists(t *testing.T) {
 	if IpcBufferPoolMisses == nil {
 		t.Fatal("IpcBufferPoolMisses metric should not be nil")
@@ -271,6 +295,7 @@ func TestIpcBufferPoolMisses_Exists(t *testing.T) {
 // S3 Backend Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestS3RequestDuration_Exists runs the test s3 request duration_exists operation.
 func TestS3RequestDuration_Exists(t *testing.T) {
 	if S3RequestDuration == nil {
 		t.Fatal("S3RequestDuration metric should not be nil")
@@ -281,6 +306,7 @@ func TestS3RequestDuration_Exists(t *testing.T) {
 	S3RequestDuration.WithLabelValues("ListObjects").Observe(0.1)
 }
 
+// TestS3RetriesTotal_Exists runs the test s3 retries total_exists operation.
 func TestS3RetriesTotal_Exists(t *testing.T) {
 	if S3RetriesTotal == nil {
 		t.Fatal("S3RetriesTotal metric should not be nil")
@@ -294,6 +320,7 @@ func TestS3RetriesTotal_Exists(t *testing.T) {
 // Warmup Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestWarmupProgressPercent_Exists runs the test warmup progress percent_exists operation.
 func TestWarmupProgressPercent_Exists(t *testing.T) {
 	if WarmupProgressPercent == nil {
 		t.Fatal("WarmupProgressPercent metric should not be nil")
@@ -302,6 +329,7 @@ func TestWarmupProgressPercent_Exists(t *testing.T) {
 	WarmupProgressPercent.Set(75.5)
 }
 
+// TestWarmupDatasetsTotal_Exists runs the test warmup datasets total_exists operation.
 func TestWarmupDatasetsTotal_Exists(t *testing.T) {
 	if WarmupDatasetsTotal == nil {
 		t.Fatal("WarmupDatasetsTotal metric should not be nil")
@@ -310,6 +338,7 @@ func TestWarmupDatasetsTotal_Exists(t *testing.T) {
 	WarmupDatasetsTotal.Set(10)
 }
 
+// TestWarmupDatasetsCompleted_Exists runs the test warmup datasets completed_exists operation.
 func TestWarmupDatasetsCompleted_Exists(t *testing.T) {
 	if WarmupDatasetsCompleted == nil {
 		t.Fatal("WarmupDatasetsCompleted metric should not be nil")
@@ -322,6 +351,7 @@ func TestWarmupDatasetsCompleted_Exists(t *testing.T) {
 // Sharded HNSW Metrics Tests
 // -----------------------------------------------------------------------------
 
+// TestShardedHnswLoadFactor_Exists runs the test sharded hnsw load factor_exists operation.
 func TestShardedHnswLoadFactor_Exists(t *testing.T) {
 	if ShardedHnswLoadFactor == nil {
 		t.Fatal("ShardedHnswLoadFactor metric should not be nil")
@@ -332,6 +362,7 @@ func TestShardedHnswLoadFactor_Exists(t *testing.T) {
 	ShardedHnswLoadFactor.WithLabelValues("test_dataset", "2").Set(0.58)
 }
 
+// TestShardedHnswShardSize_Exists runs the test sharded hnsw shard size_exists operation.
 func TestShardedHnswShardSize_Exists(t *testing.T) {
 	if ShardedHnswShardSize == nil {
 		t.Fatal("ShardedHnswShardSize metric should not be nil")
@@ -349,6 +380,7 @@ func TestShardedHnswShardSize_Exists(t *testing.T) {
 // Test all comprehensive metrics are registered
 // =============================================================================
 
+// TestComprehensiveMetricsRegistered runs the test comprehensive metrics registered operation.
 func TestComprehensiveMetricsRegistered(t *testing.T) {
 	metrics := []prometheus.Collector{
 		// SearchArena
@@ -410,24 +442,28 @@ func TestComprehensiveMetricsRegistered(t *testing.T) {
 // Benchmarks for new metrics
 // =============================================================================
 
+// BenchmarkArenaAllocBytesAdd runs the benchmark arena alloc bytes add operation.
 func BenchmarkArenaAllocBytesAdd(b *testing.B) {
 	for b.Loop() {
 		ArenaAllocBytesTotal.Add(1024)
 	}
 }
 
+// BenchmarkResultPoolHitsInc runs the benchmark result pool hits inc operation.
 func BenchmarkResultPoolHitsInc(b *testing.B) {
 	for b.Loop() {
 		ResultPoolHitsTotal.WithLabelValues("100").Inc()
 	}
 }
 
+// BenchmarkHnswNodesVisitedObserve runs the benchmark hnsw nodes visited observe operation.
 func BenchmarkHnswNodesVisitedObserve(b *testing.B) {
 	for b.Loop() {
 		HnswNodesVisited.WithLabelValues("dataset").Observe(150)
 	}
 }
 
+// BenchmarkS3RequestDurationObserve runs the benchmark s3 request duration observe operation.
 func BenchmarkS3RequestDurationObserve(b *testing.B) {
 	for b.Loop() {
 		S3RequestDuration.WithLabelValues("PutObject").Observe(0.5)

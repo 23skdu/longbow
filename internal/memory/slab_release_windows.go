@@ -15,8 +15,10 @@ var (
 )
 
 const (
+	// MEM_DECOMMIT is a mem_decommit constant.
 	MEM_DECOMMIT = 0x4000
-	MEM_RELEASE  = 0x8000
+	// MEM_RELEASE is a mem_release constant.
+	MEM_RELEASE = 0x8000
 )
 
 // ReleaseSlab hints the OS that the memory backing this slab can be reclaimed.

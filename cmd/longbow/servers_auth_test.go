@@ -15,6 +15,7 @@ type opsStubValidator struct {
 	principals map[string]*security.TenantContext
 }
 
+// AuthorizeToken runs the authorize token operation.
 func (s *opsStubValidator) AuthorizeToken(_ context.Context, rawToken, _ string, _, _ string) (*security.TenantContext, error) {
 	tc, ok := s.principals[rawToken]
 	if !ok {
@@ -23,6 +24,7 @@ func (s *opsStubValidator) AuthorizeToken(_ context.Context, rawToken, _ string,
 	return tc, nil
 }
 
+// TestAdminHTTPWrapRequiresGlobalAdministrator runs the test admin http wrap requires global administrator operation.
 func TestAdminHTTPWrapRequiresGlobalAdministrator(t *testing.T) {
 	validator := &opsStubValidator{principals: map[string]*security.TenantContext{
 		"global": {
@@ -62,6 +64,7 @@ func TestAdminHTTPWrapRequiresGlobalAdministrator(t *testing.T) {
 	}
 }
 
+// TestReadinessTracksStartupCompletion runs the test readiness tracks startup completion operation.
 func TestReadinessTracksStartupCompletion(t *testing.T) {
 	previous := globalIsReady.Load()
 	t.Cleanup(func() { globalIsReady.Store(previous) })

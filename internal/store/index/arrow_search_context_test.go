@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestArrowSearchContext_DynamicResizing runs the test arrow search context_dynamic resizing operation.
 func TestArrowSearchContext_DynamicResizing(t *testing.T) {
 	ctx := NewArrowSearchContext()
 
@@ -29,6 +30,7 @@ func TestArrowSearchContext_DynamicResizing(t *testing.T) {
 	assert.GreaterOrEqual(t, cap(ctx.querySQ8), dim)
 }
 
+// TestArrowSearchContextPool_MemoryAlignment runs the test arrow search context pool_memory alignment operation.
 func TestArrowSearchContextPool_MemoryAlignment(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

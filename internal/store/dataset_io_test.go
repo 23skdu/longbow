@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestDatasetIO_ExportImportParquet runs the test dataset io_export import parquet operation.
 func TestDatasetIO_ExportImportParquet(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestSearchContextPooling runs the test search context pooling operation.
 func TestSearchContextPooling(t *testing.T) {
 	h := &ArrowHNSW{}
 	h.config.DataType = types.VectorTypeFloat32
@@ -23,6 +24,8 @@ func TestSearchContextPooling(t *testing.T) {
 	assert.NotNil(t, ctx2)
 
 }
+
+// TestCandidateHeap runs the test candidate heap operation.
 func TestCandidateHeap(t *testing.T) {
 	h := &CandidateHeap{}
 	heap.Push(h, types.Candidate{ID: 1, Dist: 10.0})
@@ -33,6 +36,7 @@ func TestCandidateHeap(t *testing.T) {
 	assert.Equal(t, float32(5.0), (*h)[0].Dist)
 }
 
+// TestHNSWRepairWorkers runs the test hnsw repair workers operation.
 func TestHNSWRepairWorkers(t *testing.T) {
 	// Comprehensive test for RepairTombstones and background workers
 }

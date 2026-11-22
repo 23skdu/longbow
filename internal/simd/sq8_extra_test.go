@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestQuantizeSQ8 runs the test quantize sq8 operation.
 func TestQuantizeSQ8(t *testing.T) {
 	src := []float32{0.0, 0.5, 1.0, -1.0, 2.0}
 	dst := make([]byte, len(src))
@@ -21,6 +22,7 @@ func TestQuantizeSQ8(t *testing.T) {
 	assert.Equal(t, byte(255), dst[4]) // 2.0 -> 255 (clamp)
 }
 
+// TestComputeBounds runs the test compute bounds operation.
 func TestComputeBounds(t *testing.T) {
 	tests := []struct {
 		name    string

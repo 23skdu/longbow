@@ -8,6 +8,7 @@ import (
 	"github.com/mmcloughlin/avo/reg"
 )
 
+// ImplementEuclideanFloat64AVX2 runs the implement euclidean float64 avx2 operation.
 func ImplementEuclideanFloat64AVX2() {
 	implementFloat64AVX2Pairwise(
 		"euclideanFloat64AVX2Kernel",
@@ -23,6 +24,7 @@ func ImplementEuclideanFloat64AVX2() {
 	)
 }
 
+// ImplementDotFloat64AVX2 runs the implement dot float64 avx2 operation.
 func ImplementDotFloat64AVX2() {
 	implementFloat64AVX2Pairwise(
 		"dotFloat64AVX2Kernel",
@@ -133,6 +135,7 @@ func implementFloat64AVX2Pairwise(
 	RET()
 }
 
+// ImplementL2SquaredFloat64AVX2 runs the implement l2 squared float64 avx2 operation.
 func ImplementL2SquaredFloat64AVX2() {
 	TEXT("l2SquaredFloat64AVX2Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
 	a := Load(Param("a"), GP64())
@@ -193,6 +196,7 @@ func ImplementL2SquaredFloat64AVX2() {
 	RET()
 }
 
+// ImplementCosineFloat64AVX2 runs the implement cosine float64 avx2 operation.
 func ImplementCosineFloat64AVX2() {
 	TEXT("cosineFloat64AVX2Kernel", NOSPLIT, "func(a, b uintptr, n int) (dot, normA, normB float32)")
 	a := Load(Param("a"), GP64())
@@ -271,6 +275,7 @@ func ImplementCosineFloat64AVX2() {
 	RET()
 }
 
+// ImplementSpecializedFloat64AVX2 runs the implement specialized float64 avx2 operation.
 func ImplementSpecializedFloat64AVX2(dim int) {
 	// L2Squared specialized (no sqrt)
 	TEXT(fmt.Sprintf("l2Squared%dFloat64AVX2Kernel", dim), NOSPLIT, "func(a, b uintptr) float32")

@@ -15,6 +15,7 @@ import (
 // Subtask 4: VectorStore Hybrid Search Integration Tests
 // =============================================================================
 
+// TestVectorStoreHybridSearchConfig runs the test vector store hybrid search config operation.
 func TestVectorStoreHybridSearchConfig(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -42,6 +43,7 @@ func TestVectorStoreHybridSearchConfig(t *testing.T) {
 	}
 }
 
+// TestVectorStoreHybridSearchDisabled runs the test vector store hybrid search disabled operation.
 func TestVectorStoreHybridSearchDisabled(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -55,6 +57,7 @@ func TestVectorStoreHybridSearchDisabled(t *testing.T) {
 	}
 }
 
+// TestVectorStoreBM25IndexCreation runs the test vector store bm25 index creation operation.
 func TestVectorStoreBM25IndexCreation(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -81,6 +84,7 @@ func TestVectorStoreBM25IndexCreation(t *testing.T) {
 	}
 }
 
+// TestVectorStoreBM25IndexNilWhenDisabled runs the test vector store bm25 index nil when disabled operation.
 func TestVectorStoreBM25IndexNilWhenDisabled(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -99,6 +103,7 @@ func TestVectorStoreBM25IndexNilWhenDisabled(t *testing.T) {
 	}
 }
 
+// TestVectorStoreHybridConfigValidation runs the test vector store hybrid config validation operation.
 func TestVectorStoreHybridConfigValidation(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -117,6 +122,7 @@ func TestVectorStoreHybridConfigValidation(t *testing.T) {
 	}
 }
 
+// TestVectorStoreIndexTextColumns runs the test vector store index text columns operation.
 func TestVectorStoreIndexTextColumns(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

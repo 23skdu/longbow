@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHNSW_BulkInsert runs the test hnsw_bulk insert operation.
 func TestHNSW_BulkInsert(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping bulk insert test in short mode")

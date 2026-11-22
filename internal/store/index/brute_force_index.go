@@ -21,6 +21,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// BruteForceIndex represents a brute force index value.
 type BruteForceIndex struct {
 	mu            sync.RWMutex
 	locations     []Location
@@ -368,7 +369,7 @@ func (b *BruteForceIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([
 	return nil, errors.New("GetNeighbors not supported for BruteForceIndex")
 }
 
-// SearchVectors finds k-nearest neighbors using a full linear scan.
+// RelocateToOffHeap finds k-nearest neighbors using a full linear scan.
 func (b *BruteForceIndex) RelocateToOffHeap() error {
 	return nil
 }

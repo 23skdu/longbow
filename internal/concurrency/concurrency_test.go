@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// TestLockFreeQueue_BasicOperations runs the test lock free queue_basic operations operation.
 func TestLockFreeQueue_BasicOperations(t *testing.T) {
 	q := NewLockFreeQueue[int]()
 
@@ -52,6 +53,7 @@ func TestLockFreeQueue_BasicOperations(t *testing.T) {
 	}
 }
 
+// TestLockFreeQueue_ConcurrentAccess runs the test lock free queue_concurrent access operation.
 func TestLockFreeQueue_ConcurrentAccess(t *testing.T) {
 	q := NewLockFreeQueue[int]()
 
@@ -88,6 +90,7 @@ func TestLockFreeQueue_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+// TestLockFreeStack_BasicOperations runs the test lock free stack_basic operations operation.
 func TestLockFreeStack_BasicOperations(t *testing.T) {
 	s := NewLockFreeStack[int]()
 
@@ -124,6 +127,7 @@ func TestLockFreeStack_BasicOperations(t *testing.T) {
 	}
 }
 
+// TestWorkStealingScheduler_Basic runs the test work stealing scheduler_basic operation.
 func TestWorkStealingScheduler_Basic(t *testing.T) {
 	s := NewWorkStealingScheduler[func()](4)
 
@@ -143,6 +147,7 @@ func TestWorkStealingScheduler_Basic(t *testing.T) {
 	}
 }
 
+// TestShardedMutex_ReducedContention runs the test sharded mutex_reduced contention operation.
 func TestShardedMutex_ReducedContention(t *testing.T) {
 	sm := NewShardedMutex[string](16)
 
@@ -173,6 +178,7 @@ func TestShardedMutex_ReducedContention(t *testing.T) {
 	}
 }
 
+// BenchmarkLockFreeQueue_EnqueueDequeue runs the benchmark lock free queue_enqueue dequeue operation.
 func BenchmarkLockFreeQueue_EnqueueDequeue(b *testing.B) {
 	q := NewLockFreeQueue[int]()
 
@@ -186,6 +192,7 @@ func BenchmarkLockFreeQueue_EnqueueDequeue(b *testing.B) {
 	}
 }
 
+// BenchmarkLockFreeStack_PushPop runs the benchmark lock free stack_push pop operation.
 func BenchmarkLockFreeStack_PushPop(b *testing.B) {
 	s := NewLockFreeStack[int]()
 
@@ -199,6 +206,7 @@ func BenchmarkLockFreeStack_PushPop(b *testing.B) {
 	}
 }
 
+// BenchmarkWorkStealingScheduler_Throughput runs the benchmark work stealing scheduler_throughput operation.
 func BenchmarkWorkStealingScheduler_Throughput(b *testing.B) {
 	s := NewWorkStealingScheduler[func()](runtime.NumCPU())
 
@@ -208,6 +216,7 @@ func BenchmarkWorkStealingScheduler_Throughput(b *testing.B) {
 	}
 }
 
+// BenchmarkShardedMutex_Throughput runs the benchmark sharded mutex_throughput operation.
 func BenchmarkShardedMutex_Throughput(b *testing.B) {
 	sm := NewShardedMutex[string](16)
 

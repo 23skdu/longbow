@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestADC_Distance runs the test adc_distance operation.
 func TestADC_Distance(t *testing.T) {
 	dims := 32
 	M := 4

@@ -28,6 +28,7 @@ func getCounterValue(t *testing.T, counter prometheus.Counter) float64 {
 	return m.GetCounter().GetValue()
 }
 
+// TestArenaMemoryBytesRegistration runs the test arena memory bytes registration operation.
 func TestArenaMemoryBytesRegistration(t *testing.T) {
 	// Test that the metric is registered and can be set
 	sizeLabel := "4194304" // 4MB
@@ -43,6 +44,7 @@ func TestArenaMemoryBytesRegistration(t *testing.T) {
 	assert.Equal(t, testValue, value, "ArenaMemoryBytes should match the set value")
 }
 
+// TestArenaMemoryBytesMultipleSizes runs the test arena memory bytes multiple sizes operation.
 func TestArenaMemoryBytesMultipleSizes(t *testing.T) {
 	// Test multiple size labels
 	sizes := []string{"4194304", "8388608", "16777216", "33554432"}
@@ -58,6 +60,7 @@ func TestArenaMemoryBytesMultipleSizes(t *testing.T) {
 	}
 }
 
+// TestSlabFragmentationRatioRegistration runs the test slab fragmentation ratio registration operation.
 func TestSlabFragmentationRatioRegistration(t *testing.T) {
 	// Test that the metric is registered and can be set
 	sizeLabel := "4194304" // 4MB
@@ -73,6 +76,7 @@ func TestSlabFragmentationRatioRegistration(t *testing.T) {
 	assert.Equal(t, testRatio, value, "SlabFragmentationRatio should match the set value")
 }
 
+// TestSlabFragmentationRatioBounds runs the test slab fragmentation ratio bounds operation.
 func TestSlabFragmentationRatioBounds(t *testing.T) {
 	// Test edge cases for fragmentation ratio
 	sizeLabel := "8388608" // 8MB
@@ -100,6 +104,7 @@ func TestSlabFragmentationRatioBounds(t *testing.T) {
 	}
 }
 
+// TestCompactionEventsTotalRegistration runs the test compaction events total registration operation.
 func TestCompactionEventsTotalRegistration(t *testing.T) {
 	// Test that the metric is registered and can be incremented
 	dataset := "test_dataset"
@@ -117,6 +122,7 @@ func TestCompactionEventsTotalRegistration(t *testing.T) {
 	assert.Equal(t, initialValue+1, newValue, "CompactionEventsTotal should increment by 1")
 }
 
+// TestCompactionEventsTotalMultipleTypes runs the test compaction events total multiple types operation.
 func TestCompactionEventsTotalMultipleTypes(t *testing.T) {
 	// Test different event types
 	dataset := "test_dataset_multi"
@@ -136,6 +142,7 @@ func TestCompactionEventsTotalMultipleTypes(t *testing.T) {
 	}
 }
 
+// TestCompactionEventsMultipleDatasets runs the test compaction events multiple datasets operation.
 func TestCompactionEventsMultipleDatasets(t *testing.T) {
 	// Test that different datasets have independent counters
 	datasets := []string{"dataset_a", "dataset_b", "dataset_c"}
@@ -157,6 +164,7 @@ func TestCompactionEventsMultipleDatasets(t *testing.T) {
 	}
 }
 
+// TestMetricsIntegration runs the test metrics integration operation.
 func TestMetricsIntegration(t *testing.T) {
 	// Integration test: simulate a complete workflow
 	sizeLabel := "4194304"

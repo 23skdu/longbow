@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSchemaEvolution_Validation runs the test schema evolution_validation operation.
 func TestSchemaEvolution_Validation(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	pool := memory.NewGoAllocator()

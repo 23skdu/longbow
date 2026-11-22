@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArena_HugePageAlignment runs the test arena_huge page alignment operation.
 func TestArena_HugePageAlignment(t *testing.T) {
 	// 4MB slab arena (>= 2MB triggers transparent hugepage madvise)
 	slabSize := 4 * 1024 * 1024

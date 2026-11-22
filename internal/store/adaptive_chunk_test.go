@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestAdaptiveChunkSize_Calculation runs the test adaptive chunk size_calculation operation.
 func TestAdaptiveChunkSize_Calculation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -76,6 +77,7 @@ func TestAdaptiveChunkSize_Calculation(t *testing.T) {
 	}
 }
 
+// TestAdaptiveChunkSize_WorkerEfficiency runs the test adaptive chunk size_worker efficiency operation.
 func TestAdaptiveChunkSize_WorkerEfficiency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -130,6 +132,7 @@ func TestAdaptiveChunkSize_WorkerEfficiency(t *testing.T) {
 	}
 }
 
+// TestAdaptiveChunkSize_ConfigThresholds runs the test adaptive chunk size_config thresholds operation.
 func TestAdaptiveChunkSize_ConfigThresholds(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -187,6 +190,7 @@ func TestAdaptiveChunkSize_ConfigThresholds(t *testing.T) {
 	}
 }
 
+// TestAdaptiveChunkSize_ConcurrentSafety runs the test adaptive chunk size_concurrent safety operation.
 func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -234,6 +238,7 @@ func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 	wg.Wait()
 }
 
+// BenchmarkAdaptiveChunkSize_ParallelVsSerial runs the benchmark adaptive chunk size_parallel vs serial operation.
 func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dims := 128
@@ -296,6 +301,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 	})
 }
 
+// FuzzAdaptiveChunkSizeCalculation runs the fuzz adaptive chunk size calculation operation.
 func FuzzAdaptiveChunkSizeCalculation(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

@@ -62,6 +62,7 @@ var (
 		Help: "Total bytes processed during polymorphic search",
 	}, []string{"type"})
 
+	// HNSWPolymorphicFuzzCrashRecovered is a hnsw polymorphic fuzz crash recovered value.
 	HNSWPolymorphicFuzzCrashRecovered = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_hnsw_fuzz_crash_recovered_total",
 		Help: "Total number of recovered crashes during fuzz testing",

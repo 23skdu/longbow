@@ -154,8 +154,11 @@ func filterProbeShapes(b *testing.B, dense bool) {
 	}
 }
 
+// BenchmarkFilterProbe_Roaring runs the benchmark filter probe_roaring operation.
 func BenchmarkFilterProbe_Roaring(b *testing.B) { filterProbeShapes(b, false) }
-func BenchmarkFilterProbe_Dense(b *testing.B)   { filterProbeShapes(b, true) }
+
+// BenchmarkFilterProbe_Dense runs the benchmark filter probe_dense operation.
+func BenchmarkFilterProbe_Dense(b *testing.B) { filterProbeShapes(b, true) }
 
 // BenchmarkFilterConversion reports the one-time cost of densifying a filter,
 // which the end-to-end numbers have to amortise. Compare with
@@ -284,11 +287,13 @@ func benchmarkHNSWFilteredSuite(b *testing.B, n, dims int, sels []int) {
 	}
 }
 
+// BenchmarkHNSW_Filtered_Dense runs the benchmark hnsw_filtered_dense operation.
 func BenchmarkHNSW_Filtered_Dense(b *testing.B) {
 	benchmarkHNSWFilteredSuite(b, 10_000, 64, []int{1, 10, 50, 90})
 	benchmarkHNSWFilteredSuite(b, 50_000, 64, []int{1, 10, 50, 90})
 }
 
+// BenchmarkHNSW_Filtered_Roaring runs the benchmark hnsw_filtered_roaring operation.
 func BenchmarkHNSW_Filtered_Roaring(b *testing.B) {
 	benchmarkHNSWFilteredSuite(b, 10_000, 64, []int{1, 10, 50, 90})
 	benchmarkHNSWFilteredSuite(b, 50_000, 64, []int{1, 10, 50, 90})

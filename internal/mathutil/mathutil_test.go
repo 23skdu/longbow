@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestMathutilBackends runs the test mathutil backends operation.
 func TestMathutilBackends(t *testing.T) {
 	backends := []Backend{BackendStandard, BackendEML}
 
@@ -96,6 +97,7 @@ func TestMathutilBackends(t *testing.T) {
 	}
 }
 
+// TestMathutilCompleteCoverage runs the test mathutil complete coverage operation.
 func TestMathutilCompleteCoverage(t *testing.T) {
 	// Configuration & state helpers
 	SetFloat64Excluded(true)
@@ -144,6 +146,7 @@ func TestMathutilCompleteCoverage(t *testing.T) {
 	_ = MulBatchF32(vecF32, vecF32_2)
 }
 
+// BenchmarkBatchComparison runs the benchmark batch comparison operation.
 func BenchmarkBatchComparison(b *testing.B) {
 	n := 1000
 	x := make([]float64, n)

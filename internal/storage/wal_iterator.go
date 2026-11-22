@@ -33,6 +33,7 @@ type WALIterator struct {
 	zstdDec *zstd.Decoder
 }
 
+// NewWALIterator constructs a new WALIterator.
 func NewWALIterator(dir string, mem memory.Allocator) (*WALIterator, error) {
 	path := filepath.Join(dir, walFileName)
 	f, err := os.Open(filepath.Clean(path)) // #nosec G304
@@ -374,6 +375,7 @@ func (it *WALIterator) deserialize(data []byte) (arrow.RecordBatch, error) {
 	return nil, fmt.Errorf("empty record in WAL")
 }
 
+// Close runs the close operation.
 func (it *WALIterator) Close() error {
 	it.mu.Lock()
 	defer it.mu.Unlock()

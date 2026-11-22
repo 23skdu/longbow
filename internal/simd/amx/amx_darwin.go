@@ -33,6 +33,7 @@ import (
 	"unsafe"
 )
 
+// DotAMX runs the dot amx operation.
 func DotAMX(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
@@ -45,6 +46,7 @@ func DotAMX(a, b []float32) (float32, error) {
 	return float32(C.dot_amx((*C.float)(unsafe.Pointer(&a[0])), (*C.float)(unsafe.Pointer(&b[0])), C.int(n32))), nil // #nosec G103
 }
 
+// L2AMX runs the l2 amx operation.
 func L2AMX(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil

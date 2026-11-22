@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// TestRouter_SpatialScale runs the test router_spatial scale operation.
 func TestRouter_SpatialScale(t *testing.T) {
 	router := NewRouter()
 	rnd := rand.New(rand.NewSource(42)) // Deterministic

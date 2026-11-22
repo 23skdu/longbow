@@ -12,6 +12,7 @@ var (
 	// Remote Storage Metrics (S3/GCS)
 	// =============================================================================
 
+	// RemoteStorageOpsTotal is a remote storage ops total value.
 	RemoteStorageOpsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_remote_storage_ops_total",
@@ -20,6 +21,7 @@ var (
 		[]string{"provider", "operation", "status"}, // provider: "s3", "gcs". operation: "put", "get", "delete", "exists". status: "success", "error"
 	)
 
+	// RemoteStorageDurationSeconds is a remote storage duration seconds value.
 	RemoteStorageDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_remote_storage_duration_seconds",
@@ -29,6 +31,7 @@ var (
 		[]string{"provider", "operation"},
 	)
 
+	// RemoteStorageUploadBytes is a remote storage upload bytes value.
 	RemoteStorageUploadBytes = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_remote_storage_upload_bytes_total",
@@ -37,6 +40,7 @@ var (
 		[]string{"provider"},
 	)
 
+	// RemoteStorageDownloadBytes is a remote storage download bytes value.
 	RemoteStorageDownloadBytes = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_remote_storage_download_bytes_total",
@@ -45,7 +49,7 @@ var (
 		[]string{"provider"},
 	)
 
-	// Contention Metrics
+	// LockNodeSpinCyclesTotal Metrics
 	LockNodeSpinCyclesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_lock_node_spin_cycles_total",
@@ -54,6 +58,7 @@ var (
 		[]string{"dataset", "layer"},
 	)
 
+	// InsertMuWaitDurationSeconds is a insert mu wait duration seconds value.
 	InsertMuWaitDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_insert_mu_wait_duration_seconds",
@@ -67,6 +72,7 @@ var (
 	// ML & Embedding Metrics
 	// =============================================================================
 
+	// EmbeddingGenerationDurationSeconds is a embedding generation duration seconds value.
 	EmbeddingGenerationDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_embedding_generation_duration_seconds",
@@ -76,6 +82,7 @@ var (
 		[]string{"provider", "model"},
 	)
 
+	// EmbeddingPoolingDurationSeconds is a embedding pooling duration seconds value.
 	EmbeddingPoolingDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_embedding_pooling_duration_seconds",
@@ -88,6 +95,7 @@ var (
 	// Vector Quantization (PQ/OPQ) Metrics
 	// =============================================================================
 
+	// VQTrainingDurationSeconds is a vq training duration seconds value.
 	VQTrainingDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_vq_training_duration_seconds",
@@ -97,6 +105,7 @@ var (
 		[]string{"type"}, // "pq", "opq"
 	)
 
+	// OPQEncoderWarmupDurationSeconds is a opq encoder warmup duration seconds value.
 	OPQEncoderWarmupDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_opq_encoder_warmup_duration_seconds",
@@ -106,6 +115,7 @@ var (
 		[]string{"type"}, // "ivf-opq", etc.
 	)
 
+	// VQReconstructionError is a vq reconstruction error value.
 	VQReconstructionError = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_vq_reconstruction_error",
@@ -118,6 +128,7 @@ var (
 	// IVF Index Metrics
 	// =============================================================================
 
+	// IVFClusterSearchTotal is a ivf cluster search total value.
 	IVFClusterSearchTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_ivf_cluster_search_total",
@@ -126,6 +137,7 @@ var (
 		[]string{"dataset", "type"},
 	)
 
+	// IVFLoadBalanceRatio is a ivf load balance ratio value.
 	IVFLoadBalanceRatio = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_ivf_load_balance_ratio",
@@ -134,7 +146,7 @@ var (
 		[]string{"dataset"},
 	)
 
-	// IVFOPQ specific metrics
+	// IVFOPQPQcodesPerCluster specific metrics
 	IVFOPQPQcodesPerCluster = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_ivfopq_pqcodes_per_cluster",
@@ -143,6 +155,7 @@ var (
 		},
 	)
 
+	// IVFOPQLookupHits is a ivfopq lookup hits value.
 	IVFOPQLookupHits = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_ivfopq_lookup_hits_total",
@@ -151,7 +164,7 @@ var (
 		[]string{"dataset"},
 	)
 
-	// TurboQuant metrics (TQ2/TQ4/TQ8)
+	// TQ2EncodeDurationSeconds metrics (TQ2/TQ4/TQ8)
 	TQ2EncodeDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tq2_encode_duration_seconds",
@@ -160,6 +173,7 @@ var (
 		},
 	)
 
+	// TQ2DecodeDurationSeconds is a tq2 decode duration seconds value.
 	TQ2DecodeDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tq2_decode_duration_seconds",
@@ -168,6 +182,7 @@ var (
 		},
 	)
 
+	// TQ2CodesPerVector is a tq2 codes per vector value.
 	TQ2CodesPerVector = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tq2_codes_per_vector",
@@ -176,6 +191,7 @@ var (
 		},
 	)
 
+	// TQ4EncodeDurationSeconds is a tq4 encode duration seconds value.
 	TQ4EncodeDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tq4_encode_duration_seconds",
@@ -184,6 +200,7 @@ var (
 		},
 	)
 
+	// TQ4DecodeDurationSeconds is a tq4 decode duration seconds value.
 	TQ4DecodeDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tq4_decode_duration_seconds",
@@ -192,6 +209,7 @@ var (
 		},
 	)
 
+	// TQ4CodesPerVector is a tq4 codes per vector value.
 	TQ4CodesPerVector = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tq4_codes_per_vector",
@@ -200,6 +218,7 @@ var (
 		},
 	)
 
+	// TQ8EncodeDurationSeconds is a tq8 encode duration seconds value.
 	TQ8EncodeDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tq8_encode_duration_seconds",
@@ -208,6 +227,7 @@ var (
 		},
 	)
 
+	// TQ8DecodeDurationSeconds is a tq8 decode duration seconds value.
 	TQ8DecodeDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tq8_decode_duration_seconds",
@@ -216,6 +236,7 @@ var (
 		},
 	)
 
+	// TQ8CodesPerVector is a tq8 codes per vector value.
 	TQ8CodesPerVector = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tq8_codes_per_vector",
@@ -224,6 +245,7 @@ var (
 		},
 	)
 
+	// EmbeddingNormalizationDurationSeconds is a embedding normalization duration seconds value.
 	EmbeddingNormalizationDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_embedding_normalization_duration_seconds",
@@ -232,6 +254,7 @@ var (
 		},
 	)
 
+	// WasmInferenceTotal is a wasm inference total value.
 	WasmInferenceTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_wasm_inference_total",
@@ -240,6 +263,7 @@ var (
 		[]string{"model", "status"},
 	)
 
+	// WasmInferenceDurationSeconds is a wasm inference duration seconds value.
 	WasmInferenceDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_wasm_inference_duration_seconds",
@@ -249,7 +273,7 @@ var (
 		[]string{"model"},
 	)
 
-	// SIMD Activation Kernel Metrics
+	// SimdActivationKernelDurationSeconds Activation Kernel Metrics
 	SimdActivationKernelDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_simd_activation_kernel_duration_seconds",
@@ -259,6 +283,7 @@ var (
 		[]string{"kernel", "arch"}, // kernel: "exp", "softmax", "sigmoid"; arch: "avx512", "neon", "avx2"
 	)
 
+	// SimdActivationKernelCallsTotal is a simd activation kernel calls total value.
 	SimdActivationKernelCallsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_simd_activation_kernel_calls_total",
@@ -267,7 +292,7 @@ var (
 		[]string{"kernel", "arch"},
 	)
 
-	// Graph GPU Adaptive Dispatch Metrics
+	// GraphGPUDispatchTotal GPU Adaptive Dispatch Metrics
 	GraphGPUDispatchTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_graph_gpu_dispatch_total",
@@ -276,6 +301,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// GraphGPUDispatchFallbackTotal is a graph gpu dispatch fallback total value.
 	GraphGPUDispatchFallbackTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_graph_gpu_dispatch_fallback_total",
@@ -319,6 +345,7 @@ var (
 		},
 		[]string{"operation", "status"},
 	)
+	// TPUOperationLatency is a tpu operation latency value.
 	TPUOperationLatency = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tpu_operation_latency_seconds",

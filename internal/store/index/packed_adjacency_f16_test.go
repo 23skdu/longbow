@@ -31,6 +31,7 @@ func TestPackedAdjacencyF16_Storage(t *testing.T) {
 	assert.Equal(t, distances, gotDistances)
 }
 
+// TestPackedAdjacencyF16_MemorySavings runs the test packed adjacency f16_memory savings operation.
 func TestPackedAdjacencyF16_MemorySavings(t *testing.T) {
 	arena := memory.NewSlabArena(1024 * 1024)
 	adj := NewPackedAdjacency(arena, 100)

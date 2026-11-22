@@ -11,6 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// BenchmarkWAL runs the benchmark wal operation.
 func BenchmarkWAL(b *testing.B) {
 	// Prepare common data
 	pool := memory.NewGoAllocator()

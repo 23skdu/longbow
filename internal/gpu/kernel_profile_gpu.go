@@ -14,8 +14,10 @@ import "github.com/23skdu/longbow/internal/gpu/cuda"
 // KernelOpTime one named operation's share of it. Both come from the CUDA
 // package, which owns the event pool and the interned names.
 type (
+	// KernelProfile represents a kernel profile value.
 	KernelProfile = cuda.GPUKernelProfile
-	KernelOpTime  = cuda.GPUOpTime
+	// KernelOpTime represents a kernel op time value.
+	KernelOpTime = cuda.GPUOpTime
 )
 
 // SetKernelProfiling turns per-kernel device timing on or off. It costs one

@@ -31,6 +31,7 @@ func makeAdaptiveTestRecord(mem memory.Allocator, size int64) arrow.RecordBatch 
 	return array.NewRecordBatch(schema, []arrow.Array{arr}, size)
 }
 
+// TestAdaptivelySliceBatches runs the test adaptively slice batches operation.
 func TestAdaptivelySliceBatches(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -101,6 +102,7 @@ func TestAdaptivelySliceBatches(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestAdaptivelySliceBatches_SplittingTombstones runs the test adaptively slice batches_splitting tombstones operation.
 func TestAdaptivelySliceBatches_SplittingTombstones(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

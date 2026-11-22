@@ -23,6 +23,7 @@ type mockQueryCacheActionServer struct {
 	sendErr error
 }
 
+// Send runs the send operation.
 func (m *mockQueryCacheActionServer) Send(r *flight.Result) error {
 	if m.sendErr != nil {
 		return m.sendErr
@@ -31,10 +32,12 @@ func (m *mockQueryCacheActionServer) Send(r *flight.Result) error {
 	return nil
 }
 
+// Context runs the context operation.
 func (m *mockQueryCacheActionServer) Context() context.Context {
 	return m.ctx
 }
 
+// TestVectorStore_QueryCache_Integration runs the test vector store_query cache_integration operation.
 func TestVectorStore_QueryCache_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

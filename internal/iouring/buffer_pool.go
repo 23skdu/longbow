@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Default alignment for O_DIRECT I/O (512 bytes, standard sector size)
+// DefaultAlignment alignment for O_DIRECT I/O (512 bytes, standard sector size)
 const DefaultAlignment = 512
 
 // Default page size (will be detected at runtime)

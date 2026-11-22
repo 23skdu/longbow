@@ -8,6 +8,7 @@ type ErrNotFound struct {
 	Name     string
 }
 
+// Error runs the error operation.
 func (e *ErrNotFound) Error() string {
 	return fmt.Sprintf("%s not found: %s", e.Resource, e.Name)
 }
@@ -23,6 +24,7 @@ type ErrInvalidArgument struct {
 	Message string
 }
 
+// Error runs the error operation.
 func (e *ErrInvalidArgument) Error() string {
 	if e.Field != "" {
 		return fmt.Sprintf("invalid argument for %s: %s", e.Field, e.Message)
@@ -30,6 +32,7 @@ func (e *ErrInvalidArgument) Error() string {
 	return fmt.Sprintf("invalid argument: %s", e.Message)
 }
 
+// NewInvalidArgumentError constructs a new InvalidArgumentError.
 func NewInvalidArgumentError(field, message string) error {
 	return &ErrInvalidArgument{Field: field, Message: message}
 }
@@ -40,10 +43,12 @@ type ErrResourceExhausted struct {
 	Message  string
 }
 
+// Error runs the error operation.
 func (e *ErrResourceExhausted) Error() string {
 	return fmt.Sprintf("resource exhausted (%s): %s", e.Resource, e.Message)
 }
 
+// NewResourceExhaustedError constructs a new ResourceExhaustedError.
 func NewResourceExhaustedError(resource, message string) error {
 	return &ErrResourceExhausted{Resource: resource, Message: message}
 }
@@ -54,10 +59,12 @@ type ErrUnavailable struct {
 	Reason    string
 }
 
+// Error runs the error operation.
 func (e *ErrUnavailable) Error() string {
 	return fmt.Sprintf("service unavailable for %s: %s", e.Operation, e.Reason)
 }
 
+// NewUnavailableError constructs a new UnavailableError.
 func NewUnavailableError(operation, reason string) error {
 	return &ErrUnavailable{Operation: operation, Reason: reason}
 }

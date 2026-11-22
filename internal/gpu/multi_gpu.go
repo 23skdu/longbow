@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
+// MultiGPUConfig represents a multi gpu config value.
 type MultiGPUConfig struct {
 	DeviceIDs        []int32
 	Strategy         MultiGPUStrategy
@@ -26,15 +27,21 @@ type MultiGPUConfig struct {
 	MaxConcurrentGPU int // max concurrent GPU operations across all devices (0 = GOMAXPROCS)
 }
 
+// MultiGPUStrategy represents a multi gpu strategy value.
 type MultiGPUStrategy int
 
 const (
+	// StrategyRoundRobin is a strategy round robin constant.
 	StrategyRoundRobin MultiGPUStrategy = iota
+	// StrategyLoadBalance is a strategy load balance constant.
 	StrategyLoadBalance
+	// StrategyAffinity is a strategy affinity constant.
 	StrategyAffinity
+	// StrategyMemoryAware is a strategy memory aware constant.
 	StrategyMemoryAware
 )
 
+// String runs the string operation.
 func (s MultiGPUStrategy) String() string {
 	switch s {
 	case StrategyRoundRobin:
@@ -50,6 +57,7 @@ func (s MultiGPUStrategy) String() string {
 	}
 }
 
+// GPUDevice represents a gpu device value.
 type GPUDevice struct {
 	ID         int32
 	Index      types.Index
@@ -60,6 +68,7 @@ type GPUDevice struct {
 	LastUsed   atomic.Int64
 }
 
+// MultiGPUManager represents a multi gpu manager value.
 type MultiGPUManager struct {
 	config   MultiGPUConfig
 	devices  []*GPUDevice
@@ -70,6 +79,7 @@ type MultiGPUManager struct {
 	gpuSem   *semaphore.Weighted // bounds concurrent GPU operations
 }
 
+// NewMultiGPUManager constructs a new MultiGPUManager.
 func NewMultiGPUManager(config MultiGPUConfig, logger zerolog.Logger) (*MultiGPUManager, error) {
 	if len(config.DeviceIDs) == 0 {
 		return nil, fmt.Errorf("no GPU devices specified")
@@ -177,6 +187,7 @@ func (m *MultiGPUManager) initializeDevice(deviceID int32) (*GPUDevice, error) {
 	return device, nil
 }
 
+// GetDevice returns the device.
 func (m *MultiGPUManager) GetDevice(deviceID int32) (*GPUDevice, error) {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()
@@ -189,6 +200,7 @@ func (m *MultiGPUManager) GetDevice(deviceID int32) (*GPUDevice, error) {
 	return nil, fmt.Errorf("device %d not found", deviceID)
 }
 
+// SelectDevice runs the select device operation.
 func (m *MultiGPUManager) SelectDevice() *GPUDevice {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()
@@ -249,6 +261,7 @@ func (m *MultiGPUManager) selectMemoryAware() *GPUDevice {
 	return best
 }
 
+// AddVectors runs the add vectors operation.
 func (m *MultiGPUManager) AddVectors(ids []int64, vectors []float32) error {
 	device := m.SelectDevice()
 	if device == nil {
@@ -267,6 +280,7 @@ func (m *MultiGPUManager) AddVectors(ids []int64, vectors []float32) error {
 	return nil
 }
 
+// Search runs the search operation.
 func (m *MultiGPUManager) Search(query []float32, k int) ([]int64, []float32, error) {
 	device := m.SelectDevice()
 	if device == nil {
@@ -285,6 +299,7 @@ func (m *MultiGPUManager) Search(query []float32, k int) ([]int64, []float32, er
 	return ids, distances, nil
 }
 
+// SearchPQ runs the search pq operation.
 func (m *MultiGPUManager) SearchPQ(lookupTable []float32, mSub int, k int) ([]int64, []float32, error) {
 	device := m.SelectDevice()
 	if device == nil {
@@ -303,6 +318,7 @@ func (m *MultiGPUManager) SearchPQ(lookupTable []float32, mSub int, k int) ([]in
 	return ids, distances, nil
 }
 
+// TrainPQ runs the train pq operation.
 func (m *MultiGPUManager) TrainPQ(vectors []float32, mSub, kCentroids int) error {
 	device := m.SelectDevice()
 	if device == nil {
@@ -323,6 +339,7 @@ func (m *MultiGPUManager) TrainPQ(vectors []float32, mSub, kCentroids int) error
 	return err
 }
 
+// EncodePQ runs the encode pq operation.
 func (m *MultiGPUManager) EncodePQ(vectors []float32) ([]byte, error) {
 	device := m.SelectDevice()
 	if device == nil {
@@ -343,6 +360,7 @@ func (m *MultiGPUManager) EncodePQ(vectors []float32) ([]byte, error) {
 	return codes, err
 }
 
+// SearchMerged runs the search merged operation.
 func (m *MultiGPUManager) SearchMerged(query []float32, k int) ([]int64, []float32, error) {
 	allIDs, allDistances, allErrors := m.SearchAllDevices(query, k)
 
@@ -356,6 +374,7 @@ func (m *MultiGPUManager) SearchMerged(query []float32, k int) ([]int64, []float
 	return m.mergeResults(allIDs, allDistances, k)
 }
 
+// SearchMergedPQ runs the search merged pq operation.
 func (m *MultiGPUManager) SearchMergedPQ(lookupTable []float32, mSub int, k int) ([]int64, []float32, error) {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()
@@ -397,6 +416,7 @@ func (m *MultiGPUManager) SearchMergedPQ(lookupTable []float32, mSub int, k int)
 	return m.mergeResults(allIDs, allDistances, k)
 }
 
+// SearchAllDevices runs the search all devices operation.
 func (m *MultiGPUManager) SearchAllDevices(query []float32, k int) ([][]int64, [][]float32, []error) {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()
@@ -478,6 +498,7 @@ func (m *MultiGPUManager) mergeResults(allIDs [][]int64, allDistances [][]float3
 	return mergedIDs, mergedDistances, nil
 }
 
+// GetStats returns the stats.
 func (m *MultiGPUManager) GetStats() MultiGPUStats {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()
@@ -509,6 +530,7 @@ func (m *MultiGPUManager) GetStats() MultiGPUStats {
 	return stats
 }
 
+// MultiGPUStats represents a multi gpu stats value.
 type MultiGPUStats struct {
 	DeviceCount  int
 	Strategy     string
@@ -517,6 +539,7 @@ type MultiGPUStats struct {
 	Devices      []DeviceStats
 }
 
+// DeviceStats represents a device stats value.
 type DeviceStats struct {
 	ID          int32
 	Name        string
@@ -527,6 +550,7 @@ type DeviceStats struct {
 	LastUsed    time.Time
 }
 
+// Close runs the close operation.
 func (m *MultiGPUManager) Close() error {
 	if m.closed.Swap(true) {
 		return nil
@@ -553,12 +577,14 @@ func (m *MultiGPUManager) Close() error {
 	return lastErr
 }
 
+// DeviceCount runs the device count operation.
 func (m *MultiGPUManager) DeviceCount() int {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()
 	return len(m.devices)
 }
 
+// ReplicateToAll runs the replicate to all operation.
 func (m *MultiGPUManager) ReplicateToAll(ids []int64, vectors []float32) error {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()
@@ -596,6 +622,7 @@ func (m *MultiGPUManager) ReplicateToAll(ids []int64, vectors []float32) error {
 	return nil
 }
 
+// DefaultMultiGPUConfig returns the default MultiGPUConfig.
 func DefaultMultiGPUConfig() MultiGPUConfig {
 	return MultiGPUConfig{
 		DeviceIDs:        []int32{0},
@@ -607,6 +634,7 @@ func DefaultMultiGPUConfig() MultiGPUConfig {
 	}
 }
 
+// DetectAvailableDevices runs the detect available devices operation.
 func DetectAvailableDevices() ([]int32, error) {
 	count := GetDeviceCount()
 	if count == 0 {
@@ -632,6 +660,7 @@ func (m *MultiGPUManager) shardVectorID(id int64) int {
 	return int(h.Sum64() % uint64(len(m.devices))) // #nosec G115 - safe modulo conversion
 }
 
+// ShardDevice runs the shard device operation.
 func (m *MultiGPUManager) ShardDevice(vectorID int64) *GPUDevice {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()
@@ -644,6 +673,7 @@ func (m *MultiGPUManager) ShardDevice(vectorID int64) *GPUDevice {
 	return m.devices[shardIdx]
 }
 
+// AddVectorsSharded runs the add vectors sharded operation.
 func (m *MultiGPUManager) AddVectorsSharded(ids []int64, vectors []float32) error {
 	if len(ids) == 0 {
 		return nil
@@ -706,6 +736,7 @@ func (m *MultiGPUManager) AddVectorsSharded(ids []int64, vectors []float32) erro
 	return nil
 }
 
+// GetDeviceByVectorID returns the device by vector id.
 func (m *MultiGPUManager) GetDeviceByVectorID(id int64) (*GPUDevice, error) {
 	device := m.ShardDevice(id)
 	if device == nil {

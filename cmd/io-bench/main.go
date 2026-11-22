@@ -375,6 +375,7 @@ func printStats(op string, elapsed time.Duration, ops, bytes uint64) {
 	fmt.Printf("  Avg Latency: %.4f ms/op\n", avgLat)
 }
 
+// ModeStats represents a mode stats value.
 type ModeStats struct {
 	QPS   float64 `json:"qps"`
 	P50Ms float64 `json:"p50_ms"`
@@ -382,6 +383,7 @@ type ModeStats struct {
 	P99Ms float64 `json:"p99_ms"`
 }
 
+// BenchmarkResult represents a benchmark result value.
 type BenchmarkResult struct {
 	Dim                 int                  `json:"dim"`
 	Dtype               string               `json:"dtype"`

@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestParseCLIFlags_VersionFlag runs the test parse cli flags_version flag operation.
 func TestParseCLIFlags_VersionFlag(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -18,6 +19,7 @@ func TestParseCLIFlags_VersionFlag(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_VShortFlag runs the test parse cli flags_v short flag operation.
 func TestParseCLIFlags_VShortFlag(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -30,6 +32,7 @@ func TestParseCLIFlags_VShortFlag(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_HelpFlag runs the test parse cli flags_help flag operation.
 func TestParseCLIFlags_HelpFlag(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -42,6 +45,7 @@ func TestParseCLIFlags_HelpFlag(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_UnknownFlag runs the test parse cli flags_unknown flag operation.
 func TestParseCLIFlags_UnknownFlag(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -54,6 +58,7 @@ func TestParseCLIFlags_UnknownFlag(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_NoArgs runs the test parse cli flags_no args operation.
 func TestParseCLIFlags_NoArgs(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -63,6 +68,7 @@ func TestParseCLIFlags_NoArgs(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_MaxMemory runs the test parse cli flags_max memory operation.
 func TestParseCLIFlags_MaxMemory(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -75,6 +81,7 @@ func TestParseCLIFlags_MaxMemory(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_MaxMemoryEquals runs the test parse cli flags_max memory equals operation.
 func TestParseCLIFlags_MaxMemoryEquals(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -87,6 +94,7 @@ func TestParseCLIFlags_MaxMemoryEquals(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_ListenAddr runs the test parse cli flags_listen addr operation.
 func TestParseCLIFlags_ListenAddr(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -99,6 +107,7 @@ func TestParseCLIFlags_ListenAddr(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_DataPath runs the test parse cli flags_data path operation.
 func TestParseCLIFlags_DataPath(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -111,6 +120,7 @@ func TestParseCLIFlags_DataPath(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_NodeID runs the test parse cli flags_node id operation.
 func TestParseCLIFlags_NodeID(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -123,6 +133,7 @@ func TestParseCLIFlags_NodeID(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_LogFormat runs the test parse cli flags_log format operation.
 func TestParseCLIFlags_LogFormat(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -135,6 +146,7 @@ func TestParseCLIFlags_LogFormat(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_LogLevel runs the test parse cli flags_log level operation.
 func TestParseCLIFlags_LogLevel(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -147,6 +159,7 @@ func TestParseCLIFlags_LogLevel(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_GPUEnabled runs the test parse cli flags_gpu enabled operation.
 func TestParseCLIFlags_GPUEnabled(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -159,6 +172,7 @@ func TestParseCLIFlags_GPUEnabled(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_GPUDeviceID runs the test parse cli flags_gpu device id operation.
 func TestParseCLIFlags_GPUDeviceID(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -171,6 +185,7 @@ func TestParseCLIFlags_GPUDeviceID(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_GossipEnabled runs the test parse cli flags_gossip enabled operation.
 func TestParseCLIFlags_GossipEnabled(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -183,6 +198,7 @@ func TestParseCLIFlags_GossipEnabled(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_AutoSpillAndAutoQuantize runs the test parse cli flags_auto spill and auto quantize operation.
 func TestParseCLIFlags_AutoSpillAndAutoQuantize(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -214,6 +230,7 @@ func TestParseCLIFlags_AutoSpillAndAutoQuantize(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_MultipleFlags runs the test parse cli flags_multiple flags operation.
 func TestParseCLIFlags_MultipleFlags(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -257,6 +274,7 @@ func TestParseCLIFlags_MultipleFlags(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_OverridesDefaults runs the test parse cli flags_overrides defaults operation.
 func TestParseCLIFlags_OverridesDefaults(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{
@@ -275,6 +293,7 @@ func TestParseCLIFlags_OverridesDefaults(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_MetaAddr runs the test parse cli flags_meta addr operation.
 func TestParseCLIFlags_MetaAddr(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -287,6 +306,7 @@ func TestParseCLIFlags_MetaAddr(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_MetricsAddr runs the test parse cli flags_metrics addr operation.
 func TestParseCLIFlags_MetricsAddr(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}
@@ -299,6 +319,7 @@ func TestParseCLIFlags_MetricsAddr(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_StartupNamespacePolicies runs the test parse cli flags_startup namespace policies operation.
 func TestParseCLIFlags_StartupNamespacePolicies(t *testing.T) {
 	var buf bytes.Buffer
 	raw := `[{"namespace":"team-a","ephemeral":true}]`
@@ -312,6 +333,7 @@ func TestParseCLIFlags_StartupNamespacePolicies(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_MetaAddrEmptyDefault runs the test parse cli flags_meta addr empty default operation.
 func TestParseCLIFlags_MetaAddrEmptyDefault(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{MetaAddr: "0.0.0.0:3001"}
@@ -324,6 +346,7 @@ func TestParseCLIFlags_MetaAddrEmptyDefault(t *testing.T) {
 	}
 }
 
+// TestParseCLIFlags_EmptyArgsPreservesLogDefaults runs the test parse cli flags_empty args preserves log defaults operation.
 func TestParseCLIFlags_EmptyArgsPreservesLogDefaults(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{LogFormat: "json", LogLevel: "info"}

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestIndexGetNeighborsStandardized runs the test index get neighbors standardized operation.
 func TestIndexGetNeighborsStandardized(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping broken integration test in short mode")

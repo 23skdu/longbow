@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestTieredStorage_OffloadAndFetch runs the test tiered storage_offload and fetch operation.
 func TestTieredStorage_OffloadAndFetch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -63,6 +64,7 @@ func TestTieredStorage_OffloadAndFetch(t *testing.T) {
 	}
 }
 
+// TestTieredStorage_EnforcePolicy runs the test tiered storage_enforce policy operation.
 func TestTieredStorage_EnforcePolicy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -95,6 +97,7 @@ func TestTieredStorage_EnforcePolicy(t *testing.T) {
 	assert.Equal(t, float32(1.23), results[0][0])
 }
 
+// TestDiskVectorStore_Fallback_Float64 runs the test disk vector store_fallback_float64 operation.
 func TestDiskVectorStore_Fallback_Float64(t *testing.T) {
 	path := "test_fallback_f64.bin"
 	defer os.Remove(path)
@@ -165,6 +168,7 @@ func TestDiskVectorStore_Fallback_Float64(t *testing.T) {
 	assert.Equal(t, []float64{5.0, 6.0, 7.0, 8.0}, vec)
 }
 
+// TestDiskVectorStore_Fallback_Float32 runs the test disk vector store_fallback_float32 operation.
 func TestDiskVectorStore_Fallback_Float32(t *testing.T) {
 	path := "test_fallback_f32.bin"
 	defer os.Remove(path)

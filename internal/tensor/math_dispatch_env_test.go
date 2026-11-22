@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestParseDispatchMode runs the test parse dispatch mode operation.
 func TestParseDispatchMode(t *testing.T) {
 	tests := []struct {
 		input string
@@ -34,6 +35,7 @@ func TestParseDispatchMode(t *testing.T) {
 	}
 }
 
+// TestGetDispatchMode runs the test get dispatch mode operation.
 func TestGetDispatchMode(t *testing.T) {
 	origMode := dispatchMode
 	defer func() { dispatchMode = origMode }()
@@ -48,6 +50,7 @@ func TestGetDispatchMode(t *testing.T) {
 	assert.Equal(t, DispatchStandard, GetDispatchMode())
 }
 
+// TestResolveBackend_StandardMode runs the test resolve backend_standard mode operation.
 func TestResolveBackend_StandardMode(t *testing.T) {
 	origMode := dispatchMode
 	dispatchMode = DispatchStandard
@@ -62,6 +65,7 @@ func TestResolveBackend_StandardMode(t *testing.T) {
 	}
 }
 
+// TestResolveBackend_EmptyTypeName runs the test resolve backend_empty type name operation.
 func TestResolveBackend_EmptyTypeName(t *testing.T) {
 	origMode := dispatchMode
 	dispatchMode = DispatchAuto
@@ -146,6 +150,7 @@ func TestResolveBackend_AutoMode_SizeThresholds(t *testing.T) {
 	}
 }
 
+// TestHardwareAwareThresholdCalibration runs the test hardware aware threshold calibration operation.
 func TestHardwareAwareThresholdCalibration(t *testing.T) {
 	// Tier 1: Advanced Server (AMX or AVX-512 VNNI with large L3)
 	t.Run("Tier1_AMX_Server", func(t *testing.T) {
@@ -212,6 +217,7 @@ func TestHardwareAwareThresholdCalibration(t *testing.T) {
 	})
 }
 
+// TestApplyDispatchConfig_EnvOverrides runs the test apply dispatch config_env overrides operation.
 func TestApplyDispatchConfig_EnvOverrides(t *testing.T) {
 	origThresholds := GetDispatchThresholds()
 	defer SetDispatchThresholds(origThresholds)
@@ -234,6 +240,7 @@ func TestApplyDispatchConfig_EnvOverrides(t *testing.T) {
 	assert.Equal(t, 890123, th.Complex128EMLMaxCount)
 }
 
+// TestDetectHardwareProfile runs the test detect hardware profile operation.
 func TestDetectHardwareProfile(t *testing.T) {
 	profile := DetectHardwareProfile()
 	// L2 and L3 should be non-negative

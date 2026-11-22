@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestTrainKMeans_Basic runs the test train k means_basic operation.
 func TestTrainKMeans_Basic(t *testing.T) {
 
 	// Create simple test data: 3 clusters of 100 vectors each
@@ -61,6 +62,7 @@ func TestTrainKMeans_Basic(t *testing.T) {
 	}
 }
 
+// TestTrainKMeans_EmptyCluster runs the test train k means_empty cluster operation.
 func TestTrainKMeans_EmptyCluster(t *testing.T) {
 	// rand.Seed(123) - deprecated
 	r := rand.New(rand.NewSource(123))
@@ -87,6 +89,7 @@ func TestTrainKMeans_EmptyCluster(t *testing.T) {
 	}
 }
 
+// TestTrainKMeans_SingleIteration runs the test train k means_single iteration operation.
 func TestTrainKMeans_SingleIteration(t *testing.T) {
 	rng := rand.New(rand.NewSource(456))
 
@@ -111,6 +114,7 @@ func TestTrainKMeans_SingleIteration(t *testing.T) {
 	}
 }
 
+// TestTrainKMeans_CentroidCount runs the test train k means_centroid count operation.
 func TestTrainKMeans_CentroidCount(t *testing.T) {
 	rng := rand.New(rand.NewSource(999))
 
@@ -144,6 +148,7 @@ func TestTrainKMeans_CentroidCount(t *testing.T) {
 	}
 }
 
+// BenchmarkTrainKMeans runs the benchmark train k means operation.
 func BenchmarkTrainKMeans(b *testing.B) {
 	rng := rand.New(rand.NewSource(42))
 
@@ -178,6 +183,7 @@ func BenchmarkTrainKMeans(b *testing.B) {
 	}
 }
 
+// BenchmarkTrainKMeans_AllocationReduction runs the benchmark train k means_allocation reduction operation.
 func BenchmarkTrainKMeans_AllocationReduction(b *testing.B) {
 	rng := rand.New(rand.NewSource(42))
 

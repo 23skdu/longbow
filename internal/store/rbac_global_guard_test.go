@@ -33,6 +33,7 @@ func doJSONReqWithHeader(t *testing.T, client *http.Client, method, url, apiKey,
 	return resp.StatusCode, out
 }
 
+// TestNamespaceAdminCannotUseGlobalAdminRoutes runs the test namespace admin cannot use global admin routes operation.
 func TestNamespaceAdminCannotUseGlobalAdminRoutes(t *testing.T) {
 	vs, mgr, _, _, adminRaw := newNamespacePayloadStore(t)
 
@@ -78,6 +79,7 @@ func TestNamespaceAdminCannotUseGlobalAdminRoutes(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 }
 
+// TestNamespaceNameValidationAtRuntime runs the test namespace name validation at runtime operation.
 func TestNamespaceNameValidationAtRuntime(t *testing.T) {
 	vs, _, _, _, _ := newNamespacePayloadStore(t)
 	for _, name := range []string{"team-a", "team_a", "team.1"} {

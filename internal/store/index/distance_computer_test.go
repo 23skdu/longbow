@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFloat32ToFloat32Computer runs the test float32 to float32 computer operation.
 func TestFloat32ToFloat32Computer(t *testing.T) {
 	gd := &types.GraphData{
 		Dims: 2,
@@ -59,6 +60,7 @@ func TestFloat32ToFloat32Computer(t *testing.T) {
 	c.Prefetch(types.ChunkSize)
 }
 
+// TestSearchContextChunkCache runs the test search context chunk cache operation.
 func TestSearchContextChunkCache(t *testing.T) {
 	const dims = 16
 	const nChunks = 3
@@ -128,6 +130,7 @@ func TestSearchContextChunkCache(t *testing.T) {
 	require.Equal(t, uint32(2), sctx.cachedChunksF32[0].epoch)
 }
 
+// TestSearchContextTQReconCache runs the test search context tq recon cache operation.
 func TestSearchContextTQReconCache(t *testing.T) {
 	sctx := NewArrowSearchContext()
 	require.Equal(t, uint32(1), sctx.tqReconEpoch)

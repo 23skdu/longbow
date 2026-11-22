@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestZeroAllocVectorSearchParser_Parse runs the test zero alloc vector search parser_parse operation.
 func TestZeroAllocVectorSearchParser_Parse(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -71,6 +72,7 @@ func TestZeroAllocVectorSearchParser_Parse(t *testing.T) {
 	})
 }
 
+// BenchmarkVectorSearchParser runs the benchmark vector search parser operation.
 func BenchmarkVectorSearchParser(b *testing.B) {
 	vec := make([]float32, 128)
 	for i := range vec {

@@ -621,6 +621,7 @@ func (h *ArrowHNSW) pruneNeighborsGPU(candidateIds []uint32, candidateDists []fl
 	return selected, nil
 }
 
+// ComputeDistancesBatch runs the compute distances batch operation.
 func (h *ArrowHNSW) ComputeDistancesBatch(query []float32, candidateIDs []uint32) ([]float32, error) {
 	h.gpuMu.RLock()
 	defer h.gpuMu.RUnlock()

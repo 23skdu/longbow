@@ -18,6 +18,7 @@ var (
 			Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 5},
 		},
 	)
+	// SnapshotRateLimitWaitSeconds is a snapshot rate limit wait seconds value.
 	SnapshotRateLimitWaitSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_snapshot_rate_limit_wait_seconds",
@@ -26,6 +27,7 @@ var (
 		},
 	)
 
+	// RateLimitRequestsTotal is a rate limit requests total value.
 	RateLimitRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_rate_limit_requests_total",
@@ -34,6 +36,7 @@ var (
 		[]string{"result"}, // "allowed", "throttled"
 	)
 
+	// ValidationFailuresTotal is a validation failures total value.
 	ValidationFailuresTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_validation_failures_total",
@@ -42,6 +45,7 @@ var (
 		[]string{"component", "reason"},
 	)
 
+	// PanicTotal is a panic total value.
 	PanicTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_panic_total",
@@ -50,6 +54,7 @@ var (
 		[]string{"component"},
 	)
 
+	// DoGetTimeToFirstChunk is a do get time to first chunk value.
 	DoGetTimeToFirstChunk = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_do_get_time_to_first_chunk_seconds",
@@ -70,16 +75,19 @@ var (
 		Help: "Current GOGC value set by adaptive GC controller",
 	})
 
+	// AdaptiveGCAdjustmentsTotal is a adaptive gc adjustments total value.
 	AdaptiveGCAdjustmentsTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_adaptive_gc_adjustments_total",
 		Help: "Total number of GOGC adjustments made by adaptive controller",
 	})
 
+	// AdaptiveGCAllocationRate is a adaptive gc allocation rate value.
 	AdaptiveGCAllocationRate = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "longbow_adaptive_gc_allocation_rate_bytes_per_sec",
 		Help: "Current memory allocation rate in bytes per second",
 	})
 
+	// AdaptiveGCMemoryPressure is a adaptive gc memory pressure value.
 	AdaptiveGCMemoryPressure = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "longbow_adaptive_gc_memory_pressure_ratio",
 		Help: "Current memory pressure ratio (0-1, where 1 is maximum pressure)",
@@ -103,16 +111,19 @@ var (
 		Help: "Number of batches exceeding fragmentation threshold",
 	}, []string{"dataset"})
 
+	// CompactionTriggersTotal is a compaction triggers total value.
 	CompactionTriggersTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "longbow_compaction_triggers_total",
 		Help: "Total number of compaction triggers by reason",
 	}, []string{"dataset", "reason"})
 
+	// CompactionBatchesMerged is a compaction batches merged value.
 	CompactionBatchesMerged = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "longbow_compaction_batches_merged_total",
 		Help: "Total number of batches merged during compaction",
 	}, []string{"dataset"})
 
+	// CompactionRunsTotal is a compaction runs total value.
 	CompactionRunsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "longbow_compaction_runs_total",
 		Help: "Total number of compaction runs performed",
@@ -125,12 +136,14 @@ var (
 			Help: "Current warmup progress percentage (0-100)",
 		},
 	)
+	// WarmupDatasetsTotal is a warmup datasets total value.
 	WarmupDatasetsTotal = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_warmup_datasets_total",
 			Help: "Total number of datasets to warmup",
 		},
 	)
+	// WarmupDatasetsCompleted is a warmup datasets completed value.
 	WarmupDatasetsCompleted = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_warmup_datasets_completed",
@@ -143,6 +156,7 @@ var (
 // GOGC Auto-Tuning Metrics
 // =============================================================================
 var (
+	// GCTunerTargetGOGC is a gc tuner target gogc value.
 	GCTunerTargetGOGC = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_gc_tuner_target_gogc",
@@ -150,6 +164,7 @@ var (
 		},
 	)
 
+	// GCTunerHeapUtilization is a gc tuner heap utilization value.
 	GCTunerHeapUtilization = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_gc_tuner_heap_utilization",
@@ -157,6 +172,7 @@ var (
 		},
 	)
 
+	// GCTunerGPUUtilization is a gc tuner gpu utilization value.
 	GCTunerGPUUtilization = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_gc_tuner_gpu_utilization",
@@ -164,19 +180,21 @@ var (
 		},
 	)
 
-	// HNSW Stabilization Metrics
+	// HnswRepairSuccessTotal Stabilization Metrics
 	HnswRepairSuccessTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_repair_success_total",
 			Help: "Total number of successful HNSW graph repairs",
 		},
 	)
+	// HnswRepairFailureTotal is a hnsw repair failure total value.
 	HnswRepairFailureTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_repair_failure_total",
 			Help: "Total number of failed HNSW graph repairs",
 		},
 	)
+	// HnswRepairNodesVisitedTotal is a hnsw repair nodes visited total value.
 	HnswRepairNodesVisitedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_repair_nodes_visited_total",
@@ -184,6 +202,7 @@ var (
 		},
 	)
 
+	// HnswLockWaitDurationSeconds is a hnsw lock wait duration seconds value.
 	HnswLockWaitDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_hnsw_lock_wait_duration_seconds",
@@ -192,6 +211,7 @@ var (
 		},
 	)
 
+	// HnswSearchEarlyExitsTotal is a hnsw search early exits total value.
 	HnswSearchEarlyExitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_search_early_exits_total",
@@ -200,6 +220,7 @@ var (
 		[]string{"reason"}, // "timeout", "threshold", "no_candidates"
 	)
 
+	// HNSWEarlyTerminationTotal is a hnsw early termination total value.
 	HNSWEarlyTerminationTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_early_termination_total",
@@ -208,7 +229,7 @@ var (
 		[]string{"reason"},
 	)
 
-	// NUMA Metrics
+	// NUMANodeCount Metrics
 	NUMANodeCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_numa_node_count",
@@ -216,6 +237,7 @@ var (
 		},
 	)
 
+	// NUMAEnabled is a numa enabled value.
 	NUMAEnabled = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_numa_enabled",
@@ -244,6 +266,7 @@ var (
 		[]string{"stage", "status"},
 	)
 
+	// PipelineDurationSeconds is a pipeline duration seconds value.
 	PipelineDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_pipeline_duration_seconds",
@@ -270,6 +293,7 @@ var (
 		[]string{"worker_id"},
 	)
 
+	// S3OperationsTotal is a s3 operations total value.
 	S3OperationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_s3_operations_total",
@@ -314,6 +338,7 @@ var (
 		[]string{"namespace"},
 	)
 
+	// NamespaceCreationTotal is a namespace creation total value.
 	NamespaceCreationTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_namespace_creation_total",
@@ -403,6 +428,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// QueryCacheHitsTotal is a query cache hits total value.
 	QueryCacheHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_query_cache_hits_total",
@@ -411,6 +437,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// QueryCacheMissesTotal is a query cache misses total value.
 	QueryCacheMissesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_query_cache_misses_total",
@@ -419,6 +446,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// DiskStoreReadBytesTotal is a disk store read bytes total value.
 	DiskStoreReadBytesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_disk_store_read_bytes_total",
@@ -427,6 +455,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// DiskStoreWriteBytesTotal is a disk store write bytes total value.
 	DiskStoreWriteBytesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_disk_store_write_bytes_total",
@@ -435,6 +464,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// AutoSpillToDiskEngaged is a auto spill to disk engaged value.
 	AutoSpillToDiskEngaged = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_auto_spill_to_disk_engaged_total",
@@ -443,6 +473,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// AutoQuantizeEngaged is a auto quantize engaged value.
 	AutoQuantizeEngaged = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_auto_quantize_engaged_total",
@@ -451,6 +482,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// QueryCacheEvictionsTotal is a query cache evictions total value.
 	QueryCacheEvictionsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_query_cache_evictions_total",
@@ -459,6 +491,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// BitmapCacheHitsTotal is a bitmap cache hits total value.
 	BitmapCacheHitsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bitmap_cache_hits_total",
@@ -466,6 +499,7 @@ var (
 		},
 	)
 
+	// BitmapCacheMissesTotal is a bitmap cache misses total value.
 	BitmapCacheMissesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bitmap_cache_misses_total",
@@ -478,6 +512,7 @@ var (
 // BQ & RCU Metrics
 // =============================================================================
 var (
+	// BQVectorsTotal is a bq vectors total value.
 	BQVectorsTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_bq_vectors_total",
@@ -486,6 +521,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// DatasetUpdateRetriesTotal is a dataset update retries total value.
 	DatasetUpdateRetriesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_dataset_update_retries_total",

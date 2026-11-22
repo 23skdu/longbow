@@ -4,11 +4,17 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// MinCandidateHeap represents a min candidate heap value.
 type MinCandidateHeap []types.Candidate
 
-func (h MinCandidateHeap) Len() int           { return len(h) }
+// Len runs the len operation.
+func (h MinCandidateHeap) Len() int { return len(h) }
+
+// Less runs the less operation.
 func (h MinCandidateHeap) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
-func (h MinCandidateHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+// Swap runs the swap operation.
+func (h MinCandidateHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 // Push adds a candidate to the heap.
 func (h *MinCandidateHeap) Push(x any) { *h = append(*h, x.(types.Candidate)) }
@@ -26,17 +32,22 @@ func (h *MinCandidateHeap) Pop() any {
 // The flat backing slice is sifted as a 4-ary heap: parent (j-1)/4, children 4*i+1..4*i+4.
 type MinCandidateHeapAdapter []types.Candidate
 
-func (h MinCandidateHeapAdapter) Len() int           { return len(h) }
-func (h MinCandidateHeapAdapter) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
-func (h MinCandidateHeapAdapter) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+// Len runs the len operation.
+func (h MinCandidateHeapAdapter) Len() int { return len(h) }
 
-// Zero-allocation Push
+// Less runs the less operation.
+func (h MinCandidateHeapAdapter) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
+
+// Swap runs the swap operation.
+func (h MinCandidateHeapAdapter) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+
+// PushCandidate Push
 func (h *MinCandidateHeapAdapter) PushCandidate(c types.Candidate) {
 	*h = append(*h, c)
 	h.up(len(*h) - 1)
 }
 
-// Zero-allocation Pop
+// PopCandidate Pop
 func (h *MinCandidateHeapAdapter) PopCandidate() types.Candidate {
 	s := *h
 	n := len(s)
@@ -149,17 +160,22 @@ func (h *MinCandidateHeapAdapter) down(i0, n int) bool {
 // The flat backing slice is sifted as a 4-ary heap: parent (j-1)/4, children 4*i+1..4*i+4.
 type MaxCandidateHeapAdapter []types.Candidate
 
-func (h MaxCandidateHeapAdapter) Len() int           { return len(h) }
-func (h MaxCandidateHeapAdapter) Less(i, j int) bool { return h[i].Dist > h[j].Dist }
-func (h MaxCandidateHeapAdapter) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+// Len runs the len operation.
+func (h MaxCandidateHeapAdapter) Len() int { return len(h) }
 
-// Zero-allocation Push
+// Less runs the less operation.
+func (h MaxCandidateHeapAdapter) Less(i, j int) bool { return h[i].Dist > h[j].Dist }
+
+// Swap runs the swap operation.
+func (h MaxCandidateHeapAdapter) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+
+// PushCandidate Push
 func (h *MaxCandidateHeapAdapter) PushCandidate(c types.Candidate) {
 	*h = append(*h, c)
 	h.up(len(*h) - 1)
 }
 
-// Zero-allocation Pop
+// PopCandidate Pop
 func (h *MaxCandidateHeapAdapter) PopCandidate() types.Candidate {
 	s := *h
 	n := len(s)

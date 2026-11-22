@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestComplex64_Support runs the test complex64_support operation.
 func TestComplex64_Support(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -67,6 +68,7 @@ func TestComplex64_Support(t *testing.T) {
 	assert.Equal(t, float32(0), results[0].Dist)
 }
 
+// TestComplex128_Support runs the test complex128_support operation.
 func TestComplex128_Support(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

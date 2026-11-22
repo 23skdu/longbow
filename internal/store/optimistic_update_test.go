@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestOptimisticConcurrentConfig_Defaults runs the test optimistic concurrent config_defaults operation.
 func TestOptimisticConcurrentConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -30,6 +31,7 @@ func TestOptimisticConcurrentConfig_Defaults(t *testing.T) {
 	assert.Equal(t, 10000, config.VersionCacheSize)
 }
 
+// TestNewOptimisticConcurrentUpdates runs the test new optimistic concurrent updates operation.
 func TestNewOptimisticConcurrentUpdates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -49,6 +51,7 @@ func TestNewOptimisticConcurrentUpdates(t *testing.T) {
 	assert.Equal(t, 1000, ocu.config.VersionCacheSize)
 }
 
+// TestOptimisticConcurrentUpdates_GetVersion_NotFound runs the test optimistic concurrent updates_get version_not found operation.
 func TestOptimisticConcurrentUpdates_GetVersion_NotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -61,6 +64,7 @@ func TestOptimisticConcurrentUpdates_GetVersion_NotFound(t *testing.T) {
 	assert.False(t, exists)
 }
 
+// TestOptimisticConcurrentUpdates_SetVersion runs the test optimistic concurrent updates_set version operation.
 func TestOptimisticConcurrentUpdates_SetVersion(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -76,6 +80,7 @@ func TestOptimisticConcurrentUpdates_SetVersion(t *testing.T) {
 	assert.Equal(t, uint64(1), version)
 }
 
+// TestOptimisticConcurrentUpdates_GetVersion_Found runs the test optimistic concurrent updates_get version_found operation.
 func TestOptimisticConcurrentUpdates_GetVersion_Found(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -91,6 +96,7 @@ func TestOptimisticConcurrentUpdates_GetVersion_Found(t *testing.T) {
 	assert.Equal(t, uint64(5), version)
 }
 
+// TestOptimisticConcurrentUpdates_UpdateVector_NewVector runs the test optimistic concurrent updates_update vector_new vector operation.
 func TestOptimisticConcurrentUpdates_UpdateVector_NewVector(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -107,6 +113,7 @@ func TestOptimisticConcurrentUpdates_UpdateVector_NewVector(t *testing.T) {
 	assert.NoError(t, result.Error)
 }
 
+// TestOptimisticConcurrentUpdates_UpdateVector_VersionMatch runs the test optimistic concurrent updates_update vector_version match operation.
 func TestOptimisticConcurrentUpdates_UpdateVector_VersionMatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -124,6 +131,7 @@ func TestOptimisticConcurrentUpdates_UpdateVector_VersionMatch(t *testing.T) {
 	assert.Equal(t, uint64(2), result.NewVersion)
 }
 
+// TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Abort runs the test optimistic concurrent updates_update vector_version mismatch_abort operation.
 func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Abort(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -145,6 +153,7 @@ func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Abort(t *testi
 	assert.Contains(t, result.Error.Error(), "version mismatch")
 }
 
+// TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Overwrite runs the test optimistic concurrent updates_update vector_version mismatch_overwrite operation.
 func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Overwrite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -164,6 +173,7 @@ func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Overwrite(t *t
 	assert.Equal(t, uint64(3), result.NewVersion)
 }
 
+// TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Merge runs the test optimistic concurrent updates_update vector_version mismatch_merge operation.
 func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Merge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -183,6 +193,7 @@ func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Merge(t *testi
 	assert.Equal(t, uint64(3), result.NewVersion)
 }
 
+// TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_Success runs the test optimistic concurrent updates_update vector with retry_success operation.
 func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_Success(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -200,6 +211,7 @@ func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_Success(t *testing.T)
 	assert.Equal(t, uint64(1), result.NewVersion)
 }
 
+// TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_Retries runs the test optimistic concurrent updates_update vector with retry_retries operation.
 func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_Retries(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -219,6 +231,7 @@ func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_Retries(t *testing.T)
 	assert.True(t, result.Success)
 }
 
+// TestOptimisticConcurrentUpdates_DeleteVector runs the test optimistic concurrent updates_delete vector operation.
 func TestOptimisticConcurrentUpdates_DeleteVector(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -240,6 +253,7 @@ func TestOptimisticConcurrentUpdates_DeleteVector(t *testing.T) {
 	assert.Equal(t, uint64(0), version)
 }
 
+// TestOptimisticConcurrentUpdates_BatchUpdate runs the test optimistic concurrent updates_batch update operation.
 func TestOptimisticConcurrentUpdates_BatchUpdate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -264,6 +278,7 @@ func TestOptimisticConcurrentUpdates_BatchUpdate(t *testing.T) {
 	}
 }
 
+// TestOptimisticConcurrentUpdates_GetStats runs the test optimistic concurrent updates_get stats operation.
 func TestOptimisticConcurrentUpdates_GetStats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -280,6 +295,7 @@ func TestOptimisticConcurrentUpdates_GetStats(t *testing.T) {
 	assert.Equal(t, int64(2), succeeded)
 }
 
+// TestOptimisticConcurrentUpdates_GetStats_Conflicted runs the test optimistic concurrent updates_get stats_conflicted operation.
 func TestOptimisticConcurrentUpdates_GetStats_Conflicted(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -300,6 +316,7 @@ func TestOptimisticConcurrentUpdates_GetStats_Conflicted(t *testing.T) {
 	assert.Equal(t, int64(1), conflicted)
 }
 
+// TestOptimisticConcurrentUpdates_SetConfig runs the test optimistic concurrent updates_set config operation.
 func TestOptimisticConcurrentUpdates_SetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -321,6 +338,7 @@ func TestOptimisticConcurrentUpdates_SetConfig(t *testing.T) {
 	assert.Equal(t, "merge", ocu.config.ConflictStrategy)
 }
 
+// TestOptimisticConcurrentUpdates_GetConfig runs the test optimistic concurrent updates_get config operation.
 func TestOptimisticConcurrentUpdates_GetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -339,6 +357,7 @@ func TestOptimisticConcurrentUpdates_GetConfig(t *testing.T) {
 	assert.Equal(t, config, got)
 }
 
+// TestOptimisticConcurrentUpdates_ClearCache runs the test optimistic concurrent updates_clear cache operation.
 func TestOptimisticConcurrentUpdates_ClearCache(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -357,6 +376,7 @@ func TestOptimisticConcurrentUpdates_ClearCache(t *testing.T) {
 	assert.Equal(t, 0, ocu.GetCacheSize())
 }
 
+// TestOptimisticConcurrentUpdates_GetCacheSize runs the test optimistic concurrent updates_get cache size operation.
 func TestOptimisticConcurrentUpdates_GetCacheSize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -373,6 +393,7 @@ func TestOptimisticConcurrentUpdates_GetCacheSize(t *testing.T) {
 	assert.Equal(t, 2, ocu.GetCacheSize())
 }
 
+// TestOptimisticConcurrentUpdates_GetVectorInfo runs the test optimistic concurrent updates_get vector info operation.
 func TestOptimisticConcurrentUpdates_GetVectorInfo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -389,6 +410,7 @@ func TestOptimisticConcurrentUpdates_GetVectorInfo(t *testing.T) {
 	assert.Equal(t, vector, info.Vector)
 }
 
+// TestOptimisticConcurrentUpdates_GetVectorInfo_NotFound runs the test optimistic concurrent updates_get vector info_not found operation.
 func TestOptimisticConcurrentUpdates_GetVectorInfo_NotFound(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -400,6 +422,7 @@ func TestOptimisticConcurrentUpdates_GetVectorInfo_NotFound(t *testing.T) {
 	assert.False(t, exists)
 }
 
+// TestOptimisticConcurrentUpdates_Concurrent runs the test optimistic concurrent updates_concurrent operation.
 func TestOptimisticConcurrentUpdates_Concurrent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -429,6 +452,7 @@ func TestOptimisticConcurrentUpdates_Concurrent(t *testing.T) {
 	assert.GreaterOrEqual(t, attempted, int64(numGoroutines))
 }
 
+// TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_MaxRetries runs the test optimistic concurrent updates_update vector with retry_max retries operation.
 func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_MaxRetries(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -447,6 +471,7 @@ func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_MaxRetries(t *testing
 	assert.False(t, result.Success)
 }
 
+// TestOptimisticConcurrentUpdates_MergeUpdate runs the test optimistic concurrent updates_merge update operation.
 func TestOptimisticConcurrentUpdates_MergeUpdate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

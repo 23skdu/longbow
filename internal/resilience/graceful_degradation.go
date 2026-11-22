@@ -7,18 +7,26 @@ import (
 	"time"
 )
 
+// DegradationLevel represents a degradation level value.
 type DegradationLevel int
 
 const (
+	// DegradationNone is a degradation none constant.
 	DegradationNone DegradationLevel = iota
+	// DegradationMinimal is a degradation minimal constant.
 	DegradationMinimal
+	// DegradationModerate is a degradation moderate constant.
 	DegradationModerate
+	// DegradationSevere is a degradation severe constant.
 	DegradationSevere
+	// DegradationCritical is a degradation critical constant.
 	DegradationCritical
 )
 
+// FallbackFunc represents a fallback func value.
 type FallbackFunc func(ctx context.Context) (interface{}, error)
 
+// DegradationStrategy represents a degradation strategy value.
 type DegradationStrategy struct {
 	Name         string
 	Level        DegradationLevel
@@ -27,6 +35,7 @@ type DegradationStrategy struct {
 	LastUsed     time.Time
 }
 
+// GracefulDegradation represents a graceful degradation value.
 type GracefulDegradation struct {
 	strategies      map[string]*DegradationStrategy
 	currentLevel    DegradationLevel
@@ -36,6 +45,7 @@ type GracefulDegradation struct {
 	lastLevelChange time.Time
 }
 
+// NewGracefulDegradation constructs a new GracefulDegradation.
 func NewGracefulDegradation() *GracefulDegradation {
 	return &GracefulDegradation{
 		strategies:   make(map[string]*DegradationStrategy),
@@ -44,6 +54,7 @@ func NewGracefulDegradation() *GracefulDegradation {
 	}
 }
 
+// AddStrategy runs the add strategy operation.
 func (gd *GracefulDegradation) AddStrategy(name string, level DegradationLevel, fallback FallbackFunc, enabled bool) {
 	gd.mu.Lock()
 	defer gd.mu.Unlock()
@@ -56,6 +67,7 @@ func (gd *GracefulDegradation) AddStrategy(name string, level DegradationLevel, 
 	}
 }
 
+// AddHealthCheck runs the add health check operation.
 func (gd *GracefulDegradation) AddHealthCheck(name string, check func() error) {
 	gd.mu.Lock()
 	defer gd.mu.Unlock()
@@ -63,6 +75,7 @@ func (gd *GracefulDegradation) AddHealthCheck(name string, check func() error) {
 	gd.healthChecks[name] = check
 }
 
+// Execute runs the execute operation.
 func (gd *GracefulDegradation) Execute(ctx context.Context, primary func() (any, error), fallbackStrategy string) (any, error) {
 	gd.mu.RLock()
 	strategy, exists := gd.strategies[fallbackStrategy]
@@ -85,6 +98,7 @@ func (gd *GracefulDegradation) Execute(ctx context.Context, primary func() (any,
 	return primary()
 }
 
+// ExecuteWithGracefulDegradation runs the execute with graceful degradation operation.
 func ExecuteWithGracefulDegradation[T any](gd *GracefulDegradation, ctx context.Context, primary func() (T, error), fallbackStrategy string) (T, error) {
 	gd.mu.RLock()
 	strategy, exists := gd.strategies[fallbackStrategy]
@@ -113,12 +127,14 @@ func ExecuteWithGracefulDegradation[T any](gd *GracefulDegradation, ctx context.
 	return primary()
 }
 
+// GetCurrentLevel returns the current level.
 func (gd *GracefulDegradation) GetCurrentLevel() DegradationLevel {
 	gd.mu.RLock()
 	defer gd.mu.RUnlock()
 	return gd.currentLevel
 }
 
+// SetLevel sets the level.
 func (gd *GracefulDegradation) SetLevel(level DegradationLevel) {
 	gd.mu.Lock()
 	defer gd.mu.Unlock()
@@ -135,6 +151,7 @@ func (gd *GracefulDegradation) SetLevel(level DegradationLevel) {
 	}
 }
 
+// AssessHealth runs the assess health operation.
 func (gd *GracefulDegradation) AssessHealth() DegradationLevel {
 	gd.mu.RLock()
 	healthChecks := gd.healthChecks
@@ -169,6 +186,7 @@ func (gd *GracefulDegradation) AssessHealth() DegradationLevel {
 	}
 }
 
+// StartHealthMonitoring runs the start health monitoring operation.
 func (gd *GracefulDegradation) StartHealthMonitoring(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -193,6 +211,7 @@ func (gd *GracefulDegradation) recordFallbackUse(strategyName string) {
 	}
 }
 
+// GetStats returns the stats.
 func (gd *GracefulDegradation) GetStats() map[string]interface{} {
 	gd.mu.RLock()
 	defer gd.mu.RUnlock()
@@ -217,12 +236,14 @@ func (gd *GracefulDegradation) GetStats() map[string]interface{} {
 	return stats
 }
 
+// FallbackCache represents a fallback cache value.
 type FallbackCache struct {
 	cache map[string]CacheEntry
 	ttl   time.Duration
 	mu    sync.RWMutex
 }
 
+// CacheEntry represents a cache entry value.
 type CacheEntry struct {
 	Value      interface{}
 	Expiry     time.Time
@@ -230,6 +251,7 @@ type CacheEntry struct {
 	IsFallback bool
 }
 
+// NewFallbackCache constructs a new FallbackCache.
 func NewFallbackCache(ttl time.Duration) *FallbackCache {
 	return &FallbackCache{
 		cache: make(map[string]CacheEntry),
@@ -237,6 +259,7 @@ func NewFallbackCache(ttl time.Duration) *FallbackCache {
 	}
 }
 
+// Get returns the .
 func (fc *FallbackCache) Get(key string) (value interface{}, found bool, err error) {
 	fc.mu.RLock()
 	defer fc.mu.RUnlock()
@@ -255,6 +278,7 @@ func (fc *FallbackCache) Get(key string) (value interface{}, found bool, err err
 	return
 }
 
+// Set sets the .
 func (fc *FallbackCache) Set(key string, value interface{}, isFallback bool, err error) {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
@@ -267,6 +291,7 @@ func (fc *FallbackCache) Set(key string, value interface{}, isFallback bool, err
 	}
 }
 
+// Clear runs the clear operation.
 func (fc *FallbackCache) Clear() {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
@@ -274,6 +299,7 @@ func (fc *FallbackCache) Clear() {
 	fc.cache = make(map[string]CacheEntry)
 }
 
+// Size runs the size operation.
 func (fc *FallbackCache) Size() int {
 	fc.mu.RLock()
 	defer fc.mu.RUnlock()
@@ -281,6 +307,7 @@ func (fc *FallbackCache) Size() int {
 	return len(fc.cache)
 }
 
+// Bulkhead represents a bulkhead value.
 type Bulkhead struct {
 	semaphore      chan struct{}
 	name           string
@@ -288,6 +315,7 @@ type Bulkhead struct {
 	mu             sync.RWMutex
 }
 
+// NewBulkhead constructs a new Bulkhead.
 func NewBulkhead(name string, maxConcurrency int) *Bulkhead {
 	return &Bulkhead{
 		semaphore:      make(chan struct{}, maxConcurrency),
@@ -296,6 +324,7 @@ func NewBulkhead(name string, maxConcurrency int) *Bulkhead {
 	}
 }
 
+// Execute runs the execute operation.
 func (b *Bulkhead) Execute(fn func() (interface{}, error)) (interface{}, error) {
 	select {
 	case b.semaphore <- struct{}{}:
@@ -306,6 +335,7 @@ func (b *Bulkhead) Execute(fn func() (interface{}, error)) (interface{}, error) 
 	}
 }
 
+// ExecuteWithBulkhead runs the execute with bulkhead operation.
 func ExecuteWithBulkhead[T any](b *Bulkhead, fn func() (T, error)) (T, error) {
 	select {
 	case b.semaphore <- struct{}{}:
@@ -317,6 +347,7 @@ func ExecuteWithBulkhead[T any](b *Bulkhead, fn func() (T, error)) (T, error) {
 	}
 }
 
+// ExecuteWithContext runs the execute with context operation.
 func (b *Bulkhead) ExecuteWithContext(ctx context.Context, fn func(context.Context) (interface{}, error)) (interface{}, error) {
 	select {
 	case b.semaphore <- struct{}{}:
@@ -327,6 +358,7 @@ func (b *Bulkhead) ExecuteWithContext(ctx context.Context, fn func(context.Conte
 	}
 }
 
+// ExecuteWithBulkheadAndContext runs the execute with bulkhead and context operation.
 func ExecuteWithBulkheadAndContext[T any](b *Bulkhead, ctx context.Context, fn func(context.Context) (T, error)) (T, error) {
 	select {
 	case b.semaphore <- struct{}{}:
@@ -338,6 +370,7 @@ func ExecuteWithBulkheadAndContext[T any](b *Bulkhead, ctx context.Context, fn f
 	}
 }
 
+// AvailableSlots runs the available slots operation.
 func (b *Bulkhead) AvailableSlots() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -345,6 +378,7 @@ func (b *Bulkhead) AvailableSlots() int {
 	return b.maxConcurrency - len(b.semaphore)
 }
 
+// Name runs the name operation.
 func (b *Bulkhead) Name() string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -352,17 +386,20 @@ func (b *Bulkhead) Name() string {
 	return b.name
 }
 
+// BulkheadGroup represents a bulkhead group value.
 type BulkheadGroup struct {
 	bulkheads map[string]*Bulkhead
 	mu        sync.RWMutex
 }
 
+// NewBulkheadGroup constructs a new BulkheadGroup.
 func NewBulkheadGroup() *BulkheadGroup {
 	return &BulkheadGroup{
 		bulkheads: make(map[string]*Bulkhead),
 	}
 }
 
+// GetBulkhead returns the bulkhead.
 func (bg *BulkheadGroup) GetBulkhead(name string, maxConcurrency int) *Bulkhead {
 	bg.mu.RLock()
 	bulkhead, exists := bg.bulkheads[name]
@@ -385,16 +422,19 @@ func (bg *BulkheadGroup) GetBulkhead(name string, maxConcurrency int) *Bulkhead 
 	return bulkhead
 }
 
+// Execute runs the execute operation.
 func (bg *BulkheadGroup) Execute(name string, maxConcurrency int, fn func() (any, error)) (any, error) {
 	bulkhead := bg.GetBulkhead(name, maxConcurrency)
 	return bulkhead.Execute(fn)
 }
 
+// ExecuteWithBulkheadGroup runs the execute with bulkhead group operation.
 func ExecuteWithBulkheadGroup[T any](bg *BulkheadGroup, name string, maxConcurrency int, fn func() (T, error)) (T, error) {
 	bulkhead := bg.GetBulkhead(name, maxConcurrency)
 	return ExecuteWithBulkhead(bulkhead, fn)
 }
 
+// RemoveBulkhead runs the remove bulkhead operation.
 func (bg *BulkheadGroup) RemoveBulkhead(name string) {
 	bg.mu.Lock()
 	defer bg.mu.Unlock()

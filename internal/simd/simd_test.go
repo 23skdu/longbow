@@ -34,6 +34,7 @@ func referenceCosine(a, b []float32) float32 {
 
 // === CPU Feature Detection Tests ===
 
+// TestCPUFeatureDetection runs the test cpu feature detection operation.
 func TestCPUFeatureDetection(t *testing.T) {
 	features := GetCPUFeatures()
 
@@ -46,6 +47,7 @@ func TestCPUFeatureDetection(t *testing.T) {
 		features.Vendor, features.HasAVX2, features.HasAVX512, features.HasNEON)
 }
 
+// TestSelectedImplementation runs the test selected implementation operation.
 func TestSelectedImplementation(t *testing.T) {
 	impl := GetImplementation()
 	// emerald and granite are the AMX tiers, reachable on Sapphire Rapids and
@@ -68,6 +70,7 @@ func TestSelectedImplementation(t *testing.T) {
 
 // === Euclidean Distance Tests ===
 
+// TestEuclideanDistance_Basic runs the test euclidean distance_basic operation.
 func TestEuclideanDistance_Basic(t *testing.T) {
 	a := []float32{1, 2, 3, 4}
 	b := []float32{5, 6, 7, 8}
@@ -81,6 +84,7 @@ func TestEuclideanDistance_Basic(t *testing.T) {
 	}
 }
 
+// TestEuclideanDistance_Identical runs the test euclidean distance_identical operation.
 func TestEuclideanDistance_Identical(t *testing.T) {
 	a := []float32{1, 2, 3, 4, 5, 6, 7, 8}
 
@@ -92,6 +96,7 @@ func TestEuclideanDistance_Identical(t *testing.T) {
 	}
 }
 
+// TestEuclideanDistance_Zeros runs the test euclidean distance_zeros operation.
 func TestEuclideanDistance_Zeros(t *testing.T) {
 	a := make([]float32, 128)
 	b := make([]float32, 128)
@@ -104,6 +109,7 @@ func TestEuclideanDistance_Zeros(t *testing.T) {
 	}
 }
 
+// TestEuclideanDistance_VariousDimensions runs the test euclidean distance_various dimensions operation.
 func TestEuclideanDistance_VariousDimensions(t *testing.T) {
 	dimensions := []int{1, 3, 7, 8, 15, 16, 31, 32, 64, 128, 256, 384, 512, 768, 1024, 1536}
 
@@ -123,6 +129,7 @@ func TestEuclideanDistance_VariousDimensions(t *testing.T) {
 	}
 }
 
+// TestEuclideanDistance_LengthMismatch runs the test euclidean distance_length mismatch operation.
 func TestEuclideanDistance_LengthMismatch(t *testing.T) {
 	a := []float32{1, 2, 3}
 	b := []float32{1, 2}
@@ -132,6 +139,7 @@ func TestEuclideanDistance_LengthMismatch(t *testing.T) {
 
 // === Cosine Similarity Tests ===
 
+// TestCosineDistance_Basic runs the test cosine distance_basic operation.
 func TestCosineDistance_Basic(t *testing.T) {
 	a := []float32{1, 2, 3, 4}
 	b := []float32{5, 6, 7, 8}
@@ -145,6 +153,7 @@ func TestCosineDistance_Basic(t *testing.T) {
 	}
 }
 
+// TestCosineDistance_Identical runs the test cosine distance_identical operation.
 func TestCosineDistance_Identical(t *testing.T) {
 	a := []float32{1, 2, 3, 4, 5, 6, 7, 8}
 
@@ -156,6 +165,7 @@ func TestCosineDistance_Identical(t *testing.T) {
 	}
 }
 
+// TestCosineDistance_Orthogonal runs the test cosine distance_orthogonal operation.
 func TestCosineDistance_Orthogonal(t *testing.T) {
 	a := []float32{1, 0, 0, 0}
 	b := []float32{0, 1, 0, 0}
@@ -169,6 +179,7 @@ func TestCosineDistance_Orthogonal(t *testing.T) {
 	}
 }
 
+// TestCosineDistance_Opposite runs the test cosine distance_opposite operation.
 func TestCosineDistance_Opposite(t *testing.T) {
 	a := []float32{1, 2, 3, 4}
 	b := []float32{-1, -2, -3, -4}
@@ -182,6 +193,7 @@ func TestCosineDistance_Opposite(t *testing.T) {
 	}
 }
 
+// TestCosineDistance_ZeroVector runs the test cosine distance_zero vector operation.
 func TestCosineDistance_ZeroVector(t *testing.T) {
 	a := []float32{0, 0, 0, 0}
 	b := []float32{1, 2, 3, 4}
@@ -195,6 +207,7 @@ func TestCosineDistance_ZeroVector(t *testing.T) {
 	}
 }
 
+// TestCosineDistance_VariousDimensions runs the test cosine distance_various dimensions operation.
 func TestCosineDistance_VariousDimensions(t *testing.T) {
 	dimensions := []int{1, 3, 7, 8, 15, 16, 31, 32, 64, 128, 256, 384, 512, 768, 1024, 1536}
 
@@ -214,6 +227,7 @@ func TestCosineDistance_VariousDimensions(t *testing.T) {
 	}
 }
 
+// TestCosineDistance_LengthMismatch runs the test cosine distance_length mismatch operation.
 func TestCosineDistance_LengthMismatch(t *testing.T) {
 	a := []float32{1, 2, 3}
 	b := []float32{1, 2}
@@ -223,6 +237,7 @@ func TestCosineDistance_LengthMismatch(t *testing.T) {
 
 // === Dot Product Tests ===
 
+// TestDotProduct_Basic runs the test dot product_basic operation.
 func TestDotProduct_Basic(t *testing.T) {
 	a := []float32{1, 2, 3, 4}
 	b := []float32{5, 6, 7, 8}
@@ -237,6 +252,7 @@ func TestDotProduct_Basic(t *testing.T) {
 	}
 }
 
+// TestDotProduct_VariousDimensions runs the test dot product_various dimensions operation.
 func TestDotProduct_VariousDimensions(t *testing.T) {
 	dimensions := []int{1, 7, 8, 15, 16, 31, 32, 64, 128, 256, 384, 512, 768, 1024, 1536, 3072}
 
@@ -263,6 +279,7 @@ func TestDotProduct_VariousDimensions(t *testing.T) {
 
 // === Benchmarks ===
 
+// BenchmarkEuclideanDistance_128 runs the benchmark euclidean distance_128 operation.
 func BenchmarkEuclideanDistance_128(b *testing.B) {
 	v1 := makeTestVector(128, 1.0)
 	v2 := makeTestVector(128, 2.0)
@@ -272,6 +289,7 @@ func BenchmarkEuclideanDistance_128(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclideanDistance_384 runs the benchmark euclidean distance_384 operation.
 func BenchmarkEuclideanDistance_384(b *testing.B) {
 	v1 := makeTestVector(384, 1.0)
 	v2 := makeTestVector(384, 2.0)
@@ -281,6 +299,7 @@ func BenchmarkEuclideanDistance_384(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclideanDistance_768 runs the benchmark euclidean distance_768 operation.
 func BenchmarkEuclideanDistance_768(b *testing.B) {
 	v1 := makeTestVector(768, 1.0)
 	v2 := makeTestVector(768, 2.0)
@@ -290,6 +309,7 @@ func BenchmarkEuclideanDistance_768(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclideanDistance_1536 runs the benchmark euclidean distance_1536 operation.
 func BenchmarkEuclideanDistance_1536(b *testing.B) {
 	v1 := makeTestVector(1536, 1.0)
 	v2 := makeTestVector(1536, 2.0)
@@ -299,6 +319,7 @@ func BenchmarkEuclideanDistance_1536(b *testing.B) {
 	}
 }
 
+// BenchmarkCosineDistance_128 runs the benchmark cosine distance_128 operation.
 func BenchmarkCosineDistance_128(b *testing.B) {
 	v1 := makeTestVector(128, 1.0)
 	v2 := makeTestVector(128, 2.0)
@@ -308,6 +329,7 @@ func BenchmarkCosineDistance_128(b *testing.B) {
 	}
 }
 
+// BenchmarkCosineDistance_384 runs the benchmark cosine distance_384 operation.
 func BenchmarkCosineDistance_384(b *testing.B) {
 	v1 := makeTestVector(384, 1.0)
 	v2 := makeTestVector(384, 2.0)
@@ -317,6 +339,7 @@ func BenchmarkCosineDistance_384(b *testing.B) {
 	}
 }
 
+// BenchmarkCosineDistance_768 runs the benchmark cosine distance_768 operation.
 func BenchmarkCosineDistance_768(b *testing.B) {
 	v1 := makeTestVector(768, 1.0)
 	v2 := makeTestVector(768, 2.0)
@@ -326,6 +349,7 @@ func BenchmarkCosineDistance_768(b *testing.B) {
 	}
 }
 
+// BenchmarkCosineDistance_1536 runs the benchmark cosine distance_1536 operation.
 func BenchmarkCosineDistance_1536(b *testing.B) {
 	v1 := makeTestVector(1536, 1.0)
 	v2 := makeTestVector(1536, 2.0)
@@ -335,6 +359,7 @@ func BenchmarkCosineDistance_1536(b *testing.B) {
 	}
 }
 
+// BenchmarkDotProduct_1536 runs the benchmark dot product_1536 operation.
 func BenchmarkDotProduct_1536(b *testing.B) {
 	v1 := makeTestVector(1536, 1.0)
 	v2 := makeTestVector(1536, 2.0)
@@ -344,7 +369,7 @@ func BenchmarkDotProduct_1536(b *testing.B) {
 	}
 }
 
-// Compare SIMD vs Generic
+// BenchmarkEuclidean_Generic_768 SIMD vs Generic
 func BenchmarkEuclidean_Generic_768(b *testing.B) {
 	v1 := makeTestVector(768, 1.0)
 	v2 := makeTestVector(768, 2.0)
@@ -354,6 +379,7 @@ func BenchmarkEuclidean_Generic_768(b *testing.B) {
 	}
 }
 
+// BenchmarkCosine_Generic_768 runs the benchmark cosine_generic_768 operation.
 func BenchmarkCosine_Generic_768(b *testing.B) {
 	v1 := makeTestVector(768, 1.0)
 	v2 := makeTestVector(768, 2.0)

@@ -12,6 +12,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// TestReproShardedSearchRace runs the test repro sharded search race operation.
 func TestReproShardedSearchRace(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

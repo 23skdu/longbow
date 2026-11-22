@@ -13,6 +13,7 @@ import (
 // RequestSemaphoreConfig Tests
 // =============================================================================
 
+// TestDefaultRequestSemaphoreConfig runs the test default request semaphore config operation.
 func TestDefaultRequestSemaphoreConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -35,6 +36,7 @@ func TestDefaultRequestSemaphoreConfig(t *testing.T) {
 	}
 }
 
+// TestRequestSemaphoreConfig_Validate runs the test request semaphore config_validate operation.
 func TestRequestSemaphoreConfig_Validate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -85,6 +87,7 @@ func TestRequestSemaphoreConfig_Validate(t *testing.T) {
 // RequestSemaphore Tests
 // =============================================================================
 
+// TestNewRequestSemaphore runs the test new request semaphore operation.
 func TestNewRequestSemaphore(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -109,6 +112,7 @@ func TestNewRequestSemaphore(t *testing.T) {
 	}
 }
 
+// TestRequestSemaphore_AcquireRelease runs the test request semaphore_acquire release operation.
 func TestRequestSemaphore_AcquireRelease(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -151,6 +155,7 @@ func TestRequestSemaphore_AcquireRelease(t *testing.T) {
 	}
 }
 
+// TestRequestSemaphore_TryAcquire runs the test request semaphore_try acquire operation.
 func TestRequestSemaphore_TryAcquire(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -179,6 +184,7 @@ func TestRequestSemaphore_TryAcquire(t *testing.T) {
 	}
 }
 
+// TestRequestSemaphore_Timeout runs the test request semaphore_timeout operation.
 func TestRequestSemaphore_Timeout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -212,6 +218,7 @@ func TestRequestSemaphore_Timeout(t *testing.T) {
 	}
 }
 
+// TestRequestSemaphore_ContextCancellation runs the test request semaphore_context cancellation operation.
 func TestRequestSemaphore_ContextCancellation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -253,6 +260,7 @@ func TestRequestSemaphore_ContextCancellation(t *testing.T) {
 	}
 }
 
+// TestRequestSemaphore_ConcurrentAccess runs the test request semaphore_concurrent access operation.
 func TestRequestSemaphore_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -307,6 +315,7 @@ func TestRequestSemaphore_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+// TestRequestSemaphore_Statistics runs the test request semaphore_statistics operation.
 func TestRequestSemaphore_Statistics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -343,6 +352,7 @@ func TestRequestSemaphore_Statistics(t *testing.T) {
 	}
 }
 
+// TestRequestSemaphore_DisabledBypassesLimiting runs the test request semaphore_disabled bypasses limiting operation.
 func TestRequestSemaphore_DisabledBypassesLimiting(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -368,6 +378,7 @@ func TestRequestSemaphore_DisabledBypassesLimiting(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkRequestSemaphore_AcquireRelease runs the benchmark request semaphore_acquire release operation.
 func BenchmarkRequestSemaphore_AcquireRelease(b *testing.B) {
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  runtime.GOMAXPROCS(0),
@@ -386,6 +397,7 @@ func BenchmarkRequestSemaphore_AcquireRelease(b *testing.B) {
 	})
 }
 
+// BenchmarkRequestSemaphore_TryAcquire runs the benchmark request semaphore_try acquire operation.
 func BenchmarkRequestSemaphore_TryAcquire(b *testing.B) {
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  runtime.GOMAXPROCS(0),
@@ -404,6 +416,7 @@ func BenchmarkRequestSemaphore_TryAcquire(b *testing.B) {
 	})
 }
 
+// BenchmarkRequestSemaphore_Disabled runs the benchmark request semaphore_disabled operation.
 func BenchmarkRequestSemaphore_Disabled(b *testing.B) {
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  1,

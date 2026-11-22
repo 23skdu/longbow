@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestReportFatalError runs the test report fatal error operation.
 func TestReportFatalError(t *testing.T) {
 	var out bytes.Buffer
 	reportFatalError(&out, errors.New("RBAC is always enforced"))

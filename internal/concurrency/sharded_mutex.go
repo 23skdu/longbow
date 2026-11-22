@@ -4,11 +4,13 @@ import (
 	"sync"
 )
 
+// ShardedMutex represents a sharded mutex value.
 type ShardedMutex[T any] struct {
 	shards    []sync.RWMutex
 	numShards int
 }
 
+// NewShardedMutex constructs a new ShardedMutex.
 func NewShardedMutex[T any](numShards int) *ShardedMutex[T] {
 	if numShards < 1 {
 		numShards = 16
@@ -20,21 +22,25 @@ func NewShardedMutex[T any](numShards int) *ShardedMutex[T] {
 	}
 }
 
+// Lock runs the lock operation.
 func (sm *ShardedMutex[T]) Lock(key T) {
 	shardIndex := sm.hash(key) % sm.numShards
 	sm.shards[shardIndex].Lock()
 }
 
+// Unlock runs the unlock operation.
 func (sm *ShardedMutex[T]) Unlock(key T) {
 	shardIndex := sm.hash(key) % sm.numShards
 	sm.shards[shardIndex].Unlock()
 }
 
+// RLock runs the r lock operation.
 func (sm *ShardedMutex[T]) RLock(key T) {
 	shardIndex := sm.hash(key) % sm.numShards
 	sm.shards[shardIndex].RLock()
 }
 
+// RUnlock runs the r unlock operation.
 func (sm *ShardedMutex[T]) RUnlock(key T) {
 	shardIndex := sm.hash(key) % sm.numShards
 	sm.shards[shardIndex].RUnlock()

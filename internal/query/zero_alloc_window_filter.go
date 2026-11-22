@@ -6,6 +6,7 @@ import (
 	"github.com/23skdu/longbow/internal/core"
 )
 
+// ParseFilterRecursive runs the parse filter recursive operation.
 func ParseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (core.Filter, int, error) {
 	var f core.Filter
 	if pos >= len(data) || data[pos] != '{' {
@@ -112,10 +113,12 @@ func ParseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (
 	return f, pos, nil
 }
 
+// ParseFilterArray runs the parse filter array operation.
 func ParseFilterArray(data []byte, pos int, filters *[]core.Filter) (int, error) {
 	return ParseFilterArrayRecursive(data, pos, filters, nil)
 }
 
+// ParseFilterArrayRecursive runs the parse filter array recursive operation.
 func ParseFilterArrayRecursive(data []byte, pos int, filters *[]core.Filter, parser *ZeroAllocTicketParser) (int, error) {
 	pos = SkipWhitespace(data, pos)
 	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
@@ -147,6 +150,7 @@ func ParseFilterArrayRecursive(data []byte, pos int, filters *[]core.Filter, par
 	return pos, nil
 }
 
+// ParseWindowFunctionsShared runs the parse window functions shared operation.
 func ParseWindowFunctionsShared(data []byte, pos int) ([]core.WindowFunction, int, error) {
 	pos = SkipWhitespace(data, pos)
 	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
@@ -179,6 +183,7 @@ func ParseWindowFunctionsShared(data []byte, pos int) ([]core.WindowFunction, in
 	return nil, pos, errors.New("unexpected end")
 }
 
+// ParseWindowFunctionShared runs the parse window function shared operation.
 func ParseWindowFunctionShared(data []byte, pos int) (core.WindowFunction, int, error) {
 	var wf core.WindowFunction
 	if pos >= len(data) || data[pos] != '{' {
@@ -247,6 +252,7 @@ func ParseWindowFunctionShared(data []byte, pos int) (core.WindowFunction, int, 
 	return wf, pos, nil
 }
 
+// ParseWindowSpecShared runs the parse window spec shared operation.
 func ParseWindowSpecShared(data []byte, pos int) (core.WindowSpec, int, error) {
 	var spec core.WindowSpec
 	if pos >= len(data) || data[pos] != '{' {
@@ -341,6 +347,7 @@ func ParseWindowSpecShared(data []byte, pos int) (core.WindowSpec, int, error) {
 	return spec, pos, nil
 }
 
+// ParseWindowOrderShared runs the parse window order shared operation.
 func ParseWindowOrderShared(data []byte, pos int) (core.WindowOrder, int, error) {
 	var order core.WindowOrder
 	if pos >= len(data) || data[pos] != '{' {

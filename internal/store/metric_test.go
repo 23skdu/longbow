@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHNSW_Metrics runs the test hnsw_metrics operation.
 func TestHNSW_Metrics(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -82,6 +83,7 @@ func TestHNSW_Metrics(t *testing.T) {
 	})
 }
 
+// TestShardedHNSW_Metrics runs the test sharded hnsw_metrics operation.
 func TestShardedHNSW_Metrics(t *testing.T) {
 	t.Skip("Flaky - sorting issue with sharded index results")
 	vectors := [][]float32{

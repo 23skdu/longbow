@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestVectorPrefetchBasic runs the test vector prefetch basic operation.
 func TestVectorPrefetchBasic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -27,6 +28,7 @@ func TestVectorPrefetchBasic(t *testing.T) {
 	simd.Prefetch(nil)
 }
 
+// TestVectorPrefetchProcessChunkWithPrefetch runs the test vector prefetch process chunk with prefetch operation.
 func TestVectorPrefetchProcessChunkWithPrefetch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -88,6 +90,7 @@ func TestVectorPrefetchProcessChunkWithPrefetch(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestVectorPrefetchStress runs the test vector prefetch stress operation.
 func TestVectorPrefetchStress(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -122,7 +125,7 @@ func TestVectorPrefetchStress(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// Fuzz tests preserved but using standard operations
+// FuzzVectorPrefetchSIMDPrefetch tests preserved but using standard operations
 func FuzzVectorPrefetchSIMDPrefetch(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestVectorStoreIntegration_PagingEviction runs the test vector store integration_paging eviction operation.
 func TestVectorStoreIntegration_PagingEviction(t *testing.T) {
 	dim := 8
 	cfg := types.DefaultArrowHNSWConfig()
@@ -86,6 +87,7 @@ func TestVectorStoreIntegration_PagingEviction(t *testing.T) {
 	}
 }
 
+// TestVectorStoreIntegration_GPUArgumentBuffer runs the test vector store integration_gpu argument buffer operation.
 func TestVectorStoreIntegration_GPUArgumentBuffer(t *testing.T) {
 	dim := 8
 	cfg := types.DefaultArrowHNSWConfig()

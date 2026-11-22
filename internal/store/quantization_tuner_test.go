@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestQuantizationTuner_RecallDecision runs the test quantization tuner_recall decision operation.
 func TestQuantizationTuner_RecallDecision(t *testing.T) {
 	logger := zerolog.Nop()
 	// Mock store with mock metrics
@@ -34,6 +35,7 @@ func TestQuantizationTuner_RecallDecision(t *testing.T) {
 	assert.Equal(t, QuantizationFloat16, tuner.datasetState["test_ds"].currentType)
 }
 
+// TestQuantizationTuner_MemoryDecision runs the test quantization tuner_memory decision operation.
 func TestQuantizationTuner_MemoryDecision(t *testing.T) {
 	logger := zerolog.Nop()
 

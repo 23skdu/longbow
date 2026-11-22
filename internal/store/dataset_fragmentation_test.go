@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestDataset_FragmentationTracking runs the test dataset_fragmentation tracking operation.
 func TestDataset_FragmentationTracking(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -57,6 +58,7 @@ func TestDataset_FragmentationTracking(t *testing.T) {
 	assert.NotContains(t, fragmented, 0, "Batch 0 should not be fragmented after reset")
 }
 
+// TestDataset_FragmentationMultipleBatches runs the test dataset_fragmentation multiple batches operation.
 func TestDataset_FragmentationMultipleBatches(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -109,6 +111,7 @@ func TestDataset_FragmentationMultipleBatches(t *testing.T) {
 	assert.NotContains(t, fragmented, 1, "Batch 1 should not be fragmented (10%)")
 }
 
+// TestDataset_FragmentationNilTracker runs the test dataset_fragmentation nil tracker operation.
 func TestDataset_FragmentationNilTracker(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

@@ -16,6 +16,7 @@ type DatabaseChecker struct {
 	tracer trace.Tracer
 }
 
+// NewDatabaseChecker constructs a new DatabaseChecker.
 func NewDatabaseChecker(logger *zerolog.Logger, tracer trace.Tracer) *DatabaseChecker {
 	return &DatabaseChecker{
 		name:   "database",
@@ -24,10 +25,12 @@ func NewDatabaseChecker(logger *zerolog.Logger, tracer trace.Tracer) *DatabaseCh
 	}
 }
 
+// Name runs the name operation.
 func (dc *DatabaseChecker) Name() string {
 	return dc.name
 }
 
+// Check runs the check operation.
 func (dc *DatabaseChecker) Check(ctx context.Context) *ComponentHealth {
 	_, span := dc.tracer.Start(ctx, "DatabaseChecker.Check")
 	defer span.End()
@@ -70,6 +73,7 @@ type StorageChecker struct {
 	tracer trace.Tracer
 }
 
+// NewStorageChecker constructs a new StorageChecker.
 func NewStorageChecker(logger zerolog.Logger, tracer trace.Tracer) *StorageChecker {
 	return &StorageChecker{
 		name:   "storage",
@@ -78,10 +82,12 @@ func NewStorageChecker(logger zerolog.Logger, tracer trace.Tracer) *StorageCheck
 	}
 }
 
+// Name runs the name operation.
 func (sc *StorageChecker) Name() string {
 	return sc.name
 }
 
+// Check runs the check operation.
 func (sc *StorageChecker) Check(ctx context.Context) *ComponentHealth {
 	_, span := sc.tracer.Start(ctx, "StorageChecker.Check")
 	defer span.End()
@@ -122,6 +128,7 @@ type MetricsChecker struct {
 	tracer trace.Tracer
 }
 
+// NewMetricsChecker constructs a new MetricsChecker.
 func NewMetricsChecker(logger zerolog.Logger, tracer trace.Tracer) *MetricsChecker {
 	return &MetricsChecker{
 		name:   "metrics",
@@ -130,10 +137,12 @@ func NewMetricsChecker(logger zerolog.Logger, tracer trace.Tracer) *MetricsCheck
 	}
 }
 
+// Name runs the name operation.
 func (mc *MetricsChecker) Name() string {
 	return mc.name
 }
 
+// Check runs the check operation.
 func (mc *MetricsChecker) Check(ctx context.Context) *ComponentHealth {
 	_, span := mc.tracer.Start(ctx, "MetricsChecker.Check")
 	defer span.End()
@@ -168,6 +177,7 @@ type LoggingChecker struct {
 	tracer trace.Tracer
 }
 
+// NewLoggingChecker constructs a new LoggingChecker.
 func NewLoggingChecker(logger zerolog.Logger, tracer trace.Tracer) *LoggingChecker {
 	return &LoggingChecker{
 		name:   "logging",
@@ -176,10 +186,12 @@ func NewLoggingChecker(logger zerolog.Logger, tracer trace.Tracer) *LoggingCheck
 	}
 }
 
+// Name runs the name operation.
 func (lc *LoggingChecker) Name() string {
 	return lc.name
 }
 
+// Check runs the check operation.
 func (lc *LoggingChecker) Check(ctx context.Context) *ComponentHealth {
 	_, span := lc.tracer.Start(ctx, "LoggingChecker.Check")
 	defer span.End()
@@ -213,6 +225,7 @@ type TracingChecker struct {
 	tracer trace.Tracer
 }
 
+// NewTracingChecker constructs a new TracingChecker.
 func NewTracingChecker(logger zerolog.Logger, tracer trace.Tracer) *TracingChecker {
 	return &TracingChecker{
 		name:   "tracing",
@@ -221,10 +234,12 @@ func NewTracingChecker(logger zerolog.Logger, tracer trace.Tracer) *TracingCheck
 	}
 }
 
+// Name runs the name operation.
 func (tc *TracingChecker) Name() string {
 	return tc.name
 }
 
+// Check runs the check operation.
 func (tc *TracingChecker) Check(ctx context.Context) *ComponentHealth {
 	_, span := tc.tracer.Start(ctx, "TracingChecker.Check")
 	defer span.End()

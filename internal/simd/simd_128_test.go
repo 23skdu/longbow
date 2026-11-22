@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestEuclidean128 runs the test euclidean128 operation.
 func TestEuclidean128(t *testing.T) {
 	dims := 128
 	a := make([]float32, dims)
@@ -37,6 +38,7 @@ func TestEuclidean128(t *testing.T) {
 	}
 }
 
+// TestDot128 runs the test dot128 operation.
 func TestDot128(t *testing.T) {
 	dims := 128
 	a := make([]float32, dims)
@@ -69,6 +71,7 @@ func TestDot128(t *testing.T) {
 	}
 }
 
+// BenchmarkEuclidean128 runs the benchmark euclidean128 operation.
 func BenchmarkEuclidean128(b *testing.B) {
 	dims := 128
 	a := make([]float32, dims)
@@ -80,6 +83,7 @@ func BenchmarkEuclidean128(b *testing.B) {
 	}
 }
 
+// BenchmarkDot128 runs the benchmark dot128 operation.
 func BenchmarkDot128(b *testing.B) {
 	dims := 128
 	a := make([]float32, dims)

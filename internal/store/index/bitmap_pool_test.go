@@ -8,6 +8,7 @@ import (
 // Subtask 1: BitmapPoolConfig Tests
 // =============================================================================
 
+// TestBitmapPoolConfigDefaults runs the test bitmap pool config defaults operation.
 func TestBitmapPoolConfigDefaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -28,6 +29,7 @@ func TestBitmapPoolConfigDefaults(t *testing.T) {
 	}
 }
 
+// TestBitmapPoolConfigValidation runs the test bitmap pool config validation operation.
 func TestBitmapPoolConfigValidation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -99,6 +101,7 @@ func TestBitmapPoolConfigValidation(t *testing.T) {
 // Subtask 2: BitmapPool Tests
 // =============================================================================
 
+// TestBitmapPoolCreation runs the test bitmap pool creation operation.
 func TestBitmapPoolCreation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -111,6 +114,7 @@ func TestBitmapPoolCreation(t *testing.T) {
 	pool.Close()
 }
 
+// TestBitmapPoolGetPut runs the test bitmap pool get put operation.
 func TestBitmapPoolGetPut(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -132,6 +136,7 @@ func TestBitmapPoolGetPut(t *testing.T) {
 	pool.Put(buf)
 }
 
+// TestBitmapPoolSizeBuckets runs the test bitmap pool size buckets operation.
 func TestBitmapPoolSizeBuckets(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -168,6 +173,7 @@ func TestBitmapPoolSizeBuckets(t *testing.T) {
 	}
 }
 
+// TestBitmapPoolOversizedBuffer runs the test bitmap pool oversized buffer operation.
 func TestBitmapPoolOversizedBuffer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -199,6 +205,7 @@ func TestBitmapPoolOversizedBuffer(t *testing.T) {
 	}
 }
 
+// TestBitmapPoolConcurrent runs the test bitmap pool concurrent operation.
 func TestBitmapPoolConcurrent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -240,6 +247,7 @@ func TestBitmapPoolConcurrent(t *testing.T) {
 	}
 }
 
+// TestBitmapPoolStats runs the test bitmap pool stats operation.
 func TestBitmapPoolStats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -297,6 +305,7 @@ func TestBitmapPoolStats(t *testing.T) {
 // Subtask 3: PooledBitmap Tests
 // =============================================================================
 
+// TestPooledBitmapReset runs the test pooled bitmap reset operation.
 func TestPooledBitmapReset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -322,6 +331,7 @@ func TestPooledBitmapReset(t *testing.T) {
 	pool.Put(buf)
 }
 
+// TestPooledBitmapSetBit runs the test pooled bitmap set bit operation.
 func TestPooledBitmapSetBit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -361,6 +371,7 @@ func TestPooledBitmapSetBit(t *testing.T) {
 // Subtask 5: Prometheus Metrics Tests
 // =============================================================================
 
+// TestBitmapPoolMetricsExist runs the test bitmap pool metrics exist operation.
 func TestBitmapPoolMetricsExist(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -387,6 +398,7 @@ func TestBitmapPoolMetricsExist(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkBitmapPoolGetPut runs the benchmark bitmap pool get put operation.
 func BenchmarkBitmapPoolGetPut(b *testing.B) {
 	cfg := DefaultBitmapPoolConfig()
 	pool := NewBitmapPool(cfg)
@@ -399,6 +411,7 @@ func BenchmarkBitmapPoolGetPut(b *testing.B) {
 	}
 }
 
+// BenchmarkBitmapPoolNoPool runs the benchmark bitmap pool no pool operation.
 func BenchmarkBitmapPoolNoPool(b *testing.B) {
 	// Compare against direct allocation
 	b.ResetTimer()
@@ -408,6 +421,7 @@ func BenchmarkBitmapPoolNoPool(b *testing.B) {
 	}
 }
 
+// BenchmarkBitmapPoolParallel runs the benchmark bitmap pool parallel operation.
 func BenchmarkBitmapPoolParallel(b *testing.B) {
 	cfg := DefaultBitmapPoolConfig()
 	pool := NewBitmapPool(cfg)

@@ -5,6 +5,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// NewArrowSearchContext constructs a new ArrowSearchContext.
 func NewArrowSearchContext() *ArrowSearchContext {
 	return &ArrowSearchContext{
 		candidates:              make([]types.Candidate, 0, 100),
@@ -85,6 +86,7 @@ func (p *ArrowSearchContextPool) Get() *ArrowSearchContext {
 	return ctx
 }
 
+// Put runs the put operation.
 func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 	if ctx == nil {
 		return
@@ -101,6 +103,7 @@ func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 	p.ring.Push(ctx)
 }
 
+// PutWithMetrics runs the put with metrics operation.
 func (p *ArrowSearchContextPool) PutWithMetrics(ctx *ArrowSearchContext, dataType, dims string) {
 	if ctx == nil {
 		return
@@ -175,6 +178,7 @@ func (ctx *ArrowSearchContext) nextCompSlot() int {
 	return slot
 }
 
+// Reset runs the reset operation.
 func (ctx *ArrowSearchContext) Reset() {
 	ctx.clearAppliers()
 	ctx.candidates = ctx.candidates[:0]

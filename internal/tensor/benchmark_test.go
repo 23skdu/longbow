@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// BenchmarkMatMul runs the benchmark mat mul operation.
 func BenchmarkMatMul(b *testing.B) {
 	sizes := []struct{ m, n, k int }{
 		{16, 16, 16},
@@ -41,6 +42,7 @@ func BenchmarkMatMul(b *testing.B) {
 	}
 }
 
+// BenchmarkMatMulGeneric runs the benchmark mat mul generic operation.
 func BenchmarkMatMulGeneric(b *testing.B) {
 	sizes := []struct{ m, n, k int }{
 		{64, 64, 64},

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFloat16DistanceParity_AVX512FP16 runs the test float16 distance parity_avx512 fp16 operation.
 func TestFloat16DistanceParity_AVX512FP16(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	for _, dims := range []int{2, 4, 16, 32, 64, 128, 384} {

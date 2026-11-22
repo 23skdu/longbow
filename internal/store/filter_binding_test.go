@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFilterEvaluator_BindingReproduction runs the test filter evaluator_binding reproduction operation.
 func TestFilterEvaluator_BindingReproduction(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
@@ -48,6 +49,7 @@ func TestFilterEvaluator_BindingReproduction(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to bind any filters to schema fields")
 }
 
+// TestShardedHNSW_FilterPanicReproduction runs the test sharded hnsw_filter panic reproduction operation.
 func TestShardedHNSW_FilterPanicReproduction(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSQ8Indexing runs the test sq8 indexing operation.
 func TestSQ8Indexing(t *testing.T) {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	mem := memory.NewGoAllocator()

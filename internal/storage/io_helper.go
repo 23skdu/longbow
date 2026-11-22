@@ -25,6 +25,7 @@ func NewRateLimitedWriter(w io.Writer, limitBytesPerSec int, ctx context.Context
 	return &RateLimitedWriter{w: w, limiter: limiter, ctx: ctx}
 }
 
+// Write runs the write operation.
 func (rw *RateLimitedWriter) Write(p []byte) (n int, err error) {
 	if rw.limiter == nil {
 		return rw.w.Write(p)

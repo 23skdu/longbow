@@ -120,8 +120,12 @@ func Madvise(b []byte, advice int) error {
 }
 
 const (
-	MadvRandom     = unix.MADV_RANDOM
+	// MadvRandom is a madv random constant.
+	MadvRandom = unix.MADV_RANDOM
+	// MadvSequential is a madv sequential constant.
 	MadvSequential = unix.MADV_SEQUENTIAL
-	MadvWillNeed   = unix.MADV_WILLNEED
-	MadvDontNeed   = unix.MADV_DONTNEED
+	// MadvWillNeed is a madv will need constant.
+	MadvWillNeed = unix.MADV_WILLNEED
+	// MadvDontNeed is a madv dont need constant.
+	MadvDontNeed = unix.MADV_DONTNEED
 )

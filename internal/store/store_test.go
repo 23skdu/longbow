@@ -71,6 +71,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 	return vs, tmpDir, dialer
 }
 
+// TestDoPutAndDoGet runs the test do put and do get operation.
 func TestDoPutAndDoGet(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -169,6 +170,7 @@ func TestDoPutAndDoGet(t *testing.T) {
 	}
 }
 
+// TestSchemaValidation runs the test schema validation operation.
 func TestSchemaValidation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -254,6 +256,7 @@ func TestSchemaValidation(t *testing.T) {
 	}
 }
 
+// TestPersistence runs the test persistence operation.
 func TestPersistence(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -342,6 +345,7 @@ func TestPersistence(t *testing.T) {
 	}
 }
 
+// TestEviction runs the test eviction operation.
 func TestEviction(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

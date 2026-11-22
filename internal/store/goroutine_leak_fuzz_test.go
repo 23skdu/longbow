@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// FuzzGoroutineLeakRapidCycles runs the fuzz goroutine leak rapid cycles operation.
 func FuzzGoroutineLeakRapidCycles(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

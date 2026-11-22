@@ -707,7 +707,7 @@ func (s *VectorStore) handleResetDataset(action *flight.Action, stream flight.Fl
 	return stream.Send(&flight.Result{Body: []byte(`{"status": "reset_success"}`)})
 }
 
-// doMetaAction handles management commands on VectorStore
+// DoMetaAction handles management commands on VectorStore
 // DoMetaAction handles meta-specific actions for the cluster MetaServer.
 func (s *VectorStore) DoMetaAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	if action == nil {

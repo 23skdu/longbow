@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHNSW_SearchEarlyTermination runs the test hnsw_search early termination operation.
 func TestHNSW_SearchEarlyTermination(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -38,6 +39,7 @@ func TestHNSW_SearchEarlyTermination(t *testing.T) {
 	// but we can check if it returns results.
 }
 
+// FuzzHNSWSearchEarlyTermination runs the fuzz hnsw search early termination operation.
 func FuzzHNSWSearchEarlyTermination(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

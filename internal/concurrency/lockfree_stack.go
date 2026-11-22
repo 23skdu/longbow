@@ -4,6 +4,7 @@ import (
 	"sync/atomic"
 )
 
+// LockFreeStack represents a lock free stack value.
 type LockFreeStack[T any] struct {
 	head atomic.Value
 }
@@ -13,10 +14,12 @@ type stackNode[T any] struct {
 	next  *stackNode[T]
 }
 
+// NewLockFreeStack constructs a new LockFreeStack.
 func NewLockFreeStack[T any]() *LockFreeStack[T] {
 	return &LockFreeStack[T]{}
 }
 
+// Push runs the push operation.
 func (s *LockFreeStack[T]) Push(value T) {
 	newNode := &stackNode[T]{value: value}
 
@@ -35,6 +38,7 @@ func (s *LockFreeStack[T]) Push(value T) {
 	}
 }
 
+// Pop runs the pop operation.
 func (s *LockFreeStack[T]) Pop() (T, bool) {
 	var zero T
 

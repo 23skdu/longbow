@@ -19,7 +19,7 @@ var (
 		[]string{"dataset", "type"},
 	)
 
-	// SearchResultPool metrics
+	// SearchResultPoolGetTotal metrics
 	SearchResultPoolGetTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_search_result_pool_get_total",
@@ -28,6 +28,7 @@ var (
 		[]string{"capacity"}, // bucket by initial capacity
 	)
 
+	// SearchResultPoolPutTotal is a search result pool put total value.
 	SearchResultPoolPutTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_search_result_pool_put_total",
@@ -36,6 +37,7 @@ var (
 		[]string{"capacity"},
 	)
 
+	// SearchResultPoolHitsTotal is a search result pool hits total value.
 	SearchResultPoolHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_search_result_pool_hits_total",
@@ -44,6 +46,7 @@ var (
 		[]string{"capacity"},
 	)
 
+	// SearchResultPoolMissesTotal is a search result pool misses total value.
 	SearchResultPoolMissesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_search_result_pool_misses_total",
@@ -52,7 +55,7 @@ var (
 		[]string{"capacity"},
 	)
 
-	// General search latency metrics
+	// SearchLatencySeconds search latency metrics
 	SearchLatencySeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_search_latency_seconds",
@@ -62,7 +65,7 @@ var (
 		[]string{"dataset", "type"},
 	)
 
-	// Batch search metrics
+	// BatchSearchRequestsTotal search metrics
 	BatchSearchRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_batch_search_requests_total",
@@ -71,6 +74,7 @@ var (
 		[]string{"batch_size"},
 	)
 
+	// BatchSearchLatencySeconds is a batch search latency seconds value.
 	BatchSearchLatencySeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_batch_search_latency_seconds",
@@ -80,6 +84,7 @@ var (
 		[]string{"batch_size"},
 	)
 
+	// BatchSearchQueriesTotal is a batch search queries total value.
 	BatchSearchQueriesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_batch_search_queries_total",
@@ -88,7 +93,7 @@ var (
 		[]string{"batch_size"},
 	)
 
-	// Work queue metrics
+	// WorkQueueBacklog queue metrics
 	WorkQueueBacklog = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_work_queue_backlog",
@@ -97,6 +102,7 @@ var (
 		[]string{"queue_name"},
 	)
 
+	// WorkQueueOverflowsTotal is a work queue overflows total value.
 	WorkQueueOverflowsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_work_queue_overflows_total",

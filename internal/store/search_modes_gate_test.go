@@ -215,6 +215,7 @@ type gateDoGetStream struct {
 	capture captureFlightStream
 }
 
+// Send runs the send operation.
 func (g *gateDoGetStream) Send(fd *flight.FlightData) error {
 	return g.capture.Send(fd)
 }
@@ -249,6 +250,7 @@ func extractIDs(res []SearchResult) []uint64 {
 	return ids
 }
 
+// TestSearchModesGate runs the test search modes gate operation.
 func TestSearchModesGate(t *testing.T) {
 	const corpusSize = 64
 	fx := setupSearchModesGateFixture(t, corpusSize)
@@ -599,6 +601,7 @@ func TestSearchModesGate(t *testing.T) {
 	}
 }
 
+// BenchmarkSearchModesGate runs the benchmark search modes gate operation.
 func BenchmarkSearchModesGate(b *testing.B) {
 	fx := setupSearchModesGateFixture(b, 64)
 	vs := fx.vs

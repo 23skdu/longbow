@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/gpu/metal"
 )
 
+// TestMetal3072Dimensions runs the test metal3072 dimensions operation.
 func TestMetal3072Dimensions(t *testing.T) {
 	dim := 3072
 	cfg := GPUConfig{

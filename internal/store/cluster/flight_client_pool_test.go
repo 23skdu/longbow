@@ -16,6 +16,7 @@ import (
 // FlightClientPoolConfig Tests
 // =============================================================================
 
+// TestFlightClientPoolConfig_Defaults runs the test flight client pool config_defaults operation.
 func TestFlightClientPoolConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -42,6 +43,7 @@ func TestFlightClientPoolConfig_Defaults(t *testing.T) {
 	}
 }
 
+// TestFlightClientPoolConfig_Validation runs the test flight client pool config_validation operation.
 func TestFlightClientPoolConfig_Validation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -102,6 +104,7 @@ func TestFlightClientPoolConfig_Validation(t *testing.T) {
 // FlightClientPool Tests
 // =============================================================================
 
+// TestFlightClientPool_Creation runs the test flight client pool_creation operation.
 func TestFlightClientPool_Creation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -122,6 +125,7 @@ func TestFlightClientPool_Creation(t *testing.T) {
 	}
 }
 
+// TestFlightClientPool_AddRemoveHost runs the test flight client pool_add remove host operation.
 func TestFlightClientPool_AddRemoveHost(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -164,6 +168,7 @@ func TestFlightClientPool_AddRemoveHost(t *testing.T) {
 	}
 }
 
+// TestFlightClientPool_GetConnection runs the test flight client pool_get connection operation.
 func TestFlightClientPool_GetConnection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -190,6 +195,7 @@ func TestFlightClientPool_GetConnection(t *testing.T) {
 	}
 }
 
+// TestFlightClientPool_ReturnConnection runs the test flight client pool_return connection operation.
 func TestFlightClientPool_ReturnConnection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -207,6 +213,7 @@ func TestFlightClientPool_ReturnConnection(t *testing.T) {
 	pool.Put(mockConn)
 }
 
+// TestFlightClientPool_Statistics runs the test flight client pool_statistics operation.
 func TestFlightClientPool_Statistics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -224,6 +231,7 @@ func TestFlightClientPool_Statistics(t *testing.T) {
 	}
 }
 
+// TestFlightClientPool_Close runs the test flight client pool_close operation.
 func TestFlightClientPool_Close(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -246,6 +254,7 @@ func TestFlightClientPool_Close(t *testing.T) {
 	}
 }
 
+// TestFlightClientPool_ConcurrentAccess runs the test flight client pool_concurrent access operation.
 func TestFlightClientPool_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -282,6 +291,7 @@ func TestFlightClientPool_ConcurrentAccess(t *testing.T) {
 // PooledFlightClient Tests
 // =============================================================================
 
+// TestPooledFlightClient_Metadata runs the test pooled flight client_metadata operation.
 func TestPooledFlightClient_Metadata(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -319,6 +329,7 @@ func TestPooledFlightClient_Metadata(t *testing.T) {
 // HostPool Tests
 // =============================================================================
 
+// TestHostPool_ConnectionLimit runs the test host pool_connection limit operation.
 func TestHostPool_ConnectionLimit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -357,6 +368,7 @@ func TestHostPool_ConnectionLimit(t *testing.T) {
 // Integration Tests - DoGetFromPeer / DoPutToPeer
 // =============================================================================
 
+// TestFlightClientPool_DoGetFromPeer_NoServer runs the test flight client pool_do get from peer_no server operation.
 func TestFlightClientPool_DoGetFromPeer_NoServer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -376,6 +388,7 @@ func TestFlightClientPool_DoGetFromPeer_NoServer(t *testing.T) {
 	}
 }
 
+// TestFlightClientPool_DoPutToPeer_NoServer runs the test flight client pool_do put to peer_no server operation.
 func TestFlightClientPool_DoPutToPeer_NoServer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -406,6 +419,7 @@ func TestFlightClientPool_DoPutToPeer_NoServer(t *testing.T) {
 	}
 }
 
+// TestFlightClientPool_ReplicateToPeers_NoServers runs the test flight client pool_replicate to peers_no servers operation.
 func TestFlightClientPool_ReplicateToPeers_NoServers(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -442,6 +456,7 @@ func TestFlightClientPool_ReplicateToPeers_NoServers(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkFlightClientPool_AddHost runs the benchmark flight client pool_add host operation.
 func BenchmarkFlightClientPool_AddHost(b *testing.B) {
 	cfg := DefaultFlightClientPoolConfig()
 	pool := NewFlightClientPool(cfg)
@@ -455,6 +470,7 @@ func BenchmarkFlightClientPool_AddHost(b *testing.B) {
 	}
 }
 
+// BenchmarkFlightClientPool_Stats runs the benchmark flight client pool_stats operation.
 func BenchmarkFlightClientPool_Stats(b *testing.B) {
 	cfg := DefaultFlightClientPoolConfig()
 	pool := NewFlightClientPool(cfg)

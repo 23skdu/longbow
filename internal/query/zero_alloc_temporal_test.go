@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestZeroAllocTemporalParser runs the test zero alloc temporal parser operation.
 func TestZeroAllocTemporalParser(t *testing.T) {
 	parser := NewZeroAllocTemporalParser()
 

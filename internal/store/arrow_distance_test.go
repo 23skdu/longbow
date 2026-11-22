@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestBatchDistanceComputer_ComputeL2Distances runs the test batch distance computer_compute l2 distances operation.
 func TestBatchDistanceComputer_ComputeL2Distances(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -47,6 +48,7 @@ func TestBatchDistanceComputer_ComputeL2Distances(t *testing.T) {
 	}
 }
 
+// TestBatchDistanceComputer_EmptyCandidates runs the test batch distance computer_empty candidates operation.
 func TestBatchDistanceComputer_EmptyCandidates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -61,6 +63,7 @@ func TestBatchDistanceComputer_EmptyCandidates(t *testing.T) {
 	assert.Empty(t, distances)
 }
 
+// TestBatchDistanceComputer_DimensionMismatch runs the test batch distance computer_dimension mismatch operation.
 func TestBatchDistanceComputer_DimensionMismatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -76,6 +79,7 @@ func TestBatchDistanceComputer_DimensionMismatch(t *testing.T) {
 	assert.Contains(t, err.Error(), "dimension mismatch")
 }
 
+// TestBatchDistanceComputer_ShouldUseBatchCompute runs the test batch distance computer_should use batch compute operation.
 func TestBatchDistanceComputer_ShouldUseBatchCompute(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -93,6 +97,7 @@ func TestBatchDistanceComputer_ShouldUseBatchCompute(t *testing.T) {
 	assert.True(t, computer.ShouldUseBatchCompute(1000))
 }
 
+// BenchmarkBatchDistanceComputer_Arrow runs the benchmark batch distance computer_arrow operation.
 func BenchmarkBatchDistanceComputer_Arrow(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dim := 384
@@ -122,6 +127,7 @@ func BenchmarkBatchDistanceComputer_Arrow(b *testing.B) {
 	}
 }
 
+// BenchmarkBatchDistanceComputer_SIMD runs the benchmark batch distance computer_simd operation.
 func BenchmarkBatchDistanceComputer_SIMD(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dim := 384

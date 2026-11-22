@@ -14,6 +14,7 @@ func repoConfigPath(t *testing.T) string {
 	return filepath.Clean(filepath.Join("..", "..", defaultConfigPath))
 }
 
+// TestDefaultConfigIsThreeAgentsSevenNamespaces runs the test default config is three agents seven namespaces operation.
 func TestDefaultConfigIsThreeAgentsSevenNamespaces(t *testing.T) {
 	cfg := defaultConfig()
 	if cfg.Agents != 3 {
@@ -33,6 +34,7 @@ func TestDefaultConfigIsThreeAgentsSevenNamespaces(t *testing.T) {
 	}
 }
 
+// TestLoadSharedConfig runs the test load shared config operation.
 func TestLoadSharedConfig(t *testing.T) {
 	cfg, err := loadConfig(repoConfigPath(t))
 	if err != nil {
@@ -46,6 +48,7 @@ func TestLoadSharedConfig(t *testing.T) {
 	}
 }
 
+// TestLoadConfigJSONOverrides runs the test load config json overrides operation.
 func TestLoadConfigJSONOverrides(t *testing.T) {
 	raw := map[string]any{
 		"agents":        4,
@@ -80,6 +83,7 @@ func TestLoadConfigJSONOverrides(t *testing.T) {
 	}
 }
 
+// TestLoadConfigMissingAndInvalid runs the test load config missing and invalid operation.
 func TestLoadConfigMissingAndInvalid(t *testing.T) {
 	if _, err := loadConfig(filepath.Join(t.TempDir(), "missing.json")); err == nil {
 		t.Fatal("expected error for missing config")
@@ -93,6 +97,7 @@ func TestLoadConfigMissingAndInvalid(t *testing.T) {
 	}
 }
 
+// TestTopologyPermissionMatrix runs the test topology permission matrix operation.
 func TestTopologyPermissionMatrix(t *testing.T) {
 	topo, err := newTopology(defaultConfig())
 	if err != nil {
@@ -120,6 +125,7 @@ func TestTopologyPermissionMatrix(t *testing.T) {
 	}
 }
 
+// TestTopologyScaleAndNames runs the test topology scale and names operation.
 func TestTopologyScaleAndNames(t *testing.T) {
 	for _, n := range []int{2, 3, 5, 10, 50} {
 		cfg := defaultConfig()
@@ -145,6 +151,7 @@ func TestTopologyScaleAndNames(t *testing.T) {
 	}
 }
 
+// TestResolveConfigFlagOverrides runs the test resolve config flag overrides operation.
 func TestResolveConfigFlagOverrides(t *testing.T) {
 	originalFlagSet := flagSet
 	originalConfigPath, originalAgents, originalSeed := *configPath, *agents, *seed

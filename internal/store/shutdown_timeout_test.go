@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestVectorStore_ShutdownTimeoutEnforcement runs the test vector store_shutdown timeout enforcement operation.
 func TestVectorStore_ShutdownTimeoutEnforcement(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -49,6 +50,7 @@ func TestVectorStore_ShutdownTimeoutEnforcement(t *testing.T) {
 	close(hung)
 }
 
+// TestVectorStore_CloseTimeoutEnforcement runs the test vector store_close timeout enforcement operation.
 func TestVectorStore_CloseTimeoutEnforcement(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -79,6 +81,7 @@ func TestVectorStore_CloseTimeoutEnforcement(t *testing.T) {
 	close(hung)
 }
 
+// TestVectorStore_ShutdownWithHungWorkers runs the test vector store_shutdown with hung workers operation.
 func TestVectorStore_ShutdownWithHungWorkers(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

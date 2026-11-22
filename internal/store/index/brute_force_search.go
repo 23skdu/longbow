@@ -16,6 +16,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// SearchVectors runs the search vectors operation.
 func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filters []core.Filter, options any) ([]SearchResult, error) {
 	qF32, ok := q.([]float32)
 	if !ok {
@@ -245,14 +246,21 @@ type bfHeapItem struct {
 
 type bfSearchHeap []bfHeapItem
 
-func (h bfSearchHeap) Len() int           { return len(h) }
-func (h bfSearchHeap) Less(i, j int) bool { return h[i].score > h[j].score }
-func (h bfSearchHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+// Len runs the len operation.
+func (h bfSearchHeap) Len() int { return len(h) }
 
+// Less runs the less operation.
+func (h bfSearchHeap) Less(i, j int) bool { return h[i].score > h[j].score }
+
+// Swap runs the swap operation.
+func (h bfSearchHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+
+// Push runs the push operation.
 func (h *bfSearchHeap) Push(x any) {
 	*h = append(*h, x.(bfHeapItem))
 }
 
+// Pop runs the pop operation.
 func (h *bfSearchHeap) Pop() any {
 	old := *h
 	n := len(old)

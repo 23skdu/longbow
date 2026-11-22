@@ -10,10 +10,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// ExtractVectorToBufferForParallel runs the extract vector to buffer for parallel operation.
 func (p parallelSearchHostF32) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error {
 	return p.h.ExtractVectorToBufferForParallel(rec, rowIdx, dst)
 }
 
+// ExtractVectorF64ToBufferForParallel runs the extract vector f64 to buffer for parallel operation.
 func (h *ArrowHNSW) ExtractVectorF64ToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float64) error {
 	vecColIdx := h.getVectorColumnIndex(rec)
 
@@ -29,10 +31,12 @@ func (h *ArrowHNSW) ExtractVectorF64ToBufferForParallel(rec arrow.RecordBatch, r
 	return CopyVectorToFloat64(vec, dst)
 }
 
+// ExtractVectorByIDToBufferForParallel runs the extract vector by id to buffer for parallel operation.
 func (p parallelSearchHostF32) ExtractVectorByIDToBufferForParallel(id uint32, dst []float32) error {
 	return p.h.ExtractVectorByIDToBufferForParallel(id, dst)
 }
 
+// ExtractVectorF64ByIDToBufferForParallel runs the extract vector f64 by id to buffer for parallel operation.
 func (h *ArrowHNSW) ExtractVectorF64ByIDToBufferForParallel(id uint32, dst []float64) error {
 	vecAny, err := h.GetVector(id)
 	if err != nil {
@@ -104,6 +108,7 @@ func extractFirstVector(res any) any {
 	return nil
 }
 
+// GetVector returns the vector.
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 	data := h.data.Load()
 	if data == nil {
@@ -187,6 +192,7 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 	return nil, nil
 }
 
+// GetVectorAny returns the vector any.
 func (h *ArrowHNSW) GetVectorAny(id uint32) (any, error) {
 	return h.GetVector(id)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestProvisionNamespaceWithPolicy runs the test provision namespace with policy operation.
 func TestProvisionNamespaceWithPolicy(t *testing.T) {
 	vs := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck
@@ -34,6 +35,7 @@ func TestProvisionNamespaceWithPolicy(t *testing.T) {
 	require.NoError(t, vs.ProvisionNamespaceWithPolicy(policy))
 }
 
+// TestEnsureNamespaceIsIdempotent runs the test ensure namespace is idempotent operation.
 func TestEnsureNamespaceIsIdempotent(t *testing.T) {
 	vs := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck

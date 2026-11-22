@@ -11,6 +11,7 @@ var (
 		Name: "longbow_rdma_bytes_processed_total",
 		Help: "The total number of bytes processed via RDMA transport",
 	})
+	// RDMAErrorsTotal is a rdma errors total value.
 	RDMAErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_rdma_errors_total",
 		Help: "The total number of RDMA-related errors encountered",

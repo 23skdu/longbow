@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMetricsIntegration_HNSWSearch runs the test metrics integration_hnsw search operation.
 func TestMetricsIntegration_HNSWSearch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -58,6 +59,7 @@ func TestMetricsIntegration_HNSWSearch(t *testing.T) {
 	assert.True(t, durationCount >= float64(numSearches), "Search duration histogram count should increment")
 }
 
+// TestMetricsIntegration_HNSWInsert runs the test metrics integration_hnsw insert operation.
 func TestMetricsIntegration_HNSWInsert(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

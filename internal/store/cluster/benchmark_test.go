@@ -78,6 +78,7 @@ func setupDataServerBench(b *testing.B, cfg storage.StorageConfig) flight.Client
 	return client
 }
 
+// BenchmarkE2EDoGet runs the benchmark e2 e do get operation.
 func BenchmarkE2EDoGet(b *testing.B) {
 	benchmarks := []struct {
 		name string
@@ -174,6 +175,7 @@ func BenchmarkE2EDoGet(b *testing.B) {
 	}
 }
 
+// BenchmarkE2EDoPut runs the benchmark e2 e do put operation.
 func BenchmarkE2EDoPut(b *testing.B) {
 	benchmarks := []struct {
 		name string
@@ -231,6 +233,7 @@ func BenchmarkE2EDoPut(b *testing.B) {
 	}
 }
 
+// BenchmarkStreamedDoPut runs the benchmark streamed do put operation.
 func BenchmarkStreamedDoPut(b *testing.B) {
 	benchmarks := []struct {
 		name string

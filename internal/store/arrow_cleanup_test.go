@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestArrowHNSW_Cleanup runs the test arrow hnsw_cleanup operation.
 func TestArrowHNSW_Cleanup(t *testing.T) {
 	ds := NewDataset("test_cleanup", nil)
 	config := types.DefaultArrowHNSWConfig()
@@ -24,6 +25,7 @@ func TestArrowHNSW_Cleanup(t *testing.T) {
 
 }
 
+// TestDataset_Close_Cascades runs the test dataset_close_cascades operation.
 func TestDataset_Close_Cascades(t *testing.T) {
 	ds := NewDataset("test_cascade", nil)
 	config := types.DefaultArrowHNSWConfig()

@@ -83,6 +83,7 @@ func buildTurboQuantScaleIndex(tb testing.TB, n int) (*ArrowHNSW, []float32) {
 	return idx, q
 }
 
+// TestTurboQuantScalability runs the test turbo quant scalability operation.
 func TestTurboQuantScalability(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping turboquant scalability test in short mode")
@@ -123,6 +124,7 @@ func TestTurboQuantScalability(t *testing.T) {
 	}
 }
 
+// BenchmarkTurboQuantSearchScale runs the benchmark turbo quant search scale operation.
 func BenchmarkTurboQuantSearchScale(b *testing.B) {
 	const n = 100000
 	idx, q := buildTurboQuantScaleIndex(b, n)

@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// Search runs the search operation.
 func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
 	if err := idx.acquireGPUOp(); err != nil {
 		return nil, nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
@@ -245,6 +246,7 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 	return resultIDs, resultDistances, nil
 }
 
+// SearchBatch runs the search batch operation.
 func (idx *CUDAIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	if len(vectors) == 0 {
 		return nil, nil, nil
@@ -265,6 +267,7 @@ func (idx *CUDAIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]fl
 	return results, distances, nil
 }
 
+// SearchWithFilter runs the search with filter operation.
 func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) ([]int64, []float32, error) {
 	if err := idx.acquireGPUOp(); err != nil {
 		return nil, nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)

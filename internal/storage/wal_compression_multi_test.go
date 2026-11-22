@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestWALBatcher_MultiCompression runs the test wal batcher_multi compression operation.
 func TestWALBatcher_MultiCompression(t *testing.T) {
 	testCases := []struct {
 		name string

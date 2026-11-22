@@ -14,6 +14,7 @@ type appendingApplier struct {
 	val uint32
 }
 
+// ApplyNeighbors runs the apply neighbors operation.
 func (a *appendingApplier) ApplyNeighbors(old []uint32) []uint32 {
 	res := make([]uint32, len(old)+1)
 	copy(res, old)
@@ -21,10 +22,12 @@ func (a *appendingApplier) ApplyNeighbors(old []uint32) []uint32 {
 	return res
 }
 
+// OldScratch runs the old scratch operation.
 func (a *appendingApplier) OldScratch() []uint32 {
 	return nil
 }
 
+// TestFlatAdjacency_Basic runs the test flat adjacency_basic operation.
 func TestFlatAdjacency_Basic(t *testing.T) {
 	slab := memory.NewSlabArena(1024 * 1024)
 	defer slab.Free()
@@ -56,6 +59,7 @@ func TestFlatAdjacency_Basic(t *testing.T) {
 	assert.Equal(t, input2, nbs)
 }
 
+// TestFlatAdjacency_LockFreeCAS runs the test flat adjacency_lock free cas operation.
 func TestFlatAdjacency_LockFreeCAS(t *testing.T) {
 	slab := memory.NewSlabArena(1024 * 1024)
 	defer slab.Free()
@@ -94,6 +98,7 @@ func TestFlatAdjacency_LockFreeCAS(t *testing.T) {
 	assert.Equal(t, second, nbs)
 }
 
+// TestFlatAdjacency_UpdateNeighbors runs the test flat adjacency_update neighbors operation.
 func TestFlatAdjacency_UpdateNeighbors(t *testing.T) {
 	slab := memory.NewSlabArena(1024 * 1024)
 	defer slab.Free()
@@ -112,6 +117,7 @@ func TestFlatAdjacency_UpdateNeighbors(t *testing.T) {
 	assert.Equal(t, []uint32{1, 2, 3}, nbs)
 }
 
+// TestFlatAdjacency_ConcurrentReadWrite runs the test flat adjacency_concurrent read write operation.
 func TestFlatAdjacency_ConcurrentReadWrite(t *testing.T) {
 	slab := memory.NewSlabArena(16 * 1024 * 1024)
 	defer slab.Free()

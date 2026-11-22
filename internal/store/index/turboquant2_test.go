@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestTurboQuant2_ReconstructionAndRecall runs the test turbo quant2_reconstruction and recall operation.
 func TestTurboQuant2_ReconstructionAndRecall(t *testing.T) {
 	dims := 128
 	enc := NewTurboQuant2Encoder(dims, 42)
@@ -62,6 +63,7 @@ func TestTurboQuant2_ReconstructionAndRecall(t *testing.T) {
 	assert.InDelta(t, 1.0, float64(dNorm), 0.35, "Reconstructed norm should be close to unit")
 }
 
+// TestTurboQuant2_MultiDimRecallBounds runs the test turbo quant2_multi dim recall bounds operation.
 func TestTurboQuant2_MultiDimRecallBounds(t *testing.T) {
 	for _, dims := range []int{128, 384, 768} {
 		enc := NewTurboQuant2Encoder(dims, int64(dims*7))
@@ -93,6 +95,7 @@ func TestTurboQuant2_MultiDimRecallBounds(t *testing.T) {
 	}
 }
 
+// BenchmarkTurboQuant2_EncodeDecode runs the benchmark turbo quant2_encode decode operation.
 func BenchmarkTurboQuant2_EncodeDecode(b *testing.B) {
 	dims := 1536
 	enc := NewTurboQuant2Encoder(dims, 999)

@@ -113,7 +113,7 @@ func TestPIDTuner_RecallRetention(t *testing.T) {
 	assert.True(t, found, "Should successfully find match ID 0 in top 5 results")
 }
 
-// TestComplex128_Correctness verifies that complex128 vectors are fetched correctly
+// TestComplex128_AlignmentAndBounds verifies that complex128 vectors are fetched correctly
 // and bounds checking doesn't fail even when dimensions are not multiples of 4 (e.g., dims = 5).
 func TestComplex128_AlignmentAndBounds(t *testing.T) {
 	dims := 5 // Not a multiple of 4 (padded dims will be 8)

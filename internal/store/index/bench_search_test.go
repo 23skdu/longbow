@@ -11,6 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// BenchmarkInt8Search_50k runs the benchmark int8 search_50k operation.
 func BenchmarkInt8Search_50k(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dims := 128
@@ -55,6 +56,7 @@ func BenchmarkInt8Search_50k(b *testing.B) {
 	}
 }
 
+// BenchmarkInt8Search_50k_Parallel runs the benchmark int8 search_50k_parallel operation.
 func BenchmarkInt8Search_50k_Parallel(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dims := 128
@@ -129,6 +131,7 @@ func makeUint8TestRecordBatch(mem memory.Allocator, dims, numRows int) arrow.Rec
 	return builder.NewRecordBatch()
 }
 
+// BenchmarkUint8Search_50k runs the benchmark uint8 search_50k operation.
 func BenchmarkUint8Search_50k(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dims := 128
@@ -173,6 +176,7 @@ func BenchmarkUint8Search_50k(b *testing.B) {
 	}
 }
 
+// BenchmarkInt8Search_50k_Float32Query runs the benchmark int8 search_50k_float32 query operation.
 func BenchmarkInt8Search_50k_Float32Query(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dims := 128
@@ -217,6 +221,7 @@ func BenchmarkInt8Search_50k_Float32Query(b *testing.B) {
 	}
 }
 
+// BenchmarkUint8Search_50k_Float32Query runs the benchmark uint8 search_50k_float32 query operation.
 func BenchmarkUint8Search_50k_Float32Query(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dims := 128
@@ -261,6 +266,7 @@ func BenchmarkUint8Search_50k_Float32Query(b *testing.B) {
 	}
 }
 
+// BenchmarkTurboQuantSearch_100k runs the benchmark turbo quant search_100k operation.
 func BenchmarkTurboQuantSearch_100k(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dims := 128
@@ -342,6 +348,7 @@ func BenchmarkTurboQuantSearch_100k(b *testing.B) {
 	}
 }
 
+// BenchmarkTurboQuantSearch_250k runs the benchmark turbo quant search_250k operation.
 func BenchmarkTurboQuantSearch_250k(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	dims := 128

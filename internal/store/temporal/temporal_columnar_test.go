@@ -473,12 +473,14 @@ type atomicI64 struct {
 	v  int64
 }
 
+// Load runs the load operation.
 func (a *atomicI64) Load() int64 {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.v
 }
 
+// Add runs the add operation.
 func (a *atomicI64) Add(d int64) int64 {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -521,6 +523,7 @@ func newColumnarBenchmarkIndex(b *testing.B, n int, columnar bool, baseTs, step 
 
 func columnarBenchSizes() []int { return []int{1000, 10000, 100000} }
 
+// BenchmarkTemporalIndex_SearchAsOf runs the benchmark temporal index_search as of operation.
 func BenchmarkTemporalIndex_SearchAsOf(b *testing.B) {
 	ctx := context.Background()
 	for _, n := range columnarBenchSizes() {
@@ -538,6 +541,7 @@ func BenchmarkTemporalIndex_SearchAsOf(b *testing.B) {
 	}
 }
 
+// BenchmarkTemporalIndex_SearchRange runs the benchmark temporal index_search range operation.
 func BenchmarkTemporalIndex_SearchRange(b *testing.B) {
 	ctx := context.Background()
 	for _, n := range columnarBenchSizes() {
@@ -557,6 +561,7 @@ func BenchmarkTemporalIndex_SearchRange(b *testing.B) {
 	}
 }
 
+// BenchmarkTemporalIndex_SearchSlidingWindow runs the benchmark temporal index_search sliding window operation.
 func BenchmarkTemporalIndex_SearchSlidingWindow(b *testing.B) {
 	ctx := context.Background()
 	for _, n := range columnarBenchSizes() {
@@ -575,6 +580,7 @@ func BenchmarkTemporalIndex_SearchSlidingWindow(b *testing.B) {
 	}
 }
 
+// BenchmarkTemporalIndex_SearchSlidingWindowByTime runs the benchmark temporal index_search sliding window by time operation.
 func BenchmarkTemporalIndex_SearchSlidingWindowByTime(b *testing.B) {
 	ctx := context.Background()
 	for _, n := range columnarBenchSizes() {

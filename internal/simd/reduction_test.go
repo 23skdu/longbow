@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestReductions runs the test reductions operation.
 func TestReductions(t *testing.T) {
 	sizes := []int{1, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 100, 1024}
 	for _, n := range sizes {

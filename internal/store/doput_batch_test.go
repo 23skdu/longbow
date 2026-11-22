@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestConcatenateBatches runs the test concatenate batches operation.
 func TestConcatenateBatches(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -89,6 +90,7 @@ func TestConcatenateBatches(t *testing.T) {
 	concatenated.Release()
 }
 
+// TestDoPut_AdaptiveBatching runs the test do put_adaptive batching operation.
 func TestDoPut_AdaptiveBatching(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

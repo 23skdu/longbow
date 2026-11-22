@@ -36,6 +36,7 @@ func newMockSearchStream(ctx context.Context) *mockSearchStream {
 	}
 }
 
+// Send runs the send operation.
 func (m *mockSearchStream) Send(data *flight.FlightData) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -43,6 +44,7 @@ func (m *mockSearchStream) Send(data *flight.FlightData) error {
 	return nil
 }
 
+// Recv runs the recv operation.
 func (m *mockSearchStream) Recv() (*flight.FlightData, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -54,12 +56,23 @@ func (m *mockSearchStream) Recv() (*flight.FlightData, error) {
 	return data, nil
 }
 
-func (m *mockSearchStream) Context() context.Context     { return m.ctx }
-func (m *mockSearchStream) SetHeader(metadata.MD) error  { return nil }
+// Context runs the context operation.
+func (m *mockSearchStream) Context() context.Context { return m.ctx }
+
+// SetHeader sets the header.
+func (m *mockSearchStream) SetHeader(metadata.MD) error { return nil }
+
+// SendHeader runs the send header operation.
 func (m *mockSearchStream) SendHeader(metadata.MD) error { return nil }
-func (m *mockSearchStream) SetTrailer(metadata.MD)       {}
-func (m *mockSearchStream) SendMsg(any) error            { return nil }
-func (m *mockSearchStream) RecvMsg(any) error            { return nil }
+
+// SetTrailer sets the trailer.
+func (m *mockSearchStream) SetTrailer(metadata.MD) {}
+
+// SendMsg runs the send msg operation.
+func (m *mockSearchStream) SendMsg(any) error { return nil }
+
+// RecvMsg runs the recv msg operation.
+func (m *mockSearchStream) RecvMsg(any) error { return nil }
 
 func (m *mockSearchStream) addFlightData(data *flight.FlightData) {
 	m.mu.Lock()
@@ -70,6 +83,7 @@ func (m *mockSearchStream) addFlightData(data *flight.FlightData) {
 	m.recvQueue = append(m.recvQueue, data)
 }
 
+// TestDoExchange_VectorSearch runs the test do exchange_vector search operation.
 func TestDoExchange_VectorSearch(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -188,6 +202,7 @@ type clientStreamAdapter struct {
 	first  bool
 }
 
+// Send runs the send operation.
 func (c *clientStreamAdapter) Send(data *flight.FlightData) error {
 	// Deep copy FIRST so we don't modify the writer's internal struct
 	cp := &flight.FlightData{

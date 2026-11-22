@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestAutoShardingGetNeighbors runs the test auto sharding get neighbors operation.
 func TestAutoShardingGetNeighbors(t *testing.T) {
 	ds := store.NewDataset("test_autoshard", nil)
 

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestRingManager_JoinLeave runs the test ring manager_join leave operation.
 func TestRingManager_JoinLeave(t *testing.T) {
 	logger := zerolog.Nop()
 	rm := NewRingManager("localNode", logger)
@@ -39,6 +40,7 @@ func TestRingManager_JoinLeave(t *testing.T) {
 	assert.Equal(t, "nodeB", owner2, "Should route to remaining node")
 }
 
+// TestRingManager_Consistency runs the test ring manager_consistency operation.
 func TestRingManager_Consistency(t *testing.T) {
 	logger := zerolog.Nop()
 	rm := NewRingManager("localNode", logger)

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestExtract_PromautoCounter runs the test extract_promauto counter operation.
 func TestExtract_PromautoCounter(t *testing.T) {
 	src := `package test
 import "github.com/prometheus/client_golang/prometheus/promauto"

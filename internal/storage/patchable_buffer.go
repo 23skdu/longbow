@@ -13,6 +13,7 @@ var bufferPool = sync.Pool{
 	},
 }
 
+// GetBuffer returns the buffer.
 func GetBuffer(capacity int) *PatchableBuffer {
 	buf := bufferPool.Get().(*PatchableBuffer)
 	if cap(buf.buf) < capacity {
@@ -22,6 +23,7 @@ func GetBuffer(capacity int) *PatchableBuffer {
 	return buf
 }
 
+// PutBuffer runs the put buffer operation.
 func PutBuffer(b *PatchableBuffer) {
 	b.Reset()
 	bufferPool.Put(b)

@@ -18,6 +18,7 @@ import (
 
 var _ adbc.Connection = (*Connection)(nil)
 
+// Connection represents a connection value.
 type Connection struct {
 	db     *Database
 	store  *store.VectorStore
@@ -32,18 +33,22 @@ func newConnection(db *Database) adbc.Connection {
 	return &Connection{db: db, store: vs, logger: db.logger}
 }
 
+// Close runs the close operation.
 func (c *Connection) Close() error {
 	return nil
 }
 
+// SetOption sets the option.
 func (c *Connection) SetOption(key, value string) error {
 	return adbc.Error{Code: adbc.StatusNotImplemented}
 }
 
+// NewStatement constructs a new Statement.
 func (c *Connection) NewStatement() (adbc.Statement, error) {
 	return newStatement(c), nil
 }
 
+// GetInfo returns the info.
 func (c *Connection) GetInfo(ctx context.Context, infoCodes []adbc.InfoCode) (array.RecordReader, error) {
 	pool := memory.NewGoAllocator()
 
@@ -102,6 +107,7 @@ func (c *Connection) GetInfo(ctx context.Context, infoCodes []adbc.InfoCode) (ar
 	return array.NewRecordReader(adbc.GetInfoSchema, []arrow.RecordBatch{rec})
 }
 
+// GetObjects returns the objects.
 func (c *Connection) GetObjects(ctx context.Context, depth adbc.ObjectDepth, catalog, dbSchema, tableName, columnName *string, tableType []string) (array.RecordReader, error) {
 	if c.store == nil {
 		return nil, adbc.Error{Code: adbc.StatusNotFound, Msg: "no store attached"}
@@ -135,6 +141,7 @@ func (c *Connection) GetObjects(ctx context.Context, depth adbc.ObjectDepth, cat
 	return array.NewRecordReader(schema, []arrow.RecordBatch{rec})
 }
 
+// GetTableSchema returns the table schema.
 func (c *Connection) GetTableSchema(ctx context.Context, catalog, dbSchema *string, tableName string) (*arrow.Schema, error) {
 	if c.store == nil {
 		return nil, adbc.Error{Code: adbc.StatusNotFound, Msg: "no store attached"}
@@ -157,6 +164,7 @@ func (c *Connection) GetTableSchema(ctx context.Context, catalog, dbSchema *stri
 	return found, nil
 }
 
+// GetTableTypes returns the table types.
 func (c *Connection) GetTableTypes(ctx context.Context) (array.RecordReader, error) {
 	pool := memory.NewGoAllocator()
 
@@ -175,18 +183,22 @@ func (c *Connection) GetTableTypes(ctx context.Context) (array.RecordReader, err
 	return array.NewRecordReader(schema, []arrow.RecordBatch{rec})
 }
 
+// ReadPartition runs the read partition operation.
 func (c *Connection) ReadPartition(ctx context.Context, serializedPartition []byte) (array.RecordReader, error) {
 	return nil, adbc.Error{Code: adbc.StatusNotImplemented}
 }
 
+// Commit runs the commit operation.
 func (c *Connection) Commit(ctx context.Context) error {
 	return adbc.Error{Code: adbc.StatusNotImplemented}
 }
 
+// Rollback runs the rollback operation.
 func (c *Connection) Rollback(ctx context.Context) error {
 	return adbc.Error{Code: adbc.StatusNotImplemented}
 }
 
+// FlightServer runs the flight server operation.
 func (c *Connection) FlightServer() flight.FlightServer {
 	return nil
 }

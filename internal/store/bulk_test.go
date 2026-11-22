@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestBulkDeferredConnections runs the test bulk deferred connections operation.
 func TestBulkDeferredConnections(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

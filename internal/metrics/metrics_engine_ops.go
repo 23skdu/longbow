@@ -9,6 +9,7 @@ import (
 // JIT Metrics
 // =============================================================================
 var (
+	// JitCompilationDurationSeconds is a jit compilation duration seconds value.
 	JitCompilationDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_jit_compilation_duration_seconds",
@@ -17,6 +18,7 @@ var (
 		},
 	)
 
+	// JitKernelCallsTotal is a jit kernel calls total value.
 	JitKernelCallsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_jit_kernel_calls_total",
@@ -25,6 +27,7 @@ var (
 		[]string{"kernel"},
 	)
 
+	// JitKernelErrorsTotal is a jit kernel errors total value.
 	JitKernelErrorsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_jit_kernel_errors_total",
@@ -32,6 +35,7 @@ var (
 		},
 	)
 
+	// GPUComputeDurationSeconds is a gpu compute duration seconds value.
 	GPUComputeDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_gpu_compute_duration_seconds",
@@ -41,7 +45,7 @@ var (
 		[]string{"backend", "operation"},
 	)
 
-	// WAL Metrics
+	// WALQueueDepth Metrics
 	WALQueueDepth = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_wal_queue_depth",
@@ -49,6 +53,7 @@ var (
 		},
 	)
 
+	// WALQueueLatency is a wal queue latency value.
 	WALQueueLatency = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_wal_queue_latency_seconds",
@@ -57,6 +62,7 @@ var (
 		},
 	)
 
+	// WALReplicationLatencySeconds is a wal replication latency seconds value.
 	WALReplicationLatencySeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_wal_replication_latency_seconds",
@@ -65,6 +71,7 @@ var (
 		},
 	)
 
+	// WALWriteErrors is a wal write errors value.
 	WALWriteErrors = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_wal_write_errors_total",
@@ -72,6 +79,7 @@ var (
 		},
 	)
 
+	// WALWriteDuration is a wal write duration value.
 	WALWriteDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_wal_write_duration_seconds",
@@ -88,7 +96,7 @@ var (
 		},
 	)
 
-	// GPU Ingestion Metrics
+	// GPUIngestKernelDurationSeconds Ingestion Metrics
 	GPUIngestKernelDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_gpu_ingest_kernel_duration_seconds",
@@ -97,6 +105,7 @@ var (
 		},
 	)
 
+	// GPUNeighborPruneOpsTotal is a gpu neighbor prune ops total value.
 	GPUNeighborPruneOpsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_gpu_neighbor_prune_ops_total",
@@ -104,7 +113,7 @@ var (
 		},
 	)
 
-	// TurboQuant Metrics
+	// TurboQuantDequantizeLatencySeconds Metrics
 	TurboQuantDequantizeLatencySeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_search_dequantize_latency_seconds",
@@ -122,7 +131,7 @@ var (
 	// counters below, and a precomputed ratio gauge duplicates what PromQL derives
 	// from two counters while going stale the moment either is missed.
 
-	// TemporalResultCache counters (roadmap R11a). These were maintained on the
+	// TemporalCacheHitsTotal counters (roadmap R11a). These were maintained on the
 	// cache and read by nothing, so "the temporal cache is thrashing" had to be
 	// inferred from latency. Expiries and capacity evictions are separate series
 	// because they need opposite remedies: a shorter TTL versus a larger cache.
@@ -133,6 +142,7 @@ var (
 		},
 		[]string{"dataset"},
 	)
+	// TemporalCacheMissesTotal is a temporal cache misses total value.
 	TemporalCacheMissesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_temporal_cache_misses_total",
@@ -140,6 +150,7 @@ var (
 		},
 		[]string{"dataset"},
 	)
+	// TemporalCacheExpiriesTotal is a temporal cache expiries total value.
 	TemporalCacheExpiriesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_temporal_cache_expiries_total",
@@ -147,6 +158,7 @@ var (
 		},
 		[]string{"dataset"},
 	)
+	// TemporalCacheEvictionsTotal is a temporal cache evictions total value.
 	TemporalCacheEvictionsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_temporal_cache_evictions_total",
@@ -154,6 +166,7 @@ var (
 		},
 		[]string{"dataset"},
 	)
+	// TemporalCacheEntries is a temporal cache entries value.
 	TemporalCacheEntries = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_temporal_cache_entries",
@@ -162,18 +175,21 @@ var (
 		[]string{"dataset"},
 	)
 
+	// TemporalQueryScannedNodesTotal is a temporal query scanned nodes total value.
 	TemporalQueryScannedNodesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_temporal_query_scanned_nodes_total",
 			Help: "Total number of tree nodes scanned during temporal queries",
 		},
 	)
+	// TemporalTreeNodesTotal is a temporal tree nodes total value.
 	TemporalTreeNodesTotal = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_temporal_tree_nodes_total",
 			Help: "Total number of unique timestamps in the temporal tree",
 		},
 	)
+	// TemporalTreeAllocatedBytesTotal is a temporal tree allocated bytes total value.
 	TemporalTreeAllocatedBytesTotal = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_temporal_tree_allocated_bytes_total",
@@ -181,6 +197,7 @@ var (
 		},
 	)
 
+	// SlabHugePageCount is a slab huge page count value.
 	SlabHugePageCount = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_slab_hugepage_count",
@@ -188,6 +205,7 @@ var (
 		},
 	)
 
+	// WalReplayParallelism is a wal replay parallelism value.
 	WalReplayParallelism = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_wal_replay_parallelism_total",
@@ -205,7 +223,7 @@ var (
 
 	// =============================================================================
 
-	// Simd Tiled Metrics
+	// SimdTiledDistanceBatchTotal Tiled Metrics
 	SimdTiledDistanceBatchTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_simd_tiled_distance_batch_total",
@@ -213,7 +231,7 @@ var (
 		},
 	)
 
-	// DoPut Adaptive Batching Alignment
+	// DoPutBatchSizeBytes Adaptive Batching Alignment
 	DoPutBatchSizeBytes = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_doput_batch_size_bytes",
@@ -240,7 +258,7 @@ var (
 		},
 	)
 
-	// Vector Access Metrics - Zero-Copy Optimization
+	// VectorAccessZeroCopyTotal Access Metrics - Zero-Copy Optimization
 	VectorAccessZeroCopyTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_access_zerocopy_total",
@@ -249,6 +267,7 @@ var (
 		[]string{"dataset", "index_type"},
 	)
 
+	// VectorAccessCopyTotal is a vector access copy total value.
 	VectorAccessCopyTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_access_copy_total",
@@ -257,6 +276,7 @@ var (
 		[]string{"dataset", "index_type"},
 	)
 
+	// VectorAccessBytesAllocated is a vector access bytes allocated value.
 	VectorAccessBytesAllocated = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_access_bytes_allocated_total",
@@ -265,7 +285,7 @@ var (
 		[]string{"dataset", "index_type"},
 	)
 
-	// BloomFilter metrics for filter evaluation optimization
+	// BloomFilterEarlyExitsTotal metrics for filter evaluation optimization
 	BloomFilterEarlyExitsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bloom_filter_early_exits_total",
@@ -273,6 +293,7 @@ var (
 		},
 	)
 
+	// BloomFilterSelectivityHistogram is a bloom filter selectivity histogram value.
 	BloomFilterSelectivityHistogram = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_bloom_filter_selectivity",
@@ -282,6 +303,7 @@ var (
 		[]string{"filter_type"}, // "int64", "float32", "float64", "string"
 	)
 
+	// BloomFilterBitmapZeroChecksTotal is a bloom filter bitmap zero checks total value.
 	BloomFilterBitmapZeroChecksTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bloom_filter_bitmap_zero_checks_total",
@@ -289,7 +311,7 @@ var (
 		},
 	)
 
-	// StringFilter metrics for SIMD-accelerated string filter operations
+	// StringFilterOpsTotal metrics for SIMD-accelerated string filter operations
 	StringFilterOpsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_string_filter_ops_total",
@@ -298,6 +320,7 @@ var (
 		[]string{"operator", "path"}, // operator: "eq", "neq", "gt", etc.; path: "fast", "slow"
 	)
 
+	// StringFilterDurationSeconds is a string filter duration seconds value.
 	StringFilterDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_string_filter_duration_seconds",
@@ -307,6 +330,7 @@ var (
 		[]string{"operator", "path"},
 	)
 
+	// StringFilterEqualLengthTotal is a string filter equal length total value.
 	StringFilterEqualLengthTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_string_filter_equal_length_total",
@@ -314,6 +338,7 @@ var (
 		},
 	)
 
+	// StringFilterComparisonsTotal is a string filter comparisons total value.
 	StringFilterComparisonsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_string_filter_comparisons_total",
@@ -321,6 +346,7 @@ var (
 		},
 	)
 
+	// StringFilterBytesComparedTotal is a string filter bytes compared total value.
 	StringFilterBytesComparedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_string_filter_bytes_compared_total",
@@ -328,7 +354,7 @@ var (
 		},
 	)
 
-	// Connection Pool metrics for distributed query optimization
+	// ConnectionPoolGetTotal Pool metrics for distributed query optimization
 	ConnectionPoolGetTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_connection_pool_get_total",
@@ -337,6 +363,7 @@ var (
 		[]string{"result"}, // "hit", "miss", "stale", "error"
 	)
 
+	// ConnectionPoolCreateTotal is a connection pool create total value.
 	ConnectionPoolCreateTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_connection_pool_create_total",
@@ -344,6 +371,7 @@ var (
 		},
 	)
 
+	// ConnectionPoolCloseTotal is a connection pool close total value.
 	ConnectionPoolCloseTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_connection_pool_close_total",
@@ -351,6 +379,7 @@ var (
 		},
 	)
 
+	// ConnectionPoolActiveConnections is a connection pool active connections value.
 	ConnectionPoolActiveConnections = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_connection_pool_active_connections",
@@ -359,6 +388,7 @@ var (
 		[]string{"target"}, // target address
 	)
 
+	// ConnectionPoolGetDurationSeconds is a connection pool get duration seconds value.
 	ConnectionPoolGetDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_connection_pool_get_duration_seconds",
@@ -368,6 +398,7 @@ var (
 		[]string{"result"}, // "hit", "miss", "stale", "error"
 	)
 
+	// ConnectionPoolHealthCheckTotal is a connection pool health check total value.
 	ConnectionPoolHealthCheckTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_connection_pool_health_check_total",
@@ -376,6 +407,7 @@ var (
 		[]string{"result"}, // "healthy", "unhealthy", "error"
 	)
 
+	// ConnectionPoolRefreshTotal is a connection pool refresh total value.
 	ConnectionPoolRefreshTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_connection_pool_refresh_total",
@@ -383,7 +415,7 @@ var (
 		},
 	)
 
-	// Branch Prediction metrics for HNSW graph traversal optimization
+	// HnswBranchPredictionTotal Prediction metrics for HNSW graph traversal optimization
 	HnswBranchPredictionTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_branch_prediction_total",
@@ -392,6 +424,7 @@ var (
 		[]string{"branch_type"}, // "filter_match", "filter_miss", "location_found", "location_miss", "result_append"
 	)
 
+	// HnswBranchPredictionLikelyTotal is a hnsw branch prediction likely total value.
 	HnswBranchPredictionLikelyTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_branch_prediction_likely_total",
@@ -399,6 +432,7 @@ var (
 		},
 	)
 
+	// HnswBranchPredictionUnlikelyTotal is a hnsw branch prediction unlikely total value.
 	HnswBranchPredictionUnlikelyTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_branch_prediction_unlikely_total",
@@ -406,6 +440,7 @@ var (
 		},
 	)
 
+	// HnswTraversalIterationsTotal is a hnsw traversal iterations total value.
 	HnswTraversalIterationsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_traversal_iterations_total",
@@ -413,6 +448,7 @@ var (
 		},
 	)
 
+	// HnswContextCheckTotal is a hnsw context check total value.
 	HnswContextCheckTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_context_check_total",
@@ -420,6 +456,7 @@ var (
 		},
 	)
 
+	// HnswContextCheckCancelledTotal is a hnsw context check cancelled total value.
 	HnswContextCheckCancelledTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_context_check_cancelled_total",
@@ -427,7 +464,7 @@ var (
 		},
 	)
 
-	// Batch Distance Compute metrics for SIMD batch optimization
+	// BatchDistanceComputeTotal Distance Compute metrics for SIMD batch optimization
 	BatchDistanceComputeTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_batch_distance_compute_total",
@@ -435,6 +472,7 @@ var (
 		},
 	)
 
+	// BatchDistanceComputeDurationSeconds is a batch distance compute duration seconds value.
 	BatchDistanceComputeDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_batch_distance_compute_duration_seconds",
@@ -443,6 +481,7 @@ var (
 		},
 	)
 
+	// BatchDistanceComputePairsTotal is a batch distance compute pairs total value.
 	BatchDistanceComputePairsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_batch_distance_compute_pairs_total",
@@ -450,6 +489,7 @@ var (
 		},
 	)
 
+	// BatchDistanceComputeSIMDUsed is a batch distance compute simd used value.
 	BatchDistanceComputeSIMDUsed = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_batch_distance_compute_simd_used_total",
@@ -457,6 +497,7 @@ var (
 		},
 	)
 
+	// BatchDistanceComputeFallbackTotal is a batch distance compute fallback total value.
 	BatchDistanceComputeFallbackTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_batch_distance_compute_fallback_total",

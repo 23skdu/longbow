@@ -21,6 +21,7 @@ func euclidGenericCopy(query []float32, vectors [][]float32, results []float32) 
 	}
 }
 
+// Benchmark_Compare_EuclideanBatch runs the benchmark_compare_euclidean batch operation.
 func Benchmark_Compare_EuclideanBatch(b *testing.B) {
 	dims := 128
 	batchSize := 1000
@@ -55,6 +56,7 @@ func Benchmark_Compare_EuclideanBatch(b *testing.B) {
 	})
 }
 
+// BenchmarkEuclideanF32_Single runs the benchmark euclidean f32_single operation.
 func BenchmarkEuclideanF32_Single(b *testing.B) {
 	dims := []int{128, 384, 768, 1536}
 	for _, dim := range dims {

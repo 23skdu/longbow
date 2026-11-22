@@ -60,6 +60,7 @@ func batchParityIDs(nChunks int) []uint32 {
 	return ids
 }
 
+// TestComputeBatch_Float32MatchesComputeSingle runs the test compute batch_float32 matches compute single operation.
 func TestComputeBatch_Float32MatchesComputeSingle(t *testing.T) {
 	const nChunks = 3
 	for _, maxGen := range []uint64{math.MaxUint64, 0, 1} {
@@ -96,6 +97,7 @@ func TestComputeBatch_Float32MatchesComputeSingle(t *testing.T) {
 	}
 }
 
+// TestComputeBatch_Float64MatchesComputeSingle runs the test compute batch_float64 matches compute single operation.
 func TestComputeBatch_Float64MatchesComputeSingle(t *testing.T) {
 	const nChunks = 2
 	for _, maxGen := range []uint64{math.MaxUint64, 0} {
@@ -128,6 +130,7 @@ func TestComputeBatch_Float64MatchesComputeSingle(t *testing.T) {
 	}
 }
 
+// TestComputeBatch_Int8MatchesComputeSingle runs the test compute batch_int8 matches compute single operation.
 func TestComputeBatch_Int8MatchesComputeSingle(t *testing.T) {
 	const nChunks = 2
 	for _, maxGen := range []uint64{math.MaxUint64, 0} {
@@ -166,6 +169,7 @@ func TestComputeBatch_Int8MatchesComputeSingle(t *testing.T) {
 	}
 }
 
+// TestComputeBatch_Float32ToFloat32MatchesComputeSingle runs the test compute batch_float32 to float32 matches compute single operation.
 func TestComputeBatch_Float32ToFloat32MatchesComputeSingle(t *testing.T) {
 	const nChunks = 2
 	g := batchParityGraphData(t, types.VectorTypeFloat32, 64, nChunks)
@@ -207,6 +211,7 @@ func TestComputeBatch_Float32ToFloat32MatchesComputeSingle(t *testing.T) {
 	}
 }
 
+// TestComputeBatch_EmptyAndNilDst runs the test compute batch_empty and nil dst operation.
 func TestComputeBatch_EmptyAndNilDst(t *testing.T) {
 	g := batchParityGraphData(t, types.VectorTypeFloat32, 32, 1)
 	h := newBatchBenchHNSW()

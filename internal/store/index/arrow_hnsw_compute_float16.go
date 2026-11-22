@@ -18,11 +18,13 @@ type float16Computer struct {
 	maxGen    uint64
 }
 
+// Compute runs the compute operation.
 func (c *float16Computer) Compute(ids []uint32, dists []float32) error {
 	_, err := c.ComputeBatch(ids, dists)
 	return err
 }
 
+// ComputeSingle runs the compute single operation.
 func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
 	var chunk []float16.Num
@@ -50,6 +52,7 @@ func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+// ComputeBatch runs the compute batch operation.
 func (c *float16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
 	if cap(dst) < len(ids) {
 		dst = make([]float32, len(ids))
@@ -96,6 +99,7 @@ func (c *float16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 	return dst, nil
 }
 
+// Prefetch runs the prefetch operation.
 func (c *float16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsF16ChunkWithGen(int(cID), c.maxGen)

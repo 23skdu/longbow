@@ -151,6 +151,7 @@ func TestEuclideanBatchUnrolledCorrectness(t *testing.T) {
 // Benchmarks: Unrolled vs Scalar
 // =============================================================================
 
+// BenchmarkEuclidean_Scalar_128dim runs the benchmark euclidean_scalar_128dim operation.
 func BenchmarkEuclidean_Scalar_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
@@ -160,6 +161,7 @@ func BenchmarkEuclidean_Scalar_128dim(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclidean_Unrolled4x_128dim runs the benchmark euclidean_unrolled4x_128dim operation.
 func BenchmarkEuclidean_Unrolled4x_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
@@ -169,6 +171,7 @@ func BenchmarkEuclidean_Unrolled4x_128dim(b *testing.B) {
 	}
 }
 
+// BenchmarkCosine_Scalar_128dim runs the benchmark cosine_scalar_128dim operation.
 func BenchmarkCosine_Scalar_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
@@ -178,6 +181,7 @@ func BenchmarkCosine_Scalar_128dim(b *testing.B) {
 	}
 }
 
+// BenchmarkCosine_Unrolled4x_128dim runs the benchmark cosine_unrolled4x_128dim operation.
 func BenchmarkCosine_Unrolled4x_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
@@ -187,6 +191,7 @@ func BenchmarkCosine_Unrolled4x_128dim(b *testing.B) {
 	}
 }
 
+// BenchmarkDot_Scalar_128dim runs the benchmark dot_scalar_128dim operation.
 func BenchmarkDot_Scalar_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
@@ -196,6 +201,7 @@ func BenchmarkDot_Scalar_128dim(b *testing.B) {
 	}
 }
 
+// BenchmarkDot_Unrolled4x_128dim runs the benchmark dot_unrolled4x_128dim operation.
 func BenchmarkDot_Unrolled4x_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
@@ -205,6 +211,7 @@ func BenchmarkDot_Unrolled4x_128dim(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclideanBatch_Scalar_128dim_100vec runs the benchmark euclidean batch_scalar_128dim_100vec operation.
 func BenchmarkEuclideanBatch_Scalar_128dim_100vec(b *testing.B) {
 	query := make128()
 	vectors := make([][]float32, 100)
@@ -218,6 +225,7 @@ func BenchmarkEuclideanBatch_Scalar_128dim_100vec(b *testing.B) {
 	}
 }
 
+// BenchmarkEuclideanBatch_Unrolled4x_128dim_100vec runs the benchmark euclidean batch_unrolled4x_128dim_100vec operation.
 func BenchmarkEuclideanBatch_Unrolled4x_128dim_100vec(b *testing.B) {
 	query := make128()
 	vectors := make([][]float32, 100)

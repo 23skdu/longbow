@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestOptimizerCSE runs the test optimizer cse operation.
 func TestOptimizerCSE(t *testing.T) {
 	// Build graph: (A + B) * (A + B)
 	inA := NewInput(0, DtypeFloat32, Shape{4, 4})
@@ -27,6 +28,7 @@ func TestOptimizerCSE(t *testing.T) {
 	}
 }
 
+// TestOptimizerConstantFolding runs the test optimizer constant folding operation.
 func TestOptimizerConstantFolding(t *testing.T) {
 	// Build graph with constant tensors: Const(3) + Const(4) -> folded to Const(7)
 	t1 := New(DtypeFloat32, Shape{2})

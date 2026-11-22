@@ -44,6 +44,7 @@ func makeConcurrencyTestRecord(mem memory.Allocator, dims, numVectors int) arrow
 	return b.NewRecordBatch()
 }
 
+// TestHNSW_Concurrency_HighContention runs the test hnsw_concurrency_high contention operation.
 func TestHNSW_Concurrency_HighContention(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	rec := makeConcurrencyTestRecord(mem, 128, 500)
@@ -93,6 +94,7 @@ func TestHNSW_Concurrency_HighContention(t *testing.T) {
 	}
 }
 
+// TestHNSW_Concurrency_Mixed runs the test hnsw_concurrency_mixed operation.
 func TestHNSW_Concurrency_Mixed(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	rec := makeConcurrencyTestRecord(mem, 128, 500)

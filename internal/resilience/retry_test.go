@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestDefaultRetryPolicy runs the test default retry policy operation.
 func TestDefaultRetryPolicy(t *testing.T) {
 	p := DefaultRetryPolicy()
 	assert.Equal(t, 3, p.MaxAttempts)
@@ -19,6 +20,7 @@ func TestDefaultRetryPolicy(t *testing.T) {
 	assert.NotNil(t, p.RetryableFunc)
 }
 
+// TestDefaultRetryableFunc runs the test default retryable func operation.
 func TestDefaultRetryableFunc(t *testing.T) {
 	assert.True(t, DefaultRetryableFunc(errors.New("connection refused")))
 	assert.True(t, DefaultRetryableFunc(errors.New("timeout occurred")))
@@ -28,6 +30,7 @@ func TestDefaultRetryableFunc(t *testing.T) {
 	assert.False(t, DefaultRetryableFunc(nil))
 }
 
+// TestContains runs the test contains operation.
 func TestContains(t *testing.T) {
 	assert.True(t, contains("hello world", "world"))
 	assert.True(t, contains("hello", "hello"))
@@ -36,6 +39,7 @@ func TestContains(t *testing.T) {
 	assert.False(t, contains("ab", "abc"))
 }
 
+// TestFindSubstring runs the test find substring operation.
 func TestFindSubstring(t *testing.T) {
 	assert.True(t, findSubstring("hello world", "lo wo"))
 	assert.True(t, findSubstring("abcde", "bcd"))
@@ -43,6 +47,7 @@ func TestFindSubstring(t *testing.T) {
 	assert.False(t, findSubstring("a", "ab"))
 }
 
+// TestRetrySuccess runs the test retry success operation.
 func TestRetrySuccess(t *testing.T) {
 	ctx := context.Background()
 	policy := &RetryPolicy{
@@ -61,6 +66,7 @@ func TestRetrySuccess(t *testing.T) {
 	assert.Equal(t, "success", result)
 }
 
+// TestRetrySuccessAfterFailure runs the test retry success after failure operation.
 func TestRetrySuccessAfterFailure(t *testing.T) {
 	ctx := context.Background()
 	var attempts int
@@ -85,6 +91,7 @@ func TestRetrySuccessAfterFailure(t *testing.T) {
 	assert.Equal(t, 3, attempts)
 }
 
+// TestRetryAllFail runs the test retry all fail operation.
 func TestRetryAllFail(t *testing.T) {
 	ctx := context.Background()
 	policy := &RetryPolicy{
@@ -102,6 +109,7 @@ func TestRetryAllFail(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestRetryNonRetryable runs the test retry non retryable operation.
 func TestRetryNonRetryable(t *testing.T) {
 	ctx := context.Background()
 	policy := &RetryPolicy{
@@ -119,6 +127,7 @@ func TestRetryNonRetryable(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestRetryNilPolicy runs the test retry nil policy operation.
 func TestRetryNilPolicy(t *testing.T) {
 	ctx := context.Background()
 	result, err := Retry(ctx, nil, func() (string, error) {
@@ -128,6 +137,7 @@ func TestRetryNilPolicy(t *testing.T) {
 	assert.Equal(t, "defaults", result)
 }
 
+// TestRetryContextCancelled runs the test retry context cancelled operation.
 func TestRetryContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -148,6 +158,7 @@ func TestRetryContextCancelled(t *testing.T) {
 	assert.Contains(t, err.Error(), "cancelled")
 }
 
+// TestCalculateDelay runs the test calculate delay operation.
 func TestCalculateDelay(t *testing.T) {
 	policy := &RetryPolicy{
 		InitialDelay: 100 * time.Millisecond,
@@ -161,6 +172,7 @@ func TestCalculateDelay(t *testing.T) {
 	assert.Equal(t, 400*time.Millisecond, calculateDelay(policy, 3))
 }
 
+// TestCalculateDelayMax runs the test calculate delay max operation.
 func TestCalculateDelayMax(t *testing.T) {
 	policy := &RetryPolicy{
 		InitialDelay: 1 * time.Second,
@@ -172,6 +184,7 @@ func TestCalculateDelayMax(t *testing.T) {
 	assert.Equal(t, 3*time.Second, delay)
 }
 
+// TestNewRetryConfig runs the test new retry config operation.
 func TestNewRetryConfig(t *testing.T) {
 	cfg := NewRetryConfig()
 	assert.NotNil(t, cfg.Network)
@@ -184,6 +197,7 @@ func TestNewRetryConfig(t *testing.T) {
 	assert.Equal(t, 10, cfg.Replication.MaxAttempts)
 }
 
+// TestRetryableError runs the test retryable error operation.
 func TestRetryableError(t *testing.T) {
 	inner := errors.New("inner")
 	err := &RetryableError{Err: inner}
@@ -191,6 +205,7 @@ func TestRetryableError(t *testing.T) {
 	assert.Equal(t, inner, err.Unwrap())
 }
 
+// TestNonRetryableError runs the test non retryable error operation.
 func TestNonRetryableError(t *testing.T) {
 	inner := errors.New("inner")
 	err := &NonRetryableError{Err: inner}
@@ -198,6 +213,7 @@ func TestNonRetryableError(t *testing.T) {
 	assert.Equal(t, inner, err.Unwrap())
 }
 
+// TestNewAdaptiveRetryPolicy runs the test new adaptive retry policy operation.
 func TestNewAdaptiveRetryPolicy(t *testing.T) {
 	base := DefaultRetryPolicy()
 	adaptive := NewAdaptiveRetryPolicy(base)
@@ -205,36 +221,42 @@ func TestNewAdaptiveRetryPolicy(t *testing.T) {
 	assert.Equal(t, base.InitialDelay, adaptive.InitialDelay)
 }
 
+// TestNewAdaptiveRetryPolicyNil runs the test new adaptive retry policy nil operation.
 func TestNewAdaptiveRetryPolicyNil(t *testing.T) {
 	adaptive := NewAdaptiveRetryPolicy(nil)
 	assert.NotNil(t, adaptive)
 	assert.Equal(t, 3, adaptive.MaxAttempts)
 }
 
+// TestAdaptiveRetryPolicyRecordSuccess runs the test adaptive retry policy record success operation.
 func TestAdaptiveRetryPolicyRecordSuccess(t *testing.T) {
 	adaptive := NewAdaptiveRetryPolicy(nil)
 	adaptive.RecordSuccess()
 	assert.NotPanics(t, adaptive.RecordSuccess)
 }
 
+// TestAdaptiveRetryPolicyRecordFailure runs the test adaptive retry policy record failure operation.
 func TestAdaptiveRetryPolicyRecordFailure(t *testing.T) {
 	adaptive := NewAdaptiveRetryPolicy(nil)
 	adaptive.RecordFailure()
 	assert.NotPanics(t, adaptive.RecordFailure)
 }
 
+// TestMinInt runs the test min int operation.
 func TestMinInt(t *testing.T) {
 	assert.Equal(t, 1, minInt(1, 2))
 	assert.Equal(t, 1, minInt(2, 1))
 	assert.Equal(t, 0, minInt(0, 5))
 }
 
+// TestMaxInt runs the test max int operation.
 func TestMaxInt(t *testing.T) {
 	assert.Equal(t, 2, maxInt(1, 2))
 	assert.Equal(t, 2, maxInt(2, 1))
 	assert.Equal(t, 5, maxInt(5, 0))
 }
 
+// TestRetryOnRetryCallback runs the test retry on retry callback operation.
 func TestRetryOnRetryCallback(t *testing.T) {
 	ctx := context.Background()
 	var onRetryCalled bool

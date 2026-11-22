@@ -71,8 +71,11 @@ type Session struct {
 type PoolingMode int
 
 const (
+	// PoolingMean is a pooling mean constant.
 	PoolingMean PoolingMode = iota
+	// PoolingMax is a pooling max constant.
 	PoolingMax
+	// PoolingCLS is a pooling cls constant.
 	PoolingCLS
 )
 
@@ -465,6 +468,7 @@ func (s *Session) l2Normalize(vec []float32) {
 	}
 }
 
+// Close runs the close operation.
 func (s *Session) Close() error {
 	if s.isMetal {
 		return s.metalEngine.Close()

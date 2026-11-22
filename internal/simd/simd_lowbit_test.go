@@ -7,6 +7,7 @@ import (
 	"unsafe"
 )
 
+// TestLowBitKernels runs the test low bit kernels operation.
 func TestLowBitKernels(t *testing.T) {
 	// Test Int4
 	// In my assembly, I process high and low nibbles separately.

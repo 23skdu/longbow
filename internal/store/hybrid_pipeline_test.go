@@ -11,7 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-// Config tests
+// TestHybridPipelineConfigDefaults tests
 func TestHybridPipelineConfigDefaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -31,6 +31,7 @@ func TestHybridPipelineConfigDefaults(t *testing.T) {
 	}
 }
 
+// TestHybridPipelineConfigValidation runs the test hybrid pipeline config validation operation.
 func TestHybridPipelineConfigValidation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -60,6 +61,7 @@ func TestHybridPipelineConfigValidation(t *testing.T) {
 	}
 }
 
+// TestFusionModeConstants runs the test fusion mode constants operation.
 func TestFusionModeConstants(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -75,6 +77,7 @@ func TestFusionModeConstants(t *testing.T) {
 	}
 }
 
+// TestHybridSearchQueryDefaults runs the test hybrid search query defaults operation.
 func TestHybridSearchQueryDefaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -85,6 +88,7 @@ func TestHybridSearchQueryDefaults(t *testing.T) {
 	}
 }
 
+// TestHybridSearchQueryValidation runs the test hybrid search query validation operation.
 func TestHybridSearchQueryValidation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -111,6 +115,7 @@ func TestHybridSearchQueryValidation(t *testing.T) {
 	}
 }
 
+// TestNewHybridSearchPipeline runs the test new hybrid search pipeline operation.
 func TestNewHybridSearchPipeline(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -125,6 +130,7 @@ func TestNewHybridSearchPipeline(t *testing.T) {
 	}
 }
 
+// TestPipelineSetters runs the test pipeline setters operation.
 func TestPipelineSetters(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -151,6 +157,7 @@ func TestPipelineSetters(t *testing.T) {
 	}
 }
 
+// TestFuseRRF runs the test fuse rrf operation.
 func TestFuseRRF(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -187,6 +194,7 @@ func TestFuseRRF(t *testing.T) {
 	}
 }
 
+// TestFuseRRFEmpty runs the test fuse rrf empty operation.
 func TestFuseRRFEmpty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -197,6 +205,7 @@ func TestFuseRRFEmpty(t *testing.T) {
 	}
 }
 
+// TestFuseLinear runs the test fuse linear operation.
 func TestFuseLinear(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -227,6 +236,7 @@ func TestFuseLinear(t *testing.T) {
 	}
 }
 
+// TestFuseCascade runs the test fuse cascade operation.
 func TestFuseCascade(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -247,6 +257,7 @@ func TestFuseCascade(t *testing.T) {
 	}
 }
 
+// TestFuseCascadeNoFilters runs the test fuse cascade no filters operation.
 func TestFuseCascadeNoFilters(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -262,6 +273,7 @@ func TestFuseCascadeNoFilters(t *testing.T) {
 	}
 }
 
+// BenchmarkFuseRRF runs the benchmark fuse rrf operation.
 func BenchmarkFuseRRF(b *testing.B) {
 	dense := make([]SearchResult, 100)
 	sparse := make([]SearchResult, 100)
@@ -276,6 +288,7 @@ func BenchmarkFuseRRF(b *testing.B) {
 	}
 }
 
+// BenchmarkFuseLinear runs the benchmark fuse linear operation.
 func BenchmarkFuseLinear(b *testing.B) {
 	dense := make([]SearchResult, 100)
 	sparse := make([]SearchResult, 100)
@@ -295,6 +308,7 @@ type TestRerankMock struct {
 	Called bool
 }
 
+// Rerank runs the rerank operation.
 func (r *TestRerankMock) Rerank(ctx context.Context, text string, results []SearchResult) ([]SearchResult, error) {
 	r.Called = true
 	// Reverse results as a detectable change
@@ -304,6 +318,7 @@ func (r *TestRerankMock) Rerank(ctx context.Context, text string, results []Sear
 	return results, nil
 }
 
+// TestHybridSearchPipeline_Reranking runs the test hybrid search pipeline_reranking operation.
 func TestHybridSearchPipeline_Reranking(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -338,6 +353,7 @@ func TestHybridSearchPipeline_Reranking(t *testing.T) {
 	}
 }
 
+// TestHybridSearchPipeline_ExactFilters runs the test hybrid search pipeline_exact filters operation.
 func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

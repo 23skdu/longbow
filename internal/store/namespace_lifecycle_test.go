@@ -15,8 +15,10 @@ type failingDeleteSecretStore struct {
 	err error
 }
 
+// Delete runs the delete operation.
 func (s *failingDeleteSecretStore) Delete(context.Context, string) error { return s.err }
 
+// TestPruneNamespacesKeepsDurableDataAndRuntimeNamespace runs the test prune namespaces keeps durable data and runtime namespace operation.
 func TestPruneNamespacesKeepsDurableDataAndRuntimeNamespace(t *testing.T) {
 	vs, _, _, _, _ := newNamespacePayloadStore(t)
 	for _, name := range []string{"durable", "deleted", "ephemeral"} {
@@ -48,6 +50,7 @@ func TestPruneNamespacesKeepsDurableDataAndRuntimeNamespace(t *testing.T) {
 	require.True(t, vs.NamespaceExists("ephemeral"))
 }
 
+// TestDeleteNamespaceKeepsNamespaceWhenACLProviderFails runs the test delete namespace keeps namespace when acl provider fails operation.
 func TestDeleteNamespaceKeepsNamespaceWhenACLProviderFails(t *testing.T) {
 	vs, _, secretStore, _, _ := newNamespacePayloadStore(t)
 	require.NoError(t, vs.EnsureNamespace("keep-namespace"))

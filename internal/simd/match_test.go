@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestMatchInt32NEON runs the test match int32 neon operation.
 func TestMatchInt32NEON(t *testing.T) {
 	src := []int32{1, 2, 3, 4, 5, 6, 7, 8, 1, 1, 1, 1}
 	val := int32(1)
@@ -41,6 +42,7 @@ func TestMatchInt32NEON(t *testing.T) {
 	}
 }
 
+// TestMatchInt64NEON runs the test match int64 neon operation.
 func TestMatchInt64NEON(t *testing.T) {
 	src := []int64{10, 20, 30, 40, 10}
 	val := int64(10)
@@ -58,6 +60,7 @@ func TestMatchInt64NEON(t *testing.T) {
 	}
 }
 
+// TestMatchFloat32NEON runs the test match float32 neon operation.
 func TestMatchFloat32NEON(t *testing.T) {
 	src := []float32{1.0, 2.0, 3.0, 4.0, 1.0}
 	val := float32(2.0)
@@ -75,6 +78,7 @@ func TestMatchFloat32NEON(t *testing.T) {
 	}
 }
 
+// BenchmarkMatchInt32 runs the benchmark match int32 operation.
 func BenchmarkMatchInt32(b *testing.B) {
 	sizes := []int{1024, 1024 * 1024}
 	for _, size := range sizes {
@@ -89,6 +93,7 @@ func BenchmarkMatchInt32(b *testing.B) {
 	}
 }
 
+// TestMatchUint16 runs the test match uint16 operation.
 func TestMatchUint16(t *testing.T) {
 	src := []uint16{1, 2, 3, 1, 5, 1, 7, 8, 1}
 	dst := make([]byte, len(src))
@@ -115,6 +120,7 @@ func TestMatchUint16(t *testing.T) {
 	}
 }
 
+// BenchmarkMatchUint16 runs the benchmark match uint16 operation.
 func BenchmarkMatchUint16(b *testing.B) {
 	for _, size := range []int{1024, 65536} {
 		src := make([]uint16, size)

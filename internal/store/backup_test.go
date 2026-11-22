@@ -37,6 +37,7 @@ func makeBackupTestBatch(mem memory.Allocator, startID int64, count int) arrow.R
 	return b.NewRecordBatch()
 }
 
+// TestOnlineBackupVerifyRestoreAndPITR runs the test online backup verify restore and pitr operation.
 func TestOnlineBackupVerifyRestoreAndPITR(t *testing.T) {
 	ctx := context.Background()
 	mem := memory.NewGoAllocator()
@@ -122,6 +123,7 @@ func TestOnlineBackupVerifyRestoreAndPITR(t *testing.T) {
 	require.Contains(t, string(verifyStream.results[0].Body), `"checksums_verified":true`)
 }
 
+// FuzzSnapshotArchiveParse runs the fuzz snapshot archive parse operation.
 func FuzzSnapshotArchiveParse(f *testing.F) {
 	f.Add([]byte("not-a-valid-tar-gz"))
 	f.Add([]byte{0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00})

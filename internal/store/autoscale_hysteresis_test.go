@@ -2,6 +2,7 @@ package store
 
 import "testing"
 
+// TestCanScaleDownIngestion runs the test can scale down ingestion operation.
 func TestCanScaleDownIngestion(t *testing.T) {
 	cases := []struct {
 		pending, cur, min int
@@ -21,6 +22,7 @@ func TestCanScaleDownIngestion(t *testing.T) {
 	}
 }
 
+// TestCanScaleDownIndexing runs the test can scale down indexing operation.
 func TestCanScaleDownIndexing(t *testing.T) {
 	if !CanScaleDownIndexing(0, 5, 4) {
 		t.Fatal("expected true")
@@ -30,6 +32,7 @@ func TestCanScaleDownIndexing(t *testing.T) {
 	}
 }
 
+// FuzzCanScaleDownIngestion runs the fuzz can scale down ingestion operation.
 func FuzzCanScaleDownIngestion(f *testing.F) {
 	f.Add(int64(0), 5, 4)
 	f.Add(int64(10), 2, 4)

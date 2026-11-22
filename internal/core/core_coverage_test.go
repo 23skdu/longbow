@@ -52,12 +52,14 @@ func buildNilMetadata(key string) []byte {
 	return buf
 }
 
+// TestNewArrowMetadata runs the test new arrow metadata operation.
 func TestNewArrowMetadata(t *testing.T) {
 	data := buildTestMetadata("hello", "world")
 	m := NewArrowMetadata(data)
 	assert.NotNil(t, m)
 }
 
+// TestArrowMetadata_GetField_Found runs the test arrow metadata_get field_found operation.
 func TestArrowMetadata_GetField_Found(t *testing.T) {
 	data := buildTestMetadata("key", "value123")
 	m := NewArrowMetadata(data)
@@ -66,6 +68,7 @@ func TestArrowMetadata_GetField_Found(t *testing.T) {
 	assert.Equal(t, "value123", v)
 }
 
+// TestArrowMetadata_GetField_NotFound runs the test arrow metadata_get field_not found operation.
 func TestArrowMetadata_GetField_NotFound(t *testing.T) {
 	data := buildTestMetadata("key", "value")
 	m := NewArrowMetadata(data)
@@ -73,12 +76,14 @@ func TestArrowMetadata_GetField_NotFound(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestArrowMetadata_GetField_Empty runs the test arrow metadata_get field_empty operation.
 func TestArrowMetadata_GetField_Empty(t *testing.T) {
 	m := NewArrowMetadata([]byte{})
 	_, ok := m.GetField("key")
 	assert.False(t, ok)
 }
 
+// TestArrowMetadata_GetField_NilValue runs the test arrow metadata_get field_nil value operation.
 func TestArrowMetadata_GetField_NilValue(t *testing.T) {
 	data := buildNilMetadata("nilkey")
 	m := NewArrowMetadata(data)
@@ -87,6 +92,7 @@ func TestArrowMetadata_GetField_NilValue(t *testing.T) {
 	assert.Nil(t, v)
 }
 
+// TestArrowMetadata_ToMap runs the test arrow metadata_to map operation.
 func TestArrowMetadata_ToMap(t *testing.T) {
 	// Use the codec to encode valid metadata
 	data, err := EncodeMetadata(map[string]interface{}{"field1": "val1"})
@@ -99,13 +105,14 @@ func TestArrowMetadata_ToMap(t *testing.T) {
 	assert.Equal(t, "val1", mp["field1"])
 }
 
+// TestArrowMetadata_ToMap_Empty runs the test arrow metadata_to map_empty operation.
 func TestArrowMetadata_ToMap_Empty(t *testing.T) {
 	m := NewArrowMetadata([]byte{})
 	mp, _ := m.ToMap()
 	assert.Empty(t, mp)
 }
 
-// Core error types
+// TestErrNotFound_Error error types
 func TestErrNotFound_Error(t *testing.T) {
 	err := NewNotFoundError("collection", "my_col")
 	require.Error(t, err)
@@ -113,18 +120,21 @@ func TestErrNotFound_Error(t *testing.T) {
 	assert.Contains(t, err.Error(), "collection")
 }
 
+// TestErrInvalidArgument_Error_WithField runs the test err invalid argument_error_with field operation.
 func TestErrInvalidArgument_Error_WithField(t *testing.T) {
 	err := NewInvalidArgumentError("dims", "must be positive")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "dims")
 }
 
+// TestErrInvalidArgument_Error_NoField runs the test err invalid argument_error_no field operation.
 func TestErrInvalidArgument_Error_NoField(t *testing.T) {
 	err := NewInvalidArgumentError("", "bad input")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bad input")
 }
 
+// TestErrResourceExhausted_Error runs the test err resource exhausted_error operation.
 func TestErrResourceExhausted_Error(t *testing.T) {
 	err := NewResourceExhaustedError("memory", "out of heap")
 	require.Error(t, err)
@@ -132,12 +142,14 @@ func TestErrResourceExhausted_Error(t *testing.T) {
 	assert.Contains(t, err.Error(), "out of heap")
 }
 
+// TestErrUnavailable_Error runs the test err unavailable_error operation.
 func TestErrUnavailable_Error(t *testing.T) {
 	err := NewUnavailableError("search", "index locked")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "search")
 }
 
+// TestNewShutdownError runs the test new shutdown error operation.
 func TestNewShutdownError(t *testing.T) {
 	inner := NewNotFoundError("store", "s1")
 	err := NewShutdownError("flush", "store1", inner)
@@ -145,7 +157,7 @@ func TestNewShutdownError(t *testing.T) {
 	assert.Contains(t, err.Error(), "shutdown")
 }
 
-// GeoPoint
+// TestGeoPoint_MarshalUnmarshalJSON.
 func TestGeoPoint_MarshalUnmarshalJSON(t *testing.T) {
 	g := &GeoPoint{Lat: 37.7749, Lon: -122.4194}
 	data, err := g.MarshalJSON()
@@ -158,7 +170,7 @@ func TestGeoPoint_MarshalUnmarshalJSON(t *testing.T) {
 	assert.InDelta(t, 37.7749, g2.Lat, 0.001)
 }
 
-// TemporalSearchRequest Validate — "range" requires StartTime/EndTime > 0
+// TestTemporalSearchRequest_Validate_Valid Validate — "range" requires StartTime/EndTime > 0
 func TestTemporalSearchRequest_Validate_Valid(t *testing.T) {
 	req := &TemporalSearchRequest{
 		Dataset:    "test",
@@ -171,6 +183,7 @@ func TestTemporalSearchRequest_Validate_Valid(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestTemporalSearchRequest_Validate_MissingTimes runs the test temporal search request_validate_missing times operation.
 func TestTemporalSearchRequest_Validate_MissingTimes(t *testing.T) {
 	req := &TemporalSearchRequest{
 		Dataset:    "test",
@@ -183,6 +196,7 @@ func TestTemporalSearchRequest_Validate_MissingTimes(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestTemporalSearchRequest_Validate_AsOf_MissingTimestamp runs the test temporal search request_validate_as of_missing timestamp operation.
 func TestTemporalSearchRequest_Validate_AsOf_MissingTimestamp(t *testing.T) {
 	req := &TemporalSearchRequest{
 		Dataset:    "test",
@@ -193,6 +207,7 @@ func TestTemporalSearchRequest_Validate_AsOf_MissingTimestamp(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestTemporalAggregationRequest_Validate_Valid runs the test temporal aggregation request_validate_valid operation.
 func TestTemporalAggregationRequest_Validate_Valid(t *testing.T) {
 	req := &TemporalAggregationRequest{
 		StartTime: 1000,
@@ -203,6 +218,7 @@ func TestTemporalAggregationRequest_Validate_Valid(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestTemporalAggregationRequest_Validate_InvalidTime runs the test temporal aggregation request_validate_invalid time operation.
 func TestTemporalAggregationRequest_Validate_InvalidTime(t *testing.T) {
 	req := &TemporalAggregationRequest{
 		StartTime: 5000,
@@ -213,7 +229,7 @@ func TestTemporalAggregationRequest_Validate_InvalidTime(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// ResultSliceIterator
+// TestResultSliceIterator.
 func TestResultSliceIterator(t *testing.T) {
 	results := []SearchResult{
 		{ID: VectorID(1), Distance: 0.1},
@@ -237,6 +253,7 @@ func TestResultSliceIterator(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestResultSliceIterator_Empty runs the test result slice iterator_empty operation.
 func TestResultSliceIterator_Empty(t *testing.T) {
 	iter := NewResultSliceIterator(nil)
 	_, ok := iter.Next()
@@ -293,6 +310,7 @@ func appendFieldBinary(buf []byte, key string, val []byte) []byte {
 	return appendFieldRaw(buf, key, TypeBinary, val)
 }
 
+// TestArrowMetadata_GetField_NumFieldsZero runs the test arrow metadata_get field_num fields zero operation.
 func TestArrowMetadata_GetField_NumFieldsZero(t *testing.T) {
 	buf := make([]byte, 2)
 	binary.LittleEndian.PutUint16(buf, 0)
@@ -301,6 +319,7 @@ func TestArrowMetadata_GetField_NumFieldsZero(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestArrowMetadata_GetField_Int64 runs the test arrow metadata_get field_int64 operation.
 func TestArrowMetadata_GetField_Int64(t *testing.T) {
 	buf := beginMetadata(1)
 	buf = appendFieldInt64(buf, "count", 42)
@@ -310,6 +329,7 @@ func TestArrowMetadata_GetField_Int64(t *testing.T) {
 	assert.Equal(t, int64(42), v)
 }
 
+// TestArrowMetadata_GetField_Float64 runs the test arrow metadata_get field_float64 operation.
 func TestArrowMetadata_GetField_Float64(t *testing.T) {
 	buf := beginMetadata(1)
 	buf = appendFieldFloat64(buf, "score", 3.14)
@@ -319,6 +339,7 @@ func TestArrowMetadata_GetField_Float64(t *testing.T) {
 	assert.InDelta(t, 3.14, v.(float64), 0.001)
 }
 
+// TestArrowMetadata_GetField_Bool runs the test arrow metadata_get field_bool operation.
 func TestArrowMetadata_GetField_Bool(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -338,6 +359,7 @@ func TestArrowMetadata_GetField_Bool(t *testing.T) {
 	}
 }
 
+// TestArrowMetadata_GetField_Binary runs the test arrow metadata_get field_binary operation.
 func TestArrowMetadata_GetField_Binary(t *testing.T) {
 	payload := []byte{0xDE, 0xAD, 0xBE, 0xEF}
 	buf := beginMetadata(1)
@@ -348,6 +370,7 @@ func TestArrowMetadata_GetField_Binary(t *testing.T) {
 	assert.Equal(t, payload, v)
 }
 
+// TestArrowMetadata_GetField_UnknownType runs the test arrow metadata_get field_unknown type operation.
 func TestArrowMetadata_GetField_UnknownType(t *testing.T) {
 	buf := beginMetadata(1)
 	buf = appendFieldRaw(buf, "mystery", 99, []byte{1, 2, 3})
@@ -356,6 +379,7 @@ func TestArrowMetadata_GetField_UnknownType(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestArrowMetadata_GetField_MultiField runs the test arrow metadata_get field_multi field operation.
 func TestArrowMetadata_GetField_MultiField(t *testing.T) {
 	buf := beginMetadata(4)
 	buf = appendFieldString(buf, "a", "alpha")
@@ -376,12 +400,14 @@ func TestArrowMetadata_GetField_MultiField(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestGeoPoint_UnmarshalJSON_Invalid runs the test geo point_unmarshal json_invalid operation.
 func TestGeoPoint_UnmarshalJSON_Invalid(t *testing.T) {
 	var g GeoPoint
 	err := g.UnmarshalJSON([]byte("not json at all"))
 	assert.Error(t, err)
 }
 
+// TestTemporalAggregationRequest_Validate_StartTimeZero runs the test temporal aggregation request_validate_start time zero operation.
 func TestTemporalAggregationRequest_Validate_StartTimeZero(t *testing.T) {
 	req := &TemporalAggregationRequest{
 		StartTime: 0,
@@ -392,6 +418,7 @@ func TestTemporalAggregationRequest_Validate_StartTimeZero(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestTemporalAggregationRequest_Validate_IntervalZero runs the test temporal aggregation request_validate_interval zero operation.
 func TestTemporalAggregationRequest_Validate_IntervalZero(t *testing.T) {
 	req := &TemporalAggregationRequest{
 		StartTime: 1000,

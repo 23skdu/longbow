@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestHammingDistanceSIMD runs the test hamming distance simd operation.
 func TestHammingDistanceSIMD(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -52,6 +53,7 @@ func TestHammingDistanceSIMD(t *testing.T) {
 	}
 }
 
+// TestHammingDistanceSIMD_Alignments runs the test hamming distance simd_alignments operation.
 func TestHammingDistanceSIMD_Alignments(t *testing.T) {
 	// Test various lengths to check loop and tail logic
 	for n := 0; n < 10; n++ {

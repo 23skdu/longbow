@@ -22,6 +22,7 @@ func sampleKey(id string) StoredKey {
 	return StoredKey{KeyID: id, Raw: "raw-secret-" + id, Meta: json.RawMessage(`{"role":"reader"}`)}
 }
 
+// TestValidateKeyID runs the test validate key id operation.
 func TestValidateKeyID(t *testing.T) {
 	require.NoError(t, ValidateKeyID("agent_0-writer.1"))
 	for _, bad := range []string{"", "../escape", "a/b", "a..b", strings.Repeat("x", 200)} {
@@ -29,6 +30,7 @@ func TestValidateKeyID(t *testing.T) {
 	}
 }
 
+// TestNamespacePolicyKeyID runs the test namespace policy key id operation.
 func TestNamespacePolicyKeyID(t *testing.T) {
 	id := NamespacePolicyKeyID("team-a")
 	require.NoError(t, ValidateKeyID(id))
@@ -38,6 +40,7 @@ func TestNamespacePolicyKeyID(t *testing.T) {
 	require.False(t, IsNamespacePolicyKeyID("agent-writer"))
 }
 
+// TestStorePreservesRecordKind runs the test store preserves record kind operation.
 func TestStorePreservesRecordKind(t *testing.T) {
 	ctx := context.Background()
 	policy := StoredKey{
@@ -68,6 +71,7 @@ func mustFileStore(t *testing.T) Store {
 	return store
 }
 
+// TestMemoryStore runs the test memory store operation.
 func TestMemoryStore(t *testing.T) {
 	ctx := context.Background()
 	s := NewMemoryStore()
@@ -89,6 +93,7 @@ func TestMemoryStore(t *testing.T) {
 	require.ErrorIs(t, s.Put(ctx, StoredKey{KeyID: "../bad"}), ErrInvalidKeyID)
 }
 
+// TestFileStore runs the test file store operation.
 func TestFileStore(t *testing.T) {
 	ctx := context.Background()
 	dir := filepath.Join(t.TempDir(), "keys")
@@ -107,6 +112,7 @@ func TestFileStore(t *testing.T) {
 	require.ErrorIs(t, s.Put(ctx, StoredKey{KeyID: "../escape"}), ErrInvalidKeyID)
 }
 
+// TestNewFactory runs the test new factory operation.
 func TestNewFactory(t *testing.T) {
 	ctx := context.Background()
 	_, err := New(ctx, Config{Provider: "memory"})
@@ -117,6 +123,7 @@ func TestNewFactory(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestVaultStore runs the test vault store operation.
 func TestVaultStore(t *testing.T) {
 	ctx := context.Background()
 	var mu sync.Mutex
@@ -158,6 +165,7 @@ func TestVaultStore(t *testing.T) {
 	require.NoError(t, s.Delete(ctx, "vault_key"))
 }
 
+// TestGCPStore runs the test gcp store operation.
 func TestGCPStore(t *testing.T) {
 	ctx := context.Background()
 	const secretID = "longbow-rbac-gcp_key"
@@ -208,6 +216,7 @@ func TestGCPStore(t *testing.T) {
 	require.NoError(t, s.Delete(ctx, "gcp_key"))
 }
 
+// TestAWSStore runs the test aws store operation.
 func TestAWSStore(t *testing.T) {
 	ctx := context.Background()
 	var mu sync.Mutex
@@ -260,6 +269,7 @@ func TestAWSStore(t *testing.T) {
 	require.NoError(t, s.Delete(ctx, "aws_key"))
 }
 
+// TestGCPSecretIDPreservesCaseDistinction runs the test gcp secret id preserves case distinction operation.
 func TestGCPSecretIDPreservesCaseDistinction(t *testing.T) {
 	lower, err := gcpSecretID(DefaultPrefix, "gcp_key")
 	require.NoError(t, err)
@@ -270,6 +280,7 @@ func TestGCPSecretIDPreservesCaseDistinction(t *testing.T) {
 	require.NotEqual(t, lower, upper)
 }
 
+// TestDeleteMissingIsIdempotentForExternalProviders runs the test delete missing is idempotent for external providers operation.
 func TestDeleteMissingIsIdempotentForExternalProviders(t *testing.T) {
 	ctx := context.Background()
 
@@ -315,6 +326,7 @@ func TestDeleteMissingIsIdempotentForExternalProviders(t *testing.T) {
 	})
 }
 
+// TestFileStorePutLeavesNoTemporaryRecords runs the test file store put leaves no temporary records operation.
 func TestFileStorePutLeavesNoTemporaryRecords(t *testing.T) {
 	ctx := context.Background()
 	dir := filepath.Join(t.TempDir(), "keys")

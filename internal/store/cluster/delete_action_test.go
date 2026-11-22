@@ -37,6 +37,7 @@ func makeVectorRecordWithInt64IDs(mem memory.Allocator, dims, count int) arrow.R
 	return bldr.NewRecordBatch()
 }
 
+// TestDeleteAction_Int64ID runs the test delete action_int64 id operation.
 func TestDeleteAction_Int64ID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -88,6 +89,7 @@ func TestDeleteAction_Int64ID(t *testing.T) {
 	// But PrimaryIndex is permanent.
 }
 
+// TestDeleteAction_StringID runs the test delete action_string id operation.
 func TestDeleteAction_StringID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

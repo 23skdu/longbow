@@ -140,6 +140,7 @@ func (ti *TemporalIndex) Dimension() int {
 	return ti.dimension
 }
 
+// GetVectorIndex returns the vector index.
 func (ti *TemporalIndex) GetVectorIndex() lbtypes.VectorIndexer {
 	if ti.vectorIndexFn == nil {
 		return nil
@@ -156,6 +157,7 @@ func (ti *TemporalIndex) GetVectorIndex() lbtypes.VectorIndexer {
 // no easier to diagnose than having no counter at all, which is what R11a was
 // about.
 
+// GetBounds returns the bounds.
 func (ti *TemporalIndex) GetBounds() (int64, int64) {
 	tt := ti.temporalTree.Load()
 	if tt == nil {

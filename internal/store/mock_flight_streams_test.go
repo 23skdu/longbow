@@ -17,11 +17,13 @@ type MockAllocator struct {
 	Freed     int64
 }
 
+// Allocate runs the allocate operation.
 func (m *MockAllocator) Allocate(size int) []byte {
 	atomic.AddInt64(&m.Allocated, int64(size))
 	return m.Allocator.Allocate(size)
 }
 
+// Reallocate runs the reallocate operation.
 func (m *MockAllocator) Reallocate(size int, b []byte) []byte {
 	atomic.AddInt64(&m.Allocated, int64(size))
 	// We don't subtract old size as we don't know it easily, but usually Realloc is net growth or similar.
@@ -29,6 +31,7 @@ func (m *MockAllocator) Reallocate(size int, b []byte) []byte {
 	return m.Allocator.Reallocate(size, b)
 }
 
+// Free runs the free operation.
 func (m *MockAllocator) Free(b []byte) {
 	atomic.AddInt64(&m.Freed, int64(len(b)))
 	m.Allocator.Free(b)
@@ -41,6 +44,7 @@ type mockPutStream struct {
 	idx    int
 }
 
+// Recv runs the recv operation.
 func (m *mockPutStream) Recv() (*flight.FlightData, error) {
 	if m.idx >= len(m.chunks) {
 		return nil, io.EOF
@@ -49,10 +53,13 @@ func (m *mockPutStream) Recv() (*flight.FlightData, error) {
 	m.idx++
 	return d, nil
 }
+
+// Context runs the context operation.
 func (m *mockPutStream) Context() context.Context {
 	return context.Background()
 }
 
+// Send runs the send operation.
 func (m *mockPutStream) Send(*flight.PutResult) error {
 	return nil
 }
@@ -64,6 +71,7 @@ type mockClientStream struct {
 	closed     atomic.Bool
 }
 
+// Send runs the send operation.
 func (m *mockClientStream) Send(d *flight.FlightData) error {
 	if m.recvChunks == nil {
 		// Panic or handle, but test setup should init
@@ -89,6 +97,7 @@ func (m *mockClientStream) Send(d *flight.FlightData) error {
 	return nil
 }
 
+// CloseSend runs the close send operation.
 func (m *mockClientStream) CloseSend() error {
 	if m.closed.Swap(true) {
 		return nil
@@ -99,9 +108,12 @@ func (m *mockClientStream) CloseSend() error {
 	return nil
 }
 
+// Recv runs the recv operation.
 func (m *mockClientStream) Recv() (*flight.PutResult, error) {
 	return &flight.PutResult{}, nil
 }
+
+// Context runs the context operation.
 func (m *mockClientStream) Context() context.Context {
 	return context.Background()
 }

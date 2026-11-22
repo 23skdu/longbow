@@ -67,6 +67,7 @@ func newLRUCache(capacity int) *LRUCache {
 	}
 }
 
+// Get returns the .
 func (c *LRUCache) Get(nodeID uint32) ([]float32, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -77,6 +78,7 @@ func (c *LRUCache) Get(nodeID uint32) ([]float32, bool) {
 	return nil, false
 }
 
+// Add runs the add operation.
 func (c *LRUCache) Add(nodeID uint32, vector []float32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

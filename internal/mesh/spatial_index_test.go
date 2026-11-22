@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestVPTree_BuildAndSearch runs the test vp tree_build and search operation.
 func TestVPTree_BuildAndSearch(t *testing.T) {
 	// 1. Create random points
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))

@@ -10,6 +10,7 @@ import (
 // Sum/Average reflect exactly the values that were added.
 const hugeWindowInterval = time.Duration(1) << 62
 
+// FuzzRollingWindowSum runs the fuzz rolling window sum operation.
 func FuzzRollingWindowSum(f *testing.F) {
 	f.Add(uint8(4), []byte{1, 2, 3})
 	f.Add(uint8(1), []byte{})
@@ -53,6 +54,7 @@ func FuzzRollingWindowSum(f *testing.F) {
 	})
 }
 
+// FuzzLoadSnapshotHealth runs the fuzz load snapshot health operation.
 func FuzzLoadSnapshotHealth(f *testing.F) {
 	f.Add(int64(0), int64(0))
 	f.Add(int64(3000), int64(0))

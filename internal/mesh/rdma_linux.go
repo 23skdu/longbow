@@ -53,6 +53,7 @@ type MemoryRegion struct {
 	ibvMR  *C.struct_ibv_mr
 }
 
+// NewRDMAContext constructs a new RDMAContext.
 func NewRDMAContext(enabled bool) *RDMAContext {
 	c := &RDMAContext{
 		enabled: enabled,

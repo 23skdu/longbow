@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestDiskBackedLearnedIndex_SaveAndLoad runs the test disk backed learned index_save and load operation.
 func TestDiskBackedLearnedIndex_SaveAndLoad(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "diskann-test")
 	require.NoError(t, err)
@@ -73,6 +74,7 @@ func TestDiskBackedLearnedIndex_SaveAndLoad(t *testing.T) {
 	assert.Empty(t, neighbors, "should return zero neighbors for empty graph template")
 }
 
+// TestLRUCache runs the test lru cache operation.
 func TestLRUCache(t *testing.T) {
 	cache := newLRUCache(3)
 

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestEuclideanDistanceTiledBatch_Remainder runs the test euclidean distance tiled batch_remainder operation.
 func TestEuclideanDistanceTiledBatch_Remainder(t *testing.T) {
 	// Dimensions not multiple of 8 or 1024
 	dims := 1030
@@ -42,6 +43,7 @@ func TestEuclideanDistanceTiledBatch_Remainder(t *testing.T) {
 	require.InDeltaSlice(t, expected, results, 1e-5)
 }
 
+// TestDotProductTiledBatch_Remainder runs the test dot product tiled batch_remainder operation.
 func TestDotProductTiledBatch_Remainder(t *testing.T) {
 	dims := 1030
 	query := make([]float32, dims)

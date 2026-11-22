@@ -20,15 +20,18 @@ type mockListFlightsStream struct {
 	results []*flight.FlightInfo
 }
 
+// Send runs the send operation.
 func (m *mockListFlightsStream) Send(info *flight.FlightInfo) error {
 	m.results = append(m.results, info)
 	return nil
 }
 
+// Context runs the context operation.
 func (m *mockListFlightsStream) Context() context.Context {
 	return context.Background()
 }
 
+// TestVectorStore_ListFlights runs the test vector store_list flights operation.
 func TestVectorStore_ListFlights(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -65,6 +68,7 @@ func TestVectorStore_ListFlights(t *testing.T) {
 	})
 }
 
+// TestVectorStore_GetFlightInfo runs the test vector store_get flight info operation.
 func TestVectorStore_GetFlightInfo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -95,6 +99,7 @@ func TestVectorStore_GetFlightInfo(t *testing.T) {
 	})
 }
 
+// TestVectorStore_MapInternalToUserIDs runs the test vector store_map internal to user i ds operation.
 func TestVectorStore_MapInternalToUserIDs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -149,23 +154,38 @@ type mockVectorIndex struct {
 	locations map[uint32]Location
 }
 
+// GetLocation returns the location.
 func (m *mockVectorIndex) GetLocation(id uint32) (interface{}, bool) {
 	loc, ok := m.locations[id]
 	return loc, ok
 }
 
+// Type runs the type operation.
 func (m *mockVectorIndex) Type() IndexType { return "mock" }
+
+// SearchVectors runs the search vectors operation.
 func (m *mockVectorIndex) SearchVectors(ctx context.Context, query any, k int, filters []core.Filter, options any) ([]types.SearchResult, error) {
 	return nil, nil
 }
+
+// AddByLocation runs the add by location operation.
 func (m *mockVectorIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	return 0, nil
 }
-func (m *mockVectorIndex) Len() int     { return 0 }
-func (m *mockVectorIndex) Size() int    { return 0 }
-func (m *mockVectorIndex) Close() error { return nil }
-func (m *mockVectorIndex) Warmup() int  { return 0 }
 
+// Len runs the len operation.
+func (m *mockVectorIndex) Len() int { return 0 }
+
+// Size runs the size operation.
+func (m *mockVectorIndex) Size() int { return 0 }
+
+// Close runs the close operation.
+func (m *mockVectorIndex) Close() error { return nil }
+
+// Warmup runs the warmup operation.
+func (m *mockVectorIndex) Warmup() int { return 0 }
+
+// TestDoGetSchemaAllocations runs the test do get schema allocations operation.
 func TestDoGetSchemaAllocations(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

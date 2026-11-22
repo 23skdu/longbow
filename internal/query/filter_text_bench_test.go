@@ -7,6 +7,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// BenchmarkStringFilterOp runs the benchmark string filter op operation.
 func BenchmarkStringFilterOp(b *testing.B) {
 	bldr := array.NewStringBuilder(memory.NewGoAllocator())
 	defer bldr.Release()

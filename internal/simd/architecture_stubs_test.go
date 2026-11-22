@@ -7,6 +7,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// TestArchitectureStubs_Coverage runs the test architecture stubs_coverage operation.
 func TestArchitectureStubs_Coverage(t *testing.T) {
 	// Surface-level calls to reach >90% coverage by hitting the stubs
 	// that are otherwise unused on non-AMD64 systems but still reported by the tool.

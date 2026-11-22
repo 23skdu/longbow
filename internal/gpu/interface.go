@@ -10,40 +10,60 @@ import (
 	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
-// Re-export basic types from types subpackage for convenience
+// GPUBackend basic types from types subpackage for convenience
 type GPUBackend = types.GPUBackend
 
 const (
-	BackendCPU    = types.BackendCPU
-	BackendCUDA   = types.BackendCUDA
-	BackendMetal  = types.BackendMetal
+	// BackendCPU is a backend cpu constant.
+	BackendCPU = types.BackendCPU
+	// BackendCUDA is a backend cuda constant.
+	BackendCUDA = types.BackendCUDA
+	// BackendMetal is a backend metal constant.
+	BackendMetal = types.BackendMetal
+	// BackendOpenCL is a backend open cl constant.
 	BackendOpenCL = types.BackendOpenCL
-	BackendTPU    = types.BackendTPU
+	// BackendTPU is a backend tpu constant.
+	BackendTPU = types.BackendTPU
 )
 
+// GPUConfig represents a gpu config value.
 type GPUConfig = types.GPUConfig
+
+// GPUInfo represents a gpu info value.
 type GPUInfo = types.GPUInfo
+
+// Index represents a index value.
 type Index = types.Index
 
-// Memory management re-exports
+// GPUMemPool management re-exports
 type GPUMemPool = memory.GPUMemPool
 
+// NewGPUMemPool constructs a new GPUMemPool.
 func NewGPUMemPool(backend GPUBackend, deviceID int32) (*GPUMemPool, error) {
 	return memory.NewGPUMemPool(backend, deviceID)
 }
 
-// Error type re-exports
+// GPUInitializationError type re-exports
 type GPUInitializationError = types.GPUInitializationError
+
+// GPUNotAvailableError represents a gpu not available error value.
 type GPUNotAvailableError = types.GPUNotAvailableError
+
+// GPUSyncError represents a gpu sync error value.
 type GPUSyncError = types.GPUSyncError
+
+// GPUMemoryError represents a gpu memory error value.
 type GPUMemoryError = types.GPUMemoryError
+
+// GPUComputeError represents a gpu compute error value.
 type GPUComputeError = types.GPUComputeError
 
-// Error helper re-exports
+// IsGPUMemoryError helper re-exports
 func IsGPUMemoryError(err error) bool {
 	return types.IsGPUMemoryError(err)
 }
 
+// IsGPUComputeError reports whether the condition holds.
 func IsGPUComputeError(err error) bool {
 	return types.IsGPUComputeError(err)
 }
@@ -121,6 +141,7 @@ func DefaultGPUConfig() GPUConfig {
 
 // Global detection and helper functions (pure Go)
 
+// DetectGPUBackend runs the detect gpu backend operation.
 func DetectGPUBackend() GPUBackend {
 	// 1. Check for NVIDIA
 	_, err := exec.LookPath("nvidia-smi")
@@ -147,6 +168,7 @@ func DetectGPUBackend() GPUBackend {
 	return BackendCPU
 }
 
+// GetDeviceCount returns the device count.
 func GetDeviceCount() int {
 	backend := DetectGPUBackend()
 	switch backend {
@@ -156,6 +178,7 @@ func GetDeviceCount() int {
 	return 0
 }
 
+// GetGlobalGPUUtilization returns the global gpu utilization.
 func GetGlobalGPUUtilization() (float32, error) {
 	return 0, fmt.Errorf("utilization monitoring not supported for current backend")
 }

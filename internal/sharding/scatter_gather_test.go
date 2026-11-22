@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// TestScatterGather_Scatter runs the test scatter gather_scatter operation.
 func TestScatterGather_Scatter(t *testing.T) {
 	// Setup
 	rm := NewRingManager("node-1", zerolog.Nop())
@@ -57,6 +58,7 @@ func TestScatterGather_Scatter(t *testing.T) {
 	}
 }
 
+// BenchmarkScatterGather runs the benchmark scatter gather operation.
 func BenchmarkScatterGather(b *testing.B) {
 	rm := NewRingManager("node-1", zerolog.Nop())
 	// create 100 fake nodes

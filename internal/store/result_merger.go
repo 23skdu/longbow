@@ -34,13 +34,16 @@ type StreamItem struct {
 	SourceIdx int // Index of the source channel
 }
 
+// Len runs the len operation.
 func (h ResultHeap) Len() int { return len(h) }
 
 // Less reports whether i should be popped before j. Search results follow the
 // house convention (higher Score = better, best-first), so this is a max-heap:
 // the best result across all streams is always at the root.
 func (h ResultHeap) Less(i, j int) bool { return h[i].Result.Score > h[j].Result.Score }
-func (h ResultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+// Swap runs the swap operation.
+func (h ResultHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 // Push adds a StreamItem to the heap.
 func (h *ResultHeap) Push(x any) {
@@ -71,6 +74,7 @@ func MergeSortedStreams(channels []<-chan []SearchResult, k int) []SearchResult 
 	h := &ResultHeap{}
 	heap.Init(h)
 
+	// SourceState represents a source state value.
 	type SourceState struct {
 		batch []SearchResult
 		idx   int

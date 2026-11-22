@@ -24,8 +24,10 @@ type fuzzChecker struct {
 	message string
 }
 
+// Name runs the name operation.
 func (c *fuzzChecker) Name() string { return c.name }
 
+// Check runs the check operation.
 func (c *fuzzChecker) Check(_ context.Context) *ComponentHealth {
 	return &ComponentHealth{
 		Name:        c.name,

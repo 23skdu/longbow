@@ -38,6 +38,7 @@ func waitForZeroTemporalWorkers(t *testing.T, timeout time.Duration) {
 	t.Fatalf("expected 0 temporal ingest worker goroutines, found %d", countTemporalIngestWorkers())
 }
 
+// TestTemporalIndex_NoGoroutineLeakWhenIdle runs the test temporal index_no goroutine leak when idle operation.
 func TestTemporalIndex_NoGoroutineLeakWhenIdle(t *testing.T) {
 	waitForZeroTemporalWorkers(t, time.Second)
 	baseline := runtime.NumGoroutine()
@@ -56,6 +57,7 @@ func TestTemporalIndex_NoGoroutineLeakWhenIdle(t *testing.T) {
 	}
 }
 
+// TestTemporalIndex_AsyncWorkerDrainsAndExits runs the test temporal index_async worker drains and exits operation.
 func TestTemporalIndex_AsyncWorkerDrainsAndExits(t *testing.T) {
 	waitForZeroTemporalWorkers(t, time.Second)
 
@@ -98,6 +100,7 @@ func TestTemporalIndex_AsyncWorkerDrainsAndExits(t *testing.T) {
 	waitForZeroTemporalWorkers(t, time.Second)
 }
 
+// TestTemporalIndex_ConcurrentAsyncToggleAndClose runs the test temporal index_concurrent async toggle and close operation.
 func TestTemporalIndex_ConcurrentAsyncToggleAndClose(t *testing.T) {
 	waitForZeroTemporalWorkers(t, time.Second)
 

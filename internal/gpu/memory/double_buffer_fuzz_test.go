@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// FuzzDoubleBufferWriteSwap runs the fuzz double buffer write swap operation.
 func FuzzDoubleBufferWriteSwap(f *testing.F) {
 	f.Add(64, []byte{0, 0, 1, 0, 2, 3, 1, 0}, []byte("hello double buffer"))
 	f.Add(10, []byte{0, 0, 0, 0}, []byte("overflowing payload")) // capacity exceeded path
@@ -102,6 +103,7 @@ func FuzzDoubleBufferWriteSwap(f *testing.F) {
 	})
 }
 
+// FuzzDoubleBufferHeadroom runs the fuzz double buffer headroom operation.
 func FuzzDoubleBufferHeadroom(f *testing.F) {
 	f.Add(200, int64(1000), int64(200), int64(100), int64(400))           // fits: 500 <= 800
 	f.Add(400, int64(1000), int64(200), int64(100), int64(750))           // check fails: 850 > 800

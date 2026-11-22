@@ -7,15 +7,19 @@ import (
 	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
-// Re-export common types from types subpackage for convenience
+// GPUBackend common types from types subpackage for convenience
 type GPUBackend = types.GPUBackend
 
 const (
-	BackendCPU   = types.BackendCPU
-	BackendCUDA  = types.BackendCUDA
+	// BackendCPU is a backend cpu constant.
+	BackendCPU = types.BackendCPU
+	// BackendCUDA is a backend cuda constant.
+	BackendCUDA = types.BackendCUDA
+	// BackendMetal is a backend metal constant.
 	BackendMetal = types.BackendMetal
 )
 
+// AllocateGPU runs the allocate gpu operation.
 func (p *GPUMemPool) AllocateGPU(size int64) (unsafe.Pointer, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -36,6 +40,7 @@ func (p *GPUMemPool) AllocateGPU(size int64) (unsafe.Pointer, error) {
 	}
 }
 
+// FreeGPU runs the free gpu operation.
 func (p *GPUMemPool) FreeGPU(ptr unsafe.Pointer) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -61,18 +66,21 @@ func (p *GPUMemPool) FreeGPU(ptr unsafe.Pointer) error {
 	}
 }
 
+// GetTotalMemory returns the total memory.
 func (p *GPUMemPool) GetTotalMemory() int64 {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.totalBytes
 }
 
+// GetUsedMemory returns the used memory.
 func (p *GPUMemPool) GetUsedMemory() int64 {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.usedBytes
 }
 
+// GetAvailableMemory returns the available memory.
 func (p *GPUMemPool) GetAvailableMemory() int64 {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -89,6 +97,7 @@ func (p *GPUMemPool) allocateCPUMemory(size int64) (unsafe.Pointer, error) {
 	return unsafe.Pointer(&ptr[0]), nil // #nosec G103
 }
 
+// Close runs the close operation.
 func (p *GPUMemPool) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -96,14 +105,17 @@ func (p *GPUMemPool) Close() error {
 	return nil
 }
 
+// Backend runs the backend operation.
 func (p *GPUMemPool) Backend() GPUBackend {
 	return p.backend
 }
 
+// DeviceID runs the device id operation.
 func (p *GPUMemPool) DeviceID() int32 {
 	return p.deviceID
 }
 
+// MemcpyHostToDevice runs the memcpy host to device operation.
 func (p *GPUMemPool) MemcpyHostToDevice(devicePtr, hostPtr unsafe.Pointer, size int64) error {
 	switch p.backend {
 	case BackendMetal:
@@ -118,6 +130,7 @@ func (p *GPUMemPool) MemcpyHostToDevice(devicePtr, hostPtr unsafe.Pointer, size 
 	}
 }
 
+// MemcpyDeviceToHost runs the memcpy device to host operation.
 func (p *GPUMemPool) MemcpyDeviceToHost(hostPtr, devicePtr unsafe.Pointer, size int64) error {
 	switch p.backend {
 	case BackendMetal:
@@ -132,6 +145,7 @@ func (p *GPUMemPool) MemcpyDeviceToHost(hostPtr, devicePtr unsafe.Pointer, size 
 	}
 }
 
+// MemcpyDeviceToDevice runs the memcpy device to device operation.
 func (p *GPUMemPool) MemcpyDeviceToDevice(dstPtr, srcPtr unsafe.Pointer, size int64) error {
 	switch p.backend {
 	case BackendCUDA:
@@ -147,6 +161,7 @@ func (p *GPUMemPool) MemcpyDeviceToDevice(dstPtr, srcPtr unsafe.Pointer, size in
 	}
 }
 
+// Memset runs the memset operation.
 func (p *GPUMemPool) Memset(ptr unsafe.Pointer, value int, size int64) error {
 	switch p.backend {
 	case BackendCUDA:

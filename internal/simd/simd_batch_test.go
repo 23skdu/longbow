@@ -9,6 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// TestEuclideanDistanceBatch runs the test euclidean distance batch operation.
 func TestEuclideanDistanceBatch(t *testing.T) {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -45,6 +46,7 @@ func TestEuclideanDistanceBatch(t *testing.T) {
 	}
 }
 
+// BenchmarkEuclideanDistanceBatch runs the benchmark euclidean distance batch operation.
 func BenchmarkEuclideanDistanceBatch(b *testing.B) {
 	rng := rand.New(rand.NewSource(12345))
 	dim := 128
@@ -71,6 +73,7 @@ func BenchmarkEuclideanDistanceBatch(b *testing.B) {
 	}
 }
 
+// TestEuclideanDistanceSQ8Batch runs the test euclidean distance sq8 batch operation.
 func TestEuclideanDistanceSQ8Batch(t *testing.T) {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -107,6 +110,7 @@ func TestEuclideanDistanceSQ8Batch(t *testing.T) {
 	}
 }
 
+// BenchmarkEuclideanDistanceSQ8Batch runs the benchmark euclidean distance sq8 batch operation.
 func BenchmarkEuclideanDistanceSQ8Batch(b *testing.B) {
 	rng := rand.New(rand.NewSource(12345))
 	dim := 128
@@ -133,6 +137,7 @@ func BenchmarkEuclideanDistanceSQ8Batch(b *testing.B) {
 	}
 }
 
+// TestEuclideanDistanceF16Batch runs the test euclidean distance f16 batch operation.
 func TestEuclideanDistanceF16Batch(t *testing.T) {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -169,6 +174,7 @@ func TestEuclideanDistanceF16Batch(t *testing.T) {
 	}
 }
 
+// BenchmarkEuclideanDistanceF16Batch runs the benchmark euclidean distance f16 batch operation.
 func BenchmarkEuclideanDistanceF16Batch(b *testing.B) {
 	rng := rand.New(rand.NewSource(12345))
 	dim := 128

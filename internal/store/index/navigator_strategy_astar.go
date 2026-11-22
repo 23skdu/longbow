@@ -154,19 +154,23 @@ type aStarItem struct {
 
 type aStarPriorityQueue []*aStarItem
 
+// Len runs the len operation.
 func (pq aStarPriorityQueue) Len() int { return len(pq) }
 
+// Less runs the less operation.
 func (pq aStarPriorityQueue) Less(i, j int) bool {
 	// Lower fScore has higher priority (min-heap)
 	return pq[i].fScore < pq[j].fScore
 }
 
+// Swap runs the swap operation.
 func (pq aStarPriorityQueue) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
 	pq[i].index = i
 	pq[j].index = j
 }
 
+// Push runs the push operation.
 func (pq *aStarPriorityQueue) Push(x any) {
 	n := len(*pq)
 	item := x.(*aStarItem)
@@ -174,6 +178,7 @@ func (pq *aStarPriorityQueue) Push(x any) {
 	*pq = append(*pq, item)
 }
 
+// Pop runs the pop operation.
 func (pq *aStarPriorityQueue) Pop() any {
 	old := *pq
 	n := len(old)

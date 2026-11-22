@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// MmapVectorStorage represents a mmap vector storage value.
 type MmapVectorStorage struct {
 	file      *os.File
 	data      []byte
@@ -25,6 +26,7 @@ type MmapVectorStorage struct {
 	logger    *zerolog.Logger
 }
 
+// MmapOptions represents a mmap options value.
 type MmapOptions struct {
 	Dimension   int
 	InitialSize int64
@@ -33,6 +35,7 @@ type MmapOptions struct {
 	Directory   string
 }
 
+// NewMmapVectorStorage constructs a new MmapVectorStorage.
 func NewMmapVectorStorage(name string, opts MmapOptions) (*MmapVectorStorage, error) {
 	if opts.InitialSize <= 0 {
 		opts.InitialSize = 64 * 1024 * 1024
@@ -89,6 +92,7 @@ func NewMmapVectorStorage(name string, opts MmapOptions) (*MmapVectorStorage, er
 	return mvs, nil
 }
 
+// WriteVector runs the write vector operation.
 func (m *MmapVectorStorage) WriteVector(id int, vector []float32) error {
 	if m.readonly {
 		return fmt.Errorf("cannot write to read-only storage")
@@ -116,6 +120,7 @@ func (m *MmapVectorStorage) WriteVector(id int, vector []float32) error {
 	return nil
 }
 
+// ReadVector runs the read vector operation.
 func (m *MmapVectorStorage) ReadVector(id int) ([]float32, error) {
 	offset := id * m.dimension * 4
 	if offset >= len(m.data) {
@@ -132,6 +137,7 @@ func (m *MmapVectorStorage) ReadVector(id int) ([]float32, error) {
 	return vector, nil
 }
 
+// ReadVectorInto runs the read vector into operation.
 func (m *MmapVectorStorage) ReadVectorInto(id int, vector []float32) error {
 	offset := id * m.dimension * 4
 	if offset >= len(m.data) {
@@ -177,6 +183,7 @@ func (m *MmapVectorStorage) grow(newSize int64) error {
 	return nil
 }
 
+// Sync runs the sync operation.
 func (m *MmapVectorStorage) Sync() error {
 	if m.readonly {
 		return nil
@@ -189,6 +196,7 @@ func (m *MmapVectorStorage) Sync() error {
 	return nil
 }
 
+// Close runs the close operation.
 func (m *MmapVectorStorage) Close() error {
 	if err := unix.Munmap(m.data); err != nil {
 		return fmt.Errorf("munmap failed: %w", err)
@@ -197,16 +205,19 @@ func (m *MmapVectorStorage) Close() error {
 	return m.file.Close()
 }
 
+// Count runs the count operation.
 func (m *MmapVectorStorage) Count() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.count
 }
 
+// Size runs the size operation.
 func (m *MmapVectorStorage) Size() int64 {
 	return m.size
 }
 
+// Dimension runs the dimension operation.
 func (m *MmapVectorStorage) Dimension() int {
 	return m.dimension
 }

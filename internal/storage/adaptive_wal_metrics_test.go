@@ -49,6 +49,7 @@ func createAdaptiveTestBatch(t *testing.T, numRows int) arrow.RecordBatch {
 	return rec
 }
 
+// TestWalAdaptiveIntervalMs_EmittedOnCalculateInterval runs the test wal adaptive interval ms_emitted on calculate interval operation.
 func TestWalAdaptiveIntervalMs_EmittedOnCalculateInterval(t *testing.T) {
 	// Reset metric to known state
 	metrics.WalAdaptiveIntervalMs.Set(0)
@@ -69,6 +70,7 @@ func TestWalAdaptiveIntervalMs_EmittedOnCalculateInterval(t *testing.T) {
 		"metric should match calculated interval")
 }
 
+// TestWalWriteRatePerSecond_EmittedOnRecordWrite runs the test wal write rate per second_emitted on record write operation.
 func TestWalWriteRatePerSecond_EmittedOnRecordWrite(t *testing.T) {
 	// Reset metric to known state
 	metrics.WalWriteRatePerSecond.Set(0)
@@ -90,6 +92,7 @@ func TestWalWriteRatePerSecond_EmittedOnRecordWrite(t *testing.T) {
 	require.Greater(t, metricValue, 0.0, "WalWriteRatePerSecond should be emitted")
 }
 
+// TestWalBatcher_RecordWriteCalledOnWrite runs the test wal batcher_record write called on write operation.
 func TestWalBatcher_RecordWriteCalledOnWrite(t *testing.T) {
 	// This test verifies that WALBatcher.Write() calls rateTracker.RecordWrite()
 	// We check this indirectly via metrics emission
@@ -129,6 +132,7 @@ func TestWalBatcher_RecordWriteCalledOnWrite(t *testing.T) {
 		"WalWriteRatePerSecond should be emitted after WALBatcher.Write()")
 }
 
+// TestGetCurrentInterval_EmitsMetrics runs the test get current interval_emits metrics operation.
 func TestGetCurrentInterval_EmitsMetrics(t *testing.T) {
 	// Reset metrics
 	metrics.WalAdaptiveIntervalMs.Set(0)

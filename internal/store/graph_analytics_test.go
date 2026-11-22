@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGraphAnalytics_PageRank_Simple runs the test graph analytics_page rank_simple operation.
 func TestGraphAnalytics_PageRank_Simple(t *testing.T) {
 	// A simple 2-node cycle: 1 <-> 2
 	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
@@ -34,6 +35,7 @@ func TestGraphAnalytics_PageRank_Simple(t *testing.T) {
 	assert.InDelta(t, 0.5, result.Scores[2], 0.01)
 }
 
+// TestGraphAnalytics_Communities_Disjoint runs the test graph analytics_communities_disjoint operation.
 func TestGraphAnalytics_Communities_Disjoint(t *testing.T) {
 	// Two disjoint triangles: {1,2,3} and {4,5,6}
 	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
@@ -70,6 +72,7 @@ func TestGraphAnalytics_Communities_Disjoint(t *testing.T) {
 	assert.NotEqual(t, l1, l4)
 }
 
+// TestGraphAnalytics_StarGraph runs the test graph analytics_star graph operation.
 func TestGraphAnalytics_StarGraph(t *testing.T) {
 	// Center 1, leaves 2,3,4.
 	// 1 -> 2,3,4
@@ -101,6 +104,7 @@ func TestGraphAnalytics_StarGraph(t *testing.T) {
 	assert.InDelta(t, s3, s4, 0.01)
 }
 
+// TestGraphAnalytics_Properties runs the test graph analytics_properties operation.
 func TestGraphAnalytics_Properties(t *testing.T) {
 	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 	// Complete graph of 3 nodes: 1->2,3; 2->1,3; 3->1,2
@@ -188,6 +192,7 @@ func newTestGraphData(nodes int) *types.GraphData {
 	return types.NewGraphData(nodes+2, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 }
 
+// TestGraphAnalytics_Communities_PathGraph runs the test graph analytics_communities_path graph operation.
 func TestGraphAnalytics_Communities_PathGraph(t *testing.T) {
 	// Bidirectional path 1-2-3-4-5 must converge to a single community.
 	gd := newTestGraphData(5)
@@ -208,6 +213,7 @@ func TestGraphAnalytics_Communities_PathGraph(t *testing.T) {
 	}
 }
 
+// TestGraphAnalytics_Communities_StarGraph runs the test graph analytics_communities_star graph operation.
 func TestGraphAnalytics_Communities_StarGraph(t *testing.T) {
 	gd := newTestGraphData(4)
 	_ = gd.SetNeighbors(1, []uint32{2, 3, 4})
@@ -224,6 +230,7 @@ func TestGraphAnalytics_Communities_StarGraph(t *testing.T) {
 	assert.Equal(t, res.Labels[1], res.Labels[4])
 }
 
+// TestGraphAnalytics_Communities_CompleteGraph runs the test graph analytics_communities_complete graph operation.
 func TestGraphAnalytics_Communities_CompleteGraph(t *testing.T) {
 	gd := newTestGraphData(4)
 	for i := uint32(1); i <= 4; i++ {
@@ -242,6 +249,7 @@ func TestGraphAnalytics_Communities_CompleteGraph(t *testing.T) {
 	require.Equal(t, 1, res.CommunityCount, "complete graph must be one community")
 }
 
+// TestGraphAnalytics_Communities_EmptyGraph runs the test graph analytics_communities_empty graph operation.
 func TestGraphAnalytics_Communities_EmptyGraph(t *testing.T) {
 	gd := newTestGraphData(4)
 	ga := NewGraphAnalytics(func() *types.GraphData { return gd })
@@ -252,6 +260,7 @@ func TestGraphAnalytics_Communities_EmptyGraph(t *testing.T) {
 	assert.Empty(t, res.Labels)
 }
 
+// TestGraphAnalytics_Communities_Deterministic runs the test graph analytics_communities_deterministic operation.
 func TestGraphAnalytics_Communities_Deterministic(t *testing.T) {
 	// LPA skips shuffling, so repeated runs on the same graph must produce
 	// bit-identical labelings.
@@ -279,6 +288,7 @@ func TestGraphAnalytics_Communities_Deterministic(t *testing.T) {
 	}
 }
 
+// TestGraphAnalytics_Communities_MaxIterations runs the test graph analytics_communities_max iterations operation.
 func TestGraphAnalytics_Communities_MaxIterations(t *testing.T) {
 	gd := newTestGraphData(4)
 	_ = gd.SetNeighbors(1, []uint32{2})
@@ -319,6 +329,7 @@ func TestGraphAnalytics_Communities_LeafTargets(t *testing.T) {
 	}
 }
 
+// TestGraphAnalytics_NilGraph runs the test graph analytics_nil graph operation.
 func TestGraphAnalytics_NilGraph(t *testing.T) {
 	ga := NewGraphAnalytics(func() *types.GraphData { return nil })
 
@@ -334,6 +345,7 @@ func TestGraphAnalytics_NilGraph(t *testing.T) {
 
 // --- PageRank accuracy tests ---
 
+// TestGraphAnalytics_PageRank_SumsToOne runs the test graph analytics_page rank_sums to one operation.
 func TestGraphAnalytics_PageRank_SumsToOne(t *testing.T) {
 	// Directed chain with a dangling sink: 1 -> 2 -> 3 (3 dangles).
 	gd := newTestGraphData(3)
@@ -358,6 +370,7 @@ func TestGraphAnalytics_PageRank_SumsToOne(t *testing.T) {
 	assert.Greater(t, res.Scores[2], res.Scores[1])
 }
 
+// TestGraphAnalytics_PageRank_ZeroIterations runs the test graph analytics_page rank_zero iterations operation.
 func TestGraphAnalytics_PageRank_ZeroIterations(t *testing.T) {
 	gd := newTestGraphData(4)
 	_ = gd.SetNeighbors(1, []uint32{2, 3, 4})
@@ -460,6 +473,7 @@ func FuzzGraphAnalytics_DetectCommunities(f *testing.F) {
 	})
 }
 
+// BenchmarkGraphAnalytics_PageRank_Prefetch runs the benchmark graph analytics_page rank_prefetch operation.
 func BenchmarkGraphAnalytics_PageRank_Prefetch(b *testing.B) {
 	numNodes := 10000
 	maxNeighbors := 20

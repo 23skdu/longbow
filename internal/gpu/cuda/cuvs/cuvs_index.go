@@ -39,6 +39,7 @@ type CUVSIndex struct {
 	res     C.cuvs_resources_t
 }
 
+// NewCUVSIndex constructs a new CUVSIndex.
 func NewCUVSIndex(dataset string, dim int) (*CUVSIndex, error) {
 	idx := &CUVSIndex{
 		dataset: dataset,
@@ -51,6 +52,7 @@ func NewCUVSIndex(dataset string, dim int) (*CUVSIndex, error) {
 	return idx, nil
 }
 
+// Search runs the search operation.
 func (idx *CUVSIndex) Search(ctx context.Context, query []float32, k int) ([]int64, []float32, error) {
 	start := time.Now()
 	cuvsSearchOps.Inc()
@@ -90,6 +92,7 @@ func (idx *CUVSIndex) Search(ctx context.Context, query []float32, k int) ([]int
 	return ids, distances, nil
 }
 
+// AddBatch runs the add batch operation.
 func (idx *CUVSIndex) AddBatch(ctx context.Context, ids []int64, vectors []float32) error {
 	if len(vectors) == 0 {
 		return nil
@@ -107,6 +110,7 @@ func (idx *CUVSIndex) AddBatch(ctx context.Context, ids []int64, vectors []float
 	return nil
 }
 
+// Close runs the close operation.
 func (idx *CUVSIndex) Close() error {
 	// If cuvs_resources_t had a cleanup, we would call it here.
 	return nil

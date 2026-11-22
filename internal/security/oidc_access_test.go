@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// TestOIDCAccessValidatorAuthorize runs the test oidc access validator authorize operation.
 func TestOIDCAccessValidatorAuthorize(t *testing.T) {
 	m2, priv2, _ := testOIDCSetup(t)
 	v := NewOIDCAccessValidator(m2)

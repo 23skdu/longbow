@@ -25,10 +25,12 @@ const (
 	// RoleTenantAdmin has administrative access scoped to a single tenant/namespace.
 	RoleTenantAdmin Role = "tenant-admin"
 	// RoleWriter / RoleReadWrite has access to read and modify data.
-	RoleWriter    Role = "writer"
+	RoleWriter Role = "writer"
+	// RoleReadWrite is a role read write constant.
 	RoleReadWrite Role = "read-write"
 	// RoleReader / RoleReadOnly has access to read data only.
-	RoleReader   Role = "reader"
+	RoleReader Role = "reader"
+	// RoleReadOnly is a role read only constant.
 	RoleReadOnly Role = "read-only"
 	// RoleIngest has access to read data and ingest new vectors.
 	RoleIngest Role = "ingest-only"
@@ -84,8 +86,11 @@ func (r Role) HasPermission(perm Permission) bool {
 type NamespaceRole string
 
 const (
-	NamespaceRoleAdmin  NamespaceRole = "admin"
+	// NamespaceRoleAdmin is a namespace role admin constant.
+	NamespaceRoleAdmin NamespaceRole = "admin"
+	// NamespaceRoleWriter is a namespace role writer constant.
 	NamespaceRoleWriter NamespaceRole = "writer"
+	// NamespaceRoleReader is a namespace role reader constant.
 	NamespaceRoleReader NamespaceRole = "reader"
 )
 

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestBatchDistanceCompute_Basic runs the test batch distance compute_basic operation.
 func TestBatchDistanceCompute_Basic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -33,6 +34,7 @@ func TestBatchDistanceCompute_Basic(t *testing.T) {
 	assert.InDelta(t, 1.414214, results[2], 0.001)
 }
 
+// TestBatchDistanceCompute_Empty runs the test batch distance compute_empty operation.
 func TestBatchDistanceCompute_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -46,6 +48,7 @@ func TestBatchDistanceCompute_Empty(t *testing.T) {
 	assert.Empty(t, results)
 }
 
+// TestBatchDistanceCompute_SinglePair runs the test batch distance compute_single pair operation.
 func TestBatchDistanceCompute_SinglePair(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -60,6 +63,7 @@ func TestBatchDistanceCompute_SinglePair(t *testing.T) {
 	assert.InDelta(t, 5.196152, results[0], 0.001)
 }
 
+// TestBatchDistanceCompute_LargeBatch runs the test batch distance compute_large batch operation.
 func TestBatchDistanceCompute_LargeBatch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -89,6 +93,7 @@ func TestBatchDistanceCompute_LargeBatch(t *testing.T) {
 	}
 }
 
+// TestBatchDistanceCompute_IdenticalVectors runs the test batch distance compute_identical vectors operation.
 func TestBatchDistanceCompute_IdenticalVectors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -116,6 +121,7 @@ func TestBatchDistanceCompute_IdenticalVectors(t *testing.T) {
 	}
 }
 
+// TestBatchDistanceCompute_OrthogonalVectors runs the test batch distance compute_orthogonal vectors operation.
 func TestBatchDistanceCompute_OrthogonalVectors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -145,6 +151,7 @@ func TestBatchDistanceCompute_OrthogonalVectors(t *testing.T) {
 	}
 }
 
+// TestBatchDistanceCompute_MismatchedDimensions runs the test batch distance compute_mismatched dimensions operation.
 func TestBatchDistanceCompute_MismatchedDimensions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -158,6 +165,7 @@ func TestBatchDistanceCompute_MismatchedDimensions(t *testing.T) {
 	assert.Equal(t, float32(3.4028235e+38), results[0]) // math.MaxFloat32
 }
 
+// TestBatchDistanceCompute_MismatchedLengths runs the test batch distance compute_mismatched lengths operation.
 func TestBatchDistanceCompute_MismatchedLengths(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -171,6 +179,7 @@ func TestBatchDistanceCompute_MismatchedLengths(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// FuzzBatchDistanceCompute runs the fuzz batch distance compute operation.
 func FuzzBatchDistanceCompute(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

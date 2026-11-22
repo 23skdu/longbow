@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestTokenizer runs the test tokenizer operation.
 func TestTokenizer(t *testing.T) {
 	// 1. Create a dummy vocab file
 	vocabContent := "hello\nworld\n[CLS]\n[SEP]\n[MASK]\n[UNK]\n"
@@ -35,6 +36,7 @@ func TestTokenizer(t *testing.T) {
 	assert.Equal(t, int64(1), mask[0]) // CLS mask should be 1
 }
 
+// TestTokenizerMissingVocab runs the test tokenizer missing vocab operation.
 func TestTokenizerMissingVocab(t *testing.T) {
 	// Test loading with non-existent file - should fail
 	tokenizer, err := NewTokenizer("non-existent-vocab.txt", 128)

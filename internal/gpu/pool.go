@@ -271,14 +271,17 @@ func (w *pooledIndexWrapper) Add(ids []int64, vectors []float32) error {
 	return w.pooled.index.Add(ids, vectors)
 }
 
+// AddPQ runs the add pq operation.
 func (w *pooledIndexWrapper) AddPQ(ids []int64, codes []byte, m int) error {
 	return w.pooled.index.AddPQ(ids, codes, m)
 }
 
+// AddTurboQuant runs the add turbo quant operation.
 func (w *pooledIndexWrapper) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
 	return w.pooled.index.AddTurboQuant(ids, tqData, bitsPerAngle)
 }
 
+// SearchTurboQuant runs the search turbo quant operation.
 func (w *pooledIndexWrapper) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	return w.pooled.index.SearchTurboQuant(vector, k, bitsPerAngle)
 }
@@ -288,18 +291,22 @@ func (w *pooledIndexWrapper) Search(vector []float32, k int) ([]int64, []float32
 	return w.pooled.index.Search(vector, k)
 }
 
+// SearchPQ runs the search pq operation.
 func (pw *pooledIndexWrapper) SearchPQ(lookupTable []float32, m int, k int) (ids []int64, distances []float32, err error) {
 	return pw.pooled.index.SearchPQ(lookupTable, m, k)
 }
 
+// TrainPQ runs the train pq operation.
 func (pw *pooledIndexWrapper) TrainPQ(vectors []float32, m int, k int) error {
 	return pw.pooled.index.TrainPQ(vectors, m, k)
 }
 
+// EncodePQ runs the encode pq operation.
 func (pw *pooledIndexWrapper) EncodePQ(vectors []float32) ([]byte, error) {
 	return pw.pooled.index.EncodePQ(vectors)
 }
 
+// AssignToClusters runs the assign to clusters operation.
 func (pw *pooledIndexWrapper) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
 	return pw.pooled.index.AssignToClusters(vectors, centroids)
 }
@@ -374,41 +381,52 @@ func (w *pooledIndexWrapper) SearchComplex128(vector []float32, k int) ([]int64,
 	return w.pooled.index.SearchComplex128(vector, k)
 }
 
+// SearchGreedy runs the search greedy operation.
 func (p *pooledIndexWrapper) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
 	return p.pooled.index.SearchGreedy(query, entryPoint, entryDist)
 }
 
+// UpdateGraph runs the update graph operation.
 func (w *pooledIndexWrapper) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
 	return w.pooled.index.UpdateGraph(offsets, neighbors, weights)
 }
 
+// GraphExpand runs the graph expand operation.
 func (w *pooledIndexWrapper) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	return w.pooled.index.GraphExpand(seeds, depth, alpha)
 }
 
+// SearchBatchDistances runs the search batch distances operation.
 func (w *pooledIndexWrapper) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
 	return w.pooled.index.SearchBatchDistances(query, candidateIDs)
 }
 
+// HaversineSearch runs the haversine search operation.
 func (w *pooledIndexWrapper) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	return w.pooled.index.HaversineSearch(centerLat, centerLon, points, earthRadius)
 }
 
+// NormBatch runs the norm batch operation.
 func (w *pooledIndexWrapper) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	return w.pooled.index.NormBatch(vectors, dims)
 }
+
+// PruneNeighbors runs the prune neighbors operation.
 func (w *pooledIndexWrapper) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
 	return w.pooled.index.PruneNeighbors(candidateIds, candidateDists, maxNeighbors, allVectors)
 }
 
+// Sync runs the sync operation.
 func (w *pooledIndexWrapper) Sync() error {
 	return w.pooled.index.Sync()
 }
 
+// Clear runs the clear operation.
 func (w *pooledIndexWrapper) Clear() error {
 	return w.pooled.index.Clear()
 }
 
+// Reset runs the reset operation.
 func (w *pooledIndexWrapper) Reset() error {
 	return w.pooled.index.Reset()
 }

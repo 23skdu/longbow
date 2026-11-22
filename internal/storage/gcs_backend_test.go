@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestGCSBackendKeyGeneration runs the test gcs backend key generation operation.
 func TestGCSBackendKeyGeneration(t *testing.T) {
 	tests := []struct {
 		prefix   string
@@ -29,6 +30,7 @@ func TestGCSBackendKeyGeneration(t *testing.T) {
 	}
 }
 
+// FuzzGCSKeyGeneration runs the fuzz gcs key generation operation.
 func FuzzGCSKeyGeneration(f *testing.F) {
 	f.Add("prefix", "name", ".ext")
 	f.Fuzz(func(t *testing.T, prefix, name, ext string) {
@@ -39,6 +41,7 @@ func FuzzGCSKeyGeneration(f *testing.F) {
 	})
 }
 
+// TestGCSBackendIntegration runs the test gcs backend integration operation.
 func TestGCSBackendIntegration(t *testing.T) {
 	if os.Getenv("GCS_TEST_BUCKET") == "" {
 		t.Skip("Skipping GCS integration test: GCS_TEST_BUCKET not set")

@@ -20,15 +20,18 @@ type mockDoActionServerCoverage struct {
 	results []*flight.Result
 }
 
+// Send runs the send operation.
 func (m *mockDoActionServerCoverage) Send(res *flight.Result) error {
 	m.results = append(m.results, res)
 	return nil
 }
 
+// Context runs the context operation.
 func (m *mockDoActionServerCoverage) Context() context.Context {
 	return context.Background()
 }
 
+// TestVectorStore_DoAction_Extended runs the test vector store_do action_extended operation.
 func TestVectorStore_DoAction_Extended(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping broken integration test in short mode")

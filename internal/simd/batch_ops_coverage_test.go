@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestBatchOperations_Extended runs the test batch operations_extended operation.
 func TestBatchOperations_Extended(t *testing.T) {
 	t.Run("ToFloat32", func(t *testing.T) {
 		v64 := []float64{1.1, 2.2, 3.3}
@@ -87,6 +88,7 @@ func TestBatchOperations_Extended(t *testing.T) {
 	})
 }
 
+// TestBatchOperations_CosineDot_Extended runs the test batch operations_cosine dot_extended operation.
 func TestBatchOperations_CosineDot_Extended(t *testing.T) {
 	query := []float32{1.0, 0.0}
 	vectors := [][]float32{{1.0, 0.0}, {0.0, 1.0}}

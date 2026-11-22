@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestParquetIngester runs the test parquet ingester operation.
 func TestParquetIngester(t *testing.T) {
 	// 1. Setup a dummy dataset
 	schema := arrow.NewSchema(

@@ -6,6 +6,7 @@ import (
 	"github.com/23skdu/longbow/pkg/wasmclient"
 )
 
+// TestWASMEntryHelper runs the test wasm entry helper operation.
 func TestWASMEntryHelper(t *testing.T) {
 	c, err := wasmclient.NewEdgeClient(wasmclient.ClientConfig{Dataset: "edge", OfflineFirst: true})
 	if err != nil {
@@ -16,6 +17,7 @@ func TestWASMEntryHelper(t *testing.T) {
 	}
 }
 
+// FuzzWASMEntryConfig runs the fuzz wasm entry config operation.
 func FuzzWASMEntryConfig(f *testing.F) {
 	f.Add("edge-ds", true)
 	f.Fuzz(func(t *testing.T, dataset string, offline bool) {

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestLearnedIndexConfig_Defaults runs the test learned index config_defaults operation.
 func TestLearnedIndexConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -30,6 +31,7 @@ func TestLearnedIndexConfig_Defaults(t *testing.T) {
 	assert.Equal(t, time.Hour, config.UpdateInterval)
 }
 
+// TestNewIndexPerformancePredictor runs the test new index performance predictor operation.
 func TestNewIndexPerformancePredictor(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -48,6 +50,7 @@ func TestNewIndexPerformancePredictor(t *testing.T) {
 	assert.NotNil(t, p.featureWeights)
 }
 
+// TestIndexPerformancePredictor_AddTrainingSample runs the test index performance predictor_add training sample operation.
 func TestIndexPerformancePredictor_AddTrainingSample(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -71,6 +74,7 @@ func TestIndexPerformancePredictor_AddTrainingSample(t *testing.T) {
 	assert.Equal(t, int64(1), p.stats.TrainingSamplesCollected.Load())
 }
 
+// TestIndexPerformancePredictor_Predict_InsufficientSamples runs the test index performance predictor_predict_insufficient samples operation.
 func TestIndexPerformancePredictor_Predict_InsufficientSamples(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -94,6 +98,7 @@ func TestIndexPerformancePredictor_Predict_InsufficientSamples(t *testing.T) {
 	assert.NotEmpty(t, prediction.Alternatives)
 }
 
+// TestIndexPerformancePredictor_Predict_SmallDataset runs the test index performance predictor_predict_small dataset operation.
 func TestIndexPerformancePredictor_Predict_SmallDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -124,6 +129,7 @@ func TestIndexPerformancePredictor_Predict_SmallDataset(t *testing.T) {
 	assert.Greater(t, prediction.Confidence, 0.5)
 }
 
+// TestIndexPerformancePredictor_Predict_LargeDataset runs the test index performance predictor_predict_large dataset operation.
 func TestIndexPerformancePredictor_Predict_LargeDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -142,6 +148,7 @@ func TestIndexPerformancePredictor_Predict_LargeDataset(t *testing.T) {
 	assert.Equal(t, types.IndexTypeDiskANN, prediction.RecommendedIndex)
 }
 
+// TestIndexPerformancePredictor_Predict_MediumDataset runs the test index performance predictor_predict_medium dataset operation.
 func TestIndexPerformancePredictor_Predict_MediumDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -160,6 +167,7 @@ func TestIndexPerformancePredictor_Predict_MediumDataset(t *testing.T) {
 	assert.Equal(t, LearnedIVFPQ, prediction.RecommendedIndex)
 }
 
+// TestIndexPerformancePredictor_calculateConfidence runs the test index performance predictor_calculate confidence operation.
 func TestIndexPerformancePredictor_calculateConfidence(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -178,6 +186,7 @@ func TestIndexPerformancePredictor_calculateConfidence(t *testing.T) {
 	assert.Greater(t, confidence, 0.5)
 }
 
+// TestIndexPerformancePredictor_estimateLatency runs the test index performance predictor_estimate latency operation.
 func TestIndexPerformancePredictor_estimateLatency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -195,6 +204,7 @@ func TestIndexPerformancePredictor_estimateLatency(t *testing.T) {
 	assert.Greater(t, latency, time.Duration(0))
 }
 
+// TestIndexPerformancePredictor_estimateRecall runs the test index performance predictor_estimate recall operation.
 func TestIndexPerformancePredictor_estimateRecall(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -213,6 +223,7 @@ func TestIndexPerformancePredictor_estimateRecall(t *testing.T) {
 	assert.Equal(t, 0.95, recallDisk)
 }
 
+// TestIndexPerformancePredictor_getAlternatives runs the test index performance predictor_get alternatives operation.
 func TestIndexPerformancePredictor_getAlternatives(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -232,6 +243,7 @@ func TestIndexPerformancePredictor_getAlternatives(t *testing.T) {
 	assert.NotContains(t, alternatives, types.IndexTypeHNSW)
 }
 
+// TestIndexPerformancePredictor_GetStats runs the test index performance predictor_get stats operation.
 func TestIndexPerformancePredictor_GetStats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -252,6 +264,7 @@ func TestIndexPerformancePredictor_GetStats(t *testing.T) {
 	assert.Equal(t, int64(0), correct)
 }
 
+// TestIndexPerformancePredictor_GetConfig runs the test index performance predictor_get config operation.
 func TestIndexPerformancePredictor_GetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -271,6 +284,7 @@ func TestIndexPerformancePredictor_GetConfig(t *testing.T) {
 	assert.Equal(t, config.ConfidenceThreshold, got.ConfidenceThreshold)
 }
 
+// TestIndexPerformancePredictor_SetConfig runs the test index performance predictor_set config operation.
 func TestIndexPerformancePredictor_SetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -287,6 +301,7 @@ func TestIndexPerformancePredictor_SetConfig(t *testing.T) {
 	assert.Equal(t, 0.9, p.config.ConfidenceThreshold)
 }
 
+// TestIndexPerformancePredictor_GetTrainingSampleCount runs the test index performance predictor_get training sample count operation.
 func TestIndexPerformancePredictor_GetTrainingSampleCount(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -306,6 +321,7 @@ func TestIndexPerformancePredictor_GetTrainingSampleCount(t *testing.T) {
 	assert.Equal(t, 2, p.GetTrainingSampleCount())
 }
 
+// TestIndexPerformancePredictor_ClearTrainingData runs the test index performance predictor_clear training data operation.
 func TestIndexPerformancePredictor_ClearTrainingData(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -327,6 +343,7 @@ func TestIndexPerformancePredictor_ClearTrainingData(t *testing.T) {
 	assert.Equal(t, 0, p.GetTrainingSampleCount())
 }
 
+// TestIndexPerformancePredictor_FeatureWeights runs the test index performance predictor_feature weights operation.
 func TestIndexPerformancePredictor_FeatureWeights(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -340,6 +357,7 @@ func TestIndexPerformancePredictor_FeatureWeights(t *testing.T) {
 	assert.Contains(t, p.featureWeights, "vector_dimension")
 }
 
+// TestIndexMapperConfig_Defaults runs the test index mapper config_defaults operation.
 func TestIndexMapperConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -357,6 +375,7 @@ func TestIndexMapperConfig_Defaults(t *testing.T) {
 	assert.Equal(t, types.IndexTypeHNSW, config.FallbackIndex)
 }
 
+// TestNewQueryIndexMapper runs the test new query index mapper operation.
 func TestNewQueryIndexMapper(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -376,6 +395,7 @@ func TestNewQueryIndexMapper(t *testing.T) {
 	assert.True(t, mapper.config.CacheEnabled)
 }
 
+// TestQueryIndexMapper_GetIndexForQuery runs the test query index mapper_get index for query operation.
 func TestQueryIndexMapper_GetIndexForQuery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -398,6 +418,7 @@ func TestQueryIndexMapper_GetIndexForQuery(t *testing.T) {
 	assert.Equal(t, int64(1), mapper.stats.QueriesMapped.Load())
 }
 
+// TestQueryIndexMapper_GetIndexForQuery_WithCache runs the test query index mapper_get index for query_with cache operation.
 func TestQueryIndexMapper_GetIndexForQuery_WithCache(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -422,6 +443,7 @@ func TestQueryIndexMapper_GetIndexForQuery_WithCache(t *testing.T) {
 	assert.Equal(t, int64(1), mapper.stats.CacheMisses.Load())
 }
 
+// TestQueryIndexMapper_GetIndexForQuery_LargeDataset runs the test query index mapper_get index for query_large dataset operation.
 func TestQueryIndexMapper_GetIndexForQuery_LargeDataset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -443,6 +465,7 @@ func TestQueryIndexMapper_GetIndexForQuery_LargeDataset(t *testing.T) {
 	assert.Equal(t, types.IndexTypeDiskANN, index)
 }
 
+// TestQueryIndexMapper_InvalidateCache runs the test query index mapper_invalidate cache operation.
 func TestQueryIndexMapper_InvalidateCache(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -461,6 +484,7 @@ func TestQueryIndexMapper_InvalidateCache(t *testing.T) {
 	assert.Equal(t, 0, mapper.GetMappingCount())
 }
 
+// TestQueryIndexMapper_ClearCache runs the test query index mapper_clear cache operation.
 func TestQueryIndexMapper_ClearCache(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -479,6 +503,7 @@ func TestQueryIndexMapper_ClearCache(t *testing.T) {
 	assert.Equal(t, 0, mapper.GetMappingCount())
 }
 
+// TestQueryIndexMapper_GetStats runs the test query index mapper_get stats operation.
 func TestQueryIndexMapper_GetStats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -495,6 +520,7 @@ func TestQueryIndexMapper_GetStats(t *testing.T) {
 	assert.Greater(t, mapped, int64(0))
 }
 
+// TestQueryIndexMapper_GetConfig runs the test query index mapper_get config operation.
 func TestQueryIndexMapper_GetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -513,6 +539,7 @@ func TestQueryIndexMapper_GetConfig(t *testing.T) {
 	assert.Equal(t, config.EnableFallback, got.EnableFallback)
 }
 
+// TestQueryIndexMapper_SetConfig runs the test query index mapper_set config operation.
 func TestQueryIndexMapper_SetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -530,6 +557,7 @@ func TestQueryIndexMapper_SetConfig(t *testing.T) {
 	assert.False(t, mapper.config.CacheEnabled)
 }
 
+// TestQueryIndexMapper_GetCachedMappings runs the test query index mapper_get cached mappings operation.
 func TestQueryIndexMapper_GetCachedMappings(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -549,6 +577,7 @@ func TestQueryIndexMapper_GetCachedMappings(t *testing.T) {
 	assert.Contains(t, mappings, "query2")
 }
 
+// TestIndexAdaptationConfig_Defaults runs the test index adaptation config_defaults operation.
 func TestIndexAdaptationConfig_Defaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -570,6 +599,7 @@ func TestIndexAdaptationConfig_Defaults(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, config.CheckInterval)
 }
 
+// TestNewRuntimeIndexAdapter runs the test new runtime index adapter operation.
 func TestNewRuntimeIndexAdapter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -586,6 +616,7 @@ func TestNewRuntimeIndexAdapter(t *testing.T) {
 	assert.True(t, adapter.config.EnableAutoAdaptation)
 }
 
+// TestRuntimeIndexAdapter_ShouldAdapt_Latency runs the test runtime index adapter_should adapt_latency operation.
 func TestRuntimeIndexAdapter_ShouldAdapt_Latency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -605,6 +636,7 @@ func TestRuntimeIndexAdapter_ShouldAdapt_Latency(t *testing.T) {
 	assert.True(t, adapter.shouldAdapt(metrics))
 }
 
+// TestRuntimeIndexAdapter_ShouldAdapt_Recall runs the test runtime index adapter_should adapt_recall operation.
 func TestRuntimeIndexAdapter_ShouldAdapt_Recall(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -625,6 +657,7 @@ func TestRuntimeIndexAdapter_ShouldAdapt_Recall(t *testing.T) {
 	assert.True(t, adapter.shouldAdapt(metrics))
 }
 
+// TestRuntimeIndexAdapter_ShouldAdapt_NoAdapt runs the test runtime index adapter_should adapt_no adapt operation.
 func TestRuntimeIndexAdapter_ShouldAdapt_NoAdapt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -646,6 +679,7 @@ func TestRuntimeIndexAdapter_ShouldAdapt_NoAdapt(t *testing.T) {
 	assert.False(t, adapter.shouldAdapt(metrics))
 }
 
+// TestRuntimeIndexAdapter_DetermineTriggerReason runs the test runtime index adapter_determine trigger reason operation.
 func TestRuntimeIndexAdapter_DetermineTriggerReason(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -670,6 +704,7 @@ func TestRuntimeIndexAdapter_DetermineTriggerReason(t *testing.T) {
 	assert.Equal(t, "low_recall", reason)
 }
 
+// TestRuntimeIndexAdapter_GetStats runs the test runtime index adapter_get stats operation.
 func TestRuntimeIndexAdapter_GetStats(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -687,6 +722,7 @@ func TestRuntimeIndexAdapter_GetStats(t *testing.T) {
 	assert.Equal(t, int64(3), completed)
 }
 
+// TestRuntimeIndexAdapter_GetConfig runs the test runtime index adapter_get config operation.
 func TestRuntimeIndexAdapter_GetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -705,6 +741,7 @@ func TestRuntimeIndexAdapter_GetConfig(t *testing.T) {
 	assert.Equal(t, 6, got.MaxAdaptationsPerHour)
 }
 
+// TestRuntimeIndexAdapter_SetConfig runs the test runtime index adapter_set config operation.
 func TestRuntimeIndexAdapter_SetConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -723,6 +760,7 @@ func TestRuntimeIndexAdapter_SetConfig(t *testing.T) {
 	assert.Equal(t, 200.0, adapter.config.LatencyThresholdMs)
 }
 
+// TestRuntimeIndexAdapter_GetAdaptation runs the test runtime index adapter_get adaptation operation.
 func TestRuntimeIndexAdapter_GetAdaptation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -747,6 +785,7 @@ func TestRuntimeIndexAdapter_GetAdaptation(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestRuntimeIndexAdapter_ListAdaptations runs the test runtime index adapter_list adaptations operation.
 func TestRuntimeIndexAdapter_ListAdaptations(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -919,6 +958,7 @@ func TestKNNPredict_ConcurrentAddAndPredict(t *testing.T) {
 // FeatureNormalizer Tests
 // =============================================================================
 
+// TestFeatureNormalizer_MinMax runs the test feature normalizer_min max operation.
 func TestFeatureNormalizer_MinMax(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -942,6 +982,7 @@ func TestFeatureNormalizer_MinMax(t *testing.T) {
 	}
 }
 
+// TestFeatureNormalizer_NormalizeOutput runs the test feature normalizer_normalize output operation.
 func TestFeatureNormalizer_NormalizeOutput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -960,6 +1001,7 @@ func TestFeatureNormalizer_NormalizeOutput(t *testing.T) {
 	}
 }
 
+// TestFeatureNormalizer_ZeroSpanReturns05 runs the test feature normalizer_zero span returns05 operation.
 func TestFeatureNormalizer_ZeroSpanReturns05(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -1026,6 +1068,7 @@ func TestOnlineWeightUpdate_ConvergesDirection(t *testing.T) {
 // PredictionCorrect / Feedback Loop Tests
 // =============================================================================
 
+// TestPredictionCorrect_IncrementOnFeedback runs the test prediction correct_increment on feedback operation.
 func TestPredictionCorrect_IncrementOnFeedback(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -1071,12 +1114,14 @@ type mockSwitcher struct {
 	switchErr    error
 }
 
+// SwitchIndex runs the switch index operation.
 func (m *mockSwitcher) SwitchIndex(_ string, to types.IndexType) error {
 	m.switchCalled = true
 	m.switchTarget = to
 	return m.switchErr
 }
 
+// TestRollback_IsNotNoOp runs the test rollback_is not no op operation.
 func TestRollback_IsNotNoOp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -1106,6 +1151,7 @@ func TestRollback_IsNotNoOp(t *testing.T) {
 	assert.Equal(t, types.IndexTypeHNSW, sw.switchTarget, "Rollback must target CurrentIndex (prior index)")
 }
 
+// TestRollback_NoSwitcher_ReturnsError runs the test rollback_no switcher_returns error operation.
 func TestRollback_NoSwitcher_ReturnsError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -1129,6 +1175,7 @@ func TestRollback_NoSwitcher_ReturnsError(t *testing.T) {
 	assert.Error(t, err, "Rollback without an IndexSwitcher must return an error, not silently succeed")
 }
 
+// TestRollback_UnknownCollection_ReturnsError runs the test rollback_unknown collection_returns error operation.
 func TestRollback_UnknownCollection_ReturnsError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -1151,6 +1198,7 @@ func TestRollback_UnknownCollection_ReturnsError(t *testing.T) {
 // extractFeatureVector Tests
 // =============================================================================
 
+// TestExtractFeatureVector_ComplexityMapping runs the test extract feature vector_complexity mapping operation.
 func TestExtractFeatureVector_ComplexityMapping(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -1171,6 +1219,7 @@ func TestExtractFeatureVector_ComplexityMapping(t *testing.T) {
 	}
 }
 
+// TestExtractFeatureVector_BoolFields runs the test extract feature vector_bool fields operation.
 func TestExtractFeatureVector_BoolFields(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -1190,6 +1239,7 @@ func TestExtractFeatureVector_BoolFields(t *testing.T) {
 // weightedEuclidean Tests
 // =============================================================================
 
+// TestWeightedEuclidean_ZeroDistance runs the test weighted euclidean_zero distance operation.
 func TestWeightedEuclidean_ZeroDistance(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -1206,6 +1256,7 @@ func TestWeightedEuclidean_ZeroDistance(t *testing.T) {
 	assert.InDelta(t, 0.0, dist, 1e-9, "distance to self must be zero")
 }
 
+// TestWeightedEuclidean_Symmetry runs the test weighted euclidean_symmetry operation.
 func TestWeightedEuclidean_Symmetry(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -1220,6 +1271,7 @@ func TestWeightedEuclidean_Symmetry(t *testing.T) {
 		"weighted Euclidean distance must be symmetric")
 }
 
+// TestRuntimeIndexAdapter_FeedbackLoop runs the test runtime index adapter_feedback loop operation.
 func TestRuntimeIndexAdapter_FeedbackLoop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

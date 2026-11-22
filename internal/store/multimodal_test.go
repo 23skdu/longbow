@@ -53,6 +53,7 @@ func makeTestWAV(freqSamples int) []byte {
 	return buf.Bytes()
 }
 
+// TestMultiModalIngestParquetAndCrossModalSearch runs the test multi modal ingest parquet and cross modal search operation.
 func TestMultiModalIngestParquetAndCrossModalSearch(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -118,6 +119,7 @@ func TestMultiModalIngestParquetAndCrossModalSearch(t *testing.T) {
 	require.Len(t, v, 4)
 }
 
+// BenchmarkMultiModalPipeline runs the benchmark multi modal pipeline operation.
 func BenchmarkMultiModalPipeline(b *testing.B) {
 	emb, _ := NewJointMultiModalEmbedder(MultiModalConfig{Dimension: 128})
 	img := makeTestPNG(color.RGBA{R: 200, G: 100, B: 50, A: 255})
@@ -130,6 +132,7 @@ func BenchmarkMultiModalPipeline(b *testing.B) {
 	}
 }
 
+// FuzzMultiModalEmbedding runs the fuzz multi modal embedding operation.
 func FuzzMultiModalEmbedding(f *testing.F) {
 	f.Add([]byte("RIFF\x24\x00\x00\x00WAVEfmt "), "sunset sky")
 	f.Add(makeTestPNG(color.RGBA{R: 1, G: 2, B: 3, A: 255}), "blue")

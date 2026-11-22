@@ -22,6 +22,7 @@ func saveAndSetAVX2() func() {
 	}
 }
 
+// TestAVX2_EuclideanDistance runs the test avx2_euclidean distance operation.
 func TestAVX2_EuclideanDistance(t *testing.T) {
 	restore := saveAndSetAVX2()
 	defer restore()
@@ -51,6 +52,7 @@ func TestAVX2_EuclideanDistance(t *testing.T) {
 	}
 }
 
+// TestAVX2_EuclideanEdgeCases runs the test avx2_euclidean edge cases operation.
 func TestAVX2_EuclideanEdgeCases(t *testing.T) {
 	restore := saveAndSetAVX2()
 	defer restore()
@@ -87,6 +89,7 @@ func TestAVX2_EuclideanEdgeCases(t *testing.T) {
 	})
 }
 
+// TestAVX2_CosineDistance runs the test avx2_cosine distance operation.
 func TestAVX2_CosineDistance(t *testing.T) {
 	restore := saveAndSetAVX2()
 	defer restore()
@@ -115,6 +118,7 @@ func TestAVX2_CosineDistance(t *testing.T) {
 	}
 }
 
+// TestAVX2_CosineEdgeCases runs the test avx2_cosine edge cases operation.
 func TestAVX2_CosineEdgeCases(t *testing.T) {
 	restore := saveAndSetAVX2()
 	defer restore()
@@ -161,6 +165,7 @@ func TestAVX2_CosineEdgeCases(t *testing.T) {
 	})
 }
 
+// TestAVX2_DotProduct runs the test avx2_dot product operation.
 func TestAVX2_DotProduct(t *testing.T) {
 	restore := saveAndSetAVX2()
 	defer restore()
@@ -192,6 +197,7 @@ func TestAVX2_DotProduct(t *testing.T) {
 	}
 }
 
+// TestAVX2_PublicAPI runs the test avx2_public api operation.
 func TestAVX2_PublicAPI(t *testing.T) {
 	restore := saveAndSetAVX2()
 	defer restore()
@@ -217,7 +223,7 @@ func TestAVX2_PublicAPI(t *testing.T) {
 	}
 }
 
-// Benchmarks
+// BenchmarkAVX2_Euclidean_768.
 func BenchmarkAVX2_Euclidean_768(b *testing.B) {
 	restore := saveAndSetAVX2()
 	defer restore()
@@ -228,6 +234,7 @@ func BenchmarkAVX2_Euclidean_768(b *testing.B) {
 	}
 }
 
+// BenchmarkAVX2_Cosine_768 runs the benchmark avx2_cosine_768 operation.
 func BenchmarkAVX2_Cosine_768(b *testing.B) {
 	restore := saveAndSetAVX2()
 	defer restore()
@@ -238,6 +245,7 @@ func BenchmarkAVX2_Cosine_768(b *testing.B) {
 	}
 }
 
+// BenchmarkAVX2_Dot_768 runs the benchmark avx2_dot_768 operation.
 func BenchmarkAVX2_Dot_768(b *testing.B) {
 	restore := saveAndSetAVX2()
 	defer restore()
@@ -248,6 +256,7 @@ func BenchmarkAVX2_Dot_768(b *testing.B) {
 	}
 }
 
+// BenchmarkAVX2_Euclidean_1536 runs the benchmark avx2_euclidean_1536 operation.
 func BenchmarkAVX2_Euclidean_1536(b *testing.B) {
 	restore := saveAndSetAVX2()
 	defer restore()
@@ -258,6 +267,7 @@ func BenchmarkAVX2_Euclidean_1536(b *testing.B) {
 	}
 }
 
+// BenchmarkAVX2_Cosine_1536 runs the benchmark avx2_cosine_1536 operation.
 func BenchmarkAVX2_Cosine_1536(b *testing.B) {
 	restore := saveAndSetAVX2()
 	defer restore()

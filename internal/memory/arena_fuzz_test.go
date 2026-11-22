@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// FuzzArenaGetWithGeneration runs the fuzz arena get with generation operation.
 func FuzzArenaGetWithGeneration(f *testing.F) {
 	f.Add(uint64(0), uint32(32), uint64(math.MaxUint64))
 	f.Add(uint64(0), uint32(64), uint64(0))

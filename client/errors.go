@@ -12,6 +12,7 @@ type ErrForwardRequired struct {
 	TargetAddr   string
 }
 
+// Error runs the error operation.
 func (e *ErrForwardRequired) Error() string {
 	return fmt.Sprintf("FORWARD_REQUIRED: target=%s addr=%s", e.TargetNodeID, e.TargetAddr)
 }

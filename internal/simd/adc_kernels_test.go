@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestADC_FastPath runs the test adc_fast path operation.
 func TestADC_FastPath(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	m := 16 // 16 sub-quantizers
@@ -47,6 +48,7 @@ func TestADC_FastPath(t *testing.T) {
 	assert.NoError(t, adcBatchAVX512(table, flatCodes, m, nil))
 }
 
+// BenchmarkADC_FastPath runs the benchmark adc_fast path operation.
 func BenchmarkADC_FastPath(b *testing.B) {
 	rng := rand.New(rand.NewSource(42))
 	m := 16

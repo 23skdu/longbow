@@ -55,6 +55,7 @@ func NewMetalHybridIndex(cfg gputypes.GPUConfig) (gputypes.Index, error) {
 	return idx, nil
 }
 
+// Add runs the add operation.
 func (idx *MetalHybridIndex) Add(ids []int64, vectors []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -80,6 +81,7 @@ func (idx *MetalHybridIndex) Add(ids []int64, vectors []float32) error {
 	return nil
 }
 
+// Search runs the search operation.
 func (idx *MetalHybridIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -139,6 +141,7 @@ func (idx *MetalHybridIndex) Search(vector []float32, k int) ([]int64, []float32
 	return resultIDs, resultDistances, nil
 }
 
+// SearchBatch runs the search batch operation.
 func (idx *MetalHybridIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	if len(vectors) == 0 {
 		return nil, nil, nil
@@ -159,6 +162,7 @@ func (idx *MetalHybridIndex) SearchBatch(vectors [][]float32, k int) ([][]int64,
 	return results, distances, nil
 }
 
+// Close runs the close operation.
 func (idx *MetalHybridIndex) Close() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -176,14 +180,17 @@ func (idx *MetalHybridIndex) Close() error {
 	return nil
 }
 
+// Backend runs the backend operation.
 func (idx *MetalHybridIndex) Backend() gputypes.GPUBackend {
 	return gputypes.BackendMetal
 }
 
+// DeviceID runs the device id operation.
 func (idx *MetalHybridIndex) DeviceID() int32 {
 	return 0
 }
 
+// GetDeviceInfo returns the device info.
 func (idx *MetalHybridIndex) GetDeviceInfo() (*gputypes.GPUInfo, error) {
 	return &gputypes.GPUInfo{
 		Backend:  gputypes.BackendMetal,
@@ -192,10 +199,12 @@ func (idx *MetalHybridIndex) GetDeviceInfo() (*gputypes.GPUInfo, error) {
 	}, nil
 }
 
+// GetMemoryInfo returns the memory info.
 func (idx *MetalHybridIndex) GetMemoryInfo() (int64, int64, int64, error) {
 	return 0, 0, 0, nil
 }
 
+// SearchPQ runs the search pq operation.
 func (idx *MetalHybridIndex) SearchPQ(lookupTable []float32, m, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -250,6 +259,7 @@ func (idx *MetalHybridIndex) SearchPQ(lookupTable []float32, m, k int) ([]int64,
 	return resIDs, resDists, nil
 }
 
+// TrainPQ runs the train pq operation.
 func (idx *MetalHybridIndex) TrainPQ(vectors []float32, m, k int) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -283,6 +293,7 @@ func (idx *MetalHybridIndex) TrainPQ(vectors []float32, m, k int) error {
 	return nil
 }
 
+// EncodePQ runs the encode pq operation.
 func (idx *MetalHybridIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -310,6 +321,7 @@ func (idx *MetalHybridIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	return codes, nil
 }
 
+// GetUtilization returns the utilization.
 func (idx *MetalHybridIndex) GetUtilization() (float32, error) {
 	return 50.0, nil
 }

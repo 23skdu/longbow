@@ -105,6 +105,7 @@ func TestMegaCoverage(t *testing.T) {
 	})
 }
 
+// TestCore_EdgeCases runs the test core_edge cases operation.
 func TestCore_EdgeCases(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 16

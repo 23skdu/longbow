@@ -23,6 +23,7 @@ func generateRandomF16Vectors(count, dim int) [][]float16.Num {
 	return vecs
 }
 
+// BenchmarkHNSW_ZeroCopy_Float16 runs the benchmark hnsw_zero copy_float16 operation.
 func BenchmarkHNSW_ZeroCopy_Float16(b *testing.B) {
 	// Configuration
 	numVectors := 5000

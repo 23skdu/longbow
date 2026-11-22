@@ -15,6 +15,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// StreamConnectorConfig represents a stream connector config value.
 type StreamConnectorConfig struct {
 	Name                string           `json:"name"`
 	Dataset             string           `json:"dataset"`
@@ -54,7 +55,7 @@ type StreamConnectorStats struct {
 	ThroughputEPS      float64 `json:"throughput_eps"`
 }
 
-// SchemaRegistryClient integrates Confluent-style Schema Registry HTTP endpoints
+// StreamConnector integrates Confluent-style Schema Registry HTTP endpoints
 // and local schema caching with wire-frame decoding and payload validation.
 // StreamConnector manages a single streaming ingestion connector (and optional CDC exporter).
 type StreamConnector struct {

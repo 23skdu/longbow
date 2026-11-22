@@ -2,6 +2,7 @@ package main
 
 import "testing"
 
+// FuzzBuildSoakSchema runs the fuzz build soak schema operation.
 func FuzzBuildSoakSchema(f *testing.F) {
 	f.Add(int32(128))
 	f.Add(int32(1))
@@ -19,6 +20,7 @@ func FuzzBuildSoakSchema(f *testing.F) {
 	})
 }
 
+// FuzzGenerateCompoundFilter runs the fuzz generate compound filter operation.
 func FuzzGenerateCompoundFilter(f *testing.F) {
 	f.Add(0)
 	f.Fuzz(func(t *testing.T, _ int) {

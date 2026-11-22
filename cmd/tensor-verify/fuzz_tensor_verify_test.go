@@ -6,6 +6,7 @@ import (
 	"github.com/23skdu/longbow/internal/tensor"
 )
 
+// FuzzShapeEqual runs the fuzz shape equal operation.
 func FuzzShapeEqual(f *testing.F) {
 	f.Add(2, 3, 2, 3)
 	f.Add(1, 1, 2, 2)

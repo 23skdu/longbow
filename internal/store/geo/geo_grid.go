@@ -181,10 +181,19 @@ type geoRadiusHeap struct {
 	items []geoRadiusHit
 }
 
-func (h *geoRadiusHeap) Len() int           { return len(h.items) }
+// Len runs the len operation.
+func (h *geoRadiusHeap) Len() int { return len(h.items) }
+
+// Less runs the less operation.
 func (h *geoRadiusHeap) Less(i, j int) bool { return h.items[i].dist > h.items[j].dist }
-func (h *geoRadiusHeap) Swap(i, j int)      { h.items[i], h.items[j] = h.items[j], h.items[i] }
-func (h *geoRadiusHeap) Push(x any)         { h.items = append(h.items, x.(geoRadiusHit)) }
+
+// Swap runs the swap operation.
+func (h *geoRadiusHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
+
+// Push runs the push operation.
+func (h *geoRadiusHeap) Push(x any) { h.items = append(h.items, x.(geoRadiusHit)) }
+
+// Pop runs the pop operation.
 func (h *geoRadiusHeap) Pop() any {
 	old := h.items
 	n := len(old)

@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
+// FuzzMetalPagerEviction runs the fuzz metal pager eviction operation.
 func FuzzMetalPagerEviction(f *testing.F) {
 	// Seed the fuzzer with some basic vector sizes
 	f.Add(100)

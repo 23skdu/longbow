@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_Metrics runs the test arrow hnsw_metrics operation.
 func TestArrowHNSW_Metrics(t *testing.T) {
 	mem := memory.NewGoAllocator()
 

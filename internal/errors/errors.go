@@ -5,16 +5,22 @@ import (
 	"runtime"
 )
 
-// Error types for different categories of failures
+// ErrorType types for different categories of failures
 type ErrorType string
 
 const (
-	ErrorTypeValidation    ErrorType = "validation"
-	ErrorTypeStorage       ErrorType = "storage"
-	ErrorTypeNetwork       ErrorType = "network"
-	ErrorTypeComputation   ErrorType = "computation"
+	// ErrorTypeValidation is a error type validation constant.
+	ErrorTypeValidation ErrorType = "validation"
+	// ErrorTypeStorage is a error type storage constant.
+	ErrorTypeStorage ErrorType = "storage"
+	// ErrorTypeNetwork is a error type network constant.
+	ErrorTypeNetwork ErrorType = "network"
+	// ErrorTypeComputation is a error type computation constant.
+	ErrorTypeComputation ErrorType = "computation"
+	// ErrorTypeConfiguration is a error type configuration constant.
 	ErrorTypeConfiguration ErrorType = "configuration"
-	ErrorTypeTimeout       ErrorType = "timeout"
+	// ErrorTypeTimeout is a error type timeout constant.
+	ErrorTypeTimeout ErrorType = "timeout"
 )
 
 // StructuredError provides rich error context

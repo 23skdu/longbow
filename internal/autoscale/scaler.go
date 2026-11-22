@@ -12,11 +12,15 @@ import (
 type ClusterHealth int
 
 const (
-	HealthHealthy  ClusterHealth = iota // Normal operations
-	HealthDegraded                      // High load, throttling ingestion
-	HealthCritical                      // Near capacity, rejecting all load
+	// HealthHealthy is a health healthy constant.
+	HealthHealthy ClusterHealth = iota // Normal operations
+	// HealthDegraded is a health degraded constant.
+	HealthDegraded // High load, throttling ingestion
+	// HealthCritical is a health critical constant.
+	HealthCritical // Near capacity, rejecting all load
 )
 
+// String runs the string operation.
 func (ch ClusterHealth) String() string {
 	switch ch {
 	case HealthHealthy:

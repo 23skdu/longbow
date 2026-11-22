@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// TestArrowHNSW_AddBatchBulk_EnsureChunkRace runs the test arrow hnsw_add batch bulk_ensure chunk race operation.
 func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping heavy concurrency HNSW bulk insert test in short mode")

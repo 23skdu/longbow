@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHTTPHandlersAndEdgeClientRoundtrip runs the test http handlers and edge client roundtrip operation.
 func TestHTTPHandlersAndEdgeClientRoundtrip(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -90,6 +91,7 @@ func TestHTTPHandlersAndEdgeClientRoundtrip(t *testing.T) {
 	require.Equal(t, "queries", dec.Resource)
 }
 
+// TestDoActionFeatureDispatchEndToEnd runs the test do action feature dispatch end to end operation.
 func TestDoActionFeatureDispatchEndToEnd(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)

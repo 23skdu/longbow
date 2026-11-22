@@ -178,6 +178,7 @@ func TestBM25Arena_Memory(t *testing.T) {
 	assert.Greater(t, idx.DocumentCount(), uint32(0))
 }
 
+// BenchmarkBM25Arena_Score runs the benchmark bm25 arena_score operation.
 func BenchmarkBM25Arena_Score(b *testing.B) {
 	arena := memory.NewSlabArena(10 * 1024 * 1024)
 	idx := NewBM25ArenaIndex(arena, 10000)

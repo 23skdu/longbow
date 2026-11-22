@@ -24,6 +24,7 @@ const (
 	MetricL2Squared
 )
 
+// String runs the string operation.
 func (m MetricType) String() string {
 	switch m {
 	case MetricEuclidean:
@@ -82,6 +83,7 @@ const (
 	DataTypeInt2
 )
 
+// String runs the string operation.
 func (d DataType) String() string {
 	switch d {
 	case DataTypeInt8:

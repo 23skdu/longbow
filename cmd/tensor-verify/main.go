@@ -13,6 +13,7 @@ import (
 	"github.com/23skdu/longbow/internal/tensor"
 )
 
+// VerificationResult represents a verification result value.
 type VerificationResult struct {
 	Name     string        `json:"name"`
 	Category string        `json:"category"`
@@ -22,6 +23,7 @@ type VerificationResult struct {
 	Error    string        `json:"error,omitempty"`
 }
 
+// SummaryReport represents a summary report value.
 type SummaryReport struct {
 	Total    int                  `json:"total"`
 	Passed   int                  `json:"passed"`

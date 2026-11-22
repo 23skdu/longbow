@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// Profiler represents a profiler value.
 type Profiler struct {
 	logger *zerolog.Logger
 
@@ -27,6 +28,7 @@ type Profiler struct {
 	wg     sync.WaitGroup
 }
 
+// ProfilerConfig represents a profiler config value.
 type ProfilerConfig struct {
 	ProfileDir      string
 	CPUProfile      bool
@@ -36,6 +38,7 @@ type ProfilerConfig struct {
 	ProfileInterval time.Duration
 }
 
+// NewProfiler constructs a new Profiler.
 func NewProfiler(config ProfilerConfig, logger *zerolog.Logger) *Profiler {
 	if config.ProfileInterval == 0 {
 		config.ProfileInterval = 30 * time.Second
@@ -56,6 +59,7 @@ func NewProfiler(config ProfilerConfig, logger *zerolog.Logger) *Profiler {
 	}
 }
 
+// Start runs the start operation.
 func (p *Profiler) Start(ctx context.Context) error {
 	if !p.enabled.CompareAndSwap(false, true) {
 		return fmt.Errorf("profiler already running")
@@ -68,6 +72,7 @@ func (p *Profiler) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop runs the stop operation.
 func (p *Profiler) Stop() error {
 	if !p.enabled.CompareAndSwap(true, false) {
 		return fmt.Errorf("profiler not running")
@@ -144,6 +149,7 @@ func (p *Profiler) writeMemProfile(filename string) error {
 	return nil
 }
 
+// WriteProfile runs the write profile operation.
 func (p *Profiler) WriteProfile(profileType string, w io.Writer) error {
 	switch profileType {
 	case "cpu":
@@ -166,12 +172,14 @@ func (p *Profiler) WriteProfile(profileType string, w io.Writer) error {
 	return nil
 }
 
+// GPURecorder represents a gpu recorder value.
 type GPURecorder struct {
 	mu         sync.RWMutex
 	records    []GPURecord
 	maxRecords int
 }
 
+// GPURecord represents a gpu record value.
 type GPURecord struct {
 	Timestamp    time.Time
 	KernelName   string
@@ -180,6 +188,7 @@ type GPURecord struct {
 	Utilization  float32
 }
 
+// NewGPURecorder constructs a new GPURecorder.
 func NewGPURecorder(maxRecords int) *GPURecorder {
 	return &GPURecorder{
 		maxRecords: maxRecords,
@@ -187,6 +196,7 @@ func NewGPURecorder(maxRecords int) *GPURecorder {
 	}
 }
 
+// Record runs the record operation.
 func (g *GPURecorder) Record(kernelName string, durationUs int64, memUsedMB int64, util float32) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -204,6 +214,7 @@ func (g *GPURecorder) Record(kernelName string, durationUs int64, memUsedMB int6
 	}
 }
 
+// GetRecords returns the records.
 func (g *GPURecorder) GetRecords() []GPURecord {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -213,12 +224,15 @@ func (g *GPURecorder) GetRecords() []GPURecord {
 	return records
 }
 
+// FlameGraphGenerator represents a flame graph generator value.
 type FlameGraphGenerator struct{}
 
+// NewFlameGraphGenerator constructs a new FlameGraphGenerator.
 func NewFlameGraphGenerator() *FlameGraphGenerator {
 	return &FlameGraphGenerator{}
 }
 
+// GenerateFlamegraph runs the generate flamegraph operation.
 func (f *FlameGraphGenerator) GenerateFlamegraph(profileData []byte) ([]byte, error) {
 	tmpInput, err := os.CreateTemp("", "profile-input-*.prof")
 	if err != nil {

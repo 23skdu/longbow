@@ -11,11 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestIsAvailable runs the test is available operation.
 func TestIsAvailable(t *testing.T) {
 	// Just check that function doesn't panic
 	_ = IsAvailable()
 }
 
+// TestEngineBehavior runs the test engine behavior operation.
 func TestEngineBehavior(t *testing.T) {
 	engine, err := NewEngine()
 	if !IsAvailable() {
@@ -54,6 +56,7 @@ func TestEngineBehavior(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestMetalRerankerBehavior runs the test metal reranker behavior operation.
 func TestMetalRerankerBehavior(t *testing.T) {
 	reranker, err := NewMetalReranker("/fake/path")
 	if !IsAvailable() {
@@ -65,6 +68,7 @@ func TestMetalRerankerBehavior(t *testing.T) {
 	assert.NotNil(t, reranker)
 }
 
+// TestEngineClose runs the test engine close operation.
 func TestEngineClose(t *testing.T) {
 	engine, err := NewEngine()
 	require.NoError(t, err)

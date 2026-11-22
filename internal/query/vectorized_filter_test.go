@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestVectorizedFilter_Comprehensive runs the test vectorized filter_comprehensive operation.
 func TestVectorizedFilter_Comprehensive(t *testing.T) {
 	ctx := context.Background()
 	pool := memory.NewGoAllocator()

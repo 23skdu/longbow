@@ -394,9 +394,12 @@ func (h *HybridReranker) computeLexicalScore(qLower string, qTerms []string, r S
 type QueryRewriteMode string
 
 const (
-	RewriteSynonyms   QueryRewriteMode = "synonyms"
+	// RewriteSynonyms is a rewrite synonyms constant.
+	RewriteSynonyms QueryRewriteMode = "synonyms"
+	// RewriteMultiQuery is a rewrite multi query constant.
 	RewriteMultiQuery QueryRewriteMode = "multi_query"
-	RewriteHyDE       QueryRewriteMode = "hyde"
+	// RewriteHyDE is a rewrite hy de constant.
+	RewriteHyDE QueryRewriteMode = "hyde"
 )
 
 // QueryRewriter expands, decomposes, or HyDE-augments queries prior to retrieval/reranking.

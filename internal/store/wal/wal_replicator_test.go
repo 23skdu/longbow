@@ -12,24 +12,29 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+// MockPeerPool represents a mock peer pool value.
 type MockPeerPool struct {
 	mock.Mock
 }
 
+// DoAction runs the do action operation.
 func (m *MockPeerPool) DoAction(ctx context.Context, host string, action *flight.Action) error {
 	args := m.Called(ctx, host, action)
 	return args.Error(0)
 }
 
+// MockMesh represents a mock mesh value.
 type MockMesh struct {
 	mock.Mock
 }
 
+// GetMembers returns the members.
 func (m *MockMesh) GetMembers() []mesh.Member {
 	args := m.Called()
 	return args.Get(0).([]mesh.Member)
 }
 
+// TestFlightWALReplicator_Replicate_QuorumSuccess runs the test flight wal replicator_replicate_quorum success operation.
 func TestFlightWALReplicator_Replicate_QuorumSuccess(t *testing.T) {
 	pool := new(MockPeerPool)
 	msh := new(MockMesh)
@@ -59,6 +64,7 @@ func TestFlightWALReplicator_Replicate_QuorumSuccess(t *testing.T) {
 	pool.AssertExpectations(t)
 }
 
+// TestFlightWALReplicator_Replicate_QuorumFailure runs the test flight wal replicator_replicate_quorum failure operation.
 func TestFlightWALReplicator_Replicate_QuorumFailure(t *testing.T) {
 	pool := new(MockPeerPool)
 	msh := new(MockMesh)

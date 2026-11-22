@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// TestCircuitBreakerInterceptor runs the test circuit breaker interceptor operation.
 func TestCircuitBreakerInterceptor(t *testing.T) {
 	interceptor := CircuitBreakerInterceptor()
 
@@ -46,6 +47,7 @@ func TestCircuitBreakerInterceptor(t *testing.T) {
 	assert.Equal(t, "service circuit breaker is open", s.Message())
 }
 
+// TestCircuitBreakerInterceptor_Unprotected runs the test circuit breaker interceptor_unprotected operation.
 func TestCircuitBreakerInterceptor_Unprotected(t *testing.T) {
 	interceptor := CircuitBreakerInterceptor()
 

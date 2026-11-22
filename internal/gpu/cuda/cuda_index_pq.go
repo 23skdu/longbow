@@ -19,6 +19,7 @@ import (
 	"github.com/23skdu/longbow/internal/pq"
 )
 
+// SearchPQ runs the search pq operation.
 func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
 	if err := idx.acquireGPUOp(); err != nil {
 		return nil, nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
@@ -147,6 +148,7 @@ func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []
 	return resultIDs, resultDistances, nil
 }
 
+// TrainPQ runs the train pq operation.
 func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
 	if err := idx.acquireGPUOp(); err != nil {
 		return fmt.Errorf("failed to acquire GPU op slot: %w", err)
@@ -246,6 +248,7 @@ func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
 	return nil
 }
 
+// EncodePQ runs the encode pq operation.
 func (idx *CUDAIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -273,6 +276,7 @@ func (idx *CUDAIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	return codes, nil
 }
 
+// PQEncode runs the pq encode operation.
 func (idx *CUDAIndex) PQEncode(vectors []float32, codebooks []float32, m, subDim int) ([]byte, error) {
 	idx.mu.RLock()
 	closed := idx.closed

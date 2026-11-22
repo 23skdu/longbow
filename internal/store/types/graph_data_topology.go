@@ -11,6 +11,7 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 )
 
+// SetNeighbors sets the neighbors.
 func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 	return g.SetNeighborsAtLayer(0, id, neighbors)
 }
@@ -20,6 +21,7 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 // PackedNeighbors, but SetNeighborsAtLayer must also be able to write the
 // legacy Neighbors slice for export / disk-graph serialization.
 
+// SetNeighborsAtLayer sets the neighbors at layer.
 func (g *GraphData) SetNeighborsAtLayer(layer int, id uint32, neighbors []uint32) error {
 	mu := &g.ShardedMus[id%1024]
 	mu.Lock()
@@ -79,6 +81,7 @@ func (g *GraphData) SetNeighborsAtLayer(layer int, id uint32, neighbors []uint32
 	return nil
 }
 
+// GetNeighbors returns the neighbors.
 func (g *GraphData) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 	return g.GetNeighborsWithGen(layer, id, buf, math.MaxUint64)
 }

@@ -33,6 +33,7 @@ type httpStatusError struct {
 	Body   string
 }
 
+// Error runs the error operation.
 func (e *httpStatusError) Error() string {
 	return fmt.Sprintf("HTTP %d: %s", e.Status, strings.TrimSpace(e.Body))
 }
@@ -49,6 +50,7 @@ type AWSStore struct {
 
 var _ Store = (*AWSStore)(nil)
 
+// NewAWSStore constructs a new AWSStore.
 func NewAWSStore(ctx context.Context, cfg AWSConfig) (*AWSStore, error) {
 	if strings.TrimSpace(cfg.Region) == "" {
 		return nil, fmt.Errorf("secrets: aws region must not be empty")
@@ -130,6 +132,7 @@ func (s *AWSStore) do(ctx context.Context, operation string, body, out any) erro
 	return nil
 }
 
+// LoadAll runs the load all operation.
 func (s *AWSStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 	var out []StoredKey
 	next := ""
@@ -171,6 +174,7 @@ func (s *AWSStore) LoadAll(ctx context.Context) ([]StoredKey, error) {
 	return out, nil
 }
 
+// Put runs the put operation.
 func (s *AWSStore) Put(ctx context.Context, key StoredKey) error {
 	name, err := s.secretName(key.KeyID)
 	if err != nil {
@@ -195,6 +199,7 @@ func (s *AWSStore) Put(ctx context.Context, key StoredKey) error {
 	}, nil)
 }
 
+// Delete runs the delete operation.
 func (s *AWSStore) Delete(ctx context.Context, keyID string) error {
 	name, err := s.secretName(keyID)
 	if err != nil {

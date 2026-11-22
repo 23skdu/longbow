@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFloat16_RoundTrip runs the test float16_round trip operation.
 func TestFloat16_RoundTrip(t *testing.T) {
 	// Goal: Verify we can store a float32 vector as float16 and retrieve it
 	// with acceptable precision loss.
@@ -89,6 +90,7 @@ func TestFloat16_RoundTrip(t *testing.T) {
 	t.Logf("Float16 Round Trip Successful for %d dims", dims)
 }
 
+// TestArrowHNSW_Float16_Integration runs the test arrow hnsw_float16_integration operation.
 func TestArrowHNSW_Float16_Integration(t *testing.T) {
 	// Goal: Verify end-to-end usage via ArrowHNSW
 

@@ -107,6 +107,8 @@ type IOVec struct {
 
 // Size constants
 const (
+	// SQESize is a sqe size constant.
 	SQESize = uint32(unsafe.Sizeof(SQE{}))
+	// CQESize is a cqe size constant.
 	CQESize = uint32(unsafe.Sizeof(CQE{}))
 )

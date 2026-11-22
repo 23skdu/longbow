@@ -5,6 +5,7 @@ import (
 	"sync"
 )
 
+// DoubleBuffer represents a double buffer value.
 type DoubleBuffer struct {
 	mu           sync.Mutex
 	bufA         []byte

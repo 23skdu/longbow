@@ -68,6 +68,7 @@ func (sca *SizeClassArena[T]) getArenaForSize(size int) *TypedArena[T] {
 	return sca.arenas["huge"]
 }
 
+// AllocSlice runs the alloc slice operation.
 func (sca *SizeClassArena[T]) AllocSlice(count int) (SliceRef, string, error) {
 	if count <= 0 {
 		return SliceRef{}, "", fmt.Errorf("count must be positive")
@@ -89,6 +90,7 @@ func (sca *SizeClassArena[T]) AllocSlice(count int) (SliceRef, string, error) {
 	return ref, className, err
 }
 
+// AllocSliceDirty runs the alloc slice dirty operation.
 func (sca *SizeClassArena[T]) AllocSliceDirty(count int) (SliceRef, string, error) {
 	if count <= 0 {
 		return SliceRef{}, "", fmt.Errorf("count must be positive")
@@ -110,6 +112,7 @@ func (sca *SizeClassArena[T]) AllocSliceDirty(count int) (SliceRef, string, erro
 	return ref, className, err
 }
 
+// Get returns the .
 func (sca *SizeClassArena[T]) Get(ref SliceRef) []T {
 	sca.mu.RLock()
 	defer sca.mu.RUnlock()
@@ -123,6 +126,7 @@ func (sca *SizeClassArena[T]) Get(ref SliceRef) []T {
 	return nil
 }
 
+// Stats runs the stats operation.
 func (sca *SizeClassArena[T]) Stats() map[string]ArenaStats {
 	sca.mu.RLock()
 	defer sca.mu.RUnlock()
@@ -134,6 +138,7 @@ func (sca *SizeClassArena[T]) Stats() map[string]ArenaStats {
 	return stats
 }
 
+// Compact runs the compact operation.
 func (sca *SizeClassArena[T]) Compact(liveRefs map[string][]SliceRef) (map[string]*CompactionStats, error) {
 	sca.mu.Lock()
 	defer sca.mu.Unlock()

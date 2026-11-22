@@ -19,15 +19,18 @@ type mockVectorSearchDoActionServer struct {
 	results []*flight.Result
 }
 
+// Send runs the send operation.
 func (m *mockVectorSearchDoActionServer) Send(res *flight.Result) error {
 	m.results = append(m.results, res)
 	return nil
 }
 
+// Context runs the context operation.
 func (m *mockVectorSearchDoActionServer) Context() context.Context {
 	return context.Background()
 }
 
+// TestVectorSearchAction_Basic runs the test vector search action_basic operation.
 func TestVectorSearchAction_Basic(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -54,6 +57,7 @@ func TestVectorSearchAction_Basic(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
+// TestVectorSearchAction_EfSearchValidation runs the test vector search action_ef search validation operation.
 func TestVectorSearchAction_EfSearchValidation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping broken integration test in short mode")

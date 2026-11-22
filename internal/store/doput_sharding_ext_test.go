@@ -35,6 +35,7 @@ func wrapInBatch(arr arrow.Array) arrow.RecordBatch {
 	return array.NewRecordBatch(schema, cols, int64(arr.Len()))
 }
 
+// TestExtractVectorFromCol_Nil runs the test extract vector from col_nil operation.
 func TestExtractVectorFromCol_Nil(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -51,6 +52,7 @@ func TestExtractVectorFromCol_Nil(t *testing.T) {
 	// Let's remove this test as it tests undefined behavior on internal helper.
 }
 
+// TestExtractVectorFromCol_OutOfBounds runs the test extract vector from col_out of bounds operation.
 func TestExtractVectorFromCol_OutOfBounds(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -78,6 +80,7 @@ func TestExtractVectorFromCol_OutOfBounds(t *testing.T) {
 	}
 }
 
+// TestExtractVectorFromCol_WrongType runs the test extract vector from col_wrong type operation.
 func TestExtractVectorFromCol_WrongType(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -102,6 +105,7 @@ func TestExtractVectorFromCol_WrongType(t *testing.T) {
 	}
 }
 
+// TestExtractVectorFromCol_Success runs the test extract vector from col_success operation.
 func TestExtractVectorFromCol_Success(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -140,6 +144,7 @@ func TestExtractVectorFromCol_Success(t *testing.T) {
 // Dataset.SearchDataset Tests
 // =============================================================================
 
+// TestDatasetSearchDataset_NoIndex runs the test dataset search dataset_no index operation.
 func TestDatasetSearchDataset_NoIndex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -152,6 +157,7 @@ func TestDatasetSearchDataset_NoIndex(t *testing.T) {
 	}
 }
 
+// TestDatasetSearchDataset_WithHNSW runs the test dataset search dataset_with hnsw operation.
 func TestDatasetSearchDataset_WithHNSW(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -168,6 +174,7 @@ func TestDatasetSearchDataset_WithHNSW(t *testing.T) {
 	}
 }
 
+// TestDatasetSearchDataset_WithSharded runs the test dataset search dataset_with sharded operation.
 func TestDatasetSearchDataset_WithSharded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -186,6 +193,7 @@ func TestDatasetSearchDataset_WithSharded(t *testing.T) {
 // Dataset.AddToIndex Tests
 // =============================================================================
 
+// TestDatasetAddToIndex_NoIndex runs the test dataset add to index_no index operation.
 func TestDatasetAddToIndex_NoIndex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -202,6 +210,7 @@ func TestDatasetAddToIndex_NoIndex(t *testing.T) {
 // Dataset.MigrateToShardedIndex Tests
 // =============================================================================
 
+// TestDatasetMigrateToShardedIndex_AlreadySharded runs the test dataset migrate to sharded index_already sharded operation.
 func TestDatasetMigrateToShardedIndex_AlreadySharded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -216,6 +225,7 @@ func TestDatasetMigrateToShardedIndex_AlreadySharded(t *testing.T) {
 	}
 }
 
+// TestDatasetMigrateToShardedIndex_NoIndex runs the test dataset migrate to sharded index_no index operation.
 func TestDatasetMigrateToShardedIndex_NoIndex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -234,6 +244,7 @@ func TestDatasetMigrateToShardedIndex_NoIndex(t *testing.T) {
 // VectorStore.checkAndMigrateToSharded Tests
 // =============================================================================
 
+// TestCheckAndMigrateToSharded_Disabled runs the test check and migrate to sharded_disabled operation.
 func TestCheckAndMigrateToSharded_Disabled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -254,6 +265,7 @@ func TestCheckAndMigrateToSharded_Disabled(t *testing.T) {
 	}
 }
 
+// TestCheckAndMigrateToSharded_AlreadySharded runs the test check and migrate to sharded_already sharded operation.
 func TestCheckAndMigrateToSharded_AlreadySharded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -272,6 +284,7 @@ func TestCheckAndMigrateToSharded_AlreadySharded(t *testing.T) {
 	vs.checkAndMigrateToSharded(ds)
 }
 
+// TestCheckAndMigrateToSharded_BelowThreshold runs the test check and migrate to sharded_below threshold operation.
 func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -297,6 +310,7 @@ func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
 // HNSWIndex.SearchVectors Tests
 // =============================================================================
 
+// TestHNSWIndex_SearchVectors_Empty runs the test hnsw index_search vectors_empty operation.
 func TestHNSWIndex_SearchVectors_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -317,6 +331,7 @@ func TestHNSWIndex_SearchVectors_Empty(t *testing.T) {
 // ShardedHNSW.SearchVectors Tests
 // =============================================================================
 
+// TestShardedHNSW_SearchVectors_Empty runs the test sharded hnsw_search vectors_empty operation.
 func TestShardedHNSW_SearchVectors_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -338,6 +353,7 @@ func TestShardedHNSW_SearchVectors_Empty(t *testing.T) {
 // Dataset.GetVectorIndex Edge Cases
 // =============================================================================
 
+// TestDatasetGetVectorIndex_NilBoth runs the test dataset get vector index_nil both operation.
 func TestDatasetGetVectorIndex_NilBoth(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -362,6 +378,7 @@ func TestDatasetGetVectorIndex_ShardedPriority(t *testing.T) {
 // Benchmarks
 // =============================================================================
 
+// BenchmarkExtractVectorFromCol runs the benchmark extract vector from col operation.
 func BenchmarkExtractVectorFromCol(b *testing.B) {
 	mem := memory.NewGoAllocator()
 
@@ -390,6 +407,7 @@ func BenchmarkExtractVectorFromCol(b *testing.B) {
 	}
 }
 
+// BenchmarkDatasetSearchDataset runs the benchmark dataset search dataset operation.
 func BenchmarkDatasetSearchDataset(b *testing.B) {
 	ds := &Dataset{
 		Name:  "test",

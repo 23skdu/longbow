@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// FuzzReciprocalRankFusion runs the fuzz reciprocal rank fusion operation.
 func FuzzReciprocalRankFusion(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

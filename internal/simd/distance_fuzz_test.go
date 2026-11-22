@@ -6,6 +6,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// FuzzDistances runs the fuzz distances operation.
 func FuzzDistances(f *testing.F) {
 	f.Add([]byte{1, 2, 3, 4, 5, 6, 7, 8}, []byte{8, 7, 6, 5, 4, 3, 2, 1})
 	f.Fuzz(func(t *testing.T, a, b []byte) {

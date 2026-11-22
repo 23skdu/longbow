@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_AddBatch_Parallel_Dense_Packed runs the test arrow hnsw_add batch_parallel_dense_packed operation.
 func TestArrowHNSW_AddBatch_Parallel_Dense_Packed(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	dims := 128

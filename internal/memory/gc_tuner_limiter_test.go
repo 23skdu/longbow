@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestGCTuner_EmergencyRateLimiter runs the test gc tuner_emergency rate limiter operation.
 func TestGCTuner_EmergencyRateLimiter(t *testing.T) {
 	limit := int64(100 * 1024 * 1024)
 	logger := zerolog.Nop()
@@ -38,6 +39,7 @@ func TestGCTuner_EmergencyRateLimiter(t *testing.T) {
 		"Check immediately after second run should be blocked")
 }
 
+// TestGCTuner_RapidTune_RateLimited runs the test gc tuner_rapid tune_rate limited operation.
 func TestGCTuner_RapidTune_RateLimited(t *testing.T) {
 	limit := int64(100 * 1024 * 1024)
 	logger := zerolog.Nop()
@@ -62,6 +64,7 @@ func TestGCTuner_RapidTune_RateLimited(t *testing.T) {
 	assert.False(t, tuner.lastEmergencyGC.IsZero())
 }
 
+// FuzzGCTuner_EmergencyRateLimiter runs the fuzz gc tuner_emergency rate limiter operation.
 func FuzzGCTuner_EmergencyRateLimiter(f *testing.F) {
 	f.Add(int64(100), int64(10), int64(5))
 	f.Add(int64(1000), int64(500), int64(1000))

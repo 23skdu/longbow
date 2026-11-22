@@ -12,6 +12,7 @@ import (
 // Circuit Breaker Tests - TDD Red Phase
 // =============================================================================
 
+// TestCircuitBreaker_InitialStateClosed runs the test circuit breaker_initial state closed operation.
 func TestCircuitBreaker_InitialStateClosed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -22,6 +23,7 @@ func TestCircuitBreaker_InitialStateClosed(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_OpensAfterFailureThreshold runs the test circuit breaker_opens after failure threshold operation.
 func TestCircuitBreaker_OpensAfterFailureThreshold(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -43,6 +45,7 @@ func TestCircuitBreaker_OpensAfterFailureThreshold(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_RejectsWhenOpen runs the test circuit breaker_rejects when open operation.
 func TestCircuitBreaker_RejectsWhenOpen(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -61,6 +64,7 @@ func TestCircuitBreaker_RejectsWhenOpen(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_TransitionsToHalfOpenAfterTimeout runs the test circuit breaker_transitions to half open after timeout operation.
 func TestCircuitBreaker_TransitionsToHalfOpenAfterTimeout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -81,6 +85,7 @@ func TestCircuitBreaker_TransitionsToHalfOpenAfterTimeout(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_ClosesAfterSuccessThreshold runs the test circuit breaker_closes after success threshold operation.
 func TestCircuitBreaker_ClosesAfterSuccessThreshold(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -105,6 +110,7 @@ func TestCircuitBreaker_ClosesAfterSuccessThreshold(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_ReOpensOnFailureInHalfOpen runs the test circuit breaker_re opens on failure in half open operation.
 func TestCircuitBreaker_ReOpensOnFailureInHalfOpen(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -128,6 +134,7 @@ func TestCircuitBreaker_ReOpensOnFailureInHalfOpen(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_Execute_Success runs the test circuit breaker_execute_success operation.
 func TestCircuitBreaker_Execute_Success(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -146,6 +153,7 @@ func TestCircuitBreaker_Execute_Success(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_Execute_RejectsWhenOpen runs the test circuit breaker_execute_rejects when open operation.
 func TestCircuitBreaker_Execute_RejectsWhenOpen(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -167,6 +175,7 @@ func TestCircuitBreaker_Execute_RejectsWhenOpen(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_Metrics runs the test circuit breaker_metrics operation.
 func TestCircuitBreaker_Metrics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -192,6 +201,7 @@ func TestCircuitBreaker_Metrics(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_ConcurrentAccess runs the test circuit breaker_concurrent access operation.
 func TestCircuitBreaker_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -232,6 +242,7 @@ func TestCircuitBreaker_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+// TestCircuitBreakerRegistry_GetOrCreate runs the test circuit breaker registry_get or create operation.
 func TestCircuitBreakerRegistry_GetOrCreate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -250,6 +261,7 @@ func TestCircuitBreakerRegistry_GetOrCreate(t *testing.T) {
 	}
 }
 
+// TestCircuitBreakerRegistry_Reset runs the test circuit breaker registry_reset operation.
 func TestCircuitBreakerRegistry_Reset(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

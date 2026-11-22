@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestBitmapPool runs the test bitmap pool operation.
 func TestBitmapPool(t *testing.T) {
 	// 1. Get a bitmap
 	bm1 := GetBitmap()

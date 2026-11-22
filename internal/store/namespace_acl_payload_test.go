@@ -50,6 +50,7 @@ func requireStoredNamespacePolicy(t *testing.T, store secrets.Store, namespace s
 	require.Equal(t, want, found, "durable record for namespace %q: found=%v", namespace, found)
 }
 
+// TestRESTCreateNamespaceEphemeralPayload runs the test rest create namespace ephemeral payload operation.
 func TestRESTCreateNamespaceEphemeralPayload(t *testing.T) {
 	vs, mgr, secretStore, admin, adminRaw := newNamespacePayloadStore(t)
 
@@ -74,6 +75,7 @@ func TestRESTCreateNamespaceEphemeralPayload(t *testing.T) {
 	requireStoredNamespacePolicy(t, secretStore, "rest-ephemeral", false)
 }
 
+// TestFlightCreateNamespaceDurablePayload runs the test flight create namespace durable payload operation.
 func TestFlightCreateNamespaceDurablePayload(t *testing.T) {
 	vs, mgr, secretStore, admin, adminRaw := newNamespacePayloadStore(t)
 

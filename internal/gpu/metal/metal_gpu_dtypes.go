@@ -18,6 +18,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// SearchInt8 runs the search int8 operation.
 func (idx *MetalIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
 	if err := idx.Flush(); err != nil {
 		return nil, nil, err
@@ -34,6 +35,7 @@ func (idx *MetalIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, err
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchUint8 runs the search uint8 operation.
 func (idx *MetalIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
 	if err := idx.Flush(); err != nil {
 		return nil, nil, err
@@ -50,6 +52,7 @@ func (idx *MetalIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, e
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchInt16 runs the search int16 operation.
 func (idx *MetalIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
 	if err := idx.Flush(); err != nil {
 		return nil, nil, err
@@ -66,6 +69,7 @@ func (idx *MetalIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, e
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchUint16 runs the search uint16 operation.
 func (idx *MetalIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
 	if err := idx.Flush(); err != nil {
 		return nil, nil, err
@@ -84,6 +88,7 @@ func (idx *MetalIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32,
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchFloat16 runs the search float16 operation.
 func (idx *MetalIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	if err := idx.Flush(); err != nil {
 		return nil, nil, err
@@ -104,6 +109,7 @@ func (idx *MetalIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchComplex64 runs the search complex64 operation.
 func (idx *MetalIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
 	if err := idx.Flush(); err != nil {
 		return nil, nil, err
@@ -124,6 +130,7 @@ func (idx *MetalIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float
 	return idx.searchFloat32(f32Vec, k)
 }
 
+// SearchComplex128 runs the search complex128 operation.
 func (idx *MetalIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
 	if err := idx.Flush(); err != nil {
 		return nil, nil, err

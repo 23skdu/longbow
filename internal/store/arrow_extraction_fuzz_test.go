@@ -11,6 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// FuzzArrowExtraction runs the fuzz arrow extraction operation.
 func FuzzArrowExtraction(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

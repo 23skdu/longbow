@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// TestMemoryLeak_PprofHeapAnalysis runs the test memory leak_pprof heap analysis operation.
 func TestMemoryLeak_PprofHeapAnalysis(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping pprof integration test in short mode")
@@ -72,6 +73,7 @@ func TestMemoryLeak_PprofHeapAnalysis(t *testing.T) {
 	}
 }
 
+// TestMemoryLeak_PprofGoroutineAnalysis runs the test memory leak_pprof goroutine analysis operation.
 func TestMemoryLeak_PprofGoroutineAnalysis(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping pprof goroutine test in short mode")
@@ -127,6 +129,7 @@ func TestMemoryLeak_PprofGoroutineAnalysis(t *testing.T) {
 	}
 }
 
+// TestMemoryLeak_CPURecentScenario runs the test memory leak_cpu recent scenario operation.
 func TestMemoryLeak_CPURecentScenario(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping CPU recent scenario test in short mode")

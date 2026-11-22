@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestShardedHNSW_Compaction runs the test sharded hnsw_compaction operation.
 func TestShardedHNSW_Compaction(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -99,6 +100,7 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 	assert.Contains(t, foundIDs, VectorID(0)) // Should find itself
 }
 
+// TestShardedHNSW_Vacuum runs the test sharded hnsw_vacuum operation.
 func TestShardedHNSW_Vacuum(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -157,6 +159,7 @@ func TestShardedHNSW_Vacuum(t *testing.T) {
 	// Just ensuring it runs without panic and returns >= 0 is a good baseline.
 }
 
+// TestShardedHNSW_DynamicGrowth runs the test sharded hnsw_dynamic growth operation.
 func TestShardedHNSW_DynamicGrowth(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

@@ -18,6 +18,7 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 )
 
+// SearchTurboQuant runs the search turbo quant operation.
 func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -78,6 +79,7 @@ func packedSize(dims int, bitsPerAngle int) int {
 	return (size + 31) &^ 31 // Pad to 32 bytes for GPU warp alignment (matches TurboQuant PackedSize)
 }
 
+// AddTurboQuant runs the add turbo quant operation.
 func (idx *MetalIndexOptimized) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -109,6 +111,7 @@ func (idx *MetalIndexOptimized) AddTurboQuant(ids []int64, tqData []byte, bitsPe
 	return nil
 }
 
+// UpdateGraph runs the update graph operation.
 func (idx *MetalIndexOptimized) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -151,6 +154,7 @@ func (idx *MetalIndexOptimized) UpdateGraph(offsets []uint32, neighbors []uint32
 	return nil
 }
 
+// GraphExpand runs the graph expand operation.
 func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -204,10 +208,12 @@ func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha flo
 	return outIDs, outScores, nil
 }
 
+// SearchBatchDistances runs the search batch distances operation.
 func (idx *MetalIndexOptimized) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
 	return nil, fmt.Errorf("SearchBatchDistances not implemented for optimized MetalIndex")
 }
 
+// HaversineSearch runs the haversine search operation.
 func (idx *MetalIndexOptimized) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -258,6 +264,7 @@ func (idx *MetalIndexOptimized) HaversineSearch(centerLat, centerLon float32, po
 	return results, nil
 }
 
+// NormBatch runs the norm batch operation.
 func (idx *MetalIndexOptimized) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -298,6 +305,7 @@ func (idx *MetalIndexOptimized) NormBatch(vectors []float32, dims int) ([]float3
 	return results, nil
 }
 
+// AssignToClusters runs the assign to clusters operation.
 func (idx *MetalIndexOptimized) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
 	// CPU fallback for cluster assignment
 	numVecs := len(vectors) / idx.dim
@@ -326,6 +334,7 @@ func (idx *MetalIndexOptimized) AssignToClusters(vectors []float32, centroids []
 	return assignments, nil
 }
 
+// SearchGreedy runs the search greedy operation.
 func (idx *MetalIndexOptimized) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -343,6 +352,7 @@ func (idx *MetalIndexOptimized) SearchGreedy(query []float32, entryPoint uint32,
 	return ep, ed, nil
 }
 
+// SearchGreedyTQ runs the search greedy tq operation.
 func (idx *MetalIndexOptimized) SearchGreedyTQ(query []float32, entryPoint uint32, entryDist float32, bitsPerAngle int) (uint32, float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -374,6 +384,7 @@ func (idx *MetalIndexOptimized) SearchGreedyTQ(query []float32, entryPoint uint3
 	return ep, ed, nil
 }
 
+// PruneNeighbors runs the prune neighbors operation.
 func (idx *MetalIndexOptimized) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

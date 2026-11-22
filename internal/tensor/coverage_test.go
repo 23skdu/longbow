@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestDtypeString runs the test dtype string operation.
 func TestDtypeString(t *testing.T) {
 	tests := []struct {
 		d    Dtype
@@ -22,6 +23,7 @@ func TestDtypeString(t *testing.T) {
 	}
 }
 
+// TestFinite runs the test finite operation.
 func TestFinite(t *testing.T) {
 	if !Finite32(1.0) {
 		t.Error("Finite32(1.0) should be true")
@@ -43,6 +45,7 @@ func TestFinite(t *testing.T) {
 	}
 }
 
+// TestMin runs the test min operation.
 func TestMin(t *testing.T) {
 	if min(1, 2) != 1 {
 		t.Error("min(1,2) should be 1")
@@ -58,6 +61,7 @@ func TestMin(t *testing.T) {
 	}
 }
 
+// TestCheckShape runs the test check shape operation.
 func TestCheckShape(t *testing.T) {
 	if err := checkShape("test", Shape{2, 3}, 2, 3); err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -70,6 +74,7 @@ func TestCheckShape(t *testing.T) {
 	}
 }
 
+// TestTensorStrides runs the test tensor strides operation.
 func TestTensorStrides(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 3})
 	s := a.Strides()
@@ -81,6 +86,7 @@ func TestTensorStrides(t *testing.T) {
 	assertEq(t, s2[0], 8)
 }
 
+// TestTensorIsContiguous runs the test tensor is contiguous operation.
 func TestTensorIsContiguous(t *testing.T) {
 	a := New(DtypeFloat32, Shape{3, 4})
 	if !a.IsContiguous() {
@@ -88,6 +94,7 @@ func TestTensorIsContiguous(t *testing.T) {
 	}
 }
 
+// TestTensorSlice runs the test tensor slice operation.
 func TestTensorSlice(t *testing.T) {
 	a := New(DtypeFloat32, Shape{3, 4})
 	for i := range a.Float32s() {
@@ -109,6 +116,7 @@ func TestTensorSlice(t *testing.T) {
 	assertEq32(t, cell.Float32s()[0], 11, 1e-6)
 }
 
+// TestFloat64s runs the test float64s operation.
 func TestFloat64s(t *testing.T) {
 	a := New(DtypeFloat64, Shape{3})
 	a.Float64s()[0] = 1.5
@@ -125,6 +133,7 @@ func TestFloat64s(t *testing.T) {
 	assertPanic(t, func() { New(DtypeFloat32, Shape{2}).Float64s() })
 }
 
+// TestNewEmptyShape runs the test new empty shape operation.
 func TestNewEmptyShape(t *testing.T) {
 	a := New(DtypeFloat32, Shape{})
 	assertEq(t, a.Rank(), 1)
@@ -132,6 +141,7 @@ func TestNewEmptyShape(t *testing.T) {
 	assertEq(t, a.NumElements(), 1)
 }
 
+// TestCloneNilLabels runs the test clone nil labels operation.
 func TestCloneNilLabels(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2})
 	a.Float32s()[0] = 42
@@ -142,6 +152,7 @@ func TestCloneNilLabels(t *testing.T) {
 	assertEq32(t, b.Float32s()[0], 42, 1e-6)
 }
 
+// TestSubMulDiv runs the test sub mul div operation.
 func TestSubMulDiv(t *testing.T) {
 	a := New(DtypeFloat32, Shape{3})
 	a.Float32s()[0] = 10
@@ -162,6 +173,7 @@ func TestSubMulDiv(t *testing.T) {
 	assertEq32(t, div.Float32s()[2], 5, 1e-6)
 }
 
+// TestTanAsinAcosAtan runs the test tan asin acos atan operation.
 func TestTanAsinAcosAtan(t *testing.T) {
 	a := New(DtypeFloat32, Shape{3})
 	a.Float32s()[0] = 0
@@ -181,6 +193,7 @@ func TestTanAsinAcosAtan(t *testing.T) {
 	assertEq32(t, atan.Float32s()[0], 0, 1e-4)
 }
 
+// TestTanGo runs the test tan go operation.
 func TestTanGo(t *testing.T) {
 	v, err := tanGo(0)
 	assertNoErr(t, err)
@@ -194,6 +207,7 @@ func TestTanGo(t *testing.T) {
 	}
 }
 
+// TestAsinGo runs the test asin go operation.
 func TestAsinGo(t *testing.T) {
 	if v := asinGo(0); v != 0 {
 		t.Errorf("asinGo(0) = %v, want 0", v)
@@ -206,6 +220,7 @@ func TestAsinGo(t *testing.T) {
 	}
 }
 
+// TestAcosGo runs the test acos go operation.
 func TestAcosGo(t *testing.T) {
 	if v := acosGo(1); v != 0 {
 		t.Errorf("acosGo(1) = %v, want 0", v)
@@ -215,6 +230,7 @@ func TestAcosGo(t *testing.T) {
 	}
 }
 
+// TestAtanGo runs the test atan go operation.
 func TestAtanGo(t *testing.T) {
 	if v := atanGo(0); v != 0 {
 		t.Errorf("atanGo(0) = %v, want 0", v)
@@ -233,6 +249,7 @@ func TestAtanGo(t *testing.T) {
 	}
 }
 
+// TestReshapeFunction runs the test reshape function operation.
 func TestReshapeFunction(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 3})
 	b := Reshape(a, Shape{6})
@@ -240,6 +257,7 @@ func TestReshapeFunction(t *testing.T) {
 	assertEq(t, b.Rank(), 1)
 }
 
+// TestContractGenericNonFloat32 runs the test contract generic non float32 operation.
 func TestContractGenericNonFloat32(t *testing.T) {
 	// Float64 is supported
 	a64 := New(DtypeFloat64, Shape{2})
@@ -265,6 +283,7 @@ func TestContractGenericNonFloat32(t *testing.T) {
 	}
 }
 
+// TestOptimizeNilGraph runs the test optimize nil graph operation.
 func TestOptimizeNilGraph(t *testing.T) {
 	opt := NewOptimizer()
 	if g := opt.Optimize(nil); g != nil {
@@ -272,6 +291,7 @@ func TestOptimizeNilGraph(t *testing.T) {
 	}
 }
 
+// TestApplyDefaultRule runs the test apply default rule operation.
 func TestApplyDefaultRule(t *testing.T) {
 	opt := &Optimizer{Rules: []RewriteRule{RuleReshapeOfReshape}}
 	in := NewInput(0, DtypeFloat32, Shape{2})
@@ -281,6 +301,7 @@ func TestApplyDefaultRule(t *testing.T) {
 	}
 }
 
+// TestNodeKeyAllTypes runs the test node key all types operation.
 func TestNodeKeyAllTypes(t *testing.T) {
 	tests := []struct {
 		node *IRNode
@@ -301,6 +322,7 @@ func TestNodeKeyAllTypes(t *testing.T) {
 	}
 }
 
+// TestNodeKeyUnknown runs the test node key unknown operation.
 func TestNodeKeyUnknown(t *testing.T) {
 	n := &IRNode{Kind: OpKind(255)}
 	if k := nodeKey(n); k != "unknown" {
@@ -308,6 +330,7 @@ func TestNodeKeyUnknown(t *testing.T) {
 	}
 }
 
+// TestCopyNode runs the test copy node operation.
 func TestCopyNode(t *testing.T) {
 	if n := copyNode(nil); n != nil {
 		t.Error("copyNode(nil) should be nil")
@@ -353,6 +376,7 @@ func TestCopyNode(t *testing.T) {
 	}
 }
 
+// TestRewriteMulByZeroNonMul runs the test rewrite mul by zero non mul operation.
 func TestRewriteMulByZeroNonMul(t *testing.T) {
 	in := NewInput(0, DtypeFloat32, Shape{2})
 	ew := NewElementwise("add", in, in)
@@ -361,6 +385,7 @@ func TestRewriteMulByZeroNonMul(t *testing.T) {
 	}
 }
 
+// TestRewriteAddZeroNonAdd runs the test rewrite add zero non add operation.
 func TestRewriteAddZeroNonAdd(t *testing.T) {
 	in := NewInput(0, DtypeFloat32, Shape{2})
 	if r := rewriteAddZero(in); r != nil {
@@ -368,6 +393,7 @@ func TestRewriteAddZeroNonAdd(t *testing.T) {
 	}
 }
 
+// TestIsZeroTensorEdgeCases runs the test is zero tensor edge cases operation.
 func TestIsZeroTensorEdgeCases(t *testing.T) {
 	if isZeroTensor(NewInput(0, DtypeFloat32, Shape{2})) {
 		t.Error("input is not a zero tensor")
@@ -394,6 +420,7 @@ func TestIsZeroTensorEdgeCases(t *testing.T) {
 	}
 }
 
+// TestComposePermMismatched runs the test compose perm mismatched operation.
 func TestComposePermMismatched(t *testing.T) {
 	p := composePerm([]int{0, 1}, []int{0})
 	assertEq(t, len(p), 2)
@@ -402,6 +429,7 @@ func TestComposePermMismatched(t *testing.T) {
 	}
 }
 
+// TestElementwiseUnaryNonFloat32 runs the test elementwise unary non float32 operation.
 func TestElementwiseUnaryNonFloat32(t *testing.T) {
 	a := New(DtypeInt8, Shape{2})
 	_, err := Sin(a)
@@ -410,6 +438,7 @@ func TestElementwiseUnaryNonFloat32(t *testing.T) {
 	}
 }
 
+// TestElementwiseBinaryNonFloat32 runs the test elementwise binary non float32 operation.
 func TestElementwiseBinaryNonFloat32(t *testing.T) {
 	a := New(DtypeInt8, Shape{2})
 	b := New(DtypeInt8, Shape{2})
@@ -419,6 +448,7 @@ func TestElementwiseBinaryNonFloat32(t *testing.T) {
 	}
 }
 
+// TestTransposeNonFloat32 runs the test transpose non float32 operation.
 func TestTransposeNonFloat32(t *testing.T) {
 	a := New(DtypeFloat64, Shape{2, 2})
 	_, err := Transpose(a, []int{1, 0})
@@ -427,6 +457,7 @@ func TestTransposeNonFloat32(t *testing.T) {
 	}
 }
 
+// TestReduceSumNonFloat32 runs the test reduce sum non float32 operation.
 func TestReduceSumNonFloat32(t *testing.T) {
 	// Float64 is supported
 	a64 := New(DtypeFloat64, Shape{2})
@@ -446,6 +477,7 @@ func TestReduceSumNonFloat32(t *testing.T) {
 	}
 }
 
+// TestBroadcastShapeNonBroadcastable runs the test broadcast shape non broadcastable operation.
 func TestBroadcastShapeNonBroadcastable(t *testing.T) {
 	_, err := broadcastShapes(Shape{2, 3}, Shape{4, 5})
 	if err == nil {
@@ -453,6 +485,7 @@ func TestBroadcastShapeNonBroadcastable(t *testing.T) {
 	}
 }
 
+// TestTransposePermLengthError runs the test transpose perm length error operation.
 func TestTransposePermLengthError(t *testing.T) {
 	a := New(DtypeFloat32, Shape{2, 3})
 	_, err := Transpose(a, []int{0})
@@ -461,6 +494,7 @@ func TestTransposePermLengthError(t *testing.T) {
 	}
 }
 
+// TestMatMulRankError runs the test mat mul rank error operation.
 func TestMatMulRankError(t *testing.T) {
 	a := New(DtypeFloat32, Shape{3})
 	b := New(DtypeFloat32, Shape{3, 2})
@@ -470,12 +504,14 @@ func TestMatMulRankError(t *testing.T) {
 	}
 }
 
+// TestSetLabelsMismatchPanic runs the test set labels mismatch panic operation.
 func TestSetLabelsMismatchPanic(t *testing.T) {
 	assertPanic(t, func() {
 		New(DtypeFloat32, Shape{2, 3}).SetLabels([]string{"x"})
 	})
 }
 
+// TestNewElementwiseMultiArg runs the test new elementwise multi arg operation.
 func TestNewElementwiseMultiArg(t *testing.T) {
 	a := NewInput(0, DtypeFloat32, Shape{4})
 	b := NewInput(1, DtypeFloat64, Shape{4})
@@ -486,6 +522,7 @@ func TestNewElementwiseMultiArg(t *testing.T) {
 	}
 }
 
+// TestInitMathDispatch runs the test init math dispatch operation.
 func TestInitMathDispatch(t *testing.T) {
 	InitMathDispatch(false)
 	if mathImpl != MathGo {

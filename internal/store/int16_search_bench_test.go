@@ -47,6 +47,7 @@ func generateRandomFloat32Vectors(count, dim int) [][]float32 {
 	return vecs
 }
 
+// BenchmarkSearch_Int16 runs the benchmark search_int16 operation.
 func BenchmarkSearch_Int16(b *testing.B) {
 	for _, numVectors := range []int{1000, 5000, 10000} {
 		for _, dim := range []int{64, 128, 384} {
@@ -80,6 +81,7 @@ func BenchmarkSearch_Int16(b *testing.B) {
 	}
 }
 
+// BenchmarkSearch_Int64 runs the benchmark search_int64 operation.
 func BenchmarkSearch_Int64(b *testing.B) {
 	for _, numVectors := range []int{1000, 5000, 10000} {
 		for _, dim := range []int{64, 128, 384} {
@@ -113,6 +115,7 @@ func BenchmarkSearch_Int64(b *testing.B) {
 	}
 }
 
+// BenchmarkSearch_Float32 runs the benchmark search_float32 operation.
 func BenchmarkSearch_Float32(b *testing.B) {
 	for _, numVectors := range []int{1000, 5000, 10000} {
 		for _, dim := range []int{64, 128, 384} {
@@ -146,6 +149,7 @@ func BenchmarkSearch_Float32(b *testing.B) {
 	}
 }
 
+// BenchmarkSearch_Uint16 runs the benchmark search_uint16 operation.
 func BenchmarkSearch_Uint16(b *testing.B) {
 	for _, numVectors := range []int{1000, 5000, 10000} {
 		for _, dim := range []int{64, 128, 384} {
@@ -186,6 +190,7 @@ func BenchmarkSearch_Uint16(b *testing.B) {
 	}
 }
 
+// BenchmarkSearch_Int16VsInt64 runs the benchmark search_int16 vs int64 operation.
 func BenchmarkSearch_Int16VsInt64(b *testing.B) {
 	numVectors := 100
 	dim := 128

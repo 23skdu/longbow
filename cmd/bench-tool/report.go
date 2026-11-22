@@ -18,6 +18,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 )
 
+// BenchmarkResult represents a benchmark result value.
 type BenchmarkResult struct {
 	Name             string    `json:"name"`
 	DurationSeconds  float64   `json:"duration_seconds"`

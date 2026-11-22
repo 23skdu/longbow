@@ -6,6 +6,7 @@ import (
 )
 
 var (
+	// TensorOperationsTotal is a tensor operations total value.
 	TensorOperationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_tensor_operations_total",
@@ -14,6 +15,7 @@ var (
 		[]string{"op", "device", "dtype"},
 	)
 
+	// TensorOperationDurationSeconds is a tensor operation duration seconds value.
 	TensorOperationDurationSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_tensor_operation_duration_seconds",
@@ -23,6 +25,7 @@ var (
 		[]string{"op", "device"},
 	)
 
+	// TensorBytesProcessedTotal is a tensor bytes processed total value.
 	TensorBytesProcessedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_tensor_bytes_processed_total",
@@ -31,6 +34,7 @@ var (
 		[]string{"op"},
 	)
 
+	// TensorOptimizerPassesTotal is a tensor optimizer passes total value.
 	TensorOptimizerPassesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_tensor_optimizer_passes_total",
@@ -39,6 +43,7 @@ var (
 		[]string{"rule"},
 	)
 
+	// TensorOptimizerFlopsSavedTotal is a tensor optimizer flops saved total value.
 	TensorOptimizerFlopsSavedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_tensor_optimizer_flops_saved_total",

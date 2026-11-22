@@ -33,6 +33,7 @@ func newGateCounter() *gateCounter {
 	}
 }
 
+// Add runs the add operation.
 func (g *gateCounter) Add(v float64) {
 	g.once.Do(func() { close(g.entered) })
 	<-g.release
@@ -64,6 +65,7 @@ func waitForGoroutines(t *testing.T, baseline int, timeout time.Duration) {
 	}
 }
 
+// TestNewShardedCounter_Defaults runs the test new sharded counter_defaults operation.
 func TestNewShardedCounter_Defaults(t *testing.T) {
 	target := newTestCounter(t)
 	sc := NewShardedCounter(target, ShardedCounterOptions{Name: "defaults"})
@@ -78,6 +80,7 @@ func TestNewShardedCounter_Defaults(t *testing.T) {
 	assert.Equal(t, 5*time.Millisecond, cfg.FlushInterval())
 }
 
+// TestShardedCounter_ShardLayoutIsCacheLinePadded runs the test sharded counter_shard layout is cache line padded operation.
 func TestShardedCounter_ShardLayoutIsCacheLinePadded(t *testing.T) {
 	sc := NewShardedCounter(newTestCounter(t), ShardedCounterOptions{Name: "layout"})
 
@@ -92,6 +95,7 @@ func TestShardedCounter_ShardLayoutIsCacheLinePadded(t *testing.T) {
 	assert.Zero(t, sc.Shards()&(sc.Shards()-1), "shard count must be a power of two")
 }
 
+// TestShardedCounter_SingleThreadedIncrementAndFlush runs the test sharded counter_single threaded increment and flush operation.
 func TestShardedCounter_SingleThreadedIncrementAndFlush(t *testing.T) {
 	target := newTestCounter(t)
 	sc := NewShardedCounter(target, ShardedCounterOptions{Name: "single"})
@@ -124,6 +128,7 @@ func TestShardedCounter_SingleThreadedIncrementAndFlush(t *testing.T) {
 	assert.Greater(t, stats.LastFlushUnixNano, int64(0))
 }
 
+// TestShardedCounter_ConcurrentAddsAreExactlyCounted runs the test sharded counter_concurrent adds are exactly counted operation.
 func TestShardedCounter_ConcurrentAddsAreExactlyCounted(t *testing.T) {
 	const (
 		workers   = 8
@@ -165,6 +170,7 @@ func TestShardedCounter_ConcurrentAddsAreExactlyCounted(t *testing.T) {
 	assert.GreaterOrEqual(t, stats.Flushes, uint64(1))
 }
 
+// TestShardedCounter_PeriodicFlush runs the test sharded counter_periodic flush operation.
 func TestShardedCounter_PeriodicFlush(t *testing.T) {
 	target := newTestCounter(t)
 	sc := NewShardedCounter(target, ShardedCounterOptions{
@@ -184,6 +190,7 @@ func TestShardedCounter_PeriodicFlush(t *testing.T) {
 	assert.Equal(t, 10.0, counterValue(t, target))
 }
 
+// TestShardedCounter_ConcurrentAddsAcrossAllShards runs the test sharded counter_concurrent adds across all shards operation.
 func TestShardedCounter_ConcurrentAddsAcrossAllShards(t *testing.T) {
 	const (
 		workers   = 16
@@ -273,6 +280,7 @@ func TestShardedCounter_AddDuringFlushIsCountedExactlyOnce(t *testing.T) {
 	assert.Equal(t, 0.0, sc.Pending())
 }
 
+// TestShardedCounter_AddConcurrentWithRepeatedFlushes runs the test sharded counter_add concurrent with repeated flushes operation.
 func TestShardedCounter_AddConcurrentWithRepeatedFlushes(t *testing.T) {
 	const rounds = 2000
 
@@ -303,6 +311,7 @@ func TestShardedCounter_AddConcurrentWithRepeatedFlushes(t *testing.T) {
 	assert.Equal(t, float64(rounds), counterValue(t, target))
 }
 
+// TestShardedCounter_StartStopLifecycle runs the test sharded counter_start stop lifecycle operation.
 func TestShardedCounter_StartStopLifecycle(t *testing.T) {
 	t.Run("start and stop flushes pending values", func(t *testing.T) {
 		target := newTestCounter(t)
@@ -381,6 +390,7 @@ func TestShardedCounter_StartStopLifecycle(t *testing.T) {
 	})
 }
 
+// TestShardedCounter_ContextCancelStopsFlusher runs the test sharded counter_context cancel stops flusher operation.
 func TestShardedCounter_ContextCancelStopsFlusher(t *testing.T) {
 	target := newTestCounter(t)
 	sc := NewShardedCounter(target, ShardedCounterOptions{
@@ -402,6 +412,7 @@ func TestShardedCounter_ContextCancelStopsFlusher(t *testing.T) {
 	require.NoError(t, sc.Stop(context.Background()))
 }
 
+// TestShardedCounter_StopHonorsContextDeadline runs the test sharded counter_stop honors context deadline operation.
 func TestShardedCounter_StopHonorsContextDeadline(t *testing.T) {
 	gate := newGateCounter()
 	sc := NewShardedCounter(gate, ShardedCounterOptions{
@@ -430,6 +441,7 @@ func TestShardedCounter_StopHonorsContextDeadline(t *testing.T) {
 	assert.Equal(t, 0.0, sc.Pending())
 }
 
+// TestShardedCounter_StopMidFlush runs the test sharded counter_stop mid flush operation.
 func TestShardedCounter_StopMidFlush(t *testing.T) {
 	gate := newGateCounter()
 	sc := NewShardedCounter(gate, ShardedCounterOptions{
@@ -470,6 +482,7 @@ func TestShardedCounter_StopMidFlush(t *testing.T) {
 	assert.Equal(t, 7.0, counterValue(t, gate.Counter))
 }
 
+// TestShardedCounter_NoGoroutineLeakAcrossCycles runs the test sharded counter_no goroutine leak across cycles operation.
 func TestShardedCounter_NoGoroutineLeakAcrossCycles(t *testing.T) {
 	// Warm up so lazily started test/runtime goroutines are already running.
 	for i := 0; i < 3; i++ {
@@ -499,6 +512,7 @@ func TestShardedCounter_NoGoroutineLeakAcrossCycles(t *testing.T) {
 	waitForGoroutines(t, before, 5*time.Second)
 }
 
+// TestShardedCounter_EdgeCases runs the test sharded counter_edge cases operation.
 func TestShardedCounter_EdgeCases(t *testing.T) {
 	t.Run("zero adds are free and publish nothing", func(t *testing.T) {
 		target := newTestCounter(t)
@@ -558,6 +572,7 @@ func TestShardedCounter_EdgeCases(t *testing.T) {
 	})
 }
 
+// TestShardedCounter_LargeValuesStayExact runs the test sharded counter_large values stay exact operation.
 func TestShardedCounter_LargeValuesStayExact(t *testing.T) {
 	target := newTestCounter(t)
 	sc := NewShardedCounter(target, ShardedCounterOptions{Name: "large"})
@@ -581,6 +596,7 @@ func TestShardedCounter_LargeValuesStayExact(t *testing.T) {
 	assert.Equal(t, expected, counterValue(t, target))
 }
 
+// TestShardedCounter_FractionalAddsUseTheFLOATAccumulator runs the test sharded counter_fractional adds use the float accumulator operation.
 func TestShardedCounter_FractionalAddsUseTheFLOATAccumulator(t *testing.T) {
 	target := newTestCounter(t)
 	sc := NewShardedCounter(target, ShardedCounterOptions{Name: "float"})
@@ -597,6 +613,7 @@ func TestShardedCounter_FractionalAddsUseTheFLOATAccumulator(t *testing.T) {
 	assert.Equal(t, 0.0, math.Float64frombits(sc.shards[0].intAcc.Load()))
 }
 
+// TestNewRegisteredShardedCounter_DoesNotDoubleRegister runs the test new registered sharded counter_does not double register operation.
 func TestNewRegisteredShardedCounter_DoesNotDoubleRegister(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	counterOpts := prometheus.CounterOpts{
@@ -630,11 +647,13 @@ func TestNewRegisteredShardedCounter_DoesNotDoubleRegister(t *testing.T) {
 	assert.Equal(t, counterOpts.Name, families[0].GetName())
 }
 
+// TestNewRegisteredShardedCounter_NilRegisterer runs the test new registered sharded counter_nil registerer operation.
 func TestNewRegisteredShardedCounter_NilRegisterer(t *testing.T) {
 	_, err := NewRegisteredShardedCounter(nil, prometheus.CounterOpts{Name: "x_total", Help: "x"}, ShardedCounterOptions{})
 	require.Error(t, err)
 }
 
+// TestShardedCounterVec_LabelResolution runs the test sharded counter vec_label resolution operation.
 func TestShardedCounterVec_LabelResolution(t *testing.T) {
 	vec := prometheus.NewCounterVec(
 		prometheus.CounterOpts{Name: "longbow_test_sharded_vec_total", Help: "vec test"},
@@ -688,6 +707,7 @@ func TestShardedCounterVec_LabelResolution(t *testing.T) {
 	assert.Equal(t, 0.0, scv.Flush(), "nothing is left pending")
 }
 
+// TestShardedCounterVec_ConcurrentForAndFlush runs the test sharded counter vec_concurrent for and flush operation.
 func TestShardedCounterVec_ConcurrentForAndFlush(t *testing.T) {
 	vec := prometheus.NewCounterVec(
 		prometheus.CounterOpts{Name: "longbow_test_sharded_vec_concurrent_total", Help: "vec test"},
@@ -725,6 +745,7 @@ func TestShardedCounterVec_ConcurrentForAndFlush(t *testing.T) {
 	}
 }
 
+// TestShardedCounterVec_NilResolution runs the test sharded counter vec_nil resolution operation.
 func TestShardedCounterVec_NilResolution(t *testing.T) {
 	scv := NewShardedCounterVec(
 		prometheus.NewCounterVec(prometheus.CounterOpts{Name: "longbow_test_sharded_vec_nil_total", Help: "x"}, []string{"k"}),
@@ -735,6 +756,7 @@ func TestShardedCounterVec_NilResolution(t *testing.T) {
 	require.NoError(t, scv.Stop(context.Background()))
 }
 
+// TestShardedCounterVec_InvalidConstruction runs the test sharded counter vec_invalid construction operation.
 func TestShardedCounterVec_InvalidConstruction(t *testing.T) {
 	assert.PanicsWithError(t, ErrShardedCounterNilTarget.Error(), func() {
 		NewShardedCounterVec(nil, func([]string) prometheus.Counter { return nil }, ShardedCounterOptions{})
@@ -748,6 +770,7 @@ func TestShardedCounterVec_InvalidConstruction(t *testing.T) {
 	})
 }
 
+// TestShardedCounter_ShardsAreIndependent runs the test sharded counter_shards are independent operation.
 func TestShardedCounter_ShardsAreIndependent(t *testing.T) {
 	sc := NewShardedCounter(newTestCounter(t), ShardedCounterOptions{Name: "independent", Shards: 8})
 

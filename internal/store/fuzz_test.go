@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// FuzzIngestion runs the fuzz ingestion operation.
 func FuzzIngestion(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")
@@ -68,6 +69,7 @@ func FuzzIngestion(f *testing.F) {
 	})
 }
 
+// FuzzCompaction runs the fuzz compaction operation.
 func FuzzCompaction(f *testing.F) {
 	if testing.Short() {
 		f.Skip("skipping fuzz test in short mode")

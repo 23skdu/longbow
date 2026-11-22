@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestOptimizeMulByZero runs the test optimize mul by zero operation.
 func TestOptimizeMulByZero(t *testing.T) {
 	opt := NewOptimizer()
 	zero := NewConstant(New(DtypeFloat32, Shape{2}))
@@ -15,6 +16,7 @@ func TestOptimizeMulByZero(t *testing.T) {
 	}
 }
 
+// TestOptimizeAddZero runs the test optimize add zero operation.
 func TestOptimizeAddZero(t *testing.T) {
 	opt := NewOptimizer()
 	zero := NewConstant(New(DtypeFloat32, Shape{2}))
@@ -26,6 +28,7 @@ func TestOptimizeAddZero(t *testing.T) {
 	}
 }
 
+// TestOptimizeDoubleNeg runs the test optimize double neg operation.
 func TestOptimizeDoubleNeg(t *testing.T) {
 	opt := NewOptimizer()
 	in := NewInput(0, DtypeFloat32, Shape{2})
@@ -37,6 +40,7 @@ func TestOptimizeDoubleNeg(t *testing.T) {
 	}
 }
 
+// TestOptimizeTransposeIdentity runs the test optimize transpose identity operation.
 func TestOptimizeTransposeIdentity(t *testing.T) {
 	opt := NewOptimizer()
 	in := NewInput(0, DtypeFloat32, Shape{2, 3})
@@ -48,6 +52,7 @@ func TestOptimizeTransposeIdentity(t *testing.T) {
 	}
 }
 
+// TestFindCommonSubexpressions runs the test find common subexpressions operation.
 func TestFindCommonSubexpressions(t *testing.T) {
 	in := NewInput(0, DtypeFloat32, Shape{2})
 	a := NewElementwise("sin", in)
@@ -59,6 +64,7 @@ func TestFindCommonSubexpressions(t *testing.T) {
 	}
 }
 
+// TestNoCSE runs the test no cse operation.
 func TestNoCSE(t *testing.T) {
 	in0 := NewInput(0, DtypeFloat32, Shape{2})
 	in1 := NewInput(1, DtypeFloat32, Shape{2})
@@ -78,6 +84,7 @@ func TestNoCSE(t *testing.T) {
 	}
 }
 
+// TestIsIdentityPerm runs the test is identity perm operation.
 func TestIsIdentityPerm(t *testing.T) {
 	if !isIdentityPerm([]int{0, 1, 2}) {
 		t.Error("0,1,2 should be identity")
@@ -87,6 +94,7 @@ func TestIsIdentityPerm(t *testing.T) {
 	}
 }
 
+// TestComposePerm runs the test compose perm operation.
 func TestComposePerm(t *testing.T) {
 	p := composePerm([]int{0, 1}, []int{1, 0})
 	if p[0] != 1 || p[1] != 0 {

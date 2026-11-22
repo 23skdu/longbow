@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// TestDeterministicIngestPinsWorkerPools runs the test deterministic ingest pins worker pools operation.
 func TestDeterministicIngestPinsWorkerPools(t *testing.T) {
 	saved := DeterministicIngestEnabled()
 	SetDeterministicIngest(true)
@@ -48,6 +49,7 @@ func TestDeterministicIngestPinsWorkerPools(t *testing.T) {
 	}
 }
 
+// TestWorkerPoolsAreNotPinnedOutsideDeterministicMode runs the test worker pools are not pinned outside deterministic mode operation.
 func TestWorkerPoolsAreNotPinnedOutsideDeterministicMode(t *testing.T) {
 	saved := DeterministicIngestEnabled()
 	SetDeterministicIngest(false)

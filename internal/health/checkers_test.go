@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
+// TestComponentHealth_JSON runs the test component health_json operation.
 func TestComponentHealth_JSON(t *testing.T) {
 	h := ComponentHealth{
 		Name:        "test",
@@ -26,6 +27,7 @@ func TestComponentHealth_JSON(t *testing.T) {
 	}
 }
 
+// TestHealthStatus_String runs the test health status_string operation.
 func TestHealthStatus_String(t *testing.T) {
 	tests := []struct {
 		status   HealthStatus
@@ -43,6 +45,7 @@ func TestHealthStatus_String(t *testing.T) {
 	}
 }
 
+// TestNewDatabaseChecker runs the test new database checker operation.
 func TestNewDatabaseChecker(t *testing.T) {
 	logger := zerolog.New(nil)
 	tracer := noop.NewTracerProvider().Tracer("test")
@@ -65,6 +68,7 @@ func TestNewDatabaseChecker(t *testing.T) {
 	}
 }
 
+// TestNewStorageChecker runs the test new storage checker operation.
 func TestNewStorageChecker(t *testing.T) {
 	logger := zerolog.New(nil)
 	tracer := noop.NewTracerProvider().Tracer("test")
@@ -84,6 +88,7 @@ func TestNewStorageChecker(t *testing.T) {
 	}
 }
 
+// TestNewMetricsChecker runs the test new metrics checker operation.
 func TestNewMetricsChecker(t *testing.T) {
 	logger := zerolog.New(nil)
 	tracer := noop.NewTracerProvider().Tracer("test")
@@ -103,6 +108,7 @@ func TestNewMetricsChecker(t *testing.T) {
 	}
 }
 
+// TestNewLoggingChecker runs the test new logging checker operation.
 func TestNewLoggingChecker(t *testing.T) {
 	logger := zerolog.New(nil)
 	tracer := noop.NewTracerProvider().Tracer("test")

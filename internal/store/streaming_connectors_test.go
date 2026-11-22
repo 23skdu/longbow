@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestStreamingConnectorSchemaDedupDLQAndIngest runs the test streaming connector schema dedup dlq and ingest operation.
 func TestStreamingConnectorSchemaDedupDLQAndIngest(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -106,6 +107,7 @@ func TestStreamingConnectorSchemaDedupDLQAndIngest(t *testing.T) {
 	require.NoError(t, mgr.StopConnector("orders-stream"))
 }
 
+// TestKafkaBrokerAndTestcontainersConnectorIntegration runs the test kafka broker and testcontainers connector integration operation.
 func TestKafkaBrokerAndTestcontainersConnectorIntegration(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vs := NewVectorStore(mem, zerolog.Nop(), 64*1024*1024, 64*1024*1024, 10*time.Millisecond)
@@ -219,6 +221,7 @@ func TestKafkaBrokerAndTestcontainersConnectorIntegration(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
+// FuzzStreamWireAndEventParse runs the fuzz stream wire and event parse operation.
 func FuzzStreamWireAndEventParse(f *testing.F) {
 	f.Add(EncodeWirePayload(1, []byte(`{"id":"1","vector":[0.1,0.2]}`)))
 	f.Add([]byte{0x00, 0x00, 0x01})

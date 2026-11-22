@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_RangeSearch runs the test arrow hnsw_range search operation.
 func TestArrowHNSW_RangeSearch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -67,6 +68,7 @@ func TestArrowHNSW_RangeSearch(t *testing.T) {
 	_ = idx.Close()
 }
 
+// TestArrowHNSW_RangeSearch_Empty runs the test arrow hnsw_range search_empty operation.
 func TestArrowHNSW_RangeSearch_Empty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -97,6 +99,7 @@ func TestArrowHNSW_RangeSearch_Empty(t *testing.T) {
 	_ = idx.Close()
 }
 
+// TestVectorStore_RangeSearch_Complex64AndComplex128 runs the test vector store_range search_complex64 and complex128 operation.
 func TestVectorStore_RangeSearch_Complex64AndComplex128(t *testing.T) {
 	const (
 		dims  = 8

@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// TestFSBackend_WriteSyncClose runs the test fs backend_write sync close operation.
 func TestFSBackend_WriteSyncClose(t *testing.T) {
 	tmpFile := t.TempDir() + "/fs_backend_test.wal"
 	backend, err := NewFSBackend(tmpFile)
@@ -32,6 +33,7 @@ func TestFSBackend_WriteSyncClose(t *testing.T) {
 	assert.Equal(t, data, content)
 }
 
+// TestFSBackend_DirectIO runs the test fs backend_direct io operation.
 func TestFSBackend_DirectIO(t *testing.T) {
 	// Skip on CI where DirectIO might not be supported or behaves differently on tmpfs
 	if os.Getenv("CI") != "" {

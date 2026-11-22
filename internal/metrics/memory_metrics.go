@@ -87,6 +87,7 @@ var (
 		},
 	)
 
+	// VectorCastF32ToF16Total is a vector cast f32 to f16 total value.
 	VectorCastF32ToF16Total = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_cast_f32_to_f16_total",
@@ -102,6 +103,7 @@ var (
 		},
 	)
 
+	// AllocatorAllocationsActive is a allocator allocations active value.
 	AllocatorAllocationsActive = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_allocator_allocations_active",
@@ -109,6 +111,7 @@ var (
 		},
 	)
 
+	// AllocatorBytesFreedTotal is a allocator bytes freed total value.
 	AllocatorBytesFreedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_allocator_bytes_freed_total",
@@ -130,6 +133,7 @@ var (
 		},
 	)
 
+	// IpcBufferPoolHits is a ipc buffer pool hits value.
 	IpcBufferPoolHits = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_ipc_buffer_pool_hits_total",
@@ -137,6 +141,7 @@ var (
 		},
 	)
 
+	// IpcBufferPoolMisses is a ipc buffer pool misses value.
 	IpcBufferPoolMisses = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_ipc_buffer_pool_misses_total",
@@ -144,6 +149,7 @@ var (
 		},
 	)
 
+	// IpcBufferPoolEvictions is a ipc buffer pool evictions value.
 	IpcBufferPoolEvictions = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_ipc_buffer_pool_evictions_total",
@@ -151,6 +157,7 @@ var (
 		},
 	)
 
+	// IpcBufferPoolSize is a ipc buffer pool size value.
 	IpcBufferPoolSize = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_ipc_buffer_pool_size",

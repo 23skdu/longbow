@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestArrowHNSW_BinaryQuantization_Integration runs the test arrow hnsw_binary quantization_integration operation.
 func TestArrowHNSW_BinaryQuantization_Integration(t *testing.T) {
 	t.Skip("Skipping: binary quantization has incorrect expected values (pre-existing bug)")
 	// Setup

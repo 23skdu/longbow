@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestSlabAllocator_Alloc runs the test slab allocator_alloc operation.
 func TestSlabAllocator_Alloc(t *testing.T) {
 	allocator := NewSlabAllocator()
 
@@ -28,6 +29,7 @@ func TestSlabAllocator_Alloc(t *testing.T) {
 	assert.Equal(t, uintptr(10), diff)
 }
 
+// TestSlabAllocator_AllocLarge runs the test slab allocator_alloc large operation.
 func TestSlabAllocator_AllocLarge(t *testing.T) {
 	allocator := NewSlabAllocator()
 
@@ -38,9 +40,11 @@ func TestSlabAllocator_AllocLarge(t *testing.T) {
 	assert.Equal(t, int64(size), allocator.TotalAllocated())
 }
 
+// TestSlabAllocator_AllocStruct runs the test slab allocator_alloc struct operation.
 func TestSlabAllocator_AllocStruct(t *testing.T) {
 	allocator := NewSlabAllocator()
 
+	// TestStruct represents a test struct value.
 	type TestStruct struct {
 		A int64
 		B float64
@@ -57,6 +61,7 @@ func TestSlabAllocator_AllocStruct(t *testing.T) {
 	assert.Equal(t, int64(unsafe.Sizeof(TestStruct{})), allocator.TotalAllocated())
 }
 
+// TestSlabAllocator_Reset runs the test slab allocator_reset operation.
 func TestSlabAllocator_Reset(t *testing.T) {
 	allocator := NewSlabAllocator()
 	allocator.Alloc(100)

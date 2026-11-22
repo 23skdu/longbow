@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestMapRCUBasic runs the test map rcu basic operation.
 func TestMapRCUBasic(t *testing.T) {
 	m := NewMapRCU[string, int]()
 
@@ -54,6 +55,7 @@ func TestMapRCUBasic(t *testing.T) {
 	}
 }
 
+// TestMapRCUBulkStoreAndBulkDelete runs the test map rcu bulk store and bulk delete operation.
 func TestMapRCUBulkStoreAndBulkDelete(t *testing.T) {
 	m := NewMapRCU[int, string]()
 
@@ -117,6 +119,7 @@ func TestMapRCUBulkStoreAndBulkDelete(t *testing.T) {
 	}
 }
 
+// TestMapRCURangeAndLoad runs the test map rcu range and load operation.
 func TestMapRCURangeAndLoad(t *testing.T) {
 	m := NewMapRCU[string, int]()
 	expected := map[string]int{
@@ -159,6 +162,7 @@ func TestMapRCURangeAndLoad(t *testing.T) {
 	}
 }
 
+// TestMapRCUKeyTypes runs the test map rcu key types operation.
 func TestMapRCUKeyTypes(t *testing.T) {
 	// uint64
 	mU64 := NewMapRCU[uint64, bool]()
@@ -201,6 +205,7 @@ func TestMapRCUKeyTypes(t *testing.T) {
 	}
 }
 
+// TestMapRCUConcurrentRace runs the test map rcu concurrent race operation.
 func TestMapRCUConcurrentRace(t *testing.T) {
 	m := NewMapRCU[int, int]()
 	const numGoroutines = 8

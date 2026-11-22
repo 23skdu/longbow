@@ -8,6 +8,7 @@ import (
 	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
+// TPUBackend manages access to a single TPU device.
 type TPUBackend struct {
 	deviceID    int32
 	mu          sync.Mutex
@@ -16,6 +17,7 @@ type TPUBackend struct {
 	initialized bool
 }
 
+// NewTPUBackend creates a backend for the given TPU device ID.
 func NewTPUBackend(deviceID int32) (*TPUBackend, error) {
 	return &TPUBackend{
 		deviceID: deviceID,
@@ -24,6 +26,7 @@ func NewTPUBackend(deviceID int32) (*TPUBackend, error) {
 	}, nil
 }
 
+// Initialize initializes the underlying TPU device once.
 func (b *TPUBackend) Initialize() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -48,6 +51,7 @@ type HBMManager struct {
 	allocations map[unsafe.Pointer]int64
 }
 
+// NewHBMManager creates an HBM allocator with the given capacity in bytes.
 func NewHBMManager(total int64) *HBMManager {
 	return &HBMManager{
 		total:       total,
@@ -55,6 +59,7 @@ func NewHBMManager(total int64) *HBMManager {
 	}
 }
 
+// Allocate reserves size bytes of HBM on the given device.
 func (m *HBMManager) Allocate(deviceID int32, size int64) (unsafe.Pointer, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -74,6 +79,7 @@ func (m *HBMManager) Allocate(deviceID int32, size int64) (unsafe.Pointer, error
 	return ptr, nil
 }
 
+// Free releases a previously allocated HBM block.
 func (m *HBMManager) Free(ptr unsafe.Pointer) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -92,10 +98,12 @@ func (m *HBMManager) Free(ptr unsafe.Pointer) error {
 	return nil
 }
 
+// VMEMManager tracks TPU on-chip scratchpad memory capacity.
 type VMEMManager struct {
 	total int64
 }
 
+// GetDeviceInfo reports metadata for the managed TPU device.
 func (b *TPUBackend) GetDeviceInfo() (*types.GPUInfo, error) {
 	total, _, err := tpuGetDeviceInfo(b.deviceID)
 	if err != nil {

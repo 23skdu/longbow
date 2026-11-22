@@ -10,6 +10,7 @@ type GPUNotAvailableError struct {
 	Reason string
 }
 
+// Error runs the error operation.
 func (e *GPUNotAvailableError) Error() string {
 	return fmt.Sprintf("GPU not available: %s", e.Reason)
 }
@@ -27,6 +28,7 @@ type GPUMemoryError struct {
 	DeviceID  int32
 }
 
+// Error runs the error operation.
 func (e *GPUMemoryError) Error() string {
 	return fmt.Sprintf("GPU memory error on device %d: requested %d bytes, available %d bytes",
 		e.DeviceID, e.Requested, e.Available)
@@ -45,6 +47,7 @@ type GPUInitializationError struct {
 	Cause    error
 }
 
+// Error runs the error operation.
 func (e *GPUInitializationError) Error() string {
 	return fmt.Sprintf("GPU initialization failed for device %d (backend: %s): %v",
 		e.DeviceID, e.Backend, e.Cause)
@@ -68,6 +71,7 @@ type GPUComputeError struct {
 	Cause     error
 }
 
+// Error runs the error operation.
 func (e *GPUComputeError) Error() string {
 	return fmt.Sprintf("GPU computation error on device %d during %s: %v",
 		e.DeviceID, e.Operation, e.Cause)
@@ -91,6 +95,7 @@ type GPUSyncError struct {
 	Cause     error
 }
 
+// Error runs the error operation.
 func (e *GPUSyncError) Error() string {
 	return fmt.Sprintf("GPU sync error on device %d for batch of %d vectors: %v",
 		e.DeviceID, e.BatchSize, e.Cause)

@@ -11,6 +11,7 @@ import (
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
+// TemporalResultCache represents a temporal result cache value.
 type TemporalResultCache struct {
 	mu        sync.Mutex
 	items     map[string]*list.Element

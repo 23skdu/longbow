@@ -11,6 +11,7 @@ import (
 // We want something that allocates byte slices of a fixed chunk size
 // and potentially reuses them.
 
+// TestChunkAllocator runs the test chunk allocator operation.
 func TestChunkAllocator(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

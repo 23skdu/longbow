@@ -44,6 +44,7 @@ func concrete(t *testing.T, db adbc.Database) *longbowadbc.Database {
 	return c
 }
 
+// TestDatabase_NewDatabase_NilOpts runs the test database_new database_nil opts operation.
 func TestDatabase_NewDatabase_NilOpts(t *testing.T) {
 	db, err := longbowadbc.NewDriver().NewDatabase(nil)
 	if err != nil {
@@ -57,6 +58,7 @@ func TestDatabase_NewDatabase_NilOpts(t *testing.T) {
 	}
 }
 
+// TestDatabase_NewDatabase_WithOpts runs the test database_new database_with opts operation.
 func TestDatabase_NewDatabase_WithOpts(t *testing.T) {
 	db, err := longbowadbc.NewDriver().NewDatabase(map[string]string{"key": "value"})
 	if err != nil {
@@ -70,6 +72,7 @@ func TestDatabase_NewDatabase_WithOpts(t *testing.T) {
 	}
 }
 
+// TestDatabase_SetOptions runs the test database_set options operation.
 func TestDatabase_SetOptions(t *testing.T) {
 	db := newTestDatabase(t, map[string]string{"existing": "old"})
 	if err := db.SetOptions(map[string]string{"existing": "new", "added": "yes"}); err != nil {
@@ -91,6 +94,7 @@ func TestDatabase_SetOptions(t *testing.T) {
 	}
 }
 
+// TestDatabase_SetOption runs the test database_set option operation.
 func TestDatabase_SetOption(t *testing.T) {
 	db := newTestDatabase(t, nil)
 	cdb := concrete(t, db)
@@ -106,6 +110,7 @@ func TestDatabase_SetOption(t *testing.T) {
 	}
 }
 
+// TestDatabase_Open runs the test database_open operation.
 func TestDatabase_Open(t *testing.T) {
 	db := newTestDatabase(t, nil)
 	conn, err := db.Open(context.Background())
@@ -120,6 +125,7 @@ func TestDatabase_Open(t *testing.T) {
 	}
 }
 
+// TestDatabase_Close runs the test database_close operation.
 func TestDatabase_Close(t *testing.T) {
 	db := newTestDatabase(t, nil)
 	if err := db.Close(); err != nil {
@@ -127,6 +133,7 @@ func TestDatabase_Close(t *testing.T) {
 	}
 }
 
+// TestDatabase_GetOption_Found runs the test database_get option_found operation.
 func TestDatabase_GetOption_Found(t *testing.T) {
 	db := newTestDatabase(t, map[string]string{"present": "yes"})
 	got, err := concrete(t, db).GetOption("present")
@@ -138,12 +145,14 @@ func TestDatabase_GetOption_Found(t *testing.T) {
 	}
 }
 
+// TestDatabase_GetOption_NotFound runs the test database_get option_not found operation.
 func TestDatabase_GetOption_NotFound(t *testing.T) {
 	db := newTestDatabase(t, map[string]string{"present": "yes"})
 	_, err := concrete(t, db).GetOption("missing")
 	assertNotFound(t, err, "GetOption(missing)")
 }
 
+// TestDatabase_GetOptionBytes_NotImplemented runs the test database_get option bytes_not implemented operation.
 func TestDatabase_GetOptionBytes_NotImplemented(t *testing.T) {
 	db := newTestDatabase(t, nil)
 	val, err := concrete(t, db).GetOptionBytes("k")
@@ -153,6 +162,7 @@ func TestDatabase_GetOptionBytes_NotImplemented(t *testing.T) {
 	}
 }
 
+// TestDatabase_GetOptionInt_NotImplemented runs the test database_get option int_not implemented operation.
 func TestDatabase_GetOptionInt_NotImplemented(t *testing.T) {
 	db := newTestDatabase(t, nil)
 	val, err := concrete(t, db).GetOptionInt("k")
@@ -162,6 +172,7 @@ func TestDatabase_GetOptionInt_NotImplemented(t *testing.T) {
 	}
 }
 
+// TestDatabase_GetOptionDouble_NotImplemented runs the test database_get option double_not implemented operation.
 func TestDatabase_GetOptionDouble_NotImplemented(t *testing.T) {
 	db := newTestDatabase(t, nil)
 	val, err := concrete(t, db).GetOptionDouble("k")
@@ -171,16 +182,19 @@ func TestDatabase_GetOptionDouble_NotImplemented(t *testing.T) {
 	}
 }
 
+// TestDatabase_SetOptionBytes_NotImplemented runs the test database_set option bytes_not implemented operation.
 func TestDatabase_SetOptionBytes_NotImplemented(t *testing.T) {
 	db := newTestDatabase(t, nil)
 	assertNotImplemented(t, concrete(t, db).SetOptionBytes("k", []byte("v")), "SetOptionBytes")
 }
 
+// TestDatabase_SetOptionInt_NotImplemented runs the test database_set option int_not implemented operation.
 func TestDatabase_SetOptionInt_NotImplemented(t *testing.T) {
 	db := newTestDatabase(t, nil)
 	assertNotImplemented(t, concrete(t, db).SetOptionInt("k", 42), "SetOptionInt")
 }
 
+// TestDatabase_SetOptionDouble_NotImplemented runs the test database_set option double_not implemented operation.
 func TestDatabase_SetOptionDouble_NotImplemented(t *testing.T) {
 	db := newTestDatabase(t, nil)
 	assertNotImplemented(t, concrete(t, db).SetOptionDouble("k", 3.14), "SetOptionDouble")

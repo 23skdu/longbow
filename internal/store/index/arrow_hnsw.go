@@ -722,6 +722,7 @@ func (h *ArrowHNSW) GetNUMANode() (int, *memory.NUMATopology) {
 	return h.config.NUMANode, h.topo
 }
 
+// RelocateToOffHeap runs the relocate to off heap operation.
 func (h *ArrowHNSW) RelocateToOffHeap() error {
 	gd := h.data.Load()
 	if gd == nil {

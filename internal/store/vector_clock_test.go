@@ -9,6 +9,7 @@ import (
 // VectorClock Tests
 // =============================================================================
 
+// TestVectorClock_NewVectorClock runs the test vector clock_new vector clock operation.
 func TestVectorClock_NewVectorClock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -25,6 +26,7 @@ func TestVectorClock_NewVectorClock(t *testing.T) {
 	}
 }
 
+// TestVectorClock_Increment runs the test vector clock_increment operation.
 func TestVectorClock_Increment(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -41,6 +43,7 @@ func TestVectorClock_Increment(t *testing.T) {
 	}
 }
 
+// TestVectorClock_Merge runs the test vector clock_merge operation.
 func TestVectorClock_Merge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -64,6 +67,7 @@ func TestVectorClock_Merge(t *testing.T) {
 	}
 }
 
+// TestVectorClock_Compare_Equal runs the test vector clock_compare_equal operation.
 func TestVectorClock_Compare_Equal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -81,6 +85,7 @@ func TestVectorClock_Compare_Equal(t *testing.T) {
 	}
 }
 
+// TestVectorClock_Compare_Before runs the test vector clock_compare_before operation.
 func TestVectorClock_Compare_Before(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -99,6 +104,7 @@ func TestVectorClock_Compare_Before(t *testing.T) {
 	}
 }
 
+// TestVectorClock_Compare_After runs the test vector clock_compare_after operation.
 func TestVectorClock_Compare_After(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -117,6 +123,7 @@ func TestVectorClock_Compare_After(t *testing.T) {
 	}
 }
 
+// TestVectorClock_Compare_Concurrent runs the test vector clock_compare_concurrent operation.
 func TestVectorClock_Compare_Concurrent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -135,6 +142,7 @@ func TestVectorClock_Compare_Concurrent(t *testing.T) {
 	}
 }
 
+// TestVectorClock_Copy runs the test vector clock_copy operation.
 func TestVectorClock_Copy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -154,6 +162,7 @@ func TestVectorClock_Copy(t *testing.T) {
 	}
 }
 
+// TestVectorClock_ConcurrentAccess runs the test vector clock_concurrent access operation.
 func TestVectorClock_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -177,6 +186,7 @@ func TestVectorClock_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+// TestVectorClock_Serialize runs the test vector clock_serialize operation.
 func TestVectorClock_Serialize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -203,6 +213,7 @@ func TestVectorClock_Serialize(t *testing.T) {
 // VersionedData Tests
 // =============================================================================
 
+// TestVersionedData_New runs the test versioned data_new operation.
 func TestVersionedData_New(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -223,6 +234,7 @@ func TestVersionedData_New(t *testing.T) {
 	}
 }
 
+// TestVersionedData_Supersedes runs the test versioned data_supersedes operation.
 func TestVersionedData_Supersedes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -244,6 +256,7 @@ func TestVersionedData_Supersedes(t *testing.T) {
 	}
 }
 
+// TestVersionedData_Conflicts runs the test versioned data_conflicts operation.
 func TestVersionedData_Conflicts(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
@@ -271,6 +284,7 @@ func TestVersionedData_Conflicts(t *testing.T) {
 // Prometheus Metrics Tests
 // =============================================================================
 
+// TestVectorClock_Metrics runs the test vector clock_metrics operation.
 func TestVectorClock_Metrics(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")

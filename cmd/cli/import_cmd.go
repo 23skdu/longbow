@@ -371,6 +371,7 @@ type s3ReaderAt struct {
 	currentOffset int64
 }
 
+// ReadAt runs the read at operation.
 func (r *s3ReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
 	if off >= r.size {
 		return 0, io.EOF
@@ -392,6 +393,7 @@ func (r *s3ReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
 	return io.ReadFull(out.Body, p)
 }
 
+// Seek runs the seek operation.
 func (r *s3ReaderAt) Seek(offset int64, whence int) (int64, error) {
 	var newOffset int64
 	switch whence {
@@ -411,6 +413,7 @@ func (r *s3ReaderAt) Seek(offset int64, whence int) (int64, error) {
 	return newOffset, nil
 }
 
+// Read runs the read operation.
 func (r *s3ReaderAt) Read(p []byte) (n int, err error) {
 	n, err = r.ReadAt(p, r.currentOffset)
 	r.currentOffset += int64(n)

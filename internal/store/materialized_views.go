@@ -25,8 +25,11 @@ import (
 type ViewRefreshPolicy string
 
 const (
-	RefreshManual    ViewRefreshPolicy = "manual"
+	// RefreshManual is a refresh manual constant.
+	RefreshManual ViewRefreshPolicy = "manual"
+	// RefreshScheduled is a refresh scheduled constant.
 	RefreshScheduled ViewRefreshPolicy = "scheduled"
+	// RefreshStreaming is a refresh streaming constant.
 	RefreshStreaming ViewRefreshPolicy = "streaming"
 )
 
@@ -34,11 +37,16 @@ const (
 type AggOp string
 
 const (
+	// AggCount is a agg count constant.
 	AggCount AggOp = "count"
-	AggSum   AggOp = "sum"
-	AggAvg   AggOp = "avg"
-	AggMin   AggOp = "min"
-	AggMax   AggOp = "max"
+	// AggSum is a agg sum constant.
+	AggSum AggOp = "sum"
+	// AggAvg is a agg avg constant.
+	AggAvg AggOp = "avg"
+	// AggMin is a agg min constant.
+	AggMin AggOp = "min"
+	// AggMax is a agg max constant.
+	AggMax AggOp = "max"
 )
 
 // AggSpec defines one computed metric column inside a materialized view.

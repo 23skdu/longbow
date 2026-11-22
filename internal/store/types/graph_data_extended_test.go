@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGraphData_VariousVectorTypes runs the test graph data_various vector types operation.
 func TestGraphData_VariousVectorTypes(t *testing.T) {
 	capacity := 10
 	dims := 128
@@ -47,6 +48,7 @@ func TestGraphData_VariousVectorTypes(t *testing.T) {
 	assert.Equal(t, bqData, backBQ)
 }
 
+// TestGraphData_Metadata runs the test graph data_metadata operation.
 func TestGraphData_Metadata(t *testing.T) {
 	g := NewGraphData(10, 4, true, true, 0, false, false, false, VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 	err := g.EnsureChunk(0, 0, 4)
@@ -64,6 +66,7 @@ func TestGraphData_Metadata(t *testing.T) {
 	g.GrowMetadataSlices(20)
 }
 
+// TestGraphData_Clone runs the test graph data_clone operation.
 func TestGraphData_Clone(t *testing.T) {
 	g := NewGraphData(10, 4, false, false, 0, false, false, false, VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 	_ = g.EnsureChunk(0, 0, 4)

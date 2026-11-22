@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestOPQ_Basic runs the test opq_basic operation.
 func TestOPQ_Basic(t *testing.T) {
 	dims := 16
 	m := 4
@@ -50,6 +51,7 @@ func TestOPQ_Basic(t *testing.T) {
 	t.Logf("Reconstruction L2 distance: %f", dist)
 }
 
+// TestOPQ_RotationOrthogonality runs the test opq_rotation orthogonality operation.
 func TestOPQ_RotationOrthogonality(t *testing.T) {
 	dims := 8
 	m := 2
@@ -87,6 +89,7 @@ func TestOPQ_RotationOrthogonality(t *testing.T) {
 	}
 }
 
+// TestOPQ_ReconstructionImprovement runs the test opq_reconstruction improvement operation.
 func TestOPQ_ReconstructionImprovement(t *testing.T) {
 	// OPQ should generally perform better than standard PQ on correlated data
 	rand.Seed(42) //nolint:staticcheck // Set seed to avoid flakiness in this probabilistic test

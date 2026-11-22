@@ -10,6 +10,7 @@ import (
 	"github.com/parquet-go/parquet-go/format"
 )
 
+// TestParquetCompression_IsZSTD runs the test parquet compression_is zstd operation.
 func TestParquetCompression_IsZSTD(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	tmpDir := t.TempDir()

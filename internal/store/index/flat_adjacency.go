@@ -40,6 +40,7 @@ func unpackHeader(h uint64) (gen uint32, length uint32) {
 	return uint32(h >> 32), uint32(h) // #nosec G115
 }
 
+// NewFlatAdjacency constructs a new FlatAdjacency.
 func NewFlatAdjacency(arena *memory.SlabArena, maxNeighbors int, initialCapacity int) *FlatAdjacency {
 	// 64 bytes = 16 uint32s.
 	// We need 2 uint32s for length & generation header, so maxNeighbors+2 elements.
@@ -68,6 +69,7 @@ func NewFlatAdjacency(arena *memory.SlabArena, maxNeighbors int, initialCapacity
 	return fa
 }
 
+// EnsureCapacity runs the ensure capacity operation.
 func (fa *FlatAdjacency) EnsureCapacity(id uint32) {
 	chunkIdx := int(id) / adjacencyChunkSize
 
@@ -142,6 +144,7 @@ func (fa *FlatAdjacency) ensureChunk(chunkIdx int) uint64 {
 	return ref.Offset
 }
 
+// SetNeighbors sets the neighbors.
 func (fa *FlatAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 	fa.EnsureCapacity(id)
 	chunkIdx := int(id) / adjacencyChunkSize
@@ -196,10 +199,12 @@ func (fa *FlatAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 	}
 }
 
+// GetNeighbors returns the neighbors.
 func (fa *FlatAdjacency) GetNeighbors(id uint32) ([]uint32, bool) {
 	return fa.GetNeighborsWithGen(id, math.MaxUint64)
 }
 
+// GetNeighborsWithGen returns the neighbors with gen.
 func (fa *FlatAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint32, bool) {
 	fa.Retain()
 	defer fa.Release()
@@ -297,6 +302,7 @@ func (fa *FlatAdjacency) getNeighborsWithGenInner(id uint32, maxGen uint64, dst 
 	return res, true
 }
 
+// GetPackedNeighbors returns the packed neighbors.
 func (fa *FlatAdjacency) GetPackedNeighbors(id uint32) (uint64, bool) {
 	chunkIdx := int(id) / adjacencyChunkSize
 	cOff := int(id) % adjacencyChunkSize
@@ -320,16 +326,19 @@ func (fa *FlatAdjacency) GetPackedNeighbors(id uint32) (uint64, bool) {
 	return atomic.LoadUint64(headerPtr), true
 }
 
+// GetNeighborsFromPacked returns the neighbors from packed.
 func (fa *FlatAdjacency) GetNeighborsFromPacked(packed uint64) []uint32 {
 	res, _ := fa.GetNeighbors(uint32(packed)) // #nosec G115
 	return res
 }
 
+// GetNeighborsFromPackedWithGen returns the neighbors from packed with gen.
 func (fa *FlatAdjacency) GetNeighborsFromPackedWithGen(packed uint64, maxGen uint64) []uint32 {
 	res, _ := fa.GetNeighborsWithGen(uint32(packed), maxGen) // #nosec G115
 	return res
 }
 
+// CASNeighbors runs the cas neighbors operation.
 func (fa *FlatAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint32) bool {
 	fa.EnsureCapacity(id)
 	chunkIdx := int(id) / adjacencyChunkSize
@@ -370,6 +379,7 @@ func (fa *FlatAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint32)
 	return true
 }
 
+// UpdateNeighbors runs the update neighbors operation.
 func (fa *FlatAdjacency) UpdateNeighbors(id uint32, applier types.NeighborApplier) error {
 	fa.EnsureCapacity(id)
 	chunkIdx := int(id) / adjacencyChunkSize
@@ -452,6 +462,7 @@ func (fa *FlatAdjacency) Lock(id uint32) {}
 // Unlock is a no-op for lock-free FlatAdjacency, provided for types.PackedNeighbors interface compatibility.
 func (fa *FlatAdjacency) Unlock(id uint32) {}
 
+// IsOffHeap reports whether the condition holds.
 func (fa *FlatAdjacency) IsOffHeap() bool {
 	if fa.baseArena == nil {
 		return false
@@ -459,6 +470,7 @@ func (fa *FlatAdjacency) IsOffHeap() bool {
 	return fa.baseArena.IsOffHeap()
 }
 
+// Release runs the release operation.
 func (fa *FlatAdjacency) Release() {
 	if fa.refs.Add(-1) == 0 {
 		if fa.arena != nil {
@@ -468,16 +480,22 @@ func (fa *FlatAdjacency) Release() {
 	}
 }
 
+// Retain runs the retain operation.
 func (fa *FlatAdjacency) Retain() {
 	fa.refs.Add(1)
 }
 
+// GetNeighborsF16 returns the neighbors f16.
 func (fa *FlatAdjacency) GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool) {
 	return nil, nil, false
 }
+
+// GetNeighborsF16WithGen returns the neighbors f16 with gen.
 func (fa *FlatAdjacency) GetNeighborsF16WithGen(id uint32, maxGen uint64) ([]uint32, []float16.Num, bool) {
 	return nil, nil, false
 }
+
+// SetNeighborsF16 sets the neighbors f16.
 func (fa *FlatAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, dists []float16.Num) error {
 	return errors.New("unsupported")
 }

@@ -35,6 +35,7 @@ func euclideanComplex64(a, b []float32) float32 {
 	return float32(math.Sqrt(float64(sum)))
 }
 
+// TestCUDAIndex_SearchComplex128 runs the test cuda index_search complex128 operation.
 func TestCUDAIndex_SearchComplex128(t *testing.T) {
 	numComplex := 64 // number of complex elements per vector
 	dim := numComplex * 2
@@ -110,6 +111,7 @@ func TestCUDAIndex_SearchComplex128(t *testing.T) {
 		"nearest neighbor should be the query vector itself")
 }
 
+// TestCUDAIndex_SearchComplex64 runs the test cuda index_search complex64 operation.
 func TestCUDAIndex_SearchComplex64(t *testing.T) {
 	numComplex := 64 // number of complex elements per vector
 	dim := numComplex * 2
@@ -181,6 +183,7 @@ func TestCUDAIndex_SearchComplex64(t *testing.T) {
 	}
 }
 
+// TestCUDAIndex_Complex128_NearestNeighborIsSelf runs the test cuda index_complex128_nearest neighbor is self operation.
 func TestCUDAIndex_Complex128_NearestNeighborIsSelf(t *testing.T) {
 	numComplex := 32
 	dim := numComplex * 2
@@ -273,6 +276,7 @@ func float16Encode(f float32) uint16 {
 	return sign | (exp16 << 10) | mant16
 }
 
+// TestCUDAIndex_Complex128_MultipleQueries runs the test cuda index_complex128_multiple queries operation.
 func TestCUDAIndex_Complex128_MultipleQueries(t *testing.T) {
 	numComplex := 16
 	dim := numComplex * 2
@@ -331,6 +335,7 @@ func TestCUDAIndex_Complex128_MultipleQueries(t *testing.T) {
 	}
 }
 
+// TestCUDAIndex_SearchBatchDistances runs the test cuda index_search batch distances operation.
 func TestCUDAIndex_SearchBatchDistances(t *testing.T) {
 	dim := 128
 	count := 500

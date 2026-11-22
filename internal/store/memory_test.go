@@ -6,6 +6,7 @@ import (
 	"unsafe"
 )
 
+// TestGetNumaNode runs the test get numa node operation.
 func TestGetNumaNode(t *testing.T) {
 	// Allocate a byte slice
 	data := make([]byte, 4096)
@@ -31,6 +32,7 @@ func TestGetNumaNode(t *testing.T) {
 	t.Logf("Memory mapped to NUMA node: %d", node)
 }
 
+// TestPinThreadToNode runs the test pin thread to node operation.
 func TestPinThreadToNode(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -58,6 +60,7 @@ func TestPinThreadToNode(t *testing.T) {
 	}
 }
 
+// TestPinThreadToCore runs the test pin thread to core operation.
 func TestPinThreadToCore(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

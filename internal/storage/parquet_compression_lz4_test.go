@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestParquetCompression_LZ4 runs the test parquet compression_lz4 operation.
 func TestParquetCompression_LZ4(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	tmpDir := t.TempDir()
@@ -46,6 +47,7 @@ func TestParquetCompression_LZ4(t *testing.T) {
 	require.Equal(t, format.Lz4Raw, codec, "Should use LZ4Raw compression")
 }
 
+// TestParquetCompression_Uncompressed runs the test parquet compression_uncompressed operation.
 func TestParquetCompression_Uncompressed(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	tmpDir := t.TempDir()

@@ -9,6 +9,7 @@ import (
 	"unsafe"
 )
 
+// TestDebugInt32 runs the test debug int32 operation.
 func TestDebugInt32(t *testing.T) {
 	rand.Seed(42) //nolint:staticcheck
 	for _, d := range []int{4, 8, 16} {

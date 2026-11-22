@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// WorkStealingScheduler represents a work stealing scheduler value.
 type WorkStealingScheduler[T any] struct {
 	workers    int
 	queues     []*WorkQueue[T]
@@ -14,11 +15,13 @@ type WorkStealingScheduler[T any] struct {
 	done       chan struct{}
 }
 
+// WorkQueue represents a work queue value.
 type WorkQueue[T any] struct {
 	mu    sync.Mutex
 	items []T
 }
 
+// NewWorkStealingScheduler constructs a new WorkStealingScheduler.
 func NewWorkStealingScheduler[T any](numWorkers int) *WorkStealingScheduler[T] {
 	if numWorkers < 1 {
 		numWorkers = runtime.NumCPU()
@@ -37,6 +40,7 @@ func NewWorkStealingScheduler[T any](numWorkers int) *WorkStealingScheduler[T] {
 	}
 }
 
+// Submit runs the submit operation.
 func (ws *WorkStealingScheduler[T]) Submit(task T) {
 	workerID := runtime.GOMAXPROCS(0) % ws.workers
 	q := ws.queues[workerID]
@@ -46,6 +50,7 @@ func (ws *WorkStealingScheduler[T]) Submit(task T) {
 	q.items = append(q.items, task)
 }
 
+// GetTask returns the task.
 func (ws *WorkStealingScheduler[T]) GetTask(workerID int) (T, bool) {
 	var zero T
 	q := ws.queues[workerID]
@@ -77,12 +82,14 @@ func (ws *WorkStealingScheduler[T]) GetTask(workerID int) (T, bool) {
 	return zero, false
 }
 
+// Start runs the start operation.
 func (ws *WorkStealingScheduler[T]) Start() {
 	for i := 0; i < ws.workers; i++ {
 		go ws.worker(i)
 	}
 }
 
+// Stop runs the stop operation.
 func (ws *WorkStealingScheduler[T]) Stop() {
 	close(ws.done)
 }
@@ -110,6 +117,7 @@ func (ws *WorkStealingScheduler[T]) worker(workerID int) {
 	}
 }
 
+// Stats runs the stats operation.
 func (ws *WorkStealingScheduler[T]) Stats() SchedulerStats {
 	stats := SchedulerStats{}
 
@@ -125,6 +133,7 @@ func (ws *WorkStealingScheduler[T]) Stats() SchedulerStats {
 	return stats
 }
 
+// SchedulerStats represents a scheduler stats value.
 type SchedulerStats struct {
 	QueueSizes []int
 	NumWorkers int

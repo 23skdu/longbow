@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// TestAdaptiveSampler_ShouldSample_AlwaysSample runs the test adaptive sampler_should sample_always sample operation.
 func TestAdaptiveSampler_ShouldSample_AlwaysSample(t *testing.T) {
 	sampler := &AdaptiveSampler{
 		AlwaysSample: true,
@@ -29,6 +30,7 @@ func TestAdaptiveSampler_ShouldSample_AlwaysSample(t *testing.T) {
 	assert.Equal(t, int64(0), sampler.skippedCount.Load())
 }
 
+// TestAdaptiveSampler_ShouldSample_NormalLoad runs the test adaptive sampler_should sample_normal load operation.
 func TestAdaptiveSampler_ShouldSample_NormalLoad(t *testing.T) {
 	sampler := &AdaptiveSampler{}
 	assert.False(t, sampler.AlwaysSample)
@@ -59,6 +61,7 @@ func TestAdaptiveSampler_ShouldSample_NormalLoad(t *testing.T) {
 	assert.Equal(t, int64(0), sampler.skippedCount.Load())
 }
 
+// TestAdaptiveSampler_ShouldSampleUnderPressure runs the test adaptive sampler_should sample under pressure operation.
 func TestAdaptiveSampler_ShouldSampleUnderPressure(t *testing.T) {
 	sampler := &AdaptiveSampler{}
 	now := time.Now().UnixNano()
@@ -127,6 +130,7 @@ func TestAdaptiveSampler_ShouldSampleUnderPressure(t *testing.T) {
 	})
 }
 
+// TestAdaptiveSampler_Concurrency runs the test adaptive sampler_concurrency operation.
 func TestAdaptiveSampler_Concurrency(t *testing.T) {
 	sampler := &AdaptiveSampler{}
 	numWorkers := 8

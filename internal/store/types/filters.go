@@ -4,11 +4,12 @@ import (
 	"strings"
 )
 
-// Logical Operators
+// AndExpr Operators
 type AndExpr struct {
 	Conditions []FilterExpr
 }
 
+// Evaluate runs the evaluate operation.
 func (a *AndExpr) Evaluate(metadata *LazyMetadata) bool {
 	if len(a.Conditions) == 0 {
 		return true
@@ -21,10 +22,12 @@ func (a *AndExpr) Evaluate(metadata *LazyMetadata) bool {
 	return true
 }
 
+// OrExpr represents a or expr value.
 type OrExpr struct {
 	Conditions []FilterExpr
 }
 
+// Evaluate runs the evaluate operation.
 func (o *OrExpr) Evaluate(metadata *LazyMetadata) bool {
 	if len(o.Conditions) == 0 {
 		return true
@@ -37,20 +40,23 @@ func (o *OrExpr) Evaluate(metadata *LazyMetadata) bool {
 	return false
 }
 
+// NotExpr represents a not expr value.
 type NotExpr struct {
 	Condition FilterExpr
 }
 
+// Evaluate runs the evaluate operation.
 func (n *NotExpr) Evaluate(metadata *LazyMetadata) bool {
 	return !n.Condition.Evaluate(metadata)
 }
 
-// Comparison Operators
+// EqExpr Operators
 type EqExpr struct {
 	Field string
 	Value interface{}
 }
 
+// Evaluate runs the evaluate operation.
 func (e *EqExpr) Evaluate(metadata *LazyMetadata) bool {
 	val, ok := metadata.GetField(e.Field)
 	if !ok {
@@ -59,11 +65,13 @@ func (e *EqExpr) Evaluate(metadata *LazyMetadata) bool {
 	return val == e.Value
 }
 
+// GtExpr represents a gt expr value.
 type GtExpr struct {
 	Field string
 	Value interface{}
 }
 
+// Evaluate runs the evaluate operation.
 func (e *GtExpr) Evaluate(metadata *LazyMetadata) bool {
 	val, ok := metadata.GetField(e.Field)
 	if !ok {
@@ -72,11 +80,13 @@ func (e *GtExpr) Evaluate(metadata *LazyMetadata) bool {
 	return compareValues(val, e.Value) > 0
 }
 
+// GeExpr represents a ge expr value.
 type GeExpr struct {
 	Field string
 	Value interface{}
 }
 
+// Evaluate runs the evaluate operation.
 func (e *GeExpr) Evaluate(metadata *LazyMetadata) bool {
 	val, ok := metadata.GetField(e.Field)
 	if !ok {
@@ -85,11 +95,13 @@ func (e *GeExpr) Evaluate(metadata *LazyMetadata) bool {
 	return compareValues(val, e.Value) >= 0
 }
 
+// LtExpr represents a lt expr value.
 type LtExpr struct {
 	Field string
 	Value interface{}
 }
 
+// Evaluate runs the evaluate operation.
 func (e *LtExpr) Evaluate(metadata *LazyMetadata) bool {
 	val, ok := metadata.GetField(e.Field)
 	if !ok {
@@ -98,11 +110,13 @@ func (e *LtExpr) Evaluate(metadata *LazyMetadata) bool {
 	return compareValues(val, e.Value) < 0
 }
 
+// LeExpr represents a le expr value.
 type LeExpr struct {
 	Field string
 	Value interface{}
 }
 
+// Evaluate runs the evaluate operation.
 func (e *LeExpr) Evaluate(metadata *LazyMetadata) bool {
 	val, ok := metadata.GetField(e.Field)
 	if !ok {
@@ -195,11 +209,13 @@ func toFloat64(v interface{}) (float64, bool) {
 	return 0, false
 }
 
+// ContainsExpr represents a contains expr value.
 type ContainsExpr struct {
 	Field string
 	Value string
 }
 
+// Evaluate runs the evaluate operation.
 func (c *ContainsExpr) Evaluate(metadata *LazyMetadata) bool {
 	val, ok := metadata.GetField(c.Field)
 	if !ok {

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGraphParquetRoundTrip runs the test graph parquet round trip operation.
 func TestGraphParquetRoundTrip(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
@@ -103,6 +104,7 @@ func TestGraphParquetRoundTrip(t *testing.T) {
 	}
 }
 
+// TestReadGraphParquet_Empty runs the test read graph parquet_empty operation.
 func TestReadGraphParquet_Empty(t *testing.T) {
 	mem := memory.NewGoAllocator()
 

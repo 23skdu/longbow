@@ -340,7 +340,7 @@ func TestFastPathFilter_Integration(t *testing.T) {
 	}
 }
 
-// Benchmarks
+// BenchmarkFastPath_Int64Equal.
 func BenchmarkFastPath_Int64Equal(b *testing.B) {
 	alloc := memory.NewGoAllocator()
 	ctx := context.Background()
@@ -362,6 +362,7 @@ func BenchmarkFastPath_Int64Equal(b *testing.B) {
 	}
 }
 
+// BenchmarkArrowCompute_Int64Equal runs the benchmark arrow compute_int64 equal operation.
 func BenchmarkArrowCompute_Int64Equal(b *testing.B) {
 	alloc := memory.NewGoAllocator()
 	ctx := context.Background()
@@ -386,6 +387,7 @@ func BenchmarkArrowCompute_Int64Equal(b *testing.B) {
 	}
 }
 
+// BenchmarkFastPath_Float64Equal runs the benchmark fast path_float64 equal operation.
 func BenchmarkFastPath_Float64Equal(b *testing.B) {
 	alloc := memory.NewGoAllocator()
 	ctx := context.Background()

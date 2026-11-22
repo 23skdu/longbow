@@ -425,7 +425,38 @@ spec:
             - name: LONGBOW_OIDC_ISSUERS
               value: {{ .Values.oidc.issuers | toJson | quote }}
             {{- end }}
-
+            # RBAC is always enforced. LONGBOW_RBAC_ENABLED is intentionally
+            # not set; configure the bootstrap admin and durable key store.
+            - name: LONGBOW_SECRETS_PROVIDER
+              value: {{ .Values.rbac.secretsProvider | default "file" | quote }}
+            - name: LONGBOW_SECRETS_PATH
+              value: {{ .Values.rbac.secretsPath | default "/data/rbac_secrets" | quote }}
+            - name: LONGBOW_SECRETS_PREFIX
+              value: {{ .Values.rbac.secretsPrefix | default "longbow/rbac" | quote }}
+            - name: LONGBOW_SECRETS_VAULT_ADDR
+              value: {{ .Values.rbac.vaultAddr | default "" | quote }}
+            - name: LONGBOW_SECRETS_VAULT_TOKEN
+              value: {{ .Values.rbac.vaultToken | default "" | quote }}
+            - name: LONGBOW_SECRETS_VAULT_MOUNT
+              value: {{ .Values.rbac.vaultMount | default "secret" | quote }}
+            - name: LONGBOW_SECRETS_GCP_PROJECT_ID
+              value: {{ .Values.rbac.gcpProjectID | default "" | quote }}
+            - name: LONGBOW_SECRETS_GCP_TOKEN
+              value: {{ .Values.rbac.gcpToken | default "" | quote }}
+            - name: LONGBOW_SECRETS_AWS_REGION
+              value: {{ .Values.rbac.awsRegion | default "" | quote }}
+            - name: LONGBOW_SECRETS_AWS_ENDPOINT
+              value: {{ .Values.rbac.awsEndpoint | default "" | quote }}
+            {{- if .Values.rbac.existingSecret }}
+            - name: LONGBOW_RBAC_BOOTSTRAP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.rbac.existingSecret }}
+                  key: {{ .Values.rbac.existingSecretKey | default "bootstrap-api-key" }}
+            {{- else if .Values.rbac.bootstrapKey }}
+            - name: LONGBOW_RBAC_BOOTSTRAP_KEY
+              value: {{ .Values.rbac.bootstrapKey | quote }}
+            {{- end }}
 
           ports:
             - name: grpc-data

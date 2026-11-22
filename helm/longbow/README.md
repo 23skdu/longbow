@@ -221,6 +221,37 @@ graph was left partly disconnected; see `docs/development/roadmap.md` §9.2.
 |-----------|-------------|---------|
 | `oidc.enabled` | Enable AWS/Google OIDC federation | `false` |
 | `oidc.issuers` | List of trusted `OIDCIssuerConfig` objects | `[]` |
+| `rbac.bootstrapKey` | Bootstrap admin API key (prefer `rbac.existingSecret`) | `""` |
+| `rbac.existingSecret` | Kubernetes Secret containing the bootstrap admin key | `""` |
+| `rbac.existingSecretKey` | Key in `rbac.existingSecret` holding the bootstrap admin key | `bootstrap-api-key` |
+| `rbac.secretsProvider` | API-key store: `file`, `memory`, `vault`, `gcp`, or `aws` | `file` |
+| `rbac.secretsPath` | File-store path (mounted under the WAL PVC by default) | `/data/rbac_secrets` |
+| `rbac.secretsPrefix` | Provider-side prefix for Longbow secrets | `longbow/rbac` |
+| `rbac.vaultAddr` | Vault address (required for `vault`) | `""` |
+| `rbac.vaultToken` | Vault token | `""` |
+| `rbac.vaultMount` | Vault KV v2 mount | `secret` |
+| `rbac.gcpProjectID` | Google Cloud project ID (required for `gcp`) | `""` |
+| `rbac.gcpToken` | Optional Google OAuth token (otherwise ADC is used) | `""` |
+| `rbac.awsRegion` | AWS region (required for `aws`) | `""` |
+| `rbac.awsEndpoint` | Optional AWS Secrets Manager endpoint | `""` |
 | `networkPolicy.enabled` | Create Kubernetes `NetworkPolicy` (permits TCP 443 egress when OIDC is enabled) | `false` |
 | `podDisruptionBudget.enabled` | Create `PodDisruptionBudget` | `false` |
 | `podDisruptionBudget.minAvailable` | Minimum available pods during disruptions | `1` |
+
+RBAC cannot be disabled. The chart never sets `LONGBOW_RBAC_ENABLED`. Provide
+`rbac.existingSecret` (recommended) or `rbac.bootstrapKey` on first install, or
+provision an admin API key directly in the configured external secret provider.
+Without an admin key, the Longbow process exits at startup.
+
+Example using a Kubernetes Secret:
+
+```bash
+kubectl create secret generic longbow-rbac-bootstrap \
+  --from-literal=bootstrap-api-key='a-long-random-admin-secret'
+
+helm upgrade --install longbow ./helm/longbow \
+  --set rbac.existingSecret=longbow-rbac-bootstrap \
+  --set rbac.secretsProvider=file
+```
+
+Verify the deployment with `python3 scripts/verify_rbac.py --url http://<metrics-host>:9090`.

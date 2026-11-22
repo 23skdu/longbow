@@ -491,3 +491,26 @@ podDisruptionBudget:
 oidc:
   enabled: false
   issuers: []  # list of OIDC issuer configs
+
+# RBAC is always enforced; these values configure its bootstrap admin and the
+# durable store that holds API keys across restarts.
+rbac:
+  # Bootstrap admin API key. Prefer existingSecret in production.
+  bootstrapKey: ""
+  # Kubernetes Secret containing the bootstrap admin key.
+  existingSecret: ""
+  existingSecretKey: "bootstrap-api-key"
+  # file, memory, vault, gcp, or aws. `memory` is for tests only.
+  secretsProvider: "file"
+  secretsPath: "/data/rbac_secrets"
+  secretsPrefix: "longbow/rbac"
+  # Vault KV v2 (required when secretsProvider=vault)
+  vaultAddr: ""
+  vaultToken: ""
+  vaultMount: "secret"
+  # Google Secret Manager (required when secretsProvider=gcp)
+  gcpProjectID: ""
+  gcpToken: ""
+  # AWS Secrets Manager (required when secretsProvider=aws)
+  awsRegion: ""
+  awsEndpoint: ""

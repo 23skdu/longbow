@@ -50,7 +50,7 @@ require (
 	golang.org/x/sys v0.50.0
 	golang.org/x/time v0.16.0
 	gonum.org/v1/gonum v0.17.0
-	google.golang.org/api v0.315.0
+	google.golang.org/api v0.316.0
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
@@ -181,6 +181,5 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
-
 
 replace github.com/hamba/avro/v2 => github.com/iskorotkov/avro/v2 v2.35.0

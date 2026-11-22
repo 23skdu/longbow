@@ -187,7 +187,7 @@ from what the server does — and both are checkable.
    defect is invisible to the whole Go suite and only appears in a server run.
    Any new configuration the store derives at runtime rather than from the config
    needs an in-process test that reproduces the store's shape. For TurboQuant this
-   was worth 8.2% → 99.2% reachability (§ `docs/performance.md`).
+   was worth 8.2% → 99.2% reachability (§ `docs/development/performance.md`).
 2. **Effective HNSW parameters.** The harness sets both `LONGBOW_MAX_M0` and
    `LONGBOW_HNSW_MMAX0`. Only the latter is read by
    `types.DefaultArrowHNSWConfig`; `LONGBOW_MAX_M0` is a cap applied by
@@ -201,7 +201,7 @@ anything, and a `>10%` delta against it is not evidence of a regression.
 
 ### 4.3 Benchmarking Observations & Hardware Hotspot Analysis
 
-Profiling on AVX-512 hardware revealed key architectural hotspots that guide optimization priorities (documented in `docs/roadmap.md`):
+Profiling on AVX-512 hardware revealed key architectural hotspots that guide optimization priorities (documented in `docs/development/roadmap.md`):
 
 1. **BM25 Inverted Index Heap Churn**: `(*BM25InvertedIndex).Add` accounts for ~60% of total heap allocations during bulk ingest due to copy-on-write map cloning (`MapRCU`) and frequent slice resizing.
 2. **Redundant Square Root in L2 Distance**: AVX-512 integer distance kernels in `dispatch.go` previously invoked `euclideanInt8AVX512` (`VSQRTPS`) followed by squaring (`d * d`), adding unnecessary square-root overhead compared to direct accumulator addition.
@@ -222,7 +222,7 @@ Profiling on AVX-512 hardware revealed key architectural hotspots that guide opt
 ### 5.1 Which Gate Applies Where (R30, R39)
 
 There are two benchmark gates and they answer different questions. Using the
-wrong one is worse than having none: `docs/roadmap.md` records that the
+wrong one is worse than having none: `docs/development/roadmap.md` records that the
 single-run-versus-baseline gate fires falsely **77-89%** of the time at a 10%
 threshold, and that interleaving two separate invocations makes it *worse*
 (R35/R36), because inter-invocation variation is systematic rather than
@@ -316,7 +316,7 @@ and recall are the checks that catch a fast-but-wrong build, and they are exact.
 ## 6. Maintenance & Artifact Hygiene
 
 - Temporary profiling `.pprof` files and graph dumps (`.bin`) must not be committed to version control.
-- Only summary performance metrics, consolidated logs, and documentation (`docs/performance.md`, `docs/roadmap.md`) shall be tracked in git.
+- Only summary performance metrics, consolidated logs, and documentation (`docs/development/performance.md`, `docs/development/roadmap.md`) shall be tracked in git.
 - Test artifacts and binaries must be periodically cleared using the project clean guidelines.
 - `data/perf_logs/`, `data/bench/` and `scratch/perfruns/` are run output, not
   baselines. Clear them between runs: `unified_benchmark.py` keys its result files
@@ -329,4 +329,4 @@ and recall are the checks that catch a fast-but-wrong build, and they are exact.
   written by `analyze_benchmark_matrix.py`. It records the `perf_matrix_*` files it
   was built from in `source_files`, and it is worthless once those files are gone
   — it does not fail, it just stops describing anything reproducible. Regenerate it
-  in the same pass that produces `docs/performance.md`, or delete it.
+  in the same pass that produces `docs/development/performance.md`, or delete it.

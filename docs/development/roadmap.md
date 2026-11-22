@@ -2,23 +2,23 @@
 
 This document tracks the **remaining** performance, scalability, and
 modularization work for Longbow. Completed items have been removed; their
-results are recorded in `docs/performance.md`, `docs/testplan.md`, `docs/gates.md`,
+results are recorded in `docs/development/performance.md`, `docs/development/testplan.md`, `docs/development/gates.md`,
 and the git history.
 
 The removed work covered:
 
-- **Performance & Scale**: 1M `complex128` memory-profile hot spots (zero-allocation neighbor updates, batch-scratch reuse, copy-on-write graph cloning, cached distance computers), SIMD parity and zero-allocation kernels across all dtypes, dynamic worker scaling, NUMA-aware allocation, request batching, multi-predicate bitmap intersection, HNSW bulk quality (reachability, recall @10, post-bulk repair, and `addbatch_inflight` / `BulkChainLinks` tuning), memory-scaling tests, P0 performance, OIDC Federation, DevSecOps, geo/temporal/text candidate caps, TurboQuant kernels/LUT, predicate pushdown, disk/tiered storage, spatial hash grid, temporal sorted index, text trigram index, filtered predicate-aware entry points, parallel filter evaluation, geo LRU result cache, the 50k–1M scalability tests, and the complete 1M × 15-dtype × 21-mode validation matrix (`benchmarks/baseline_cpu_1m_all15_20261121.json`, `docs/performance.md` §0e, Recall@10 = 0.8600 at 1M).
+- **Performance & Scale**: 1M `complex128` memory-profile hot spots (zero-allocation neighbor updates, batch-scratch reuse, copy-on-write graph cloning, cached distance computers), SIMD parity and zero-allocation kernels across all dtypes, dynamic worker scaling, NUMA-aware allocation, request batching, multi-predicate bitmap intersection, HNSW bulk quality (reachability, recall @10, post-bulk repair, and `addbatch_inflight` / `BulkChainLinks` tuning), memory-scaling tests, P0 performance, OIDC Federation, DevSecOps, geo/temporal/text candidate caps, TurboQuant kernels/LUT, predicate pushdown, disk/tiered storage, spatial hash grid, temporal sorted index, text trigram index, filtered predicate-aware entry points, parallel filter evaluation, geo LRU result cache, the 50k–1M scalability tests, and the complete 1M × 15-dtype × 21-mode validation matrix (`benchmarks/baseline_cpu_1m_all15_20261121.json`, `docs/development/performance.md` §0e, Recall@10 = 0.8600 at 1M).
 - **Codebase Modularization (M1–M4, M6, & initial M5 extractions)**:
   - **M1**: Same-package splits of `rest_graphql.go` (9 files), `cmd/bench-tool/main.go` (6 files), `cmd/longbow/main.go` (6 files), `text_search_advanced.go` (4 files), `store_ingest.go` (3 files), `dataset.go` (3 files), `hnsw_autoshard.go` (3 files), `temporal_search.go` (3 files), `streaming_connectors.go` (3 files), and `internal/metrics/metrics.go` (3 files).
   - **M2**: Modularization of `longbowclientsdk/src/longbow/client.py` into `_mixins/` and `scripts/unified_benchmark.py` into `scripts/benchmark/`.
   - **M3**: Decomposition of `arrow_hnsw_insert.go`, `navigation_search.go`, `adaptive_index.go`, `arrow_search_context.go`, `internal/query/zero_alloc_utils.go`, and `fast_path_filter.go`.
   - **M4**: Splitting `internal/simd/gen/all_kernels_gen.go` into `families/` generating 5 AMD64 assembly family files, splitting `simd_arm64.s` across 6 files + shared macro header, splitting `internal/gpu/cuda/kernels.cu` across 5 files, and extracting `metal_bridge.{h,*.m}` + Go PQ/dtype helpers in `internal/gpu/metal/`.
   - **M5 (initial standalone domain extractions)**: Extracted `internal/store/rbac`, `internal/store/geo`, `internal/store/temporal`, `internal/store/index/learned`, and `internal/store/index/bm25` (including splitting 812-LOC `bm25_inverted_index.go` and extracting pluggable index types into `internal/store/types/pluggable_types.go`), with type/constructor aliases preserved in parent packages.
-  - **M6**: Added `scripts/check_module_sizes.sh` (`make module-size-check`, `scripts/verify.sh` `--staged` check, CI `validate` job, Gate 14 in `docs/gates.md`) warning on hand-maintained files `> 800 LOC`, failing new files `> 1,200 LOC`, and enforcing a shrinkable legacy allow-list (updated for macOS bash 3.2 compatibility).
+  - **M6**: Added `scripts/check_module_sizes.sh` (`make module-size-check`, `scripts/verify.sh` `--staged` check, CI `validate` job, Gate 14 in `docs/development/gates.md`) warning on hand-maintained files `> 800 LOC`, failing new files `> 1,200 LOC`, and enforcing a shrinkable legacy allow-list (updated for macOS bash 3.2 compatibility).
 - **macOS Metal GPU & ARM64 Darwin SIMD**: Runtime Metal shader compilation from embedded `kernels.metal`, Metal bridge buffer-index/top-k/CFRelease/deadlock/race fixes across `MetalIndexOptimized`, `MetalIndex`, and `MetalHybridIndex`, 32-byte TurboQuant Metal alignment, ARM64 NEON `int16`/`uint8` unsigned widening (`VUADDLP_2D`) fix, and all-dtype × dims `128`/`384`/`768` GPU & NEON verification suites.
 
-See `docs/performance.md` for benchmark results and baselines, `docs/gates.md`
-for repository conformance gates, and `docs/testplan.md` for the full
+See `docs/development/performance.md` for benchmark results and baselines, `docs/development/gates.md`
+for repository conformance gates, and `docs/development/testplan.md` for the full
 search-mode and dtype matrix.
 
 ---
@@ -97,7 +97,7 @@ operations.
 - [x] **Split read/write lock scopes (partial)**: `DeleteVectorByID` now resolves location under RLock and applies tombstone under a short write lock; `SearchByID`/`RangeSearch` release `dataMu` before index calls; federated router lock released during search. Full per-column locks remain.
 - [x] **Non-blocking delete path (partial)**: `DeleteVectorByID` no longer holds the dataset write lock during location resolution; tombstone application is a short critical section. Full enqueue-to-ingestion-worker deferred.
 - [ ] **Auto-scaler hysteresis**: prevent the ingestion/indexing auto-scaler from draining below a minimum (currently 4) while pending work exists; add a "busy" signal from the dataset lock queue.
-- [ ] **Shared-namespace soak gate**: add a CI soak variant (8 agents, 2 per namespace, 10 min) that fails on QPS drop > 50% or stall; track in `docs/soaktestplan.md`.
+- [ ] **Shared-namespace soak gate**: add a CI soak variant (8 agents, 2 per namespace, 10 min) that fails on QPS drop > 50% or stall; track in `docs/development/soaktestplan.md`.
 - [x] **Cross-agent memory test**: script `scripts/verify_cross_agent_memory.py` verifies agent A writes are searchable/gettable by agent B.
 
 ### AgentSoak Go Tool & Collation Pipeline (Planned)

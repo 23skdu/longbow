@@ -2,7 +2,7 @@
 # Run the AVX-512 / VBMI / AMX lanes of internal/simd under Intel Software
 # Development Emulator and fail if any of them was skipped.
 #
-# Why this exists: docs/roadmap.md item 5. The AVX-512 parity tests
+# Why this exists: docs/development/roadmap.md item 5. The AVX-512 parity tests
 # (TestPackTQ*AVX512*, the FMA portable tests, TestPackTQ2AVX512VBMI) and the AMX
 # tests all guard on GetCPUFeatures() and t.Skip on a GitHub Actions runner,
 # which has no AVX-512. That is correct for a developer machine and useless for

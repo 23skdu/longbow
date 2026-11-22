@@ -20,7 +20,7 @@ import (
 // everywhere therefore round trips within tolerance and passes.
 //
 // scripts/check_avx512_coverage.sh runs this under Intel SDE
-// (docs/roadmap.md item 5). There was no evidence before it that the VBMI
+// (docs/development/roadmap.md item 5). There was no evidence before it that the VBMI
 // packer agreed with the definition it implements.
 
 // tq2VBMIProbe spans [-2*PI, 2*PI] so both clamp arms are exercised, and

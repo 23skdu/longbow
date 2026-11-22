@@ -205,7 +205,7 @@ func TestNarrowTypeRecallParity(t *testing.T) {
 	// uniform random 128-d vectors are close to a worst case for graph search -
 	// every point is nearly equidistant from every other, so 8 bits of per-component
 	// error reorders neighbours that were barely distinguishable. Confirming it
-	// needs a real embedding corpus; see docs/roadmap.md.
+	// needs a real embedding corpus; see docs/development/roadmap.md.
 	f32 := recalls["float32"]
 	// Reported as absolute figures plus a ratio only when the denominator is
 	// non-zero. Across runs the 8-bit figures land anywhere from exactly 0.0000

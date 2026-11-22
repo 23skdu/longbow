@@ -57,7 +57,7 @@ func PackTQ8AVX512(src []float32, dst []byte) {
 // mean. None of these three symbols is called from production code; they are
 // reachable only from tests, which is why the disagreement went unnoticed.
 //
-// See the note on PackTQ2AVX512VBMI and docs/roadmap.md item 10.
+// See the note on PackTQ2AVX512VBMI and docs/development/roadmap.md item 10.
 func UnpackTQ2AVX512VBMI(src []byte, dst []float32, scale, bias float32) {
 	if len(dst) == 0 {
 		return
@@ -76,12 +76,12 @@ func UnpackTQ2AVX512VBMI(src []byte, dst []float32, scale, bias float32) {
 //
 // The defect was found by scripts/check_avx512_coverage.sh, which runs
 // internal/simd under Intel SDE with an emulated Ice Lake / Sapphire Rapids
-// (docs/roadmap.md item 5). Before that lane existed these kernels had never
+// (docs/development/roadmap.md item 5). Before that lane existed these kernels had never
 // executed anywhere in CI, because every test that guards on HasVBMI skips on a
 // standard runner.
 //
 // PackTQ2 is dispatched instead: it is the entry point the index actually uses
-// and it has always been checked against the generic packer. Fixing the VBMI kernel is tracked as docs/roadmap.md item 10; when it
+// and it has always been checked against the generic packer. Fixing the VBMI kernel is tracked as docs/development/roadmap.md item 10; when it
 // is fixed this function goes back to dispatching the kernel and
 // TestPackTQ2AVX512VBMIMatchesGeneric is what says so.
 //

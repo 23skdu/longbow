@@ -153,7 +153,7 @@ on your own data, set it to `"0"` and compare recall, not timing.
 
 Note separately that TurboQuant construction is expected to be roughly **2.9x**
 float32, not faster. Before commit `a955a0c1` it was faster only because the layer-0
-graph was left partly disconnected; see `docs/roadmap.md` §9.2.
+graph was left partly disconnected; see `docs/development/roadmap.md` §9.2.
 
 ### ML & Inference
 

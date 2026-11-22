@@ -503,7 +503,7 @@ module-size-check:
 	@echo "Checking module size budgets (warn >800 LOC, fail >1,200 LOC new files)..."
 	@./scripts/check_module_sizes.sh
 
-# Observability conformance (docs/roadmap.md Items 18-20, 24)
+# Observability conformance (docs/development/roadmap.md Items 18-20, 24)
 observability-inventory:
 	$(GO) run ./tools/metrics-inventory > internal/observability/testdata/registered_metrics.tsv
 

@@ -8,7 +8,7 @@ package simd
 // instead of the committed degree-5 Horner form. Running it would silently
 // downgrade the kernel, so it is deliberately not wired up here. Porting the
 // committed kernel into Avo needs an AVX-512 host to validate; see
-// docs/roadmap.md.
+// docs/development/roadmap.md.
 //
 //go:generate go run gen/all_kernels_gen.go -family float32 -out kernels_float32_amd64.s -pkg simd
 //go:generate go run gen/all_kernels_gen.go -family vertical -out kernels_vertical_amd64.s -pkg simd

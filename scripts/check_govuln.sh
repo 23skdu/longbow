@@ -12,7 +12,7 @@ set -euo pipefail
 # Ensure Homebrew Go and Go tools are on PATH
 export PATH="/home/linuxbrew/.linuxbrew/bin:$(go env GOPATH 2>/dev/null || echo "$HOME/go")/bin:$PATH"
 
-# Allowlisted GO IDs (see .trivyignore and docs/roadmap.md section 6).
+# Allowlisted GO IDs (see .trivyignore and docs/development/roadmap.md section 6).
 # These have Fixed in: N/A upstream; tracked as accepted risk.
 ALLOWLIST=(
   "GO-2026-5046"  # hamba/avro CPU exhaustion

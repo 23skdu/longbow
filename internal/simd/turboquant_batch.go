@@ -26,7 +26,7 @@ import (
 // neighbour wins a tie.
 //
 // What the profile actually says is where the time goes. The most recent
-// decomposition (docs/performance.md §2) attributes 47.8% of distance
+// decomposition (docs/development/performance.md §2) attributes 47.8% of distance
 // evaluation to the recursive polar reconstruction, 28.5% to the QJL sign
 // correction, 12.9% to angle unpacking and under 5% to the SIMD L2 kernel
 // itself. The first three are scalar, and the first is a chain of dependent

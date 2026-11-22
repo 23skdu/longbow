@@ -13,7 +13,7 @@ import (
 
 // TestArrowHNSW_ConcurrentAddBatch_Int8_50k_Stress is a regression test for
 // the P0 "arena is nil" failure at int8 50k+ scale discovered in the
-// 12-run benchmark matrix (docs/performance.md, 2026-06-06).
+// 12-run benchmark matrix (docs/development/performance.md, 2026-06-06).
 //
 // The bug: in addBatchBulkInternal, after the bootstrap loop the code did
 //

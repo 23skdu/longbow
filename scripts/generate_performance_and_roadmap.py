@@ -2,7 +2,7 @@
 """
 Parses benchmark baseline JSON files in benchmarks/ and data/perf_logs/,
 computes aggregates across data types, scales, and search types,
-and updates docs/performance.md and docs/roadmap.md with empirical metrics and 10 actionable performance steps.
+and updates docs/development/performance.md and docs/development/roadmap.md with empirical metrics and 10 actionable performance steps.
 """
 
 import os
@@ -14,7 +14,7 @@ import glob
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BENCHMARKS_DIR = os.path.join(REPO_ROOT, "benchmarks")
 PERF_LOGS_DIR = os.path.join(REPO_ROOT, "data", "perf_logs")
-DOCS_DIR = os.path.join(REPO_ROOT, "docs")
+DOCS_DIR = os.path.join(REPO_ROOT, "docs", "development")
 PROFILES_DIR = os.path.join(REPO_ROOT, "profiles")
 
 def load_all_benchmark_data():
@@ -193,7 +193,7 @@ def update_roadmap_doc():
     function therefore no longer rewrites it, because doing so would discard
     the measurements (and, with the old split-based implementation, every
     section after it). The profile numbers it used to inject now live in
-    generate_performance_doc(), which regenerates docs/performance.md.
+    generate_performance_doc(), which regenerates docs/development/performance.md.
 
     Regenerate that file with: python3 scripts/generate_performance_and_roadmap.py
     """

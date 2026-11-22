@@ -40,8 +40,8 @@ echo "PASS: targeted OIDC federation test gate"
 
 # 4. Ensure security docs reference OIDC federation plan.
 echo "--- Checking roadmap references ---"
-if ! grep -qi "OIDC Federation" docs/roadmap.md; then
-  echo "FAIL: docs/roadmap.md missing OIDC Federation plan"
+if ! grep -qi "OIDC Federation" docs/development/roadmap.md; then
+  echo "FAIL: docs/development/roadmap.md missing OIDC Federation plan"
   exit 1
 fi
 echo "PASS: roadmap contains OIDC Federation plan"

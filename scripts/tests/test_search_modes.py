@@ -182,7 +182,7 @@ class TestPythonSDKAndDocsParity(unittest.TestCase):
         vectorsearch = _read("docs/vectorsearch.md")
         api_doc = _read("docs/api.md")
         features_doc = _read("docs/features.md")
-        dev_doc = _read("docs/development.md")
+        dev_doc = _read("docs/development/development.md")
         root_readme = _read("README.md")
 
         for term in (

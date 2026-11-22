@@ -12,8 +12,8 @@ Orchestrates benchmark runs across:
   4. GPU EMLGo (bin/longbow-cuda_emlgo)
 - Workers: 4 (pinned to unthrottled cores 12-15)
 - Saves baseline JSONs to benchmarks/
-- Overwrites docs/performance.md
-- Updates docs/roadmap.md with 10 performance steps based on empirical pprof profiles.
+- Overwrites docs/development/performance.md
+- Updates docs/development/roadmap.md with 10 performance steps based on empirical pprof profiles.
 """
 
 import os

@@ -101,9 +101,9 @@ Graph RAG dual-path architecture: Knowledge Graph edges and Spreading Activation
 
 HNSW parameter tradeoffs, memory breakdown, and concurrency safety.
 
-### 13. [Development Guide](development.md)
+### 13. [Development Guide](development/development.md)
 
-Contributing, architecture overview, benchmarking, and test infrastructure.
+Contributing, architecture overview, benchmarking, and test infrastructure. Maintained with the other contributor docs in [docs/development/](development/README.md).
 
 ### 14. [Prometheus Metrics](metrics.md)
 
@@ -117,9 +117,24 @@ RBAC roles (`admin`, `tenant-admin`, `writer`, `ingest-only`, `reader`), dataset
 
 Pure-Go WASM local HNSW index, offline-first conflict resolution, TypeScript Edge SDK (`sdk/edge-js`), and HTTP sync/search endpoints.
 
-### 17. [Feature Parity Roadmap (Items 1–15)](roadmap.md)
+### 17. [Feature Parity Roadmap (Items 1–15)](development/roadmap.md)
 
 End-to-end roadmap covering Managed Cloud multi-region replication, first-class REST/GraphQL APIs, RBAC, backup/PITR, streaming CDC, multi-modal pipelines, usage metering, sharding, encryption/mTLS, schemas, materialized views, advanced text search, and provenance.
+
+---
+
+## Developer Documentation
+
+Contributor- and maintainer-only documents are grouped in [docs/development/](development/README.md):
+
+- [Development Guide](development/development.md) — contributing, benchmarking, and test infrastructure
+- [Performance Benchmarks](development/performance.md) — empirical baselines and validation matrices
+- [Benchmark & Validation Test Plan](development/testplan.md) — single-node benchmark and A/B gating methodology
+- [24-Hour Agent-Memory Soak Test Plan](development/soaktestplan.md) — long-running stability validation
+- [Global GraphRAG & Clustering Test Plan](development/globaltestplan.md) — multi-node GCP validation
+- [Code & Quality Gates](development/gates.md) — repository conformance gates
+- [Roadmap](development/roadmap.md) — remaining performance and scale work
+- [SIMD Architecture & Dispatch](development/simd-architecture.md) — kernel dispatch internals
 
 ---
 

@@ -332,7 +332,7 @@ def main():
             "One or more results JSON files. With several, the MINIMUM QPS per "
             "configuration is combined across them. "
             "NOTE: this does NOT make the gate reliable. Measured over the runs "
-            "already in data/perf_logs (docs/roadmap.md R35/R36), a single-run "
+            "already in data/perf_logs (docs/development/roadmap.md R35/R36), a single-run "
             "gate at a 10%% threshold fires falsely 38-55%% of the time against "
             "another run of the same configuration, and combining runs makes it "
             "WORSE, monotonically: min-of-3 reaches 63-92%% and min-of-5 78-98%%. "

@@ -6,7 +6,7 @@ Why this exists
 `check_regression.py` compares one run against one baseline and applies a fixed
 percentage threshold. Measured on the runs already in `data/perf_logs`, that gate
 fires falsely 77-89% of the time at a 10% threshold, comparing a run of a binary
-against another run of the same binary (docs/roadmap.md R35). Combining runs made
+against another run of the same binary (docs/development/roadmap.md R35). Combining runs made
 it worse, not better (R36), because the variation between separate harness
 invocations is systematic rather than zero-mean: which cores are free, what the
 memory ceiling resolved to, and what else is on the host all differ between

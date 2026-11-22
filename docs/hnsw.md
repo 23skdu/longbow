@@ -523,4 +523,4 @@ the fix, 3-5 of 5 batches fail with `arena is nil` and `nodeCount`
 is well below 50000. With the fix, all 5 succeed in ~76 s.
 
 The 50k stress test is listed as a "must run" test in
-`docs/development.md` §Regression Test Plan. Do not skip it.
+`docs/development/development.md` §Regression Test Plan. Do not skip it.

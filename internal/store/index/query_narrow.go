@@ -14,7 +14,7 @@ import "math"
 // returns neighbours that have nothing to do with the query.
 //
 // It also made the benchmark matrix meaningless for the narrow types. See
-// docs/roadmap.md item 1 (R32).
+// docs/development/roadmap.md item 1 (R32).
 //
 // This file defines the conversion so that it is total, defined, and
 // in-domain-preserving: a component already inside the destination range is

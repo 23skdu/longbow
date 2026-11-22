@@ -54,7 +54,7 @@ func NewReusableSearchState(maxDim int) *ReusableSearchState {
 // arrives as 128 zeros and the search degenerates into "nearest node to the
 // origin" - the same answer for every query, measured as if it were a search.
 // That is what made the 100k matrix report int8 at 1162 QPS and uint8 at 3974
-// QPS while both are one byte wide; see docs/roadmap.md item 1 (R32).
+// QPS while both are one byte wide; see docs/development/roadmap.md item 1 (R32).
 func corpusValueRange(dtype string) (lo, hi float32) {
 	switch dtype {
 	case "int8":

@@ -12,7 +12,7 @@
 // Porting the committed kernel into Avo is only safe with an AVX-512 host to
 // validate the result, which this repository does not currently have. Until
 // then, the //go:generate line stays removed from ../generate.go.
-// See docs/roadmap.md.
+// See docs/development/roadmap.md.
 
 package main
 

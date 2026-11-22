@@ -6,7 +6,7 @@ package index
 // arrow_hnsw_bulk_connectivity_test.go covers collinear data, where the
 // insertion-order predecessor genuinely is the nearest neighbour. This file
 // covers the opposite geometry, and it exists because of a failed attempt to
-// "fix" the chain link (docs/roadmap.md section 8.3.1).
+// "fix" the chain link (docs/development/roadmap.md section 8.3.1).
 //
 // The attempted fix was to add the predecessor edge only when it was near, gated
 // on the node's own candidate median. It looked correct - on shuffled input it

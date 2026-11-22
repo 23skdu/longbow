@@ -13,7 +13,7 @@ import (
 // difference is memory rather than arithmetic.
 //
 // The 100k benchmark matrix reported int16 and uint16 dense search at roughly a
-// sixth of the 8-bit types (docs/roadmap.md item 1, R32). That comparison was
+// sixth of the 8-bit types (docs/development/roadmap.md item 1, R32). That comparison was
 // not measuring the read path: the query reaching these types was converted by
 // a truncating cast, so a [0,1) probe against a [0,127) corpus collapsed to the
 // zero vector and every query degenerated to "nearest node to the origin". The
@@ -120,7 +120,7 @@ func newReadPathHNSW() *ArrowHNSW {
 // One op is len(blocks) * readPathBlock = 32768 distance evaluations, so
 // ns/op / 32768 is the per-vector cost.
 //
-// Reference figures on the i7-12650H used for docs/performance.md (AVX2, no
+// Reference figures on the i7-12650H used for docs/development/performance.md (AVX2, no
 // AVX-512, 24 MiB L3, 500k x 128-d, so 64 MiB for a 1-byte type and 128 MiB for
 // a 2-byte type - neither resident), 32768 evaluations per op:
 //
@@ -131,7 +131,7 @@ func newReadPathHNSW() *ArrowHNSW {
 // All three are zero-allocation. The 1.4x ratio tracks the 2x byte count, so
 // the read path costs roughly what its memory traffic says it costs. Before the
 // int16/uint16 kernels were rebuilt the ratio was 1.69x. Neither figure supports
-// the 6x claim in docs/roadmap.md item 1.
+// the 6x claim in docs/development/roadmap.md item 1.
 func BenchmarkComputeBatch_ReadPath(b *testing.B) {
 	blocks := readPathIDs(readPathScale, 512)
 	dst := make([]float32, readPathBlock)

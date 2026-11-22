@@ -457,7 +457,7 @@ func TestRuleGroupsHaveUnitTests(t *testing.T) {
 			fmt.Fprintf(&b, "  %s\n", g)
 		}
 		b.WriteString("\nA parse check cannot detect a rule that never fires.\n")
-		b.WriteString("See docs/roadmap.md Item 20.\n")
+		b.WriteString("See docs/development/roadmap.md Item 20.\n")
 		t.Errorf("%s", b.String())
 	}
 }

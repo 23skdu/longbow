@@ -57,7 +57,7 @@ python3 scripts/unified_benchmark.py --mode cpu,metal --dtypes float32,turboquan
 # Run dedicated scenario benchmarks (temporal, geo, range, federated, text, multimodal, recommend, graphrag, learned_index)
 python3 scripts/unified_benchmark.py --mode temporal,geo,range,federated,text,multimodal
 
-# Results are generated as a Markdown matrix in docs/performance.md
+# Results are generated as a Markdown matrix in docs/development/performance.md
 ```
 
 ### GPU Binary Distribution
@@ -207,10 +207,10 @@ docker run -p 3000:3000 -p 3001:3001 -p 9090:9090 longbow
 - [CLI Reference (`longbow-cli`)](docs/cli.md)
 - [Deployment & Configuration](docs/deploy.md)
 - [Features & Competitive Landscape](docs/features.md)
-- [Feature Parity Roadmap](docs/roadmap.md)
+- [Feature Parity Roadmap](docs/development/roadmap.md)
 - [Security & Compliance](docs/security-compliance.md)
 - [Serverless, Edge SDKs & WASM Client](docs/edge-wasm.md)
-- [Performance Benchmarks](docs/performance.md)
+- [Performance Benchmarks](docs/development/performance.md)
 - [Systems Architecture](docs/architecture.md)
 - [Vector Search Architecture](docs/vectorsearch.md)
 - [Metrics Documentation](docs/metrics.md)

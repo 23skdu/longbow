@@ -238,7 +238,7 @@ func TestTurboQuantDistanceBatchDegenerate(t *testing.T) {
 // BenchmarkTurboQuantDistanceBatch measures the block sizes searchLayer actually
 // produces.
 //
-// The last attempt at batching (docs/roadmap.md R24) was measured at 32 KB,
+// The last attempt at batching (docs/development/roadmap.md R24) was measured at 32 KB,
 // which stays in L2, and the number it produced was then used to predict the
 // effect on a 128 MB working set touched in node-id order. It came out 25%
 // slower end to end. The block sizes below bracket what searchLayer really

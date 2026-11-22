@@ -102,7 +102,7 @@ func buildFloat32DenseCorpus(tb testing.TB, n, dims, mmax0 int) (*ArrowHNSW, [][
 //
 // Note that this exercises ArrowHNSW.Search directly, not the gRPC/Arrow Flight
 // request path, so its absolute ns/op is not comparable with the QPS figures in
-// docs/performance.md. Use it for A/B and bisection only.
+// docs/development/performance.md. Use it for A/B and bisection only.
 func BenchmarkDenseSearch_Float32_50k(b *testing.B) {
 	idx, queries := buildFloat32DenseCorpus(b, 50_000, 128, 16)
 	ctx := context.Background()

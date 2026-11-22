@@ -365,7 +365,7 @@ grep -i "error\|fail\|exhausted\|panic\|CRASH" benchmark_run.log
 Results are auto-saved to `data/perf_logs/perf_matrix_*.json` with an accompanying `*.md` report. Copy to docs:
 
 ```bash
-cp data/perf_logs/perf_matrix_cpu_regression_*.md docs/performance.md
+cp data/perf_logs/perf_matrix_cpu_regression_*.md docs/development/performance.md
 ```
 
 #### Output Artifacts
@@ -376,8 +376,8 @@ cp data/perf_logs/perf_matrix_cpu_regression_*.md docs/performance.md
 | Server logs | `data/perf_logs/longbow_cpu_*.log` | Server diagnostics |
 | Bench logs | `data/perf_logs/bench_cpu_*.log` | Bench-tool output |
 | Perf matrix | `data/perf_logs/perf_matrix_*.json` | Aggregated all configs |
-| Performance doc | `docs/performance.md` | Analysis and findings |
-| Next steps | `docs/roadmap.md` | Optimization recommendations |
+| Performance doc | `docs/development/performance.md` | Analysis and findings |
+| Next steps | `docs/development/roadmap.md` | Optimization recommendations |
 
 #### Pass/Fail Criteria
 
@@ -412,7 +412,7 @@ Full run passes if:
 ### How to Contribute
 
 1. **Fork the repository** and create a feature branch.
-2. **Implement changes** following the [Architecture Guide](architecture.md).
+2. **Implement changes** following the [Architecture Guide](../architecture.md).
 3. **Close the Loop**: If you modify search behavior, ensure you update `RecordQueryPerformance` calls to provide accurate signals for the Learned Index.
 4. **Add Tests**: Include unit, integration, and (if applicable) fuzz tests.
 5. **Verify Performance**: Run `make benchmark` and Attach the results to your PR.

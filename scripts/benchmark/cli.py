@@ -353,7 +353,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--report-md", type=str, default=None,
-        help="Generate a Markdown performance report at the given path (e.g., docs/performance.md)"
+        help="Generate a Markdown performance report at the given path (e.g., docs/development/performance.md)"
     )
     return parser
 

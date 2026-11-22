@@ -3,13 +3,13 @@
 Comprehensive benchmark aggregator for Longbow.
 
 Discovers the newest unified_benchmark matrix run for each of the 8
-build/disk variants, generates docs/performance.md (ingest table, A/B tables
+build/disk variants, generates docs/development/performance.md (ingest table, A/B tables
 per device / search mode / disk mode), compares against the archived previous
 baseline, and emits a consolidated baseline under benchmarks/.
 
 Usage:
     python3 scripts/analyze_benchmark_matrix.py \
-        [--out docs/performance.md] \
+        [--out docs/development/performance.md] \
         [--baseline-dir data/perf_logs/archive_20260924] \
         [--baseline-out benchmarks/baseline_matrix.json]
 """
@@ -31,14 +31,14 @@ VARIANTS = [
     ("gpu_emlgo_disk", "cuda", "GPU EMLGo (Disk)"),
 ]
 
-# Display order from docs/testplan.md §3.4
+# Display order from docs/development/testplan.md §3.4
 DTYPES = [
     "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64",
     "float16", "float32", "float64", "complex64", "complex128",
     "turboquant4", "turboquant8",
 ]
 
-# Display order from docs/testplan.md §3.5 (bench-tool key -> testplan name)
+# Display order from docs/development/testplan.md §3.5 (bench-tool key -> testplan name)
 SEARCH_MODES = [
     ("dense", "dense"),
     ("hybrid", "hybrid"),
@@ -239,7 +239,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--log-dir", default="data/perf_logs")
     ap.add_argument("--baseline-dir", default="data/perf_logs/archive_20260924")
-    ap.add_argument("--out", default="docs/performance.md")
+    ap.add_argument("--out", default="docs/development/performance.md")
     ap.add_argument("--baseline-out", default="benchmarks/baseline_matrix.json")
     ap.add_argument("--queries", type=int, default=50)
     ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
@@ -296,7 +296,7 @@ def main():
     w(f"**Configuration:** 8 concurrency workers, {args.queries} queries, 128 dimensions, 16GB memory ceiling.")
     w(f"**Scaling Tiers:** 100,000 (100k) and 250,000 (250k) vectors.")
     w(f"**Data Types:** all {n_dt} test-plan dtypes (`int8` → `turboquant8`).")
-    w(f"**Search Modes:** all {n_modes} engine modalities (see `docs/testplan.md` §3.5).")
+    w(f"**Search Modes:** all {n_modes} engine modalities (see `docs/development/testplan.md` §3.5).")
     w("**Disk Modes:** `use_disk=no` (pure memory) and `use_disk=yes` (auto-spill with 60% memory threshold).")
     w("")
     w("---\n")
@@ -387,7 +387,7 @@ def main():
 
     # ------------------------------------------------------------- observations
     w(f"## {section}. Performance & Stability Observations for Roadmap\n")
-    w("See `docs/roadmap.md` for the tracked action items derived from this run.")
+    w("See `docs/development/roadmap.md` for the tracked action items derived from this run.")
     w("")
 
     with open(args.out, "w") as f:

@@ -641,7 +641,7 @@ Ingestion throughput measures transport-side Flight streaming vectors into the d
 Index Time measures the wall-clock time from ingest completion until HNSW graph construction
 finishes and the dataset is fully searchable (`check_readiness`). Tracking index time alongside ingest
 throughput ensures that graph-construction bottlenecks and bulk-linkage regressions are visible
-directly in the primary performance matrix (see `docs/roadmap.md` Item 3).
+directly in the primary performance matrix (see `docs/development/roadmap.md` Item 3).
 
 | Scale (Count) | Dim | Dtype | Engine | Ingestion (vec/s) | Ingestion (MB/s) | Index Time (s) | Peak RSS (MB) |
 |---|---|---|---|---|---|---|---|
@@ -811,7 +811,7 @@ replacement for the TurboQuant rows in §3; it is not comparable with them.
 > at −3.9% to +3.9% but the per-pair spread as wide as −31% to +41%
 > (`int32`/`byid`: −4%…+41%; `uint64`/`temporal`: −31%…0%; `int32`/`temporal`:
 > −30%…+23%). So a single-run delta of the size seen here is not separable from
-> noise on one sample, exactly as `docs/testplan.md` §5.1 predicts for a 10%
+> noise on one sample, exactly as `docs/development/testplan.md` §5.1 predicts for a 10%
 > single-run gate. Do not remediate code from these rows; re-baseline with
 > `--runs 3 --save-baseline` first.
 
@@ -1822,7 +1822,7 @@ Profiling `turboQuantDistanceAVX2Scratch` across 100,000 vectors revealed the in
 
 ## Performance Recommendations (2026-11-07 Matrix Review)
 
-Derived from `docs/performance.md` §0a (100k/250k/500k, dims 128 & 384, all 13 search modes).
+Derived from `docs/development/performance.md` §0a (100k/250k/500k, dims 128 & 384, all 13 search modes).
 
 ### Key Bottlenecks
 
@@ -1836,6 +1836,6 @@ Derived from `docs/performance.md` §0a (100k/250k/500k, dims 128 & 384, all 13 
 ### Recommended Actions
 
 - Prioritize P0-B, P0-C, P0-E (already in roadmap) for complex/geo/memory.
-- Add P0-F (uint32 dispatch), P0-I (TurboQuant LUT), P0-J (float64 selectNeighbors), P0-K (string filter), P0-L (memory cap) as P0 blockers in `docs/roadmap.md`.
+- Add P0-F (uint32 dispatch), P0-I (TurboQuant LUT), P0-J (float64 selectNeighbors), P0-K (string filter), P0-L (memory cap) as P0 blockers in `docs/development/roadmap.md`.
 
-These are tracked as P0 blockers in `docs/roadmap.md`.
+These are tracked as P0 blockers in `docs/development/roadmap.md`.

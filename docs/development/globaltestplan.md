@@ -4,11 +4,11 @@
 
 This test plan defines how to provision, configure, execute, and validate a **multi-node Longbow cluster on Google Cloud Platform (GCP)** to test distributed **SWIM gossip clustering**, **GlobalSearch scatter-gather**, **GlobalGraphRAG** multi-hop traversal, **elastic sharding**, and **fault tolerance**.
 
-It complements [docs/testplan.md](testplan.md) (single-node benchmark matrix and A/B gating methodology) and [docs/performance.md](performance.md) (empirical single-node CPU/AVX2/AVX-512 baselines).
+It complements [docs/development/testplan.md](testplan.md) (single-node benchmark matrix and A/B gating methodology) and [docs/development/performance.md](performance.md) (empirical single-node CPU/AVX2/AVX-512 baselines).
 
 ### Why a Multi-Node Cloud Cluster Is Required
 
-As documented in [docs/graphrag.md](graphrag.md), when Longbow runs as a standalone single-node process (`s.Mesh == nil`), requests carrying `x-longbow-global: "true"` silently fall back to the local `GraphRAG` execution path. Single-node runs validate ticket parsing and local graph traversal, **but do not exercise**:
+As documented in [docs/graphrag.md](../graphrag.md), when Longbow runs as a standalone single-node process (`s.Mesh == nil`), requests carrying `x-longbow-global: "true"` silently fall back to the local `GraphRAG` execution path. Single-node runs validate ticket parsing and local graph traversal, **but do not exercise**:
 
 1. SWIM UDP gossip membership discovery, failure detection (`suspicionTimeout`), and cluster convergence.
 2. Distributed `GlobalSearchCoordinator` scatter-gather fan-out across live peers (`internal/store/global_search.go`).
@@ -27,7 +27,7 @@ As documented in [docs/graphrag.md](graphrag.md), when Longbow runs as a standal
 
 ## 2. Recommended Google Cloud Topologies
 
-Two GCP topologies are supported depending on the test goal. Both follow the AVX-512 server concurrency rules established in [docs/testplan.md](testplan.md) §4.1: **homogeneous dedicated vCPUs, unpinned CPU cores (omit `--cpu-affinity`), and ≥8 concurrent client workers**.
+Two GCP topologies are supported depending on the test goal. Both follow the AVX-512 server concurrency rules established in [docs/development/testplan.md](testplan.md) §4.1: **homogeneous dedicated vCPUs, unpinned CPU cores (omit `--cpu-affinity`), and ≥8 concurrent client workers**.
 
 | Topology | Best For | Discovery Provider | Node Count | Isolation |
 | :--- | :--- | :--- | :--- | :--- |
@@ -36,7 +36,7 @@ Two GCP topologies are supported depending on the test goal. Both follow the AVX
 
 ### 2.1 Recommended Machine Types & Sizing
 
-Match or exceed the AVX-512 server baseline in [docs/testplan.md](testplan.md) §2.2 (`16 vCPU Xeon, 125 GiB RAM`):
+Match or exceed the AVX-512 server baseline in [docs/development/testplan.md](testplan.md) §2.2 (`16 vCPU Xeon, 125 GiB RAM`):
 
 | Role | GCP Machine Type | CPU / ISA | RAM | Local / Disk | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -215,7 +215,7 @@ export LONGBOW_AUTO_SHARDING_ENABLED="false"
 
 ## 4. Configuration Fidelity Pre-Flight Checks
 
-Following [docs/testplan.md](testplan.md) §4.2a, verify runtime state from every node before running any test suite:
+Following [docs/development/testplan.md](testplan.md) §4.2a, verify runtime state from every node before running any test suite:
 
 1. **Cluster Membership & Identity**:
    - Call `cluster-status` / `MeshStatus` / `DiscoveryStatus` against port `3001` on every node.
@@ -246,7 +246,7 @@ Build a deterministic sharded dataset (seed `42`) across all `N` nodes with **ex
 1. **Vector Corpus**:
    - Scale tiers: **100k** (smoke), **250k** (mid), **500k** (large), **1M** total vectors distributed across `N` nodes via consistent hashing (`ringSharding`).
    - Dims: `128`, `384`, `768`.
-   - Dtypes: `float32`, `int8`, `float16`, `complex128`, `turboquant4` (covering dense, quantized, complex, and TurboQuant paths from [docs/performance.md](performance.md)).
+   - Dtypes: `float32`, `int8`, `float16`, `complex128`, `turboquant4` (covering dense, quantized, complex, and TurboQuant paths from [docs/development/performance.md](performance.md)).
 2. **Knowledge Graph Edges (`add-edge`)**:
    - Ingest `5–10` semantic edges per node (`related_to`, `cites`, `belongs_to`) with **≥ 40% of edges crossing shard boundaries** (source ID owned by `longbow-i`, target ID owned by `longbow-j`, `i ≠ j`).
    - Verify `GetGraphStats` and `longbow_graph_store_edge_count` match expected edge totals across the cluster.
@@ -300,7 +300,7 @@ longbow-cli search -uri "grpc://${IP0}:3001" -dataset global_graphrag_bench \
    - Enable `LONGBOW_AUTO_SHARDING_ENABLED=true` on 128 GiB nodes (remember: `helm/longbow/values.yaml` notes shard migration temporarily doubles memory while the new shard builds).
    - Trigger `TriggerShardSplit`, `TriggerShardMerge`, and `TriggerRebalance`; verify `GetClusterTopology` reflects balanced shard ownership and zero OOMs or lost vectors.
 2. **Interleaved A/B Gating (`scripts/ab_benchmark.py`)**:
-   - Per [docs/testplan.md](testplan.md) §5.1–5.3, do not rely on single-run comparisons against static baselines to judge small deltas.
+   - Per [docs/development/testplan.md](testplan.md) §5.1–5.3, do not rely on single-run comparisons against static baselines to judge small deltas.
    - First measure the cluster noise floor (same binary as both arms, `--reps 3`), then run interleaved A/B (`--reps 6 --threshold 10`, unpinned, `--workers 8`) when evaluating cluster/GlobalGraphRAG code changes.
 
 ---
@@ -326,7 +326,7 @@ Scrape `:9090/metrics` on every node at 5s intervals from a Prometheus instance 
 
 ### Continuous `pprof` Capture
 
-Capture all 7 profiles (`profile`, `heap`, `allocs`, `goroutine`, `threadcreate`, `block`, `mutex`) from each node's `:9090/debug/pprof/` during peak GlobalGraphRAG load and before teardown. Archive summary findings only; never commit `.pprof` dumps to git ([docs/testplan.md](testplan.md) §6).
+Capture all 7 profiles (`profile`, `heap`, `allocs`, `goroutine`, `threadcreate`, `block`, `mutex`) from each node's `:9090/debug/pprof/` during peak GlobalGraphRAG load and before teardown. Archive summary findings only; never commit `.pprof` dumps to git ([docs/development/testplan.md](testplan.md) §6).
 
 ---
 
@@ -361,4 +361,4 @@ gcloud compute firewall-rules delete longbow-cluster-internal \
 # gcloud storage rm -r "gs://<your-bucket>/global-test-runs/*"
 ```
 
-Archive only consolidated summary tables and markdown updates (`docs/performance.md`, `docs/globaltestplan.md`) in git; delete raw `.pprof`, `.bin`, and temporary `data/perf_logs/` files per [docs/testplan.md](testplan.md) §6.
+Archive only consolidated summary tables and markdown updates (`docs/development/performance.md`, `docs/development/globaltestplan.md`) in git; delete raw `.pprof`, `.bin`, and temporary `data/perf_logs/` files per [docs/development/testplan.md](testplan.md) §6.

@@ -55,12 +55,15 @@ func (s *VectorStore) RangeSearch(ctx context.Context, dataset string, queryVec 
 		ds.dataMu.RUnlock()
 		return nil, status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, actualDim)
 	}
+	index := ds.Index
+	ds.dataMu.RUnlock()
 
-	results, err := ds.Index.SearchVectorsInRange(ctx, queryVec, threshold, filters, types.SearchOptions{MaxResults: maxResults})
+	results, err := index.SearchVectorsInRange(ctx, queryVec, threshold, filters, types.SearchOptions{MaxResults: maxResults})
 	if err != nil {
-		ds.dataMu.RUnlock()
 		return nil, status.Errorf(codes.Internal, "range search failed: %v", err)
 	}
+
+	ds.dataMu.RLock()
 	results = s.mapInternalToUserIDsLocked(ds, results)
 	ds.dataMu.RUnlock()
 

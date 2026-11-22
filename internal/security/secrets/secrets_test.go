@@ -28,6 +28,45 @@ func TestValidateKeyID(t *testing.T) {
 	}
 }
 
+func TestNamespacePolicyKeyID(t *testing.T) {
+	id := NamespacePolicyKeyID("team-a")
+	require.NoError(t, ValidateKeyID(id))
+	require.True(t, IsNamespacePolicyKeyID(id))
+	require.Equal(t, id, NamespacePolicyKeyID("team-a"))
+	require.NotEqual(t, id, NamespacePolicyKeyID("team-b"))
+	require.False(t, IsNamespacePolicyKeyID("agent-writer"))
+}
+
+func TestStorePreservesRecordKind(t *testing.T) {
+	ctx := context.Background()
+	policy := StoredKey{
+		KeyID: NamespacePolicyKeyID("team-a"),
+		Kind:  KindNamespacePolicy,
+		Meta:  json.RawMessage(`{"namespace":"team-a","ephemeral":false}`),
+	}
+	key := StoredKey{KeyID: "agent-writer", Kind: KindAPIKey, Raw: "secret", Meta: json.RawMessage(`{}`)}
+
+	for name, store := range map[string]Store{
+		"memory": NewMemoryStore(),
+		"file":   mustFileStore(t),
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.NoError(t, store.Put(ctx, policy))
+			require.NoError(t, store.Put(ctx, key))
+			got, err := store.LoadAll(ctx)
+			require.NoError(t, err)
+			require.ElementsMatch(t, []StoredKey{policy, key}, got)
+		})
+	}
+}
+
+func mustFileStore(t *testing.T) Store {
+	t.Helper()
+	store, err := NewFileStore(filepath.Join(t.TempDir(), "records"))
+	require.NoError(t, err)
+	return store
+}
+
 func TestMemoryStore(t *testing.T) {
 	ctx := context.Background()
 	s := NewMemoryStore()

@@ -1,13 +1,15 @@
-// Package secrets provides durable storage for Longbow RBAC API credentials.
+// Package secrets provides durable storage for Longbow RBAC records.
 //
-// The store is keyed by a stable, operator-visible KeyID and holds the raw
-// secret plus opaque API-key metadata. Implementations cover local file/memory
-// storage and the external providers operators already use: HashiCorp Vault KV
-// v2, Google Secret Manager, and AWS Secrets Manager.
+// The store is keyed by a stable, operator-visible KeyID and holds either an
+// API credential or a namespace ACL policy. Implementations cover local
+// file/memory storage and the external providers operators already use:
+// HashiCorp Vault KV v2, Google Secret Manager, and AWS Secrets Manager.
 package secrets
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +30,14 @@ const (
 	DefaultPrefix = "longbow/rbac"
 	// DefaultVaultMount is the conventional Vault KV v2 mount.
 	DefaultVaultMount = "secret"
+
+	// KindAPIKey identifies a durable RBAC API credential. An empty Kind is
+	// treated as an API key for compatibility with pre-existing records.
+	KindAPIKey = "api_key"
+	// KindNamespacePolicy identifies a durable namespace ACL.
+	KindNamespacePolicy = "namespace_policy"
+
+	namespacePolicyKeyPrefix = "nspolicy-"
 )
 
 var keyIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
@@ -41,19 +51,35 @@ func ValidateKeyID(id string) error {
 	return nil
 }
 
-// StoredKey is one durable credential record. Raw is the secret returned to
-// the caller at issuance time; Meta carries the RBAC API key metadata needed
-// to rehydrate the in-memory manager after a restart.
+// NamespacePolicyKeyID returns the deterministic provider-safe record ID for a
+// namespace ACL. The namespace itself is kept in the record metadata; hashing
+// it avoids exposing arbitrary namespace names in provider secret IDs.
+func NamespacePolicyKeyID(namespace string) string {
+	sum := sha256.Sum256([]byte(namespace))
+	return namespacePolicyKeyPrefix + hex.EncodeToString(sum[:])[:16]
+}
+
+// IsNamespacePolicyKeyID reports whether id is reserved for namespace ACLs.
+func IsNamespacePolicyKeyID(id string) bool {
+	return strings.HasPrefix(id, namespacePolicyKeyPrefix)
+}
+
+// StoredKey is one durable RBAC record. Raw is the API secret returned to the
+// caller at issuance time; Meta carries either API-key metadata or a namespace
+// ACL policy. Kind distinguishes the two record types, with an empty Kind
+// interpreted as KindAPIKey for backward compatibility.
 type StoredKey struct {
 	KeyID string          `json:"key_id"`
+	Kind  string          `json:"kind,omitempty"`
 	Raw   string          `json:"raw"`
 	Meta  json.RawMessage `json:"meta,omitempty"`
 }
 
-// Store is the pluggable credential store used by the RBAC manager.
+// Store is the pluggable RBAC record store.
 //
-// Put is write-through on issue, rotation, and metadata updates; Delete is
-// write-through on revoke/removal; LoadAll rehydrates state on startup.
+// Put is write-through on issue, rotation, policy changes, and metadata
+// updates; Delete is write-through on removal; LoadAll rehydrates state on
+// startup.
 type Store interface {
 	LoadAll(ctx context.Context) ([]StoredKey, error)
 	Put(ctx context.Context, key StoredKey) error

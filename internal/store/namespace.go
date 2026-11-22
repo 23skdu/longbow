@@ -337,6 +337,67 @@ func (vs *VectorStore) DeleteNamespace(name string) error {
 	return nil
 }
 
+// PruneNamespaces removes datasets and namespace objects that were recreated
+// by WAL/snapshot replay but no longer have a durable owner. keepNamespaces is
+// the set of namespaces that exist for this process; keepDatasets is the
+// subset whose data may survive a restart. Runtime-only (ephemeral) namespace
+// ACLs keep their namespace object but not stale replayed datasets.
+func (vs *VectorStore) PruneNamespaces(keepNamespaces, keepDatasets map[string]struct{}) (int, error) {
+	if vs.nsManager == nil {
+		return 0, errors.New("namespace manager not initialized")
+	}
+
+	var datasetNames []string
+	vs.IterateDatasets(func(name string, _ *Dataset) {
+		ns, _ := ParseNamespacedPath(name)
+		if ns == "default" {
+			return
+		}
+		if _, ok := keepDatasets[ns]; ok {
+			return
+		}
+		datasetNames = append(datasetNames, name)
+	})
+
+	pruned := 0
+	for _, name := range datasetNames {
+		if err := vs.DropDataset(context.Background(), name); err != nil {
+			return pruned, fmt.Errorf("prune replayed dataset %q: %w", name, err)
+		}
+		pruned++
+	}
+
+	var removeNamespaces []string
+	vs.nsManager.mu.RLock()
+	for name := range vs.nsManager.namespaces {
+		if name == "default" {
+			continue
+		}
+		if _, ok := keepNamespaces[name]; ok {
+			continue
+		}
+		removeNamespaces = append(removeNamespaces, name)
+	}
+	vs.nsManager.mu.RUnlock()
+
+	for _, name := range removeNamespaces {
+		vs.nsManager.mu.Lock()
+		_, exists := vs.nsManager.namespaces[name]
+		if exists {
+			delete(vs.nsManager.namespaces, name)
+			metrics.NamespacesTotal.Dec()
+		}
+		vs.nsManager.mu.Unlock()
+		if exists {
+			vs.logger.Info().Str("namespace", name).Msg("Pruned replayed namespace without a durable ACL")
+		}
+	}
+	if pruned > 0 {
+		vs.logger.Info().Int("datasets", pruned).Msg("Pruned replayed datasets without a durable namespace")
+	}
+	return pruned, nil
+}
+
 // ListNamespaces returns all namespace names.
 func (vs *VectorStore) ListNamespaces() []string {
 	if vs.nsManager == nil {

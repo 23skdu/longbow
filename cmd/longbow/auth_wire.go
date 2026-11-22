@@ -87,6 +87,27 @@ func initAuthAndTLS(cfg *Config, vectorStore *store.VectorStore, logger zerolog.
 		logger.Info().Int("namespaces", len(startupPolicies)).Msg("Provisioned startup namespace ACLs")
 	}
 
+	// WAL and snapshot replay runs before RBAC rehydration and can recreate
+	// datasets for namespaces that were deleted or declared runtime-only.
+	// Drop those datasets before any server starts accepting traffic.
+	keepNamespaces := map[string]struct{}{"default": {}}
+	for _, name := range vectorStore.ListNamespaces() {
+		keepNamespaces[name] = struct{}{}
+	}
+	keepDatasets := map[string]struct{}{"default": {}}
+	for _, policy := range rbacMgr.ListNamespacePolicies() {
+		if !policy.Ephemeral {
+			keepDatasets[policy.Namespace] = struct{}{}
+		}
+	}
+	pruned, err := vectorStore.PruneNamespaces(keepNamespaces, keepDatasets)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("prune replayed namespaces: %w", err)
+	}
+	if pruned > 0 {
+		logger.Info().Int("datasets", pruned).Msg("Pruned replayed datasets without durable namespace ACLs")
+	}
+
 	if cfg.OIDCEnabled {
 		var issuers []security.OIDCIssuerConfig
 		if strings.TrimSpace(cfg.OIDCIssuers) != "" {

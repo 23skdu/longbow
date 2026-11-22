@@ -82,3 +82,20 @@ Target budgets for hand-maintained code remain `<= 500 LOC` soft / `<= 800 LOC` 
 - `benchmarks/baseline_cpu_768_20261116.json` (50k/100k/200k, dim 768)
 - `benchmarks/baseline_cpu_large_20261116.json` (500k/1M, dim 128)
 - `benchmarks/baseline_cpu.json`, `baseline_100k.json`, `baseline_250k.json`, `baseline_25k.json` (legacy)
+
+### Shared-Namespace Concurrency (Soak-Test Findings)
+
+Investigation (2026-11-21): agent soak tests with 8 agents (2 per namespace)
+stall after ~60s even though the server stays responsive and error rate is 0.
+Profiling shows no memory pressure; the stall is a lock convoy on shared
+datasets: concurrent insert/upsert/delete/search on the same namespace
+serialize behind dataset-level mutexes (`dataMu`, index locks) and the
+auto-scaler then drains workers, leaving no forward progress for contended
+operations.
+
+- [ ] **Profile shared-dataset lock contention**: capture `pprof` mutex/block profiles during a 2-agent shared-namespace soak; identify the top contended locks (expected: `Dataset.dataMu`, HNSW insert lock, text-index queue).
+- [ ] **Split read/write lock scopes**: convert dataset-level write locks held during full ingest flush into per-column/per-index locks; allow concurrent searches during ingest.
+- [ ] **Non-blocking delete/upsert path**: make tombstone and upsert operations enqueue work to the ingestion worker instead of taking the dataset write lock synchronously.
+- [ ] **Auto-scaler hysteresis**: prevent the ingestion/indexing auto-scaler from draining below a minimum (currently 4) while pending work exists; add a "busy" signal from the dataset lock queue.
+- [ ] **Shared-namespace soak gate**: add a CI soak variant (8 agents, 2 per namespace, 10 min) that fails on QPS drop > 50% or stall; track in `docs/soaktestplan.md`.
+- [ ] **Cross-agent memory test**: verify memories written by one agent are searchable by another within the same namespace under concurrent load.

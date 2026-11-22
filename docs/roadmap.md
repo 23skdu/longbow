@@ -129,3 +129,12 @@ Subtasks:
 - [ ] **Cross-agent memory verification tests**: agent B reads/searches memories written by agent A.
 - [ ] **21-namespace soak gate**: 10 agents, 1h, 0 errors, no QPS stall.
 - [ ] **Permission audit logging**: log denied write/delete attempts under load.
+
+### Federated Search Concurrency (New Finding)
+
+- [ ] **Federated search under concurrent ingest**: `FederatedSearch` calls
+  `syncDatasetToFederatedRouter` on every request, which acquires `dataMu.RLock`
+  per dataset; under sustained ingest this blocks. Cache the router registration
+  and refresh lazily.
+- [ ] **Federated soak stability**: add a dedicated federated-only soak variant
+  (2 agents, shared namespace, 5 min) to CI.

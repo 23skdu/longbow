@@ -110,7 +110,7 @@ Baselines regenerated from this run for CPU (14 GiB ceiling, 4 pinned workers, s
 ### 0b.6 Code Wiring Verification
 
 - `make build`, `make vet`, `make test-short` (all packages) pass.
-- `make deadcode` (cmd/) reports only pre-existing optional/entry-point functions (ADBC C exports, ring-sim helpers, bench-tool generateRecord).
+- `make deadcode` (cmd/, with test roots and cgo-only ADBC entrypoints excluded) reports no dead functions.
 - `make staticcheck` reports 0 issues.
 - New tests: `TestVectorStore_RangeSearch_Complex64AndComplex128`, `TestSearchModes_All21Modalities` pass.
 - All 21 search modalities are wired and exercised end-to-end.
@@ -509,7 +509,7 @@ Baselines regenerated: `benchmarks/baseline_cpu_768_20261116.json` (50k/100k/200
 ### 0c.6 Code Wiring Verification
 
 - `make build`, `make vet`, `make test-short` pass after all changes.
-- `make deadcode` (cmd/) reports only pre-existing optional/entry-point functions.
+- `make deadcode` (cmd/, with test roots and cgo-only ADBC entrypoints excluded) reports no dead functions.
 - `make staticcheck` reports 0 issues.
 
 ---

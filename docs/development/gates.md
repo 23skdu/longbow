@@ -139,14 +139,14 @@ go test -v ./internal/simd/... ./internal/tensor/... ./internal/memory/... ./int
 golangci-lint run
 go vet ./...
 staticcheck ./...
-deadcode ./...
+make deadcode
 ```
 
 - **Description**:
   - `golangci-lint`: Runs multi-linter checks enforcing idiomatic Go standards, error checking, and code structure.
   - `go vet`: Performs official Go compiler structural checks (e.g. unkeyed struct literals, incorrect format strings).
   - `staticcheck`: AST-level inspection detecting unreachable code paths, misuse of standard library functions, incorrect sync.Pool pointer usage, and nil context bugs.
-  - `deadcode`: Scans the complete call graph to find and reject unused or unreachable functions.
+  - `deadcode`: Scans `cmd/` call graphs with test roots to find and reject unused or unreachable functions; the cgo-only `cmd/adbc` package is excluded because its `//export` functions are C entrypoints rather than Go `main`-reachable code.
 
 ---
 

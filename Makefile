@@ -245,9 +245,15 @@ staticcheck:
 	@echo "Running staticcheck and unused analyzers..."
 	$(GOLANGCI_LINT) run -E staticcheck,unused ./...
 
+# cmd/adbc is a c-shared cgo driver: its //export functions are C entrypoints
+# installed in the AdbcDriver vtable, not Go main.main-reachable functions.
+# deadcode only roots Go main/init, so exclude that package; use -test so
+# test/fuzz-only helpers in other cmd packages are not reported as dead.
 deadcode:
 	@echo "Running deadcode reachability analysis..."
-	$(DEADCODE) -filter='github.com/23skdu/longbow/cmd/' ./cmd/...
+	@PKGS=$$($(GO) list ./cmd/... | grep -v '/cmd/adbc$$'); \
+	OUT=$$($(DEADCODE) -test -filter='github.com/23skdu/longbow/cmd/' $$PKGS 2>&1); \
+	if [ -n "$$OUT" ]; then echo "$$OUT"; exit 1; fi
 
 fmt:
 	@echo "Formatting Go source files..."

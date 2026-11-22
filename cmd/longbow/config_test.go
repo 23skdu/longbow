@@ -501,3 +501,55 @@ func TestDefaultConfig_IsValid(t *testing.T) {
 		t.Errorf("ValidateConfig(DefaultConfig()) = %v, want nil", err)
 	}
 }
+
+func TestValidateConfig_SecretsProviders(t *testing.T) {
+	base := Config{
+		KeepAliveTime:    2 * time.Hour,
+		ListenAddr:       "0.0.0.0:3000",
+		MetaAddr:         "0.0.0.0:3001",
+		MetricsAddr:      "0.0.0.0:9090",
+		MaxMemory:        1073741824,
+		DataPath:         "./data",
+		SnapshotInterval: time.Hour,
+		MaxWALSize:       104857600,
+		LogFormat:        "json",
+		LogLevel:         "info",
+	}
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr bool
+	}{
+		{name: "file default", mutate: func(c *Config) { c.SecretsProvider = "file" }},
+		{name: "memory", mutate: func(c *Config) { c.SecretsProvider = "memory" }},
+		{name: "vault missing address", mutate: func(c *Config) { c.SecretsProvider = "vault" }, wantErr: true},
+		{name: "vault", mutate: func(c *Config) {
+			c.SecretsProvider = "vault"
+			c.SecretsVaultAddr = "https://vault.example.com"
+		}},
+		{name: "gcp missing project", mutate: func(c *Config) { c.SecretsProvider = "gcp" }, wantErr: true},
+		{name: "gcp", mutate: func(c *Config) {
+			c.SecretsProvider = "gcp"
+			c.SecretsGCPProjectID = "project"
+		}},
+		{name: "aws missing region", mutate: func(c *Config) { c.SecretsProvider = "aws" }, wantErr: true},
+		{name: "aws", mutate: func(c *Config) {
+			c.SecretsProvider = "aws"
+			c.SecretsAWSRegion = "us-east-1"
+		}},
+		{name: "unknown", mutate: func(c *Config) { c.SecretsProvider = "other" }, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := base
+			tt.mutate(&cfg)
+			err := ValidateConfig(&cfg)
+			if tt.wantErr && err == nil {
+				t.Fatal("ValidateConfig() error = nil, want error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("ValidateConfig() error = %v, want nil", err)
+			}
+		})
+	}
+}

@@ -21,9 +21,16 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
+const testAdminAPIKey = "integration-admin-key-0123456789"
+
 var binaryPath string
+
+func authenticatedContext() context.Context {
+	return metadata.AppendToOutgoingContext(context.Background(), "x-api-key", testAdminAPIKey)
+}
 
 func TestMain(m *testing.M) {
 	os.Exit(testMain(m))
@@ -105,6 +112,9 @@ func startServer(t *testing.T) *serverInstance {
 		"LONGBOW_DATA_PATH="+dataDir,
 		"LONGBOW_MAX_MEMORY=1073741824", // 1GB
 		"LONGBOW_TESTING=true",
+		"LONGBOW_RBAC_BOOTSTRAP_KEY="+testAdminAPIKey,
+		"LONGBOW_SECRETS_PROVIDER=file",
+		"LONGBOW_SECRETS_PATH="+filepath.Join(dataDir, "rbac_secrets"),
 	)
 	si.cmd.Stdout = os.Stdout
 	si.cmd.Stderr = os.Stderr
@@ -115,7 +125,7 @@ func startServer(t *testing.T) *serverInstance {
 	}
 
 	// Wait for server to be ready
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(authenticatedContext(), 10*time.Second)
 	defer cancel()
 
 	for {
@@ -159,7 +169,7 @@ func TestServerStartsAndAcceptsConnections(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := flight.NewClientFromConn(conn, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(authenticatedContext(), 5*time.Second)
 	defer cancel()
 
 	// ListFlights should work (even if empty)
@@ -193,7 +203,7 @@ func TestMetaServerConnection(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := flight.NewClientFromConn(conn, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(authenticatedContext(), 5*time.Second)
 	defer cancel()
 
 	stream, err := client.ListFlights(ctx, &flight.Criteria{})
@@ -246,7 +256,7 @@ func TestDataServerDoPutDoGet(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := flight.NewClientFromConn(conn, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(authenticatedContext(), 30*time.Second)
 	defer cancel()
 
 	// Create test collection via DoPut

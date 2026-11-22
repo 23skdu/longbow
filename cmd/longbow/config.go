@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -146,8 +148,20 @@ type Config struct {
 	RDMAPort      int    `envconfig:"RDMA_PORT" default:"3002"`
 
 	// Security, RBAC, TLS/mTLS, and KMS Encryption Configuration (Items 3 & 11)
+	// RBACEnabled is retained only so existing LONGBOW_RBAC_ENABLED values are
+	// accepted. RBAC is always enforced and the value is deliberately ignored.
 	RBACEnabled          bool          `envconfig:"RBAC_ENABLED" default:"false"`
 	RBACBootstrapKey     string        `envconfig:"RBAC_BOOTSTRAP_KEY" default:""`
+	SecretsProvider      string        `envconfig:"SECRETS_PROVIDER" default:"file"`
+	SecretsPath          string        `envconfig:"SECRETS_PATH" default:"data/rbac_secrets"`
+	SecretsPrefix        string        `envconfig:"SECRETS_PREFIX" default:"longbow/rbac"`
+	SecretsVaultAddr     string        `envconfig:"SECRETS_VAULT_ADDR" default:""`
+	SecretsVaultToken    string        `envconfig:"SECRETS_VAULT_TOKEN" default:""`
+	SecretsVaultMount    string        `envconfig:"SECRETS_VAULT_MOUNT" default:"secret"`
+	SecretsGCPProjectID  string        `envconfig:"SECRETS_GCP_PROJECT_ID" default:""`
+	SecretsGCPToken      string        `envconfig:"SECRETS_GCP_TOKEN" default:""`
+	SecretsAWSRegion     string        `envconfig:"SECRETS_AWS_REGION" default:""`
+	SecretsAWSEndpoint   string        `envconfig:"SECRETS_AWS_ENDPOINT" default:""`
 	TLSEnabled           bool          `envconfig:"TLS_ENABLED" default:"false"`
 	TLSCertFile          string        `envconfig:"TLS_CERT_FILE" default:""`
 	TLSKeyFile           string        `envconfig:"TLS_KEY_FILE" default:""`
@@ -177,6 +191,7 @@ var (
 	ErrInvalidLogFormat     = errors.New("log_format must be 'json' or 'console'")
 	ErrInvalidLogLevel      = errors.New("log_level must be debug, info, warn, or error")
 	ErrInvalidKeepAliveTime = errors.New("keepalive_time must be positive")
+	ErrInvalidSecrets       = errors.New("secrets provider configuration is invalid")
 )
 
 // ValidateConfig validates the configuration and returns an error if invalid
@@ -207,6 +222,23 @@ func ValidateConfig(cfg *Config) error {
 	}
 	if cfg.KeepAliveTime <= 0 {
 		return ErrInvalidKeepAliveTime
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.SecretsProvider)) {
+	case "", "file", "memory":
+	case "vault":
+		if strings.TrimSpace(cfg.SecretsVaultAddr) == "" {
+			return fmt.Errorf("%w: vault requires LONGBOW_SECRETS_VAULT_ADDR", ErrInvalidSecrets)
+		}
+	case "gcp":
+		if strings.TrimSpace(cfg.SecretsGCPProjectID) == "" {
+			return fmt.Errorf("%w: gcp requires LONGBOW_SECRETS_GCP_PROJECT_ID", ErrInvalidSecrets)
+		}
+	case "aws":
+		if strings.TrimSpace(cfg.SecretsAWSRegion) == "" {
+			return fmt.Errorf("%w: aws requires LONGBOW_SECRETS_AWS_REGION", ErrInvalidSecrets)
+		}
+	default:
+		return fmt.Errorf("%w: unknown provider %q", ErrInvalidSecrets, cfg.SecretsProvider)
 	}
 	return nil
 }

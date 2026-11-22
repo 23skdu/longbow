@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/23skdu/longbow/internal/security"
+	"github.com/23skdu/longbow/internal/security/secrets"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
@@ -19,22 +20,46 @@ import (
 )
 
 func initAuthAndTLS(cfg *Config, vectorStore *store.VectorStore, logger zerolog.Logger) (security.AccessValidator, *security.AuditLogger, *security.CertReloader, error) {
-	// Initialize RBAC, OIDC Federation & Audit Logging before HTTP/gRPC server registration (Item 3)
-	if cfg.RBACEnabled {
-		rbacMgr := store.NewRBACManager()
-		vectorStore.EnableRBAC(rbacMgr)
+	// RBAC is always enforced. API keys are stored in the configured provider
+	// and rehydrated at startup so legitimate credentials survive restarts.
+	secretStore, err := secrets.New(context.Background(), secrets.Config{
+		Provider: cfg.SecretsProvider,
+		Path:     cfg.SecretsPath,
+		Prefix:   cfg.SecretsPrefix,
+
+		VaultAddr:  cfg.SecretsVaultAddr,
+		VaultToken: cfg.SecretsVaultToken,
+		VaultMount: cfg.SecretsVaultMount,
+
+		GCPProjectID: cfg.SecretsGCPProjectID,
+		GCPToken:     cfg.SecretsGCPToken,
+
+		AWSRegion:   cfg.SecretsAWSRegion,
+		AWSEndpoint: cfg.SecretsAWSEndpoint,
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("configure RBAC secret store: %w", err)
+	}
+	rbacMgr, err := store.NewRBACManagerWithStore(context.Background(), secretStore)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	vectorStore.EnableRBAC(rbacMgr)
+
+	if strings.TrimSpace(cfg.RBACBootstrapKey) != "" {
 		bootstrapOpts := store.APIKeyOptions{
-			Name: "bootstrap-admin",
-			Role: store.RoleAdmin,
+			KeyID: "bootstrap-admin",
+			Name:  "bootstrap-admin",
+			Role:  store.RoleAdmin,
 		}
-		if strings.TrimSpace(cfg.RBACBootstrapKey) != "" {
-			if _, err := rbacMgr.RegisterAPIKeyWithSecret(bootstrapOpts, cfg.RBACBootstrapKey); err != nil {
-				return nil, nil, nil, fmt.Errorf("invalid LONGBOW_RBAC_BOOTSTRAP_KEY: %w", err)
-			}
-			logger.Info().Msg("RBAC enabled with configured bootstrap admin API key")
-		} else if _, bootstrapRaw, err := rbacMgr.CreateAPIKeyWithOptions(bootstrapOpts); err == nil {
-			logger.Info().Str("key_id", "bootstrap-admin").Int("key_len", len(bootstrapRaw)).Msg("RBAC enabled with generated bootstrap admin API key")
+		if _, err := rbacMgr.RegisterAPIKeyWithSecret(bootstrapOpts, cfg.RBACBootstrapKey); err != nil {
+			return nil, nil, nil, fmt.Errorf("invalid LONGBOW_RBAC_BOOTSTRAP_KEY: %w", err)
 		}
+		logger.Info().Str("provider", cfg.SecretsProvider).Msg("RBAC enforced with configured bootstrap admin API key")
+	} else if !rbacMgr.HasGlobalAdmin() {
+		return nil, nil, nil, fmt.Errorf(
+			"RBAC is always enforced: set LONGBOW_RBAC_BOOTSTRAP_KEY or provision an admin API key in the %s secrets provider",
+			cfg.SecretsProvider)
 	}
 	if cfg.OIDCEnabled {
 		var issuers []security.OIDCIssuerConfig
@@ -51,12 +76,8 @@ func initAuthAndTLS(cfg *Config, vectorStore *store.VectorStore, logger zerolog.
 		vectorStore.EnableOIDC(oidcMgr)
 		logger.Info().Int("issuers", len(issuers)).Msg("OIDC federation enabled")
 	}
-	var authValidator security.AccessValidator
-	var auditLog *security.AuditLogger
-	if cfg.RBACEnabled || cfg.OIDCEnabled {
-		authValidator = vectorStore.DynamicAccessValidator()
-		auditLog = vectorStore.AuditLogger()
-	}
+	authValidator := vectorStore.DynamicAccessValidator()
+	auditLog := vectorStore.AuditLogger()
 
 	// Initialize TLS / mTLS Certificate Reloader before HTTP/gRPC servers start (Item 11)
 	var certReloader *security.CertReloader

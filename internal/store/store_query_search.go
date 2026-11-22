@@ -386,9 +386,11 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 	if ds.PrimaryIndex != nil {
 		if loc, ok := ds.PrimaryIndex[req.ID]; ok {
 			isDeleted := false
+			ds.TombstoneMu.RLock()
 			if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
 				isDeleted = true
 			}
+			ds.TombstoneMu.RUnlock()
 			if !isDeleted && loc.BatchIdx < len(ds.Records.Read()) {
 				rec := ds.Records.Read()[loc.BatchIdx]
 				vec, err := internalcore.ExtractVectorRaw(rec, loc.RowIdx, -1)
@@ -435,7 +437,13 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 
 					if idStr == req.ID {
 						isDeleted := false
+						ds.TombstoneMu.RLock()
+						tomb := false
 						if ts, ok := ds.Tombstones[batchIdx]; ok && ts != nil && ts.Contains(rowIdx) {
+							tomb = true
+						}
+						ds.TombstoneMu.RUnlock()
+						if tomb {
 							isDeleted = true
 						}
 						if !isDeleted {

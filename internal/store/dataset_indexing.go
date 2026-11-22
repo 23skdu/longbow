@@ -199,10 +199,7 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap *IDMap) {
 	if idMap.IsNumeric {
 		for id, rowIdx := range idMap.IntMap {
 			if oldLoc, exists := d.NumericPrimaryIndex[id]; exists {
-				if d.Tombstones[oldLoc.BatchIdx] == nil {
-					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
-				}
-				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				setTombstone(d, oldLoc.BatchIdx, oldLoc.RowIdx)
 				d.RecordBatchDeletion(oldLoc.BatchIdx)
 				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
 			}
@@ -210,10 +207,7 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap *IDMap) {
 		}
 		for id, rowIdx := range idMap.UintMap {
 			if oldLoc, exists := d.Uint64PrimaryIndex[id]; exists {
-				if d.Tombstones[oldLoc.BatchIdx] == nil {
-					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
-				}
-				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				setTombstone(d, oldLoc.BatchIdx, oldLoc.RowIdx)
 				d.RecordBatchDeletion(oldLoc.BatchIdx)
 				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
 			}
@@ -222,10 +216,7 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap *IDMap) {
 	} else {
 		for id, rowIdx := range idMap.StringMap {
 			if oldLoc, exists := d.PrimaryIndex[id]; exists {
-				if d.Tombstones[oldLoc.BatchIdx] == nil {
-					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
-				}
-				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				setTombstone(d, oldLoc.BatchIdx, oldLoc.RowIdx)
 				d.RecordBatchDeletion(oldLoc.BatchIdx)
 				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
 			}
@@ -255,10 +246,7 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 	if idMap.IsNumeric {
 		for id, rowIdx := range idMap.IntMap {
 			if oldLoc, exists := d.NumericPrimaryIndex[id]; exists {
-				if d.Tombstones[oldLoc.BatchIdx] == nil {
-					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
-				}
-				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				setTombstone(d, oldLoc.BatchIdx, oldLoc.RowIdx)
 				d.RecordBatchDeletion(oldLoc.BatchIdx)
 				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
 			}
@@ -266,10 +254,7 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 		}
 		for id, rowIdx := range idMap.UintMap {
 			if oldLoc, exists := d.Uint64PrimaryIndex[id]; exists {
-				if d.Tombstones[oldLoc.BatchIdx] == nil {
-					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
-				}
-				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				setTombstone(d, oldLoc.BatchIdx, oldLoc.RowIdx)
 				d.RecordBatchDeletion(oldLoc.BatchIdx)
 				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
 			}
@@ -278,10 +263,7 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 	} else {
 		for id, rowIdx := range idMap.StringMap {
 			if oldLoc, exists := d.PrimaryIndex[id]; exists {
-				if d.Tombstones[oldLoc.BatchIdx] == nil {
-					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
-				}
-				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				setTombstone(d, oldLoc.BatchIdx, oldLoc.RowIdx)
 				d.RecordBatchDeletion(oldLoc.BatchIdx)
 				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
 			}

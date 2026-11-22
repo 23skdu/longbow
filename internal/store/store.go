@@ -118,6 +118,9 @@ type VectorStore struct {
 	// Circuit Breakers for fault tolerance
 	Breakers *CircuitBreakerRegistry
 
+	// Federated search sync dirty flag (incremented on dataset changes).
+	federatedDirty atomic.Int64
+
 	// Disk IO Scheduler for background tasks
 	DiskIO *DiskIOScheduler
 

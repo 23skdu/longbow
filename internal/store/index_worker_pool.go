@@ -165,7 +165,7 @@ func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
 
 				if qLen > 100 && currWorkers < maxWorkers {
 					s.StartIngestionWorkers(1)
-				} else if qLen == 0 && s.pendingOverflowJobs.Load() == 0 && currWorkers > calculateMinWorkers(2) {
+				} else if CanScaleDownIngestion(s.pendingOverflowJobs.Load(), currWorkers, calculateMinWorkers(2)) && qLen == 0 {
 					s.StopIngestionWorkers(1)
 				}
 			}

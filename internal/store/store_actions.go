@@ -560,12 +560,12 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		loc := locRaw.(Location)
 
 		// set tombstone
-		ds.dataMu.Lock()
+		ds.TombstoneMu.Lock()
 		if ds.Tombstones[loc.BatchIdx] == nil {
 			ds.Tombstones[loc.BatchIdx] = types.NewBitset()
 		}
 		ts := ds.Tombstones[loc.BatchIdx]
-		ds.dataMu.Unlock()
+		ds.TombstoneMu.Unlock()
 
 		ts.Set(loc.RowIdx)
 		metrics.TombstonesTotal.WithLabelValues(dsName).Inc()

@@ -422,9 +422,11 @@ func (s *VectorStore) lookupVectorByIDLocked(ds *Dataset, id string) ([]float32,
 	if ds.PrimaryIndex != nil {
 		if loc, ok := ds.PrimaryIndex[id]; ok {
 			isDeleted := false
+			ds.TombstoneMu.RLock()
 			if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
 				isDeleted = true
 			}
+			ds.TombstoneMu.RUnlock()
 			if !isDeleted && loc.BatchIdx < len(ds.Records.Read()) {
 				rec := ds.Records.Read()[loc.BatchIdx]
 				vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, -1)
@@ -453,8 +455,11 @@ func (s *VectorStore) lookupVectorByIDLocked(ds *Dataset, id string) ([]float32,
 		col := rec.Column(idColIdx)
 		rowIdx := findRowIndexByID(col, id)
 		if rowIdx != -1 {
+			ds.TombstoneMu.RLock()
 			ts := ds.Tombstones[i]
-			if ts != nil && ts.Contains(rowIdx) {
+			tomb := ts != nil && ts.Contains(rowIdx)
+			ds.TombstoneMu.RUnlock()
+			if tomb {
 				continue
 			}
 			vec, err := ExtractVectorFromArrow(rec, rowIdx, -1)

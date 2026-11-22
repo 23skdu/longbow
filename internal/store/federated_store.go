@@ -86,7 +86,12 @@ func (s *VectorStore) FederatedSearch(ctx context.Context, collections, tags []s
 
 	router := s.GetFederatedRouter()
 	active := s.GetActiveDatasets()
-	s.syncDatasetToFederatedRouter(router, active)
+	// Only re-sync when the store has changed since last sync, to avoid
+	// taking the router/dataset locks on every search.
+	if s.federatedDirty.Load() > 0 || router.SearcherCount() == 0 {
+		s.syncDatasetToFederatedRouter(router, active)
+		s.federatedDirty.Store(0)
+	}
 
 	if len(tags) > 0 && len(collections) == 0 {
 		// Authorize all readable datasets before routing by tag.

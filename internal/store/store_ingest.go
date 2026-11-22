@@ -47,6 +47,7 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 
 	// Track pending ingestion BEFORE enqueuing to fix WaitForIndexing races
 	ds.PendingIngestion.Add(1)
+	s.federatedDirty.Add(1)
 
 	// Dispatch for ingestion
 	if !s.ingestionQueue.PushBlocking(IngestionJob{DS: ds, Batch: rec, TS: ts}, 10*time.Second) {

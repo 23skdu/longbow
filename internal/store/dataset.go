@@ -46,6 +46,8 @@ type Dataset struct {
 
 	// Tombstones map BatchIdx -> Bitset of deleted RowIdxs
 	Tombstones map[int]*types.Bitset
+	// TombstoneMu guards Tombstones independently of dataMu (per-column lock split).
+	TombstoneMu sync.RWMutex
 
 	// BatchNodes tracks which NUMA node each RecordBatch is allocated on
 	BatchNodes *LockFreeSlice[int]

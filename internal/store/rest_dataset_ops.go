@@ -69,12 +69,12 @@ func (s *VectorStore) DeleteVectorByID(_ context.Context, datasetName, rawID str
 		return NewNotFoundError("vector", rawID)
 	}
 
-	ds.dataMu.Lock()
+	ds.TombstoneMu.Lock()
 	if ds.Tombstones[loc.BatchIdx] == nil {
 		ds.Tombstones[loc.BatchIdx] = types.NewBitset()
 	}
 	ds.Tombstones[loc.BatchIdx].Set(loc.RowIdx)
-	ds.dataMu.Unlock()
+	ds.TombstoneMu.Unlock()
 	metrics.TombstonesTotal.WithLabelValues(datasetName).Inc()
 	return nil
 }
@@ -86,15 +86,22 @@ func (s *VectorStore) GetVectorByID(datasetName, rawID string) (map[string]any, 
 		return nil, NewNotFoundError("dataset", datasetName)
 	}
 	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
-
 	loc, found := resolveVectorLocationLocked(ds, rawID)
+	ds.dataMu.RUnlock()
 	if !found {
 		return nil, NewNotFoundError("vector", rawID)
 	}
+	ds.TombstoneMu.RLock()
+	tombstoned := false
 	if ts := ds.Tombstones[loc.BatchIdx]; ts != nil && ts.Contains(loc.RowIdx) {
+		tombstoned = true
+	}
+	ds.TombstoneMu.RUnlock()
+	if tombstoned {
 		return nil, NewNotFoundError("vector", rawID)
 	}
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
 	batches := ds.Records.Read()
 	if loc.BatchIdx < 0 || loc.BatchIdx >= len(batches) {
 		return nil, NewNotFoundError("vector", rawID)
@@ -222,4 +229,14 @@ func (s *VectorStore) listDatasetInfos(ctx context.Context) []DatasetInfo {
 		}
 	}
 	return out
+}
+
+// setTombstone marks a row as deleted under the tombstone lock.
+func setTombstone(ds *Dataset, batchIdx, rowIdx int) {
+	ds.TombstoneMu.Lock()
+	defer ds.TombstoneMu.Unlock()
+	if ds.Tombstones[batchIdx] == nil {
+		ds.Tombstones[batchIdx] = types.NewBitset()
+	}
+	ds.Tombstones[batchIdx].Set(rowIdx)
 }

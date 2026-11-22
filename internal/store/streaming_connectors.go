@@ -13,7 +13,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/store/types"
 )
 
 type StreamConnectorConfig struct {
@@ -494,9 +493,6 @@ func (c *StreamConnector) deleteVectorByID(datasetName, rawID string) {
 	ds.dataMu.Lock()
 	defer ds.dataMu.Unlock()
 	if loc, exists := ds.PrimaryIndex[rawID]; exists {
-		if ds.Tombstones[loc.BatchIdx] == nil {
-			ds.Tombstones[loc.BatchIdx] = types.NewBitset()
-		}
-		ds.Tombstones[loc.BatchIdx].Set(loc.RowIdx)
+		setTombstone(ds, loc.BatchIdx, loc.RowIdx)
 	}
 }

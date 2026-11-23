@@ -98,14 +98,18 @@ func (ta *TypedArena[T]) Compact(liveRefs []SliceRef) (*CompactionStats, error) 
 		totalLiveBytes += int64(ref.Len) * int64(elemSize)
 	}
 
-	oldSlabs := *ta.Slab().slabs.Load()
+	oldArena := ta.Slab()
+	if oldArena == nil {
+		return nil, errors.New("arena is nil")
+	}
+	oldSlabs := *oldArena.slabs.Load()
 	oldSlabCount := len(oldSlabs)
 	var oldTotalBytes int64
 	for _, slab := range oldSlabs {
 		oldTotalBytes += int64(slab.offset)
 	}
 
-	newArena := NewSlabArena(int(ta.Slab().slabCap))
+	newArena := NewSlabArena(int(oldArena.slabCap))
 	newTypedArena := NewTypedArena[T](newArena)
 
 	newRefs := make([]SliceRef, len(liveRefs))
@@ -117,6 +121,7 @@ func (ta *TypedArena[T]) Compact(liveRefs []SliceRef) (*CompactionStats, error) 
 
 		newRef, err := newTypedArena.AllocSliceDirty(int(oldRef.Len))
 		if err != nil {
+			newArena.Release()
 			return nil, err
 		}
 
@@ -137,7 +142,9 @@ func (ta *TypedArena[T]) Compact(liveRefs []SliceRef) (*CompactionStats, error) 
 		FragmentationPct: fragmentationPct,
 	}
 
-	ta.arena.Store(newArena)
+	if prev := ta.arena.Swap(newArena); prev != nil {
+		prev.Release()
+	}
 
 	return stats, nil
 }

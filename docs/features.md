@@ -128,7 +128,7 @@ Internal benchmarks on 1M vectors (1536D) show that Longbow is within 5% of FAIS
 | Build Throughput | 10k/s | 25k/s | 40k/s |
 | Compression Ratio | 4x | 1x | 2.6x-4.7x (4-8 bit, 1536D) |
 | SIMD Optimization | Partial (AVX2) | Full (AVX-512; AMX on amd64 only) | Full |
-| TPU Acceleration | No | Yes | No (Use CPU TQ) |
+| TPU Acceleration | No | Unsupported (Untested) | No (Use CPU TQ) |
 | Zero-Copy Flight | No | Yes | Yes |
 
 **TurboQuant (0.1.9 New)**: Two-stage vector compression combining Polar Quantization with QJL correction, with a configurable angular bit depth. See [TurboQuant Compression](#turboquant-compression) for what the encoder actually buys.

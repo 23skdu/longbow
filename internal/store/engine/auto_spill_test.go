@@ -74,6 +74,7 @@ func TestAutoSpillToDisk_InitDiskStoreIntegration(t *testing.T) {
 	// Set max memory small (50 MB) so uncompressed 64-bit projection exceeds 70% threshold
 	vs := NewVectorStore(alloc, logger, 50*1024*1024, 1024*1024, time.Hour)
 	vs.dataPath = tempDir
+	defer func() { _ = vs.Close() }()
 
 	// Build Arrow schema for Float64 vectors (dim = 384)
 	fields := []arrow.Field{
@@ -95,6 +96,7 @@ func TestAutoSpillToDisk_InitDiskStoreIntegration(t *testing.T) {
 	assert.NotNil(t, ds.DiskStore, "DiskStore should have been initialized via auto-spill")
 	if ds.DiskStore != nil {
 		assert.Equal(t, 384, ds.DiskStore.dim)
+		defer ds.Close()
 	}
 }
 

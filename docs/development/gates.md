@@ -245,7 +245,7 @@ python3 tests/docker/test_dockerfiles.py
 
 - **Description**:
   - **Helm Chart Gate**: Validates that Kubernetes deployment manifests under `helm/longbow` are syntactically valid and can be dry-run templated across default values and the non-default startup namespace ACL configuration.
-  - **Dockerfile Conformance**: Validates all Dockerfiles (`Dockerfile.cpu`, `Dockerfile.tpu`, `Dockerfile.nvidia`, `Dockerfile.emlgo-cpu`, `Dockerfile.emlgo-nvidia`) to ensure accurate base images, multi-stage build caching, non-root user execution, and Go 1.27.4 compatibility.
+  - **Dockerfile Conformance**: Validates all supported Dockerfiles (`Dockerfile.cpu`, `Dockerfile.nvidia`, `Dockerfile.emlgo-cpu`, `Dockerfile.emlgo-nvidia`) to ensure accurate base images, multi-stage build caching, non-root user execution, and Go 1.27.4 compatibility (`Dockerfile.tpu` was removed; TPU code remains unsupported/untested).
 
 ---
 

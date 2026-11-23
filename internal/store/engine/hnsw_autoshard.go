@@ -393,7 +393,14 @@ func (idx *AutoShardingIndex) SetGPUIndex(gIdx any) {
 func (idx *AutoShardingIndex) Close() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
-	return idx.current.Close()
+	err := idx.current.Close()
+	if idx.interimIndex != nil {
+		if ierr := idx.interimIndex.Close(); ierr != nil && err == nil {
+			err = ierr
+		}
+		idx.interimIndex = nil
+	}
+	return err
 }
 
 // EstimateMemory returns the diagnostic neighbor IDs for a given vector ID.

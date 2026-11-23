@@ -615,8 +615,8 @@ jobs:
   #   * Dockerfile.nvidia, Dockerfile.emlgo-nvidia: linux/amd64 only because the
   #     CUDA devel image installs a linux-amd64 Go toolchain and nvcc produces
   #     amd64-only kernels (no arm64 CUDA base/toolchain in this build).
-  #   * Dockerfile.tpu: linux/amd64 only because Cloud TPU libtpu/PJRT support
-  #     is x86_64-only in this base image.
+  #   * TPU Docker builds (Dockerfile.tpu) were removed; TPU code remains
+  #     unsupported/untested.
   #   * Dockerfile.metal is never published: Metal needs a native macOS host.
   #     OCI images are Linux artifacts; no darwin/arm64 image is published.
   # Publishing is opt-in: tag refs publish automatically, and workflow_dispatch
@@ -796,32 +796,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Extract metadata for TPU Image
-        id: meta-tpu
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          flavor: |
-            suffix=-tpu
-          tags: |
-            type=ref,event=tag
-            type=raw,value=latest
-            type=sha,prefix=sha-
-
-      # amd64-only: Cloud TPU libtpu/PJRT support in this base image is x86_64.
-      - name: Build (publish on tag/dispatch) TPU Docker image (amd64-only)
-        id: build-tpu
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile.tpu
-          platforms: linux/amd64
-          push: ${{ env.PUBLISH == 'true' }}
-          tags: ${{ steps.meta-tpu.outputs.tags }}
-          labels: ${{ steps.meta-tpu.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
       # Every check below is publish-only. The build steps above produce a
       # digest only when push=true, so verifying/signing by digest guarantees
       # we never sign a local, unpushed image.
@@ -833,12 +807,10 @@ jobs:
           NVIDIA_DIGEST: ${{ steps.build-nvidia.outputs.digest }}
           EMLGO_CPU_DIGEST: ${{ steps.build-emlgo-cpu.outputs.digest }}
           EMLGO_NVIDIA_DIGEST: ${{ steps.build-emlgo-nvidia.outputs.digest }}
-          TPU_DIGEST: ${{ steps.build-tpu.outputs.digest }}
           CPU_TAGS: ${{ steps.meta.outputs.tags }}
           NVIDIA_TAGS: ${{ steps.meta-nvidia.outputs.tags }}
           EMLGO_CPU_TAGS: ${{ steps.meta-emlgo-cpu.outputs.tags }}
           EMLGO_NVIDIA_TAGS: ${{ steps.meta-emlgo-nvidia.outputs.tags }}
-          TPU_TAGS: ${{ steps.meta-tpu.outputs.tags }}
         run: |
           set -euo pipefail
           verify() {
@@ -871,7 +843,6 @@ jobs:
           verify "emlgo-cpu" "-emlgo-cpu" "${EMLGO_CPU_DIGEST}" "amd64 arm64" "${EMLGO_CPU_TAGS}"
           verify "nvidia" "-nvidia" "${NVIDIA_DIGEST}" "amd64" "${NVIDIA_TAGS}"
           verify "emlgo-nvidia" "-emlgo-nvidia" "${EMLGO_NVIDIA_DIGEST}" "amd64" "${EMLGO_NVIDIA_TAGS}"
-          verify "tpu" "-tpu" "${TPU_DIGEST}" "amd64" "${TPU_TAGS}"
 
       - name: Generate published Standard SBOM from pushed digest
         if: env.PUBLISH == 'true'
@@ -917,17 +888,6 @@ jobs:
           output-file: longbow-emlgo-nvidia.spdx.json
           upload-artifact: false
 
-      - name: Generate published TPU SBOM from pushed digest
-        if: env.PUBLISH == 'true'
-        uses: anchore/sbom-action@v0.24.3
-        with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-tpu.outputs.digest }}
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GITHUB_TOKEN }}
-          format: spdx-json
-          output-file: longbow-tpu.spdx.json
-          upload-artifact: false
-
       - name: Sign published images with Cosign by pushed digest
         if: env.PUBLISH == 'true'
         env:
@@ -937,11 +897,10 @@ jobs:
           NVIDIA_DIGEST: ${{ steps.build-nvidia.outputs.digest }}
           EMLGO_CPU_DIGEST: ${{ steps.build-emlgo-cpu.outputs.digest }}
           EMLGO_NVIDIA_DIGEST: ${{ steps.build-emlgo-nvidia.outputs.digest }}
-          TPU_DIGEST: ${{ steps.build-tpu.outputs.digest }}
         run: |
           set -euo pipefail
           for digest in "$CPU_DIGEST" "$NVIDIA_DIGEST" "$EMLGO_CPU_DIGEST" \
-            "$EMLGO_NVIDIA_DIGEST" "$TPU_DIGEST"; do
+            "$EMLGO_NVIDIA_DIGEST"; do
             if [[ -z "$digest" ]]; then
               echo "::error::refusing to sign an image without a pushed digest"
               exit 1
@@ -958,14 +917,12 @@ jobs:
           NVIDIA_DIGEST: ${{ steps.build-nvidia.outputs.digest }}
           EMLGO_CPU_DIGEST: ${{ steps.build-emlgo-cpu.outputs.digest }}
           EMLGO_NVIDIA_DIGEST: ${{ steps.build-emlgo-nvidia.outputs.digest }}
-          TPU_DIGEST: ${{ steps.build-tpu.outputs.digest }}
         run: |
           set -euo pipefail
           cosign attach sbom --sbom longbow-cpu.spdx.json "${REPO}@${CPU_DIGEST}"
           cosign attach sbom --sbom longbow-emlgo-cpu.spdx.json "${REPO}@${EMLGO_CPU_DIGEST}"
           cosign attach sbom --sbom longbow-nvidia.spdx.json "${REPO}@${NVIDIA_DIGEST}"
           cosign attach sbom --sbom longbow-emlgo-nvidia.spdx.json "${REPO}@${EMLGO_NVIDIA_DIGEST}"
-          cosign attach sbom --sbom longbow-tpu.spdx.json "${REPO}@${TPU_DIGEST}"
 
   macos-15-verify:
     name: macOS-15 Runner Verification

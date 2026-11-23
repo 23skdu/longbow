@@ -1,6 +1,9 @@
 package types
 
-import "sync/atomic"
+import (
+	"runtime"
+	"sync/atomic"
+)
 
 // CloneForSnapshot creates a deep copy of the graph topology (Neighbors, Counts, Levels)
 // and a shallow copy of vectors (assuming append-only).
@@ -46,13 +49,16 @@ func (g *GraphData) cloneSnapshot(heapTopology bool) *GraphData {
 		TurboQuantBits:    g.TurboQuantBits,
 	}
 
-	// Copy Arena pointers for read-only access (persistence will read from them)
-	g.CopyArenaReferences(&clone)
-
 	if heapTopology {
+		// Analytics clones read heap slices and are never Released.
+		g.CopyArenaReferences(&clone)
 		clone.snapshotNeighbors = make([][][]uint32, len(g.Neighbors))
 		clone.snapshotCounts = make([][][]int32, len(g.Counts))
 		clone.snapshotVersions = make([][][]uint32, len(g.Versions))
+	} else {
+		// Copy Arena pointers with Retain for snapshot persistence lifetime.
+		g.RetainArenaReferences(&clone)
+		clone.ArrowRefs = cloneArrowRefs(g.ArrowRefs)
 	}
 
 	// 1. Deep Copy Neighbors (Mutable Topology)
@@ -73,6 +79,11 @@ func (g *GraphData) cloneSnapshot(heapTopology bool) *GraphData {
 				}
 				if heapTopology {
 					clone.snapshotNeighbors[l][c] = append([]uint32(nil), chunk...)
+					// Analytics algorithms use a non-zero offset as the
+					// presence marker for a populated chunk before reading
+					// snapshotNeighbors. Heap-backed chunks have no arena
+					// offset, so use a sentinel.
+					clone.Neighbors[l][c] = 1
 					continue
 				}
 				// Allocate new chunk in arena and copy
@@ -106,6 +117,7 @@ func (g *GraphData) cloneSnapshot(heapTopology bool) *GraphData {
 				}
 				if heapTopology {
 					clone.snapshotCounts[l][c] = append([]int32(nil), chunk...)
+					clone.Counts[l][c] = 1
 					continue
 				}
 				if g.Int32Arena != nil {
@@ -150,6 +162,7 @@ func (g *GraphData) cloneSnapshot(heapTopology bool) *GraphData {
 				}
 				if heapTopology {
 					clone.snapshotVersions[l][c] = append([]uint32(nil), chunk...)
+					clone.Versions[l][c] = 1
 					continue
 				}
 				if g.Uint32Arena != nil {
@@ -223,6 +236,11 @@ func (g *GraphData) cloneSnapshot(heapTopology bool) *GraphData {
 	// `Arena` implementations usually need to be thread-safe for concurrent read/write.
 	// Longbow arenas seem to support concurrent use.
 
+	if !heapTopology {
+		snap := &clone
+		runtime.SetFinalizer(snap, func(gd *GraphData) { gd.Release() })
+		return snap
+	}
 	return &clone
 }
 
@@ -255,6 +273,13 @@ func (g *GraphData) CopyArenaReferences(clone *GraphData) {
 	clone.Float16Arena = g.Float16Arena
 	clone.Complex64Arena = g.Complex64Arena
 	clone.Complex128Arena = g.Complex128Arena
+}
+
+// RetainArenaReferences copies arena pointers into clone and takes an owned
+// reference on each underlying slab. This balances the Release call made by
+// snapshot consumers instead of decrementing the source graph's refcount.
+func (g *GraphData) RetainArenaReferences(clone *GraphData) {
+	clone.retainArenasFrom(g)
 }
 
 // SnapshotSafe checks if the graph is in a state safe for snapshotting (e.g. no resizing).

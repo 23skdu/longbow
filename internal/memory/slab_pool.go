@@ -27,7 +27,8 @@ func numaBindAlloc(capacity int) []byte {
 // SlabPool recycles byte slices of a fixed size to avoid repeated allocations and OS zeroing costs.
 // It is specifically designed for 1MB slabs used by standard SlabArena configurations.
 type SlabPool struct {
-	pool        sync.Pool
+	mu          sync.Mutex
+	free        [][]byte
 	size        int
 	activeCount int64 // Number of slabs currently in use (not in pool)
 	pooledCount int64 // Number of slabs currently in the pool
@@ -36,6 +37,8 @@ type SlabPool struct {
 	hits        int64 // Running pool hits
 	misses      int64 // Running pool misses
 }
+
+const maxPooledSlabLimit = 100
 
 var (
 	// Standard bucket sizes to cover common high-dim and standard workloads
@@ -53,20 +56,9 @@ var (
 )
 
 func newSlabPool(size int) *SlabPool {
-	sizeLabel := strconv.Itoa(size)
 	return &SlabPool{
 		size:      size,
-		maxPooled: 100, // Keep at most 100 slabs in pool before releasing
-		pool: sync.Pool{
-			New: func() any {
-				b := numaBindAlloc(size)
-				if err := AdviseHugePage(b); err == nil {
-					metrics.SlabHugePageCount.Inc()
-				}
-				metrics.SlabPoolGrowthTotal.WithLabelValues(sizeLabel).Inc()
-				return &b
-			},
-		},
+		maxPooled: maxPooledSlabLimit, // Bound retained pool memory per size class.
 	}
 }
 
@@ -89,11 +81,20 @@ func roundUpSlabCapacity(capacity int) int {
 }
 
 // GetSlab retrieves a slab of capacity 'cap'.
-// If cap matches standard sizes, it returns a pooled slice.
-// Non-standard capacities are rounded up to the next pool size for recycling.
+// Large capacities use the off-heap size-class pools. Small capacities are
+// allocated on the Go heap with their exact size; promoting a few kilobytes
+// to a 4 MB off-heap slab made tiny scratch arenas retain gigabytes of RSS.
 // The returned slice has len=cap (fully usable buffer).
 // NOTE: buffer content is DIRTY (not zeroed) if reused.
 func GetSlab(capacity int) []byte {
+	if capacity <= 0 {
+		return nil
+	}
+	if capacity < 1024*1024 {
+		metrics.SlabPoolAllocationsTotal.WithLabelValues("small", "heap").Inc()
+		return make([]byte, capacity)
+	}
+
 	rounded := roundUpSlabCapacity(capacity)
 	switch rounded {
 	case size4MB:
@@ -137,13 +138,13 @@ func PutSlab(b []byte) {
 		// via offHeapAlloc.Allocate in GetSlab. We must free it to avoid leaks.
 		if c >= 1024*1024 {
 			sizeStr := strconv.Itoa(c)
-			// DEBUG: log non-standard PutSlab with capacity info
-			fmt.Printf("[DIAG] PutSlab non-standard size=%d (%.1f MB) - freeing directly\n", c, mb(int64(c)))
+			if debugSlabFree {
+				fmt.Printf("[DIAG] PutSlab non-standard size=%d (%.1f MB) - freeing directly\n", c, mb(int64(c)))
+			}
 			offHeapAlloc.Free(b)
 			metrics.SlabPoolShrinkTotal.WithLabelValues(sizeStr, "non_standard_free").Inc()
-		} else {
-			metrics.SlabPoolBoundaryViolationsTotal.WithLabelValues(strconv.Itoa(c), "put_slab").Inc()
 		}
+		// Slabs < 1MB are allocated on the Go heap in GetSlab and reclaimed by GC.
 	}
 }
 
@@ -152,35 +153,28 @@ func (p *SlabPool) Get() []byte {
 	active := atomic.AddInt64(&p.activeCount, 1)
 	sizeStr := strconv.Itoa(p.size)
 
-	// Check if we have pooled items
-	pooled := atomic.LoadInt64(&p.pooledCount)
-	if pooled > 0 {
-		atomic.AddInt64(&p.pooledCount, -1)
+	// Pop a pooled mmap slab under mutex rather than sync.Pool: Go's GC drops
+	// sync.Pool entries silently without calling offHeapAlloc.Free(b), which
+	// leaks mmap'd address space and RSS permanently across GC cycles.
+	p.mu.Lock()
+	var b []byte
+	if n := len(p.free); n > 0 {
+		b = p.free[n-1]
+		p.free[n-1] = nil
+		p.free = p.free[:n-1]
+		atomic.StoreInt64(&p.pooledCount, int64(len(p.free)))
+		p.mu.Unlock()
 		atomic.AddInt64(&p.hits, 1)
 		metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "hit").Inc()
 	} else {
+		p.mu.Unlock()
 		atomic.AddInt64(&p.misses, 1)
 		metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "miss").Inc()
-
-		// Dynamic scale up: if we miss and our active usage exceeds current maxPooled,
-		// expand maxPooled capacity to reduce future allocation/zeroing costs.
-		for {
-			currMax := atomic.LoadInt64(&p.maxPooled)
-			if active <= currMax {
-				break
-			}
-			newMax := currMax + 50 // Expand in steps of 50 slabs
-			if newMax > 2000 {     // Cap at a sensible limit (e.g., 2000 slabs)
-				newMax = 2000
-			}
-			if newMax == currMax {
-				break
-			}
-			if atomic.CompareAndSwapInt64(&p.maxPooled, currMax, newMax) {
-				metrics.SlabPoolResizesTotal.WithLabelValues(sizeStr, "scale_up").Inc()
-				break
-			}
+		b = numaBindAlloc(p.size)
+		if err := AdviseHugePage(b); err == nil {
+			metrics.SlabHugePageCount.Inc()
 		}
+		metrics.SlabPoolGrowthTotal.WithLabelValues(sizeStr).Inc()
 	}
 
 	// Track peak active count for leak-probability estimation
@@ -196,17 +190,6 @@ func (p *SlabPool) Get() []byte {
 
 	// Update metrics
 	p.updateMetrics()
-
-	slab := p.pool.Get()
-	b := *slab.(*[]byte)
-	if cap(b) != p.size {
-		metrics.SlabPoolBoundaryViolationsTotal.WithLabelValues(sizeStr, "get").Inc()
-		newB := offHeapAlloc.Allocate(p.size)
-		if err := AdviseHugePage(newB); err == nil {
-			metrics.SlabHugePageCount.Inc()
-		}
-		b = newB
-	}
 
 	return b
 }
@@ -227,8 +210,10 @@ func (p *SlabPool) Put(b []byte) {
 	metrics.SlabRefCountDistribution.WithLabelValues(sizeStr).Observe(1)
 
 	// Check if we should release this slab instead of pooling it
-	pooled := atomic.LoadInt64(&p.pooledCount)
-	if pooled >= atomic.LoadInt64(&p.maxPooled) {
+	p.mu.Lock()
+	maxPooled := atomic.LoadInt64(&p.maxPooled)
+	if int64(len(p.free)) >= maxPooled {
+		p.mu.Unlock()
 		// Release memory back to OS instead of pooling
 		// We MUST call Free to unmap and decrement the allocator's counter
 		offHeapAlloc.Free(b)
@@ -238,8 +223,9 @@ func (p *SlabPool) Put(b []byte) {
 		return
 	}
 
-	atomic.AddInt64(&p.pooledCount, 1)
-	p.pool.Put(&b)
+	p.free = append(p.free, b)
+	atomic.StoreInt64(&p.pooledCount, int64(len(p.free)))
+	p.mu.Unlock()
 
 	// Update metrics
 	p.updateMetrics()
@@ -249,14 +235,13 @@ func (p *SlabPool) Put(b []byte) {
 // This is useful for explicit memory management after heavy workloads.
 func (p *SlabPool) ReleaseUnused() int {
 	released := 0
-	pooled := atomic.LoadInt64(&p.pooledCount)
 	sizeStr := strconv.Itoa(p.size)
 
-	// Scale down capacity: set maxPooled back to baseline (100) or active count, whichever is larger,
-	// to allow garbage collection and release excess pooled capacity.
+	// Scale down capacity to the fixed baseline or active count, whichever is
+	// larger, so pools cannot retain slabs from a previous heavy workload.
 	for {
 		currMax := atomic.LoadInt64(&p.maxPooled)
-		baseline := int64(100)
+		baseline := int64(maxPooledSlabLimit)
 		if active := atomic.LoadInt64(&p.activeCount); active > baseline {
 			baseline = active
 		}
@@ -270,26 +255,28 @@ func (p *SlabPool) ReleaseUnused() int {
 	}
 
 	// Recalculate threshold based on updated maxPooled
-	currMax := atomic.LoadInt64(&p.maxPooled)
-	threshold := currMax / 2 // Keep 50% of max as buffer
+	threshold := int(atomic.LoadInt64(&p.maxPooled) / 2) // Keep 50% of max as buffer
 
-	for i := int64(0); i < pooled-threshold; i++ {
-		if slab := p.pool.Get(); slab != nil {
-			b := *slab.(*[]byte)
-			if err := ReleaseSlab(b); err == nil {
-				released++
-				atomic.AddInt64(&p.pooledCount, -1)
-				metrics.SlabPoolShrinkTotal.WithLabelValues(sizeStr, "manual_release").Inc()
-			} else {
-				// Put it back if release failed
-				p.pool.Put(slab)
-				break
-			}
-		} else {
-			break
-		}
+	p.mu.Lock()
+	var toRelease [][]byte
+	if len(p.free) > threshold {
+		toRelease = append(toRelease, p.free[threshold:]...)
+		clear(p.free[threshold:])
+		p.free = p.free[:threshold]
+		atomic.StoreInt64(&p.pooledCount, int64(len(p.free)))
+	}
+	p.mu.Unlock()
+
+	for _, b := range toRelease {
+		_ = ReleaseSlab(b)
+		offHeapAlloc.Free(b)
+		released++
+		metrics.SlabPoolShrinkTotal.WithLabelValues(sizeStr, "manual_release").Inc()
 	}
 
+	if released > 0 {
+		p.updateMetrics()
+	}
 	return released
 }
 

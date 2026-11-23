@@ -39,6 +39,11 @@ func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
 
 	// 1. Capture Snapshot + Metadata
 	var snapshot *types.GraphData
+	defer func() {
+		if snapshot != nil {
+			snapshot.Release()
+		}
+	}()
 	storeLen := 0
 	if h.locationStore != nil {
 		storeLen = h.locationStore.Len()
@@ -177,8 +182,17 @@ func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 		}
 	}
 
-	// Swap data
-	h.data.Store(data)
+	// Swap data and release any prior GraphData so its off-heap arenas are reclaimed.
+	if old := h.data.Swap(data); old != nil && old != data {
+		if h.dataset != nil {
+			if evMgrAny := h.dataset.GetEvictionManager(); evMgrAny != nil {
+				if evMgr, ok := evMgrAny.(*GraphLayerEvictionManager); ok && evMgr != nil {
+					evMgr.SwapTarget(old, data)
+				}
+			}
+		}
+		old.Release()
+	}
 
 	// Restore configuration flags
 	h.config.BQEnabled = data.BQEnabled
@@ -355,7 +369,9 @@ func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.G
 	}
 
 	// Publish the newly consistent data structure using CAS
-	h.compareAndSwapData(h.data.Load(), newData)
+	if !h.compareAndSwapData(h.data.Load(), newData) {
+		return h.data.Load()
+	}
 	return newData
 }
 
@@ -384,6 +400,13 @@ func (h *ArrowHNSW) Close() error {
 	h.growMu.Lock()
 	data := h.data.Swap(nil)
 	if data != nil {
+		if h.dataset != nil {
+			if evMgrAny := h.dataset.GetEvictionManager(); evMgrAny != nil {
+				if evMgr, ok := evMgrAny.(*GraphLayerEvictionManager); ok && evMgr != nil {
+					evMgr.Unregister(data)
+				}
+			}
+		}
 		data.Release()
 	}
 	h.growMu.Unlock()
@@ -415,21 +438,8 @@ func (h *ArrowHNSW) SnapshotGraph() (*types.GraphData, *types.SyncState, error) 
 		})
 	}
 
-	// Capture PackedNeighbors state
-	for l, pn := range data.PackedNeighbors {
-		if pn == nil {
-			continue
-		}
-		// Ensure legacy slices are in sync for this snapshot
-		// This is a trade-off: snapshots become slightly more expensive,
-		// but we maintain compatibility with the existing serialization format.
-		for i := uint32(0); i < uint32(data.Capacity); i++ { // #nosec G115
-			if neighbors, ok := pn.GetNeighbors(i); ok {
-				_ = data.SetNeighborsAtLayer(l, i, neighbors)
-			}
-		}
-	}
-
+	// snap already retained PackedNeighbors via CloneForSnapshot(), and serialization
+	// reads PackedNeighbors directly before falling back to legacy chunks.
 	state := &types.SyncState{
 		Version:   1,
 		Dims:      int(h.dims.Load()),

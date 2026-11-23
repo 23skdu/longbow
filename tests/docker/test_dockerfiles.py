@@ -58,15 +58,6 @@ DOCKERFILES = [
         "entrypoint": '["/app/longbow"]',
     },
     {
-        "name": "Dockerfile.tpu",
-        "stages": ["golang:1.27.4-bookworm", "debian:bookworm-slim"],
-        "runtime_user": "65534:65534",
-        "ports": ["3000", "3001", "9090"],
-        "volume_data": True,
-        "env_vars": {"LONGBOW_TPU_ENABLED": "true", "LONGBOW_GPU_ENABLED": "false", "GOGC": "75"},
-        "entrypoint": '["/longbow"]',
-    },
-    {
         "name": "Dockerfile.metal",
         "stages": ["debian:bookworm-slim"],
         "runtime_user": "longbow:longbow",

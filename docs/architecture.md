@@ -471,7 +471,7 @@ Longbow is optimized for heterogeneous hardware, providing native support for NV
 | :--- | :--- | :--- | :--- | :--- |
 | **Linux (NVIDIA)** | **CUDA** | RTX/A-series/H-series | Dedicated VRAM | Production |
 | **macOS (Apple)** | **Metal** | M1/M2/M3/M4 | Unified Memory | Production |
-| **Google Cloud** | **TPU** | v7x (Ironwood) | HBM + VMEM | Beta |
+| **Google Cloud** | **TPU** | v7x (Ironwood) | HBM + VMEM | Unsupported / Untested |
 | **Cross-Platform** | **SIMD / AMX** | AVX-512 (FP16/VNNI), AMX, AVX2, ARM SVE2, NEON | System RAM | Production |
 
 ### 7.2 NVIDIA CUDA Acceleration
@@ -493,20 +493,20 @@ Optimized for local development and edge inference on Apple Silicon.
 - **MPS Integration**: Uses Metal Performance Shaders for highly optimized vector math.
 - **Automatic Detection**: Longbow automatically detects and utilizes the Metal backend on macOS (ARM64) when built with the `gpu` tag.
 
-### 7.4 Google TPU (Ironwood) Support
+### 7.4 Google TPU (Ironwood) Code (Unsupported / Untested)
 
-Experimental support for Google's latest TPU v7x architecture.
+Existing TPU backend code in-tree targets Google's TPU v7x architecture, but currently remains **unsupported and untested** (`Dockerfile.tpu` was removed):
 
-- **HBM Support**: Utilizes the 192GB of High Bandwidth Memory for massive vector indices.
-- **VMEM Scratchpad**: Uses 16MB of ultra-fast SRAM (VMEM) for hot-path distance calculations.
-- **Scalability**: Designed for petabyte-scale vector search in GCP environments.
+- **HBM Support**: Designed around 192GB of High Bandwidth Memory for vector indices.
+- **VMEM Scratchpad**: Targets 16MB of SRAM (VMEM) for distance calculations.
+- **Status**: Unsupported and untested; no TPU Docker image or CI verification is currently maintained.
 
 ### 7.5 SIMD & AMX Acceleration
 
 - **AVX2/AVX-512**: Featuring optimized `brayCurtisAVX2Kernel`, activation kernels (`exp`, `softmax`), and native AVX-512 FP16 half-precision kernels (`vaddph`, `vmulph`). AVX-512 explicitly typed kernels (e.g., `Float16`, `Float64`) are generated via Avo with rigorous type safety and memory alignment.
 - **AMX (Intel Advanced Matrix Extensions)**: Hardware matrix tile registers (`tileloadd`, `tdpbf16ps`) on Sapphire Rapids and Emerald Rapids Xeon CPUs for batched quantized dot products.
 - **ARM SVE2 / NEON**: Scalable Vector Extension 2 (dynamic 128 to 2048-bit vector width) and NEON 128-bit SIMD for ARM64 architectures (Apple Silicon, AWS Graviton 3/4).
-- **TPU Kernels**: Specialized F16/Complex kernels for Google TPU.
+- **TPU Kernels**: In-tree prototypes for F16/Complex kernels (currently unsupported and untested).
 - **TurboQuant / TurboQuant2**: SIMD-accelerated bit-packing (2-bit to 8-bit) delivering 4x-64x compression with fast approximate distance computation.
 
 ### 7.6 AVX-512 Activation Kernels (exp, softmax)
@@ -534,7 +534,7 @@ Starting in v0.2.3, Longbow supports full GPU residency for the HNSW graph topol
 
 Longbow uses a multi-stage search strategy for optimal resource utilization:
 
-1. **Candidate Generation**: Coarse-grained filtering on GPU/TPU for massive speedups.
+1. **Candidate Generation**: Coarse-grained filtering on GPU for massive speedups.
 2. **Refinement**: CPU-based HNSW traversal for final precision and tombstone filtering.
 3. **Fallback**: Seamlessly falls back to CPU-only SIMD kernels if acceleration hardware is unavailable or under heavy contention.
 
@@ -542,7 +542,7 @@ Longbow uses a multi-stage search strategy for optimal resource utilization:
 
 ## 8. RDMA Networking
 
-For distributed search across accelerated nodes, Longbow implements **RDMA over RoCEv2**. This allows pushing Arrow batches directly from a client into a remote node's GPU VRAM or TPU HBM, bypassing the OS network stack. The RDMA handshake is a gRPC service and uses the same authentication interceptors as the Flight listeners, including for health checks.
+For distributed search across accelerated nodes, Longbow implements **RDMA over RoCEv2**. This allows pushing Arrow batches directly from a client into a remote node's GPU VRAM, bypassing the OS network stack. The RDMA handshake is a gRPC service and uses the same authentication interceptors as the Flight listeners, including for health checks.
 
 ---
 

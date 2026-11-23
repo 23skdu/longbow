@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"sync"
 	"testing"
 )
 
@@ -12,6 +13,7 @@ func TestConcurrentInsert(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
 	cfg := DefaultArrowHNSWConfig()
 	index := NewArrowHNSW(dataset, &cfg, nil)
+	defer func() { _ = index.Close() }()
 	lg := NewLevelGenerator(1.44269504089)
 
 	// Note: Inserts will fail without vector storage, but tests locking
@@ -19,9 +21,12 @@ func TestConcurrentInsert(t *testing.T) {
 	insertsPerGoroutine := 25
 
 	errChan := make(chan error, numGoroutines*insertsPerGoroutine)
+	var wg sync.WaitGroup
 
 	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
 		go func(offset int) {
+			defer wg.Done()
 			for j := 0; j < insertsPerGoroutine; j++ {
 				id := uint32(offset*insertsPerGoroutine + j)
 				level := lg.Generate()
@@ -32,6 +37,7 @@ func TestConcurrentInsert(t *testing.T) {
 			}
 		}(i)
 	}
+	wg.Wait()
 
 	// Collect errors (expected due to missing vector storage)
 	for i := 0; i < numGoroutines*insertsPerGoroutine; i++ {
@@ -48,6 +54,7 @@ func BenchmarkConcurrentInsert(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
 	cfg := DefaultArrowHNSWConfig()
 	index := NewArrowHNSW(dataset, &cfg, nil)
+	defer func() { _ = index.Close() }()
 	lg := NewLevelGenerator(1.44269504089)
 
 	b.Run("Sequential", func(b *testing.B) {

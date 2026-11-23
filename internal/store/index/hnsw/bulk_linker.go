@@ -74,14 +74,22 @@ func (h *ArrowHNSW) bootstrapSequential(
 		return nil, 0, 0, fmt.Errorf("failed to retrieve last vector %d after fill", startID+uint32(n)-1) // #nosec G115
 	}
 
+	startData := data
 	var bootstrapEp uint32 = math.MaxUint32
 	var bootstrapMaxL int32 = -1
 	for i := 0; i < seedCount; i++ {
 		node := activeNodes[i]
+		prev := data
 		var err error
-		data, err = h.insertInternal(node.id, node.vec, node.level, true, data)
+		data, err = h.insertInternal(node.id, node.vec, node.level, true, prev)
 		if err != nil {
+			if prev != nil && prev != startData && prev != h.data.Load() {
+				prev.Release()
+			}
 			return nil, 0, 0, err
+		}
+		if data != nil && data != prev && prev != nil && prev != startData && prev != h.data.Load() {
+			prev.Release()
 		}
 		if int32(node.level) > bootstrapMaxL || bootstrapEp == math.MaxUint32 { // #nosec G115
 			bootstrapMaxL = int32(node.level) // #nosec G115
@@ -90,6 +98,9 @@ func (h *ArrowHNSW) bootstrapSequential(
 		}
 	}
 	if err := ctx.Err(); err != nil {
+		if data != nil && data != startData && data != h.data.Load() {
+			data.Release()
+		}
 		return nil, 0, 0, err
 	}
 

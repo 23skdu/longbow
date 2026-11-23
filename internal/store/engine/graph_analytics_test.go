@@ -187,15 +187,19 @@ func FuzzGraphAnalytics_PageRank(f *testing.F) {
 
 // --- Community detection (Label Propagation) accuracy tests ---
 
-// newTestGraphData builds an empty GraphData sized for the given node count.
-func newTestGraphData(nodes int) *types.GraphData {
-	return types.NewGraphData(nodes+2, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+// newTestGraphData builds an empty GraphData sized for the given node count
+// and registers cleanup on t so off-heap arenas are released after the test.
+func newTestGraphData(t testing.TB, nodes int) *types.GraphData {
+	t.Helper()
+	gd := types.NewGraphData(nodes+2, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+	t.Cleanup(gd.Release)
+	return gd
 }
 
 // TestGraphAnalytics_Communities_PathGraph runs the test graph analytics_communities_path graph operation.
 func TestGraphAnalytics_Communities_PathGraph(t *testing.T) {
 	// Bidirectional path 1-2-3-4-5 must converge to a single community.
-	gd := newTestGraphData(5)
+	gd := newTestGraphData(t, 5)
 	_ = gd.SetNeighbors(1, []uint32{2})
 	_ = gd.SetNeighbors(2, []uint32{1, 3})
 	_ = gd.SetNeighbors(3, []uint32{2, 4})
@@ -215,7 +219,7 @@ func TestGraphAnalytics_Communities_PathGraph(t *testing.T) {
 
 // TestGraphAnalytics_Communities_StarGraph runs the test graph analytics_communities_star graph operation.
 func TestGraphAnalytics_Communities_StarGraph(t *testing.T) {
-	gd := newTestGraphData(4)
+	gd := newTestGraphData(t, 4)
 	_ = gd.SetNeighbors(1, []uint32{2, 3, 4})
 	_ = gd.SetNeighbors(2, []uint32{1})
 	_ = gd.SetNeighbors(3, []uint32{1})
@@ -232,7 +236,7 @@ func TestGraphAnalytics_Communities_StarGraph(t *testing.T) {
 
 // TestGraphAnalytics_Communities_CompleteGraph runs the test graph analytics_communities_complete graph operation.
 func TestGraphAnalytics_Communities_CompleteGraph(t *testing.T) {
-	gd := newTestGraphData(4)
+	gd := newTestGraphData(t, 4)
 	for i := uint32(1); i <= 4; i++ {
 		nbrs := make([]uint32, 0, 3)
 		for j := uint32(1); j <= 4; j++ {
@@ -251,7 +255,7 @@ func TestGraphAnalytics_Communities_CompleteGraph(t *testing.T) {
 
 // TestGraphAnalytics_Communities_EmptyGraph runs the test graph analytics_communities_empty graph operation.
 func TestGraphAnalytics_Communities_EmptyGraph(t *testing.T) {
-	gd := newTestGraphData(4)
+	gd := newTestGraphData(t, 4)
 	ga := NewGraphAnalytics(func() *types.GraphData { return gd })
 
 	res, err := ga.DetectCommunities(context.Background(), 10)
@@ -264,7 +268,7 @@ func TestGraphAnalytics_Communities_EmptyGraph(t *testing.T) {
 func TestGraphAnalytics_Communities_Deterministic(t *testing.T) {
 	// LPA skips shuffling, so repeated runs on the same graph must produce
 	// bit-identical labelings.
-	gd := newTestGraphData(8)
+	gd := newTestGraphData(t, 8)
 	_ = gd.SetNeighbors(1, []uint32{2, 3})
 	_ = gd.SetNeighbors(2, []uint32{1, 3})
 	_ = gd.SetNeighbors(3, []uint32{1, 2, 4})
@@ -290,7 +294,7 @@ func TestGraphAnalytics_Communities_Deterministic(t *testing.T) {
 
 // TestGraphAnalytics_Communities_MaxIterations runs the test graph analytics_communities_max iterations operation.
 func TestGraphAnalytics_Communities_MaxIterations(t *testing.T) {
-	gd := newTestGraphData(4)
+	gd := newTestGraphData(t, 4)
 	_ = gd.SetNeighbors(1, []uint32{2})
 	_ = gd.SetNeighbors(2, []uint32{1, 3})
 	_ = gd.SetNeighbors(3, []uint32{2, 4})
@@ -311,7 +315,7 @@ func TestGraphAnalytics_Communities_MaxIterations(t *testing.T) {
 // all excluded from the label set (out-degree-less leaves) keep their own
 // label instead of adopting phantom community 0.
 func TestGraphAnalytics_Communities_LeafTargets(t *testing.T) {
-	gd := newTestGraphData(3)
+	gd := newTestGraphData(t, 3)
 	// Node 1 points at leaf 2; node 2 has no outgoing edges (not labeled).
 	_ = gd.SetNeighbors(1, []uint32{2})
 
@@ -348,7 +352,7 @@ func TestGraphAnalytics_NilGraph(t *testing.T) {
 // TestGraphAnalytics_PageRank_SumsToOne runs the test graph analytics_page rank_sums to one operation.
 func TestGraphAnalytics_PageRank_SumsToOne(t *testing.T) {
 	// Directed chain with a dangling sink: 1 -> 2 -> 3 (3 dangles).
-	gd := newTestGraphData(3)
+	gd := newTestGraphData(t, 3)
 	_ = gd.SetNeighbors(1, []uint32{2})
 	_ = gd.SetNeighbors(2, []uint32{3})
 	_ = gd.SetNeighbors(3, nil)
@@ -372,7 +376,7 @@ func TestGraphAnalytics_PageRank_SumsToOne(t *testing.T) {
 
 // TestGraphAnalytics_PageRank_ZeroIterations runs the test graph analytics_page rank_zero iterations operation.
 func TestGraphAnalytics_PageRank_ZeroIterations(t *testing.T) {
-	gd := newTestGraphData(4)
+	gd := newTestGraphData(t, 4)
 	_ = gd.SetNeighbors(1, []uint32{2, 3, 4})
 	_ = gd.SetNeighbors(2, []uint32{1})
 	_ = gd.SetNeighbors(3, []uint32{1})
@@ -409,7 +413,7 @@ func FuzzGraphAnalytics_DetectCommunities(f *testing.F) {
 			t.Skip()
 		}
 
-		gd := newTestGraphData(int(numNodes) + 2)
+		gd := newTestGraphData(t, int(numNodes)+2)
 		hasOutEdges := make(map[uint32]bool, numNodes)
 		for i := uint32(1); i <= numNodes; i++ {
 			neighbors := make([]uint32, 0, maxNeighbors)
@@ -478,6 +482,7 @@ func BenchmarkGraphAnalytics_PageRank_Prefetch(b *testing.B) {
 	numNodes := 10000
 	maxNeighbors := 20
 	gd := types.NewGraphData(numNodes+100, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+	defer gd.Release()
 
 	for i := 1; i <= numNodes; i++ {
 		neighbors := make([]uint32, 0, maxNeighbors)

@@ -19,8 +19,7 @@ func TestDeterministicIngestPinsWorkerPools(t *testing.T) {
 
 	vs := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<30, 0, 0)
 	t.Cleanup(func() {
-		vs.StopIndexingWorkers(len(vs.indexingWorkerCancels))
-		vs.StopIngestionWorkers(len(vs.ingestionWorkerCancels))
+		_ = vs.Close()
 	})
 
 	// Repeated calls matter: the minimum-worker ticker and the autoscaler both
@@ -57,8 +56,7 @@ func TestWorkerPoolsAreNotPinnedOutsideDeterministicMode(t *testing.T) {
 
 	vs := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<30, 0, 0)
 	t.Cleanup(func() {
-		vs.StopIndexingWorkers(len(vs.indexingWorkerCancels))
-		vs.StopIngestionWorkers(len(vs.ingestionWorkerCancels))
+		_ = vs.Close()
 	})
 
 	vs.StartIndexingWorkers(3)

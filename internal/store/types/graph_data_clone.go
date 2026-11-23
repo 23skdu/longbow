@@ -10,6 +10,45 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+func retainTypedArena[T any](src *memory.TypedArena[T]) *memory.TypedArena[T] {
+	if src == nil {
+		return nil
+	}
+	dst := memory.NewTypedArena[T](src.Slab())
+	dst.Retain()
+	return dst
+}
+
+func (g *GraphData) retainArenasFrom(src *GraphData) {
+	g.Float32Arena = retainTypedArena(src.Float32Arena)
+	g.Float64Arena = retainTypedArena(src.Float64Arena)
+	g.Uint8Arena = retainTypedArena(src.Uint8Arena)
+	g.Uint16Arena = retainTypedArena(src.Uint16Arena)
+	g.Uint32Arena = retainTypedArena(src.Uint32Arena)
+	g.Uint64Arena = retainTypedArena(src.Uint64Arena)
+	g.Int8Arena = retainTypedArena(src.Int8Arena)
+	g.Int16Arena = retainTypedArena(src.Int16Arena)
+	g.Int32Arena = retainTypedArena(src.Int32Arena)
+	g.Int64Arena = retainTypedArena(src.Int64Arena)
+	g.Float16Arena = retainTypedArena(src.Float16Arena)
+	g.Complex64Arena = retainTypedArena(src.Complex64Arena)
+	g.Complex128Arena = retainTypedArena(src.Complex128Arena)
+}
+
+func cloneArrowRefs(src []arrow.Array) []arrow.Array {
+	if src == nil {
+		return nil
+	}
+	dst := make([]arrow.Array, len(src))
+	for i, ref := range src {
+		if ref != nil {
+			ref.Retain()
+			dst[i] = ref
+		}
+	}
+	return dst
+}
+
 // Clone runs the clone operation.
 func (g *GraphData) Clone() *GraphData {
 	// Signal to any concurrent Release() that a Clone is in progress.
@@ -39,59 +78,8 @@ func (g *GraphData) Clone() *GraphData {
 	// New chunks allocated via EnsureChunk will use the original's arena.
 	// This is safe because COW is serialized (protected by growMu lock).
 	// Clone's Vectors* slices reference chunks allocated from original's arena.
-	// Slabs/Arenas - Create new wrappers but share underlying SlabArena
-	if g.Float32Arena != nil {
-		newG.Float32Arena = memory.NewTypedArena[float32](g.Float32Arena.Slab())
-		newG.Float32Arena.Retain()
-	}
-	if g.Float64Arena != nil {
-		newG.Float64Arena = memory.NewTypedArena[float64](g.Float64Arena.Slab())
-		newG.Float64Arena.Retain()
-	}
-	if g.Uint8Arena != nil {
-		newG.Uint8Arena = memory.NewTypedArena[uint8](g.Uint8Arena.Slab())
-		newG.Uint8Arena.Retain()
-	}
-	if g.Uint16Arena != nil {
-		newG.Uint16Arena = memory.NewTypedArena[uint16](g.Uint16Arena.Slab())
-		newG.Uint16Arena.Retain()
-	}
-	if g.Uint32Arena != nil {
-		newG.Uint32Arena = memory.NewTypedArena[uint32](g.Uint32Arena.Slab())
-		newG.Uint32Arena.Retain()
-	}
-	if g.Uint64Arena != nil {
-		newG.Uint64Arena = memory.NewTypedArena[uint64](g.Uint64Arena.Slab())
-		newG.Uint64Arena.Retain()
-	}
-	if g.Int8Arena != nil {
-		newG.Int8Arena = memory.NewTypedArena[int8](g.Int8Arena.Slab())
-		newG.Int8Arena.Retain()
-	}
-	if g.Int16Arena != nil {
-		newG.Int16Arena = memory.NewTypedArena[int16](g.Int16Arena.Slab())
-		newG.Int16Arena.Retain()
-	}
-	if g.Int32Arena != nil {
-		newG.Int32Arena = memory.NewTypedArena[int32](g.Int32Arena.Slab())
-		newG.Int32Arena.Retain()
-	}
-	if g.Int64Arena != nil {
-		newG.Int64Arena = memory.NewTypedArena[int64](g.Int64Arena.Slab())
-		newG.Int64Arena.Retain()
-	}
-	if g.Float16Arena != nil {
-		newG.Float16Arena = memory.NewTypedArena[float16.Num](g.Float16Arena.Slab())
-		newG.Float16Arena.Retain()
-	}
-	if g.Complex64Arena != nil {
-		newG.Complex64Arena = memory.NewTypedArena[complex64](g.Complex64Arena.Slab())
-		newG.Complex64Arena.Retain()
-	}
-	if g.Complex128Arena != nil {
-		newG.Complex128Arena = memory.NewTypedArena[complex128](g.Complex128Arena.Slab())
-		newG.Complex128Arena.Retain()
-	}
+	// Slabs/Arenas - Create new wrappers sharing underlying SlabArena with Retain.
+	newG.retainArenasFrom(g)
 
 	// Deep copy Levels
 	if g.Levels != nil {
@@ -208,15 +196,7 @@ func (g *GraphData) Clone() *GraphData {
 	}
 
 	// Copy Arrow References (with Retain if not nil)
-	if g.ArrowRefs != nil {
-		newG.ArrowRefs = make([]arrow.Array, len(g.ArrowRefs))
-		for i, ref := range g.ArrowRefs {
-			if ref != nil {
-				ref.Retain()
-				newG.ArrowRefs[i] = ref
-			}
-		}
-	}
+	newG.ArrowRefs = cloneArrowRefs(g.ArrowRefs)
 
 	// Deep copy vector offset slices
 	copyOffsetSlice := func(src []uint64, enabled bool) []uint64 {
@@ -251,7 +231,7 @@ func (g *GraphData) Clone() *GraphData {
 	newG.VectorsComplex128Offsets = copyOffsetSlice(g.VectorsComplex128Offsets, g.Type == VectorTypeComplex128)
 
 	// Set finalizer to ensure automatic Release when snapshot is orphaned
-	runtime.SetFinalizer(newG, func(g *GraphData) { g.Release() })
+	runtime.SetFinalizer(newG, func(g *GraphData) { g.release(false) })
 
 	return newG
 }
@@ -327,58 +307,7 @@ func (g *GraphData) ShallowStructuralClone() *GraphData {
 	// Slabs/Arenas - share with original for read access (same as Clone).
 	// The Retain() ensures the Slab stays alive as long as the new
 	// GraphData is alive, even after the old is Released.
-	if g.Float32Arena != nil {
-		newG.Float32Arena = memory.NewTypedArena[float32](g.Float32Arena.Slab())
-		newG.Float32Arena.Retain()
-	}
-	if g.Float64Arena != nil {
-		newG.Float64Arena = memory.NewTypedArena[float64](g.Float64Arena.Slab())
-		newG.Float64Arena.Retain()
-	}
-	if g.Uint8Arena != nil {
-		newG.Uint8Arena = memory.NewTypedArena[uint8](g.Uint8Arena.Slab())
-		newG.Uint8Arena.Retain()
-	}
-	if g.Uint16Arena != nil {
-		newG.Uint16Arena = memory.NewTypedArena[uint16](g.Uint16Arena.Slab())
-		newG.Uint16Arena.Retain()
-	}
-	if g.Uint32Arena != nil {
-		newG.Uint32Arena = memory.NewTypedArena[uint32](g.Uint32Arena.Slab())
-		newG.Uint32Arena.Retain()
-	}
-	if g.Uint64Arena != nil {
-		newG.Uint64Arena = memory.NewTypedArena[uint64](g.Uint64Arena.Slab())
-		newG.Uint64Arena.Retain()
-	}
-	if g.Int8Arena != nil {
-		newG.Int8Arena = memory.NewTypedArena[int8](g.Int8Arena.Slab())
-		newG.Int8Arena.Retain()
-	}
-	if g.Int16Arena != nil {
-		newG.Int16Arena = memory.NewTypedArena[int16](g.Int16Arena.Slab())
-		newG.Int16Arena.Retain()
-	}
-	if g.Int32Arena != nil {
-		newG.Int32Arena = memory.NewTypedArena[int32](g.Int32Arena.Slab())
-		newG.Int32Arena.Retain()
-	}
-	if g.Int64Arena != nil {
-		newG.Int64Arena = memory.NewTypedArena[int64](g.Int64Arena.Slab())
-		newG.Int64Arena.Retain()
-	}
-	if g.Float16Arena != nil {
-		newG.Float16Arena = memory.NewTypedArena[float16.Num](g.Float16Arena.Slab())
-		newG.Float16Arena.Retain()
-	}
-	if g.Complex64Arena != nil {
-		newG.Complex64Arena = memory.NewTypedArena[complex64](g.Complex64Arena.Slab())
-		newG.Complex64Arena.Retain()
-	}
-	if g.Complex128Arena != nil {
-		newG.Complex128Arena = memory.NewTypedArena[complex128](g.Complex128Arena.Slab())
-		newG.Complex128Arena.Retain()
-	}
+	newG.retainArenasFrom(g)
 
 	// SHALLOW COPY: share per-chunk vector slice headers.
 	// The per-chunk data is read-only after publication. Sharing the
@@ -503,15 +432,7 @@ func (g *GraphData) ShallowStructuralClone() *GraphData {
 	}
 
 	// Copy Arrow References (with Retain if not nil)
-	if g.ArrowRefs != nil {
-		newG.ArrowRefs = make([]arrow.Array, len(g.ArrowRefs))
-		for i, ref := range g.ArrowRefs {
-			if ref != nil {
-				ref.Retain()
-				newG.ArrowRefs[i] = ref
-			}
-		}
-	}
+	newG.ArrowRefs = cloneArrowRefs(g.ArrowRefs)
 
 	// Deep copy offset slices (VectorsF32, VectorsInt8, etc.) — these
 	// are written by EnsureChunk via atomic StoreUint64, so a deep copy
@@ -548,7 +469,7 @@ func (g *GraphData) ShallowStructuralClone() *GraphData {
 	newG.VectorsComplex128Offsets = copyOffsetSlice(g.VectorsComplex128Offsets, g.Type == VectorTypeComplex128)
 
 	// Set finalizer to ensure automatic Release when snapshot is orphaned
-	runtime.SetFinalizer(newG, func(g *GraphData) { g.Release() })
+	runtime.SetFinalizer(newG, func(g *GraphData) { g.release(false) })
 
 	return newG
 }

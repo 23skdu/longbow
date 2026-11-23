@@ -102,6 +102,17 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 					return fmt.Errorf("failed to snapshot index for %s: %w", name, err)
 				}
 
+				baseCleanup := item.Cleanup
+				item.Cleanup = func() {
+					if snap != nil {
+						snap.Release()
+						snap = nil
+					}
+					if baseCleanup != nil {
+						baseCleanup()
+					}
+				}
+
 				// 2. Set Writer Callback
 				// This writer will be invoked LATER in a background thread to serialize the clone.
 				item.IndexConfigWriter = func(w io.Writer) error {

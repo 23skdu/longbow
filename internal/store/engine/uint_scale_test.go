@@ -44,6 +44,7 @@ func buildUintScaleIndex(tb testing.TB, n int) (*ArrowHNSW, []uint16) {
 
 	ds := NewDataset("uint_scale", schema)
 	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
+	tb.Cleanup(ds.Close)
 
 	cfg := DefaultArrowHNSWConfig()
 	cfg.DataType = types.VectorTypeUint16

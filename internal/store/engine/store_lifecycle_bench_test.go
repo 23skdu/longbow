@@ -131,4 +131,5 @@ func runBenchmark(b *testing.B, mem memory.Allocator, schema *arrow.Schema, rec 
 	s.indexQueue.Stop()
 	close(s.stopChan)
 	wg.Wait()
+	_ = s.Close()
 }

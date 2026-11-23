@@ -253,6 +253,9 @@ func (c *TurboQuantCompute) getTQBytes(id uint32, dg *DiskGraph, maxGen uint64) 
 	cID := types.ChunkID(id)
 	cOff := types.ChunkOffset(id)
 	data := c.h.data.Load()
+	if data == nil {
+		return nil, fmt.Errorf("index data unavailable")
+	}
 	var chunk []byte
 	if maxGen == 18446744073709551615 {
 		chunk = data.GetVectorsTQChunkFast(int(cID))

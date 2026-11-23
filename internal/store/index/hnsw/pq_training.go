@@ -90,7 +90,7 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		newData := oldData.Clone()
 		newData.PQEnabled = true
 		newData.PQM = m
-		if h.data.CompareAndSwap(oldData, newData) {
+		if h.compareAndSwapData(oldData, newData) {
 			break
 		}
 	}

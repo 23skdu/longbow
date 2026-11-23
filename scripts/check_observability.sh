@@ -3,7 +3,7 @@
 #
 # Invoked by `make observability-check` and the CI `observability` job so the
 # release artifact list stays in sync with what CI and the Makefile actually
-# build: multi-arch linux/amd64 + linux/arm64 CPU images, amd64-only GPU/TPU
+# build: multi-arch linux/amd64 + linux/arm64 CPU images, amd64-only GPU
 # images, and the native darwin/arm64 binary (never a darwin/arm64 OCI image).
 set -euo pipefail
 
@@ -20,7 +20,8 @@ WORKFLOW=.github/workflows/ci.yml
 DEPLOY_DOC=docs/deploy.md
 
 # image:platform:dockerfile:make-target
-# TPU and CUDA variants are amd64-only because their base toolchains require it.
+# CUDA GPU variants are amd64-only because their base toolchains require it.
+# TPU container builds (Dockerfile.tpu) were removed; TPU code remains unsupported/untested.
 RELEASE_IMAGES=(
   "longbow:linux/amd64:Dockerfile.cpu:docker-build-cpu"
   "longbow:linux/arm64:Dockerfile.cpu:docker-build-cpu-arm64"
@@ -28,7 +29,6 @@ RELEASE_IMAGES=(
   "longbow-emlgo-cpu:linux/arm64:Dockerfile.emlgo-cpu:docker-build-emlgo-cpu-arm64"
   "longbow-nvidia:linux/amd64:Dockerfile.nvidia:docker-build-nvidia"
   "longbow-emlgo-nvidia:linux/amd64:Dockerfile.emlgo-nvidia:docker-build-emlgo-nvidia"
-  "longbow-tpu:linux/amd64:Dockerfile.tpu:docker-build-tpu"
 )
 # Native (non-OCI) release artifacts.
 NATIVE_ARTIFACTS=(
@@ -94,4 +94,4 @@ if grep -Eiq "darwin/arm64 (OCI )?(image|container)s? (is|are) published|publish
   fail "$DEPLOY_DOC must not promise a darwin/arm64 OCI image or container"
 fi
 
-echo "PASS: release artifact matrix (amd64 + arm64 CPU images, amd64-only GPU/TPU, native darwin/arm64 binary) is consistent."
+echo "PASS: release artifact matrix (amd64 + arm64 CPU images, amd64-only GPU, native darwin/arm64 binary) is consistent."

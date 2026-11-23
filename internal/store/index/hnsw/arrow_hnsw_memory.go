@@ -331,13 +331,3 @@ func (h *ArrowHNSW) installData(newData *types.GraphData) {
 		}
 	}
 }
-
-// publishDataClone clones data, merges any concurrent chunk allocations or
-// levels from the currently published GraphData, and installs the clone via a
-// CAS retry loop without consuming or releasing the caller's working copy.
-func (h *ArrowHNSW) publishDataClone(data *types.GraphData) {
-	if data == nil {
-		return
-	}
-	h.installData(data.Clone())
-}

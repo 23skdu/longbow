@@ -131,6 +131,7 @@ func TestGraphAPI_DetectCommunities_EmitsMetrics(t *testing.T) {
 	for id, nbrs := range adj {
 		require.NoError(t, gd.SetNeighbors(id, nbrs))
 	}
+	metrics.GraphCommunitiesTotal.Set(0)
 	before := testutil.ToFloat64(metrics.GraphCommunitiesTotal)
 	histBefore := clusteringSampleCount(t)
 

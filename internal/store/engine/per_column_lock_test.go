@@ -20,7 +20,7 @@ func TestDeleteVectorByIDConcurrency(t *testing.T) {
 	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1024*1024*1024, 0, 0)
 	s.StartIndexingWorkers(2)
 	s.StartIngestionWorkers(2)
-	defer func() { s.StopIndexingWorkers(2); s.StopIngestionWorkers(2) }()
+	defer func() { _ = s.Close() }()
 
 	dsName := "dsdel"
 	schema := arrow.NewSchema([]arrow.Field{

@@ -21,6 +21,7 @@ func TestVectorStore_GoroutineLeak(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		s := NewVectorStore(mem, logger, 1024*1024, 0, 0)
+		s.dataPath = t.TempDir()
 
 		ctx, cancel := context.WithCancel(context.Background())
 		s.StartLifecycleManager(ctx)

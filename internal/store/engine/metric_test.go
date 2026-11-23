@@ -38,6 +38,7 @@ func TestHNSW_Metrics(t *testing.T) {
 		cfg := DefaultArrowHNSWConfig()
 		cfg.Metric = MetricCosine
 		idx := NewArrowHNSW(ds, &cfg, nil)
+		defer func() { _ = idx.Close() }()
 		_, err := idx.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
 		_, err = idx.AddByLocation(context.Background(), 0, 1)
@@ -62,6 +63,7 @@ func TestHNSW_Metrics(t *testing.T) {
 		cfg := DefaultArrowHNSWConfig()
 		cfg.Metric = MetricDotProduct
 		idx := NewArrowHNSW(ds, &cfg, nil)
+		defer func() { _ = idx.Close() }()
 		_, err := idx.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
 		_, err = idx.AddByLocation(context.Background(), 0, 1)

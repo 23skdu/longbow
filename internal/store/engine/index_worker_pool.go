@@ -274,7 +274,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context, workerNodeIDs ...int) 
 				defer func() {
 					if r := recover(); r != nil {
 						s.logger.Error().Msgf("Panic in index worker for %s: %v\n%s", dsName, r, debug.Stack())
-						if ds, ok := s.getDataset(dsName); ok {
+						if ds, ok := s.getDatasetForIndexing(dsName); ok {
 							var totalRows int64
 							for _, j := range dsGroup {
 								totalRows += j.Record.NumRows()
@@ -284,7 +284,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context, workerNodeIDs ...int) 
 					}
 				}()
 
-				ds, ok := s.getDataset(dsName)
+				ds, ok := s.getDatasetForIndexing(dsName)
 				if !ok {
 					s.logger.Error().
 						Str("dataset", dsName).

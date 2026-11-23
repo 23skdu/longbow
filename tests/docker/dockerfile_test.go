@@ -95,20 +95,6 @@ var allDockerfiles = []dockerfileMeta{
 		entrypoint:     `["/app/longbow"]`,
 	},
 	{
-		filename:      "Dockerfile.tpu",
-		stages:        []string{"golang:1.27.4-bookworm", "debian:bookworm-slim"},
-		runtimeUser:   "65534:65534",
-		exposedPorts:  []string{"3000", "3001", "9090"},
-		hasVolumeData: true,
-		expectedTags:  []string{"tpu"},
-		envVars: map[string]string{
-			"LONGBOW_TPU_ENABLED": "true",
-			"LONGBOW_GPU_ENABLED": "false",
-			"GOGC":                "75",
-		},
-		entrypoint: `["/longbow"]`,
-	},
-	{
 		filename:      "Dockerfile.metal",
 		stages:        []string{"debian:bookworm-slim"},
 		runtimeUser:   "longbow:longbow",

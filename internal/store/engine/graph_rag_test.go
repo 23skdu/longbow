@@ -26,6 +26,7 @@ func TestGraphRAG_SearchHybrid(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.New(os.Stderr)
 	s := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
+	s.dataPath = t.TempDir()
 	s.StartIndexingWorkers(1)
 	defer s.Close()
 
@@ -114,6 +115,7 @@ func TestGraphRAG_Stability_Large(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 2*1024*1024*1024, 0, 0)
+	s.dataPath = t.TempDir()
 	s.StartIndexingWorkers(4)
 	defer s.Close()
 
@@ -225,6 +227,7 @@ func TestHNSW_SearchLayer_NilContext_Regression(t *testing.T) {
 		DataType:       types.VectorTypeFloat32,
 		Metric:         basecore.MetricEuclidean,
 	}, nil)
+	defer func() { _ = h.Close() }()
 
 	// Create some data
 	vec := make([]float32, 128)

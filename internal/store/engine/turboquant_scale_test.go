@@ -44,6 +44,7 @@ func buildTurboQuantScaleIndex(tb testing.TB, n int) (*ArrowHNSW, []float32) {
 
 	ds := NewDataset("tq_scale", schema)
 	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
+	tb.Cleanup(ds.Close)
 	ds.SetTurboQuantBits(4)
 
 	cfg := DefaultArrowHNSWConfig()

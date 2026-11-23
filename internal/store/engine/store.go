@@ -71,6 +71,11 @@ type VectorStore struct {
 	stopOnce sync.Once      // Protects stopChan closure
 	indexWg  sync.WaitGroup // For background workers
 	datasets atomic.Pointer[map[string]*Dataset]
+	// droppedDatasets keeps just-dropped datasets reachable until their queued
+	// indexing jobs finish. Workers look here when the active map no longer
+	// contains the dataset, so pending job counts are always decremented before
+	// the dataset's index is closed.
+	droppedDatasets sync.Map // map[string]*Dataset
 
 	// configMu protects configuration fields
 	configMu sync.RWMutex
@@ -746,6 +751,22 @@ func (vs *VectorStore) MerkleRoot(name string) [32]byte {
 
 // IndexJob is defined in dataset.go
 
+// waitForDatasetIndexing waits until every queued indexing job for the dataset
+// has finished. Unlike the bounded user-facing wait, DropDataset must not close
+// an index while a worker still holds it.
+func waitForDatasetIndexing(ctx context.Context, ds *Dataset) error {
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for ds.PendingIndexJobs.Load() > 0 || ds.PendingIngestion.Load() > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	return nil
+}
+
 // DropDataset removes a dataset from the store immediately (Fast Path).
 // It unlinks the dataset from the map (RCU) and schedules cleanup asynchronously.
 func (vs *VectorStore) DropDataset(ctx context.Context, name string) error {
@@ -782,14 +803,28 @@ func (vs *VectorStore) DropDataset(ctx context.Context, name string) error {
 			metrics.StoreDroppedDatasets.Inc()
 			metrics.StoreActiveDatasets.Set(float64(len(newMap)))
 
-			// Ensure all pending indexing/ingestion for this dataset is finished
-			// before we decrement the global memory counter and release resources.
-			droppedDS.WaitForIndexing()
+			// The dataset is already unreachable from the active map, so queue
+			// workers need the dropped-table fallback to find it and decrement
+			// their pending-job counts.
+			vs.droppedDatasets.Store(name, droppedDS)
+			if err := waitForDatasetIndexing(ctx, droppedDS); err != nil {
+				vs.logger.Warn().Err(err).Str("dataset", name).
+					Msg("DropDataset canceled while waiting for indexing; finishing cleanup asynchronously")
+				go func() {
+					asyncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+					defer cancel()
+					_ = waitForDatasetIndexing(asyncCtx, droppedDS)
+					droppedDS.Close()
+					vs.droppedDatasets.Delete(name)
+				}()
+				return err
+			}
 
 			// Decrement both record batch memory AND index memory
 			totalMemory := droppedDS.SizeBytes.Load() + droppedDS.IndexMemoryBytes.Load()
 			vs.currentMemory.Add(-totalMemory)
 			droppedDS.Close()
+			vs.droppedDatasets.Delete(name)
 
 			// Synchronous Memory Reclamation for Benchmarking stability
 			// 1. Trigger GC to finalize all unreachable objects and arenas

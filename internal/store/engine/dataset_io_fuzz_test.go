@@ -67,9 +67,13 @@ func FuzzDatasetIOExportImport(f *testing.F) {
 		}
 
 		rec := b.NewRecordBatch()
+		defer rec.Release()
+		rec.Retain()
 		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 		ds.BatchNodes.UpdateInPlace(append(append([]int{}, ds.BatchNodes.Read()...), -1))
 		vs := NewVectorStore(pool, zerolog.Nop(), 1<<30, 0, 0)
+		defer vs.Close()
+		b.Release()
 		vs.datasets.Store(&map[string]*Dataset{"fuzz-dataset": ds})
 
 		tmpDir, _ := os.MkdirTemp("", "fuzz-*")

@@ -761,12 +761,12 @@ implausibly cheaper than float32, which is the signature of the stranding bug. S
 | `longbow_tensor_optimizer_flops_saved_total` | Estimated floating-point operations saved by tensor DAG optimizations |
 | `longbow_tensor_optimizer_passes_total` | Total number of optimization rewrite passes applied to tensor DAGs |
 | `longbow_tombstones_total` | Total number of active tombstones |
-| `longbow_tpu_core_utilization_ratio` | TPU core utilization ratio (0.0 to 1.0) |
-| `longbow_tpu_d2d_latency_seconds` | TPU die-to-die (D2D) interconnect latency in seconds |
-| `longbow_tpu_hbm_usage_bytes` | TPU High Bandwidth Memory usage in bytes |
-| `longbow_tpu_inference_duration_seconds` | TPU inference duration in seconds |
-| `longbow_tpu_operation_latency_seconds` | Latency of TPU operations in seconds |
-| `longbow_tpu_operations_total` | Total number of TPU operations |
+| `longbow_tpu_core_utilization_ratio` | TPU core utilization ratio (0.0 to 1.0; TPU backend currently unsupported/untested) |
+| `longbow_tpu_d2d_latency_seconds` | TPU die-to-die (D2D) interconnect latency in seconds (TPU backend currently unsupported/untested) |
+| `longbow_tpu_hbm_usage_bytes` | TPU High Bandwidth Memory usage in bytes (TPU backend currently unsupported/untested) |
+| `longbow_tpu_inference_duration_seconds` | TPU inference duration in seconds (TPU backend currently unsupported/untested) |
+| `longbow_tpu_operation_latency_seconds` | Latency of TPU operations in seconds (TPU backend currently unsupported/untested) |
+| `longbow_tpu_operations_total` | Total number of TPU operations (TPU backend currently unsupported/untested) |
 | `longbow_tq2_codes_per_vector` | Number of codes per vector for TurboQuant2 (2-bit) |
 | `longbow_tq2_decode_duration_seconds` | Time spent decoding vectors with TurboQuant2 (2-bit) |
 | `longbow_tq2_encode_duration_seconds` | Time spent encoding vectors with TurboQuant2 (2-bit) |

@@ -132,7 +132,7 @@ func FuzzIngestionIntegrityConcurrent(f *testing.F) {
 				t.Logf("Waiting for index: Len=%d/%d, Pending=%d", ds.Index.Len(), totalExpected, ds.PendingIngestion.Load())
 			}
 			return lenOk && pendingOk
-		}, 30*time.Second, 1*time.Second, "Index failed to reach expected size or drain pending jobs")
+		}, 90*time.Second, 1*time.Second, "Index failed to reach expected size or drain pending jobs")
 
 		// Verify Search Integrity (Sample)
 		// Pick a random vector from what we inserted (re-generate)

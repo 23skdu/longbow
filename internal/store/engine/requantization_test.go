@@ -15,6 +15,7 @@ func TestAdaptiveRequantization_Trigger(t *testing.T) {
 	}
 	// 1. Setup Dataset
 	ds := NewDataset("test_requant", nil)
+	defer ds.Close()
 	// We need an index for the task to proceed
 	cfg := DefaultArrowHNSWConfig()
 	ds.Index = NewArrowHNSW(ds, &cfg, nil)

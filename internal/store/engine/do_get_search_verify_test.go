@@ -36,6 +36,7 @@ func TestDoGetSearch_Integration(t *testing.T) {
 	logger := zerolog.New(zerolog.NewTestWriter(t))
 	// NewVectorStore args: allocator, logger, maxMemory, walBytes(unused), checkInterval(unused)
 	store := NewVectorStore(memory.NewGoAllocator(), logger, 1024*1024, 0, time.Minute)
+	store.dataPath = t.TempDir()
 	defer func() { _ = store.Close() }()
 	store.StartIndexingWorkers(1)  // Start 1 worker for test
 	store.StartIngestionWorkers(1) // Start ingestion workers to drain queues

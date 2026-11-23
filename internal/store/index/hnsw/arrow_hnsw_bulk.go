@@ -264,9 +264,16 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	original.ReleaseReader()
 	data = clone
 
+	releaseUnpublished := func() {
+		if data != nil && data != original && data != h.data.Load() {
+			data.Release()
+		}
+	}
+
 	// Ingest vectors and generate active nodes in parallel
 	activeNodes, err := h.extractAndIngestBatchVectors(ctx, startID, n, dims, vecs, data)
 	if err != nil {
+		releaseUnpublished()
 		return err
 	}
 
@@ -278,6 +285,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 
 	data, _, _, err = h.bootstrapSequential(ctx, startID, n, seedCount, activeNodes, data)
 	if err != nil {
+		releaseUnpublished()
 		return err
 	}
 	if n <= seedCount {
@@ -287,6 +295,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	// 3. Parallel Linkage Phase
 	data, batchMaxLevel, batchEpCandidate, err := h.linkRemainingNodes(ctx, startID, n, seedCount, activeNodes, data)
 	if err != nil {
+		releaseUnpublished()
 		return err
 	}
 

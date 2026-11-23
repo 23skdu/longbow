@@ -16,6 +16,7 @@ func TestStore_IPCEmptyRecords(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
+	s.dataPath = t.TempDir()
 	defer s.Close()
 
 	ctx := context.Background()
@@ -50,6 +51,7 @@ func TestStore_IPCReliability(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1024*1024*100, 0, 0)
+	s.dataPath = t.TempDir()
 	defer s.Close()
 
 	ctx := context.Background()

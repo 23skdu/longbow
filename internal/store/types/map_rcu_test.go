@@ -260,3 +260,40 @@ func TestMapRCUConcurrentRace(t *testing.T) {
 
 	wg.Wait()
 }
+
+// TestMapRCULazyShardAllocation ensures a fresh map does not allocate any of
+// its 64 shard hash tables. BM25 nests MapRCU inside 1,024 outer shards, so
+// eager allocation previously created ~196,000 empty maps per index.
+func TestMapRCULazyShardAllocation(t *testing.T) {
+	m := NewMapRCU[string, int]()
+	for i := range m.shards {
+		if m.shards[i].data != nil {
+			t.Fatalf("shard %d allocated before first write", i)
+		}
+	}
+
+	if _, ok := m.Get("missing"); ok {
+		t.Fatal("unexpected value from empty map")
+	}
+	m.Delete("missing")
+	if seen := m.Len(); seen != 0 {
+		t.Fatalf("expected empty map, got len %d", seen)
+	}
+	iterated := false
+	m.Range(func(_ string, _ int) bool {
+		iterated = true
+		return true
+	})
+	if iterated {
+		t.Fatal("empty map produced a range callback")
+	}
+
+	m.Store("first", 1)
+	m.BulkStore(map[string]int{"second": 2, "third": 3})
+	if got := m.Len(); got != 3 {
+		t.Fatalf("expected 3 entries after writes, got %d", got)
+	}
+	if v, ok := m.Get("second"); !ok || v != 2 {
+		t.Fatalf("expected 2 for second, got %v (ok=%v)", v, ok)
+	}
+}

@@ -46,6 +46,7 @@ func buildComplexScaleIndex(tb testing.TB, n int) (*ArrowHNSW, []float32) {
 
 	ds := NewDataset("complex_scale", schema)
 	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
+	tb.Cleanup(ds.Close)
 
 	cfg := DefaultArrowHNSWConfig()
 	cfg.DataType = VectorTypeComplex128

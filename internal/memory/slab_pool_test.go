@@ -2,6 +2,7 @@ package memory
 
 import (
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -50,6 +51,24 @@ func TestSlabPool_MaxPooledLimit(t *testing.T) {
 
 	// Pool should not exceed maxPooled
 	assert.LessOrEqual(t, pool.PooledCount(), pool.maxPooled)
+	assert.Equal(t, int64(0), pool.ActiveCount())
+}
+
+// TestSlabPool_MaxPooledDoesNotExpandUnderLoad prevents the old dynamic
+// scale-up path from retaining thousands of 4 MB slabs after a large test.
+func TestSlabPool_MaxPooledDoesNotExpandUnderLoad(t *testing.T) {
+	pool := newSlabPool(1024 * 1024)
+
+	slabs := make([][]byte, maxPooledSlabLimit+25)
+	for i := range slabs {
+		slabs[i] = pool.Get()
+	}
+	for _, slab := range slabs {
+		pool.Put(slab)
+	}
+
+	assert.Equal(t, int64(maxPooledSlabLimit), atomic.LoadInt64(&pool.maxPooled))
+	assert.LessOrEqual(t, pool.PooledCount(), int64(maxPooledSlabLimit))
 	assert.Equal(t, int64(0), pool.ActiveCount())
 }
 
@@ -158,6 +177,36 @@ func TestGetSlab_NonStandardSize(t *testing.T) {
 	PutSlab(slab)
 }
 
+// TestGetSlab_SmallCapacityUsesHeap ensures small scratch allocations are not
+// promoted to a full 4 MB off-heap slab.
+func TestGetSlab_SmallCapacityUsesHeap(t *testing.T) {
+	before := global4MBPool.ActiveCount()
+
+	slab := GetSlab(4096)
+	require.Equal(t, 4096, len(slab))
+	require.Equal(t, 4096, cap(slab))
+	assert.Equal(t, before, global4MBPool.ActiveCount())
+
+	PutSlab(slab)
+	assert.Equal(t, before, global4MBPool.ActiveCount())
+}
+
+// TestSlabArena_SmallSlabDoesNotGrowPool verifies that an arena configured with
+// kilobyte-scale slabs does not retain gigabytes via the standard slab pools.
+func TestSlabArena_SmallSlabDoesNotGrowPool(t *testing.T) {
+	before := global4MBPool.ActiveCount()
+
+	arena := NewSlabArena(1024)
+	for i := 0; i < 1000; i++ {
+		_, err := arena.Alloc(4096)
+		require.NoError(t, err)
+	}
+	assert.Equal(t, before, global4MBPool.ActiveCount())
+
+	arena.Free()
+	assert.Equal(t, before, global4MBPool.ActiveCount())
+}
+
 // BenchmarkSlabPool_GetPut runs the benchmark slab pool_get put operation.
 func BenchmarkSlabPool_GetPut(b *testing.B) {
 	pool := newSlabPool(4 * 1024 * 1024)
@@ -179,31 +228,6 @@ func BenchmarkSlabPool_Parallel(b *testing.B) {
 			pool.Put(slab)
 		}
 	})
-}
-
-// TestSlabPool_Autoscale runs the test slab pool_autoscale operation.
-func TestSlabPool_Autoscale(t *testing.T) {
-	pool := newSlabPool(4 * 1024 * 1024)
-	assert.Equal(t, int64(100), pool.maxPooled)
-
-	// Allocate more slabs than current maxPooled to trigger scale up
-	slabs := make([][]byte, 150)
-	for i := range slabs {
-		slabs[i] = pool.Get()
-	}
-
-	// maxPooled should have dynamically increased (incremented in steps of 50)
-	assert.Greater(t, pool.maxPooled, int64(100))
-	assert.Equal(t, int64(150), pool.maxPooled)
-
-	// Return all slabs
-	for _, slab := range slabs {
-		pool.Put(slab)
-	}
-
-	// Release unused slabs should trigger scale down back to baseline (100)
-	pool.ReleaseUnused()
-	assert.Equal(t, int64(100), pool.maxPooled)
 }
 
 // TestSlabPool_ReslicingProtection runs the test slab pool_reslicing protection operation.

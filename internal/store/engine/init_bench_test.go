@@ -50,6 +50,7 @@ func TestHNSW_DimensionTransition(t *testing.T) {
 	cfg := DefaultArrowHNSWConfig()
 	cfg.InitialCapacity = 10
 	h := NewArrowHNSW(nil, &cfg, nil)
+	defer func() { _ = h.Close() }()
 
 	// Initially dims = 0
 	require.Equal(t, int(0), h.GetConfig().Dims)

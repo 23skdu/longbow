@@ -412,8 +412,13 @@ func (idx *BM25ArenaIndex) Close() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
+	if rel, ok := idx.postings.(interface{ Release() }); ok {
+		rel.Release()
+	}
+	idx.postings = nil
+
 	if idx.arena != nil {
-		idx.arena.Free()
+		idx.arena.Release()
 		idx.arena = nil
 	}
 	idx.tokenDict = nil

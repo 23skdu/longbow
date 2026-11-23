@@ -1878,5 +1878,5 @@ SDE 10.13.1-2026-07-28. All emulated lanes ran with no supported-feature skips:
 2026-11-22: `./scripts/check_observability.sh`, `actionlint
 .github/workflows/ci.yml`, and `make -n docker-build-all` passed. The release
 artifact list contains `linux/amd64` and `linux/arm64` CPU and EMLGo CPU
-images, amd64-only NVIDIA/EMLGo-NVIDIA/TPU images, and the native
-`darwin/arm64` binary. No `darwin/arm64` OCI image is promised.
+images, amd64-only NVIDIA/EMLGo-NVIDIA images, and the native
+`darwin/arm64` binary. No `darwin/arm64` OCI image is promised. (`Dockerfile.tpu` has since been removed; TPU code remains unsupported/untested.)

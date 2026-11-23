@@ -21,14 +21,20 @@ func TestCloneForAnalyticsDoesNotAllocateArenas(t *testing.T) {
 		snap := g.CloneForAnalytics()
 		require.NotNil(t, snap)
 		require.Nil(t, snap.PackedNeighbors, "analytics snapshots must not retain packed adjacency")
+		require.NotZero(t, snap.Neighbors[0][0], "analytics topology chunks need a presence marker")
 		require.Equal(t, []uint32{2, 3}, snap.GetNeighbors(0, 1, nil))
 	}
 
 	require.Equal(t, usedBefore, g.Uint32Arena.TotalAllocated(),
 		"analytics snapshots must not allocate from the live topology arena")
 
-	// Persistence snapshots intentionally keep arena-backed offsets.
-	_ = g.CloneForSnapshot()
+	// Persistence snapshots intentionally keep arena-backed offsets, and own
+	// balanced references to those arenas until their consumer releases them.
+	persistSnap := g.CloneForSnapshot()
 	require.Greater(t, g.Uint32Arena.TotalAllocated(), usedBefore,
 		"persistence snapshots should still copy topology into the arena")
+	persistSnap.Release()
+	require.Equal(t, []uint32{2, 3}, g.GetNeighbors(0, 1, nil),
+		"releasing a snapshot must not release the live graph's arena")
+	g.Release()
 }

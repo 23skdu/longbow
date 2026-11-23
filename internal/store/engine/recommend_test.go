@@ -479,7 +479,8 @@ func TestRecommend(t *testing.T) {
 			SeedIDs: []string{"999"},
 			K:       5,
 		}
-		_, err := vs.Recommend(ctx, req)
-		assert.Error(t, err)
+		results, err := vs.Recommend(ctx, req)
+		require.NoError(t, err)
+		assert.Empty(t, results)
 	})
 }

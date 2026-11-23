@@ -14,7 +14,7 @@ Get started with Longbow using Docker or Helm. Covers installation, environment 
 
 Comprehensive guide to all Longbow search modes (including Flight `DoGet`/`DoAction`, REST v1 `/api/v1/*`, GraphQL, `longbow-cli`, Python SDK, and `bench-tool`):
 
-- **Dense Vector Search (ANN / k-NN)**: HNSW vector similarity across 17 data types with SIMD/GPU/TPU acceleration and global scatter-gather (`LocalOnly=false`).
+- **Dense Vector Search (ANN / k-NN)**: HNSW vector similarity across 17 data types with SIMD/GPU acceleration and global scatter-gather (`LocalOnly=false`).
 - **Vector Search by ID (`ByID`)**: O(1) similarity lookup from a stored vector ID (`search_by_id`, `/search/by-id`, `longbow-cli search -mode by-id`).
 - **Filtered Search**: SIMD predicate evaluation (`filters`), complex boolean `filter_expr` AST, subqueries, and CTE pipelines.
 - **Sparse / BM25 Keyword Search**: Pure keyword retrieval over inverted text indexes (`alpha=0.0` + `text_query`).
@@ -43,7 +43,7 @@ Tuning for scale and speed:
 
 Unleash hardware performance:
 
-- **GPU/TPU**: CUDA (NVIDIA), Metal (Apple Silicon), and Google TPU (Ironwood).
+- **GPU/Accelerators**: CUDA (NVIDIA), Metal (Apple Silicon), and legacy Google TPU code (currently unsupported/untested).
 - **Inference**: ONNX Runtime (native acceleration) and WASM (Wazero sandboxed portability).
 - **Networking**: Zero-copy RDMA over RoCEv2.
 
@@ -54,7 +54,7 @@ Deep dive into Longbow's design:
 - **Distributed Mesh**: Gossip-based membership and Consistent Hashing.
 - **Storage**: WAL, Snapshots, S3/GCS offloading, and tiered storage.
 - **Data Lifecycle**: Tombstones, compaction, TTL, LRU eviction.
-- **Hardware**: CUDA, Metal, TPU, SIMD acceleration matrix.
+- **Hardware**: CUDA, Metal, SIMD acceleration matrix (plus unsupported/untested TPU code).
 
 ### 6. [API Reference](api.md)
 

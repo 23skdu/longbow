@@ -127,6 +127,7 @@ func TestTextIndexedExactlyOncePerBatch(t *testing.T) {
 		"delta epsilon zeta",
 		"eta theta iota",
 	})
+	defer batch.Release()
 
 	store.indexTextColumnsForHybridSearch(ds, batch, 0)
 

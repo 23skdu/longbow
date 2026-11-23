@@ -224,10 +224,6 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				}
 
 				repaired++
-
-				// CAS the updated data pointer back to h.data to ensure visibility
-				latest := h.data.Load()
-				_ = h.data.CompareAndSwap(latest, data)
 			}
 			data.UnlockNode(lvl, nid, oldVer)
 		}

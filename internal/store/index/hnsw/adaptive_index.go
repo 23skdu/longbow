@@ -252,7 +252,16 @@ func (idx *AdaptiveIndex) SetIndexedColumns(cols []string) {
 func (idx *AdaptiveIndex) Close() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
-	return idx.activeIndex().Close()
+	var err error
+	if idx.bruteForce != nil {
+		err = idx.bruteForce.Close()
+	}
+	if idx.hnsw != nil {
+		if herr := idx.hnsw.Close(); herr != nil && err == nil {
+			err = herr
+		}
+	}
+	return err
 }
 
 // TrainPQ trains a Product Quantizer for the index.

@@ -68,9 +68,8 @@ Official images are published to GitHub Container Registry (`ghcr.io/23skdu/long
 | `latest-emlgo-cpu` | `Dockerfile.emlgo-cpu` | `linux/amd64`, `linux/arm64` |
 | `latest-nvidia` | `Dockerfile.nvidia` | `linux/amd64` only |
 | `latest-emlgo-nvidia` | `Dockerfile.emlgo-nvidia` | `linux/amd64` only |
-| `latest-tpu` | `Dockerfile.tpu` | `linux/amd64` only |
 
-The GPU and TPU variants are amd64-only because their base toolchains require it: both CUDA images install a `linux-amd64` Go toolchain and compile `nvcc` kernels for amd64, and the Cloud TPU image links the x86_64-only `libtpu`/PJRT stack. The CPU and EMLGo CPU images use `golang:1.27.4-bookworm` plus `scratch`, so they publish a real multi-arch manifest with both slices. `Dockerfile.metal` is not in the release matrix, and darwin/arm64 OCI images are not published: OCI images are Linux artifacts, and Metal requires a native macOS binary.
+The NVIDIA GPU variants are amd64-only because their base toolchains require it: both CUDA images install a `linux-amd64` Go toolchain and compile `nvcc` kernels for amd64. The CPU and EMLGo CPU images use `golang:1.27.4-bookworm` plus `scratch`, so they publish a real multi-arch manifest with both slices. `Dockerfile.metal` is not in the release matrix, and darwin/arm64 OCI images are not published: OCI images are Linux artifacts, and Metal requires a native macOS binary. `Dockerfile.tpu` has been removed; existing TPU code in the repository currently remains unsupported and untested.
 
 Publishing is opt-in. Pull requests and plain `workflow_dispatch` runs build every platform for validation but do not push. A tag ref, or a dispatch with `publish: true`, pushes the images, verifies each manifest and tag by digest, generates SPDX SBOMs from the pushed digests, and signs those digests with Cosign. The SBOMs are attached to the same digests.
 
@@ -113,10 +112,9 @@ make docker-build-cpu-arm64
 make docker-build-emlgo-cpu
 make docker-build-emlgo-cpu-arm64
 
-# AMD64-only accelerator builds
+# AMD64-only NVIDIA GPU builds
 make docker-build-nvidia
 make docker-build-emlgo-nvidia
-make docker-build-tpu
 
 # Equivalent raw docker commands
 docker build --platform linux/amd64 -f Dockerfile.cpu -t longbow:cpu .

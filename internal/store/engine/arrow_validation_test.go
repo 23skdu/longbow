@@ -67,6 +67,27 @@ func (h *DualIndexHarness) AddVector(id uint32, vec []float32) {
 	}
 }
 
+// Close releases resources held by the validation harness.
+func (h *DualIndexHarness) Close() {
+	if h == nil {
+		return
+	}
+	if h.candidate != nil {
+		_ = h.candidate.Close()
+		h.candidate = nil
+	}
+	if h.dataset != nil && h.dataset.Records != nil {
+		h.dataset.dataMu.Lock()
+		for _, r := range h.dataset.Records.Read() {
+			if r != nil {
+				r.Release()
+			}
+		}
+		h.dataset.Records.UpdateInPlace(nil)
+		h.dataset.dataMu.Unlock()
+	}
+}
+
 // MeasureRecall will compare search results between reference and candidate.
 // Returns recall@k (percentage of reference results found in candidate results).
 func (h *DualIndexHarness) MeasureRecall(query []float32, k int) float64 {
@@ -123,6 +144,7 @@ func TestDualIndexHarness_Basic(t *testing.T) {
 	dataset := NewDataset("test", nil)
 
 	harness := NewDualIndexHarness(dataset)
+	defer harness.Close()
 
 	// Add some vectors
 	vec1 := []float32{1.0, 0.0, 0.0}

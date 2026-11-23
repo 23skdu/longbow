@@ -434,6 +434,9 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		}
 
 		fa := NewFlatAdjacency(adjArena, maxNeighbors, capacity)
+		// NewFlatAdjacency retains adjArena; drop the constructor reference so
+		// fa.Release() frees adjArena when the index closes.
+		adjArena.Release()
 		fa.missLayer = l
 		gd.PackedNeighbors[l] = fa
 	}
@@ -491,9 +494,10 @@ func (h *ArrowHNSW) SetDisableNodeCountMetric(disable bool) {
 	h.disableNodeCountMetric.Store(disable)
 }
 
-// SetData sets the graph data for the index
+// SetData publishes graph data through the normal ownership-transfer path so
+// any previous data is released and the eviction manager target is swapped.
 func (h *ArrowHNSW) SetData(data *types.GraphData) {
-	h.data.Store(data)
+	h.compareAndSwapData(h.data.Load(), data)
 }
 
 // GetData returns the current graph data

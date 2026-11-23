@@ -28,6 +28,7 @@ func TestArrowHNSW_Complex64_ZeroCopy(t *testing.T) {
 	config.Metric = "l2"
 
 	idx := NewArrowHNSW(nil, &config, nil)
+	defer func() { _ = idx.Close() }()
 
 	// 1. Prepare Data
 	vecsC64 := make([][]complex64, count)
@@ -85,6 +86,7 @@ func TestArrowHNSW_Complex128_ZeroCopy(t *testing.T) {
 	config.Metric = "l2"
 
 	idx := NewArrowHNSW(nil, &config, nil)
+	defer func() { _ = idx.Close() }()
 
 	vecsC128 := make([][]complex128, count)
 	for i := 0; i < count; i++ {
@@ -127,6 +129,7 @@ func TestArrowHNSW_Complex_FlattenedQuery(t *testing.T) {
 	config.Metric = "l2"
 
 	idx := NewArrowHNSW(nil, &config, nil)
+	defer func() { _ = idx.Close() }()
 
 	// Create test vector
 	vec := []complex128{1 + 1i, 2 + 2i, 3 + 3i, 4 + 4i}
@@ -159,6 +162,7 @@ func TestArrowHNSW_Complex_Float64Query(t *testing.T) {
 	config.Metric = "l2"
 
 	idx := NewArrowHNSW(nil, &config, nil)
+	defer func() { _ = idx.Close() }()
 
 	// Create test vector
 	vec := []complex128{1 + 1i, 2 + 2i, 3 + 3i, 4 + 4i}

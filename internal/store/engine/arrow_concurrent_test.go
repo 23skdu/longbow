@@ -19,6 +19,7 @@ func TestConcurrentSearch(t *testing.T) {
 	dataset := &Dataset{Name: "test"}
 	defaultConfig := DefaultArrowHNSWConfig()
 	index := NewArrowHNSW(dataset, &defaultConfig, nil)
+	defer func() { _ = index.Close() }()
 
 	// Create a simple index with a few nodes
 	// Note: This test validates the locking mechanism works
@@ -92,6 +93,7 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 
 	defaultConfig := DefaultArrowHNSWConfig()
 	index := NewArrowHNSW(dataset, &defaultConfig, nil)
+	defer func() { _ = index.Close() }()
 
 	query := make([]float32, dim)
 
@@ -137,6 +139,7 @@ func BenchmarkConcurrentSearch(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
 	defaultConfig := DefaultArrowHNSWConfig()
 	index := NewArrowHNSW(dataset, &defaultConfig, nil)
+	defer func() { _ = index.Close() }()
 
 	query := []float32{1.0, 2.0, 3.0}
 
@@ -170,6 +173,7 @@ func BenchmarkSearchLatency(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
 	defaultConfig := DefaultArrowHNSWConfig()
 	index := NewArrowHNSW(dataset, &defaultConfig, nil)
+	defer func() { _ = index.Close() }()
 
 	query := make([]float32, 384)
 	for i := range query {
@@ -187,6 +191,7 @@ func BenchmarkInsertThroughput(b *testing.B) {
 	dataset := &Dataset{Name: "test"}
 	defaultConfig := DefaultArrowHNSWConfig()
 	index := NewArrowHNSW(dataset, &defaultConfig, nil)
+	defer func() { _ = index.Close() }()
 
 	lg := NewLevelGenerator(1.44269504089)
 

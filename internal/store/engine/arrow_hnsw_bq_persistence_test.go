@@ -93,9 +93,13 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	// Replace in AutoShardingIndex via reflection or if accessible?
 	// ASI.current is unexported but we are in package store
 	asi.mu.Lock()
+	oldCurrent := asi.current
 	asi.current = arrowIndex
 	asi.sharded = false
 	asi.mu.Unlock()
+	if oldCurrent != nil {
+		_ = oldCurrent.Close()
+	}
 
 	// Verify BQ state before snapshot
 	gd := arrowIndex.GetData()

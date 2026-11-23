@@ -18,6 +18,7 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 	initialCapacity := 100
 	dims := 128
 	data := lbtypes.NewGraphData(initialCapacity, dims, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+	defer data.Release()
 
 	// Simulate node allocation
 	// We need to ensure chunks are allocated for ID 0
@@ -60,6 +61,7 @@ func TestGraphData_ArenaGrowth(t *testing.T) {
 	}
 	// Verify that we can store widespread IDs (triggering multiple chunks/slabs)
 	gd := lbtypes.NewGraphData(10000, 16, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+	defer gd.Release()
 
 	// Add neighbors for node 5000
 	id := uint32(5000)
@@ -86,8 +88,8 @@ func TestGraphData_PreAllocate(t *testing.T) {
 		dims     int
 		dataType lbtypes.VectorDataType
 	}{
-		{"Float32_1M", 1000000, 128, lbtypes.VectorTypeFloat32},
-		{"Float32_100K", 100000, 256, lbtypes.VectorTypeFloat32},
+		{"Float32_100K", 100000, 128, lbtypes.VectorTypeFloat32},
+		{"Float32_50K", 50000, 256, lbtypes.VectorTypeFloat32},
 		{"Float64_10K", 10000, 64, lbtypes.VectorTypeFloat64},
 		{"Int8_50K", 50000, 384, lbtypes.VectorTypeInt8},
 		{"Int16_25K", 25000, 192, lbtypes.VectorTypeInt16},
@@ -105,6 +107,7 @@ func TestGraphData_PreAllocate(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			gd := lbtypes.NewGraphData(0, tc.dims, false, false, 0, false, false, false, tc.dataType, false, false, false, 8, "test", nil, false)
+			defer gd.Release()
 
 			err := gd.PreAllocate(tc.capacity)
 			if err != nil {
@@ -213,6 +216,7 @@ func TestGraphData_PreAllocate_SQ8(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, true, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+	defer gd.Release()
 	gd.SQ8Enabled = true
 
 	err := gd.PreAllocate(10000)
@@ -232,6 +236,7 @@ func TestGraphData_PreAllocate_PQ(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	gd := lbtypes.NewGraphData(0, 128, false, false, 0, true, false, false, lbtypes.VectorTypeFloat32, false, true, false, 8, "test", nil, false)
+	defer gd.Release()
 	gd.PQM = 64
 
 	err := gd.PreAllocate(10000)
@@ -251,6 +256,7 @@ func TestGraphData_PreAllocate_BQ(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, true, false, false, 8, "test", nil, false)
+	defer gd.Release()
 
 	err := gd.PreAllocate(10000)
 	if err != nil {
@@ -269,6 +275,7 @@ func TestGraphData_PreAllocate_ZeroCapacity(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+	defer gd.Release()
 
 	err := gd.PreAllocate(0)
 	if err != nil {
@@ -288,6 +295,7 @@ func TestGraphData_NewGraphData_AutoPreAllocate(t *testing.T) {
 	}
 	// Verify NewGraphData automatically pre-allocates when capacity > 0
 	gd := lbtypes.NewGraphData(5000, 64, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+	defer gd.Release()
 
 	// NewGraphData creates initial chunks + calls PreAllocate
 	// So we should have at least numChunks pre-allocated

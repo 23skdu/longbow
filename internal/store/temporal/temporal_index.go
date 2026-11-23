@@ -209,6 +209,10 @@ func (ti *TemporalIndex) Close() error {
 		ti.shards[i].mu.Unlock()
 	}
 
+	if tree := ti.temporalTree.Swap(nil); tree != nil {
+		tree.Release()
+	}
+
 	if gpuIdx := ti.gpuIndex.Load(); gpuIdx != nil {
 		if gi, ok := gpuIdx.(gputypes.Index); ok {
 			_ = gi.Close()

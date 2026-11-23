@@ -646,7 +646,16 @@ func AdbcConnectionGetInfo(conn *C.struct_AdbcConnection, infoCodes *C.uint32_t,
 	}
 	var codes []arrowadbc.InfoCode
 	if infoCodes != nil && infoCodesLen > 0 {
-		slice := unsafe.Slice((*uint32)(unsafe.Pointer(infoCodes)), int(infoCodesLen)) // #nosec G115
+		const maxInfoCodes = 1 << 20
+		if uint64(infoCodesLen) > maxInfoCodes {
+			setCError(err, "AdbcConnectionGetInfo: too many info codes")
+			return C.int(adbcStatusInvalidArgument)
+		}
+		count := 0
+		for uint64(count) < uint64(infoCodesLen) {
+			count++
+		}
+		slice := unsafe.Slice((*uint32)(unsafe.Pointer(infoCodes)), count)
 		codes = make([]arrowadbc.InfoCode, len(slice))
 		for i, c := range slice {
 			codes[i] = arrowadbc.InfoCode(c)

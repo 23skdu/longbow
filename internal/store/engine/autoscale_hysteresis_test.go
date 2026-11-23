@@ -9,8 +9,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func newHysteresisTestStore() *VectorStore {
-	return NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<30, 0, 0)
+func newHysteresisTestStore(t *testing.T) *VectorStore {
+	t.Helper()
+	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1<<30, 0, 0)
+	t.Cleanup(func() { _ = s.Close() })
+	return s
 }
 
 func testWorkerCounts(s *VectorStore) (ingestion, indexing int) {
@@ -57,7 +60,7 @@ func TestCanScaleDownIndexing(t *testing.T) {
 // TestPendingScaleDownWorkIncludesIndexQueueDepth verifies that queued index
 // jobs are counted as pending work even before workers mark them in flight.
 func TestPendingScaleDownWorkIncludesIndexQueueDepth(t *testing.T) {
-	s := newHysteresisTestStore()
+	s := newHysteresisTestStore(t)
 	rec := createTestRecordBatch(t, 1)
 	defer rec.Release()
 
@@ -78,7 +81,7 @@ func TestPendingScaleDownWorkIncludesIndexQueueDepth(t *testing.T) {
 // TestDatasetLockWaiterInstrumentation verifies that contended read and write
 // lock helpers publish waiters to the autoscaler busy signal.
 func TestDatasetLockWaiterInstrumentation(t *testing.T) {
-	s := newHysteresisTestStore()
+	s := newHysteresisTestStore(t)
 	ds := NewDataset("autoscale_lock_instrumentation", nil)
 
 	ds.dataMu.Lock()
@@ -139,7 +142,7 @@ func FuzzCanScaleDownIngestion(f *testing.F) {
 // TestAutoscalerHysteresisWithContendedDatasetLock verifies that a contended
 // dataset lock is treated as pending work during a scale-down tick.
 func TestAutoscalerHysteresisWithContendedDatasetLock(t *testing.T) {
-	s := newHysteresisTestStore()
+	s := newHysteresisTestStore(t)
 	s.StartIngestionWorkers(MinIngestionWorkers + 2)
 	s.StartIndexingWorkers(MinIndexingWorkers + 2)
 	defer func() {
@@ -194,7 +197,7 @@ func TestAutoscalerHysteresisWithContendedDatasetLock(t *testing.T) {
 // TestStartIngestionAutoscalerSurvivesScaleUp verifies that a scale-up tick
 // does not terminate the autoscaler before it can later scale back down.
 func TestStartIngestionAutoscalerSurvivesScaleUp(t *testing.T) {
-	s := newHysteresisTestStore()
+	s := newHysteresisTestStore(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s.StartIngestionWorkers(MinIngestionWorkers + 1)
@@ -263,7 +266,7 @@ func TestStartIngestionAutoscalerSurvivesScaleUp(t *testing.T) {
 // TestStartIndexingAutoscalerRespectsMinimum verifies the autoscaler never
 // drains the indexing pool below MinIndexingWorkers.
 func TestStartIndexingAutoscalerRespectsMinimum(t *testing.T) {
-	s := newHysteresisTestStore()
+	s := newHysteresisTestStore(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s.StartIndexingAutoscaler(ctx)

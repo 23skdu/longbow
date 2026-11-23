@@ -366,6 +366,9 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	if idx.sharded {
 		idx.dataset.dataMu.RUnlock()
 		idx.mu.Unlock()
+		if newIndex != nil {
+			_ = newIndex.Close()
+		}
 		return
 	}
 

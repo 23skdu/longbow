@@ -64,6 +64,21 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		isPrivate = true // We assume existingData provided by the caller is a private copy they own
 	}
 
+	var ownedClone *types.GraphData
+	replaceClone := func(next *types.GraphData) {
+		if ownedClone != nil && ownedClone != next {
+			ownedClone.Release()
+		}
+		ownedClone = next
+		data = next
+	}
+	releaseOwnedClone := func() {
+		if ownedClone != nil && ownedClone != existingData && ownedClone != h.data.Load() {
+			ownedClone.Release()
+			ownedClone = nil
+		}
+	}
+
 	// Helper to ensure we are working on a private clone before any modification
 	ensurePrivate := func() {
 		if !isPrivate {
@@ -73,7 +88,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			// modern write path goes through VectorsF32 (offset) +
 			// Float32Arena.Get(...), not Vectors[i] directly. Saves
 			// ~19 MB of heap at int8 50k dim=384 per Clone call.
-			data = data.ShallowStructuralClone()
+			replaceClone(data.ShallowStructuralClone())
 			isPrivate = true
 		}
 	}
@@ -143,6 +158,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			newCap := (int(id) + types.ChunkSize) & ^(types.ChunkSize - 1)
 			if err := h.growInternal(newCap, dims); err != nil {
 				h.growMu.Unlock()
+				releaseOwnedClone()
 				return nil, err
 			}
 			// Adopt the new global state
@@ -151,7 +167,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			// ShallowStructuralClone saves ~19 MB per call at int8 50k
 			// dim=384; see ensurePrivate above for the safety contract.
 			if !skipSet || existingData != nil {
-				data = data.ShallowStructuralClone()
+				replaceClone(data.ShallowStructuralClone())
 			}
 		}
 		h.growMu.Unlock()
@@ -165,6 +181,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		var err error
 		data, err = h.ensureChunk(int(cID), int(types.ChunkOffset(id)), dims)
 		if err != nil {
+			releaseOwnedClone()
 			return nil, err
 		}
 		// If we were supposed to have a private copy, clone it.
@@ -174,7 +191,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		if !skipSet || existingData != nil {
 			data.ReleaseReader()
 			data = h.data.Load()
-			data = data.ShallowStructuralClone()
+			replaceClone(data.ShallowStructuralClone())
 		} else {
 			defer data.ReleaseReader()
 		}
@@ -191,6 +208,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			err := data.SetVector(id, vec)
 			data.UnlockNode(0, id, oldVer)
 			if err != nil {
+				releaseOwnedClone()
 				return nil, err
 			}
 		}
@@ -360,6 +378,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 				neighbors, err = h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
 			}
 			if err != nil {
+				releaseOwnedClone()
 				return nil, err
 			}
 			if len(neighbors) > 0 {
@@ -390,6 +409,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 				neighbors, err = h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
 			}
 			if err != nil {
+				releaseOwnedClone()
 				return nil, err
 			}
 			if len(neighbors) > 0 {
@@ -420,6 +440,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		ef := cachedEf
 		found, err := h.searchLayerForInsert(context.Background(), ctx, vec, ep, ef, l, data)
 		if err != nil {
+			releaseOwnedClone()
 			return nil, err
 		}
 

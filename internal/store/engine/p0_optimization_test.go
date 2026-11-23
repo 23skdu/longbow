@@ -27,6 +27,7 @@ func TestP0_DefaultPrecisionPromotion(t *testing.T) {
 	logger, _ := logging.NewLogger(logging.Config{Format: "text", Level: "warn"})
 	mem := NewPooledAllocator()
 	vs := NewVectorStore(mem, logger, 100*1024*1024, 10*1024*1024, 0)
+	vs.dataPath = t.TempDir()
 	defer vs.Close()
 
 	// Initialize indexing workers so we don't hang
@@ -78,6 +79,7 @@ func TestP0_ExplicitFloat32Preserved(t *testing.T) {
 	logger, _ := logging.NewLogger(logging.Config{Format: "text", Level: "warn"})
 	mem := NewPooledAllocator()
 	vs := NewVectorStore(mem, logger, 100*1024*1024, 10*1024*1024, 0)
+	vs.dataPath = t.TempDir()
 	defer vs.Close()
 
 	vs.StartIndexingWorkers(2)
@@ -122,6 +124,7 @@ func TestP0_AutoQuantization(t *testing.T) {
 
 	// Set MaxMemory limit (e.g. 10000 bytes)
 	vs := NewVectorStore(mem, logger, 10000, 100, 0)
+	vs.dataPath = t.TempDir()
 	defer vs.Close()
 
 	vs.StartIndexingWorkers(2)
@@ -167,6 +170,7 @@ func TestP0_Eviction_And_FallbackSearch(t *testing.T) {
 	logger, _ := logging.NewLogger(logging.Config{Format: "text", Level: "warn"})
 	mem := NewPooledAllocator()
 	vs := NewVectorStore(mem, logger, 100*1024*1024, 10*1024*1024, 0)
+	vs.dataPath = t.TempDir()
 	defer vs.Close()
 
 	vs.StartIndexingWorkers(2)
@@ -247,9 +251,20 @@ func TestP0_Eviction_And_FallbackSearch(t *testing.T) {
 	require.NotNil(t, gd)
 
 	// Before clearing PackedNeighbors, copy upper layers to gd.Neighbors
-	// to simulate the state as if legacy neighbors storage was populated.
-	for l := 1; l < len(gd.Neighbors); l++ {
-		for cID := 0; cID < len(gd.Neighbors[l]); cID++ {
+	// for populated chunks to simulate legacy neighbor storage without allocating empty slabs.
+	populatedChunks := (int(hnsw.GetNodeCount()) + types.ChunkSize - 1) / types.ChunkSize
+	if populatedChunks < 1 {
+		populatedChunks = 1
+	}
+	maxEvictLayer := int(hnsw.GetMaxLevel())
+	if maxEvictLayer < 1 {
+		maxEvictLayer = 1
+	}
+	if maxEvictLayer >= len(gd.Neighbors) {
+		maxEvictLayer = len(gd.Neighbors) - 1
+	}
+	for l := 1; l <= maxEvictLayer; l++ {
+		for cID := 0; cID < len(gd.Neighbors[l]) && cID < populatedChunks; cID++ {
 			// Allocate chunk
 			ref, err := gd.Uint32Arena.AllocSlice(types.ChunkSize * types.MaxNeighbors)
 			require.NoError(t, err)
@@ -263,7 +278,11 @@ func TestP0_Eviction_And_FallbackSearch(t *testing.T) {
 		// Copy neighbors from PackedNeighbors to gd.Neighbors
 		if l < len(gd.PackedNeighbors) && gd.PackedNeighbors[l] != nil {
 			pn := gd.PackedNeighbors[l]
-			for id := uint32(0); id < uint32(gd.Capacity); id++ {
+			limitID := uint32(populatedChunks * types.ChunkSize)
+			if limitID > uint32(gd.Capacity) { // #nosec G115
+				limitID = uint32(gd.Capacity) // #nosec G115
+			}
+			for id := uint32(0); id < limitID; id++ {
 				if nbs, ok := pn.GetNeighbors(id); ok {
 					cID := id / types.ChunkSize
 					cOff := id % types.ChunkSize
@@ -281,7 +300,13 @@ func TestP0_Eviction_And_FallbackSearch(t *testing.T) {
 		}
 	}
 
-	// Force HNSW search to fall back to standard gd.Neighbors by clearing PackedNeighbors
+	// Force HNSW search to fall back to standard gd.Neighbors after releasing PackedNeighbors.
+	for l, pn := range gd.PackedNeighbors {
+		if pn != nil {
+			pn.Release()
+			gd.PackedNeighbors[l] = nil
+		}
+	}
 	gd.PackedNeighbors = nil
 
 	t.Logf("DEBUG: gd.Neighbors length: %d, MaxLevel: %d", len(gd.Neighbors), hnsw.GetMaxLevel())

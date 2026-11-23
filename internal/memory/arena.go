@@ -469,7 +469,7 @@ func (a *SlabArena) Free() {
 		}
 	}
 
-	if debugSlabFree || slabCount > 0 {
+	if debugSlabFree {
 		fmt.Printf("[DIAG] SlabArena.Free: slabCap=%d, slabs=%d, bytes=%.1f MB (alloc=%v)\n",
 			a.slabCap, slabCount, mb(slabBytes), a.alloc != nil)
 	}

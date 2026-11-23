@@ -26,6 +26,21 @@ func (vs *VectorStore) getDataset(name string) (*Dataset, bool) {
 	return ds, ok
 }
 
+// getDatasetForIndexing resolves a dataset for a queued indexing job. A job may
+// still be in flight after DropDataset unlinks the dataset from the active map,
+// so the dropped-table fallback keeps pending-job accounting and index lifetime
+// correct until the worker finishes.
+func (vs *VectorStore) getDatasetForIndexing(name string) (*Dataset, bool) {
+	if ds, ok := vs.getDataset(name); ok {
+		return ds, true
+	}
+	if value, ok := vs.droppedDatasets.Load(name); ok {
+		ds, ok := value.(*Dataset)
+		return ds, ok
+	}
+	return nil, false
+}
+
 // UpdateDatasets executes a CAS loop to update the dataset map safely.
 // fn receives a copy of the current map to modify.
 func (vs *VectorStore) UpdateDatasets(fn func(map[string]*Dataset)) {
@@ -79,6 +94,12 @@ func (vs *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset)
 				newDs.Index = index.NewArrowHNSW(newDs, vs.hnsw2Config, nil)
 			}
 			if vs.hybridSearchConfig.Enabled {
+				if newDs.BM25Index != nil {
+					_ = newDs.BM25Index.Close()
+				}
+				if newDs.BM25ArenaIndex != nil {
+					_ = newDs.BM25ArenaIndex.Close()
+				}
 				newDs.BM25Index = NewBM25InvertedIndex(vs.hybridSearchConfig.BM25)
 				slabArena := lbmem.NewSlabArena(4 * 1024 * 1024)
 				newDs.BM25ArenaIndex = NewBM25ArenaIndex(slabArena, 10000)
@@ -233,6 +254,10 @@ func (s *VectorStore) initDiskStore(ds *Dataset, name string, schema *arrow.Sche
 	}
 
 	if !useDisk {
+		return
+	}
+	if s.dataPath == "" {
+		s.logger.Debug().Str("dataset", name).Msg("Skipping DiskVectorStore initialization: dataPath is empty")
 		return
 	}
 

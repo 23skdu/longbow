@@ -56,6 +56,7 @@ func TestVacuum_SearchImpact(t *testing.T) {
 	ds := &Dataset{Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec})}
 	cfg := DefaultArrowHNSWConfig()
 	h := NewArrowHNSW(ds, &cfg, nil)
+	defer func() { _ = h.Close() }()
 
 	_, _ = h.AddByLocation(context.Background(), 0, 0)
 

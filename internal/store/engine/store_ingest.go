@@ -346,6 +346,7 @@ func (s *VectorStore) lazyInitDatasetIndexLocked(ds *Dataset, name string, rec a
 									dataType = VectorTypeComplex64
 									dim /= 2
 									config.IndexConfig.DataType = dataType
+									_ = aIdx.Close()
 									aIdx = NewAutoShardingIndex(ds, config)
 									s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("Detected complex64 from physical dimension")
 								}

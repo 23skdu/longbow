@@ -25,6 +25,7 @@ func TestMemoryLeak_CreateDropDataset(t *testing.T) {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	mem := memory.NewGoAllocator()
 	s := NewVectorStore(mem, logger, 10*1024*1024*1024, 0, 0)
+	s.dataPath = t.TempDir()
 	s.StartIngestionWorkers(2)
 	s.StartIndexingWorkers(2)
 	defer func() { _ = s.Close() }()
@@ -99,7 +100,7 @@ func runDatasetCycle(ctx context.Context, t *testing.T, s *VectorStore, name str
 		idBld.Append(uint32(i))
 		vecBld.Append(true)
 		for j := 0; j < 128; j++ {
-			valBld.Append(float32(j))
+			valBld.Append(float32(i)*0.01 + float32(j)*0.001)
 		}
 	}
 
@@ -110,13 +111,14 @@ func runDatasetCycle(ctx context.Context, t *testing.T, s *VectorStore, name str
 	err := s.StoreRecordBatch(ctx, name, rec)
 	require.NoError(t, err)
 
-	// Wait for indexing
-	s.WaitForIndexing(name)
-	afterStore := s.currentMemory.Load()
-
-	// Get dataset for search
+	// Wait for indexing (bounded poll so 1000-row TQ/HNSW ingest completes reliably)
 	ds, ok := s.getDataset(name)
 	require.True(t, ok)
+	deadline := time.Now().Add(30 * time.Second)
+	for (ds.Index == nil || ds.Index.Len() < numRows) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	afterStore := s.currentMemory.Load()
 
 	dsSize := ds.SizeBytes.Load()
 	logger.Debug().Int64("before_store", beforeStore).Int64("after_store", afterStore).Int64("store_delta", afterStore-beforeStore).Int64("ds_size", dsSize).Msg("After StoreRecordBatch")

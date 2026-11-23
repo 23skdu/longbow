@@ -618,13 +618,16 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	ids := make([]uint32, len(rowIdxs))
 	maxID := startID + uint32(len(rowIdxs)) - 1 // #nosec G115
 	data, err := h.EnsureChunks(int(types.ChunkID(startID)), int(types.ChunkID(maxID)), int(h.dims.Load()))
-	if err == nil {
-		data = data.Clone()
-	}
 	if err != nil {
 		return nil, err
 	}
-	// h.data.Store(data)
+	data = data.Clone()
+	published := false
+	defer func() {
+		if !published && data != nil {
+			data.Release()
+		}
+	}()
 
 	// Phase 1: Sequential Vector Ingestion
 	// Ensures all vectors are persistent in arenas before we start linking nodes.
@@ -654,8 +657,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 	}
 
-	// Publish the populated snapshot
-	h.publishDataClone(data)
+	// Install the populated clone directly (transfers ownership of `data`).
+	h.installData(data)
+	published = true
 
 	// Phase 1.5: Sequential Bootstrap
 	// If the index is empty or very small, we must insert some nodes sequentially

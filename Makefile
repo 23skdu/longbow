@@ -33,7 +33,7 @@ IMAGE_TAG     ?= $(TAG)
 	cross-compile check-simd check-avx512-coverage module-size-check test-bench-harness test-rbac-verifier rbac-verify check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
 	accuracy-gate oracle-gate search-gate observability-inventory observability-check observability-rules release-artifacts-check \
 	soak-quick soak-shared soak-permissions soak-federated soak-analytics soak-secure soak-tls soak-mtls soak-encrypted soak-combined soak-oidc soak-ci \
-	docker-build-cpu docker-build-cpu-arm64 docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-cpu-arm64 docker-build-emlgo-nvidia docker-build-all \
+	docker-build-cpu docker-build-cpu-arm64 docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-cpu-arm64 docker-build-emlgo-nvidia docker-build-all \
 	makehooks install-commit-hook install-hooks verify pre-commit
 
 # Default target
@@ -131,7 +131,6 @@ help:
 	@echo "  release              Run full CI pipeline and build release binaries"
 	@echo "  docker-build-cpu     Build linux/amd64 CPU Docker container image"
 	@echo "  docker-build-cpu-arm64 Build linux/arm64 CPU Docker container image"
-	@echo "  docker-build-tpu     Build linux/amd64 TPU Docker container image"
 	@echo "  docker-build-nvidia  Build linux/amd64 NVIDIA GPU Docker container image"
 	@echo "  docker-build-emlgo-cpu Build linux/amd64 EMLGo CPU Docker container image"
 	@echo "  docker-build-emlgo-cpu-arm64 Build linux/arm64 EMLGo CPU Docker container image"
@@ -665,8 +664,9 @@ fuzz: test-fuzz
 
 # Platform policy mirrors .github/workflows/ci.yml release-containers:
 #   CPU and EMLGo CPU publish linux/amd64 + linux/arm64 (multi-arch manifests).
-#   CUDA/NVIDIA and TPU variants are amd64-only: the CUDA devel base installs a
-#   linux-amd64 Go toolchain / nvcc kernels, and Cloud TPU libtpu is x86_64.
+#   CUDA/NVIDIA variants are amd64-only: the CUDA devel base installs a
+#   linux-amd64 Go toolchain / nvcc kernels.
+#   TPU builds (Dockerfile.tpu) are removed; TPU code remains unsupported/untested.
 #   No darwin/arm64 image is produced; Apple Silicon uses the native binary or
 #   the linux/arm64 container.
 docker-build-cpu:
@@ -676,10 +676,6 @@ docker-build-cpu:
 docker-build-cpu-arm64:
 	@echo "Building linux/arm64 Standard CPU Docker image..."
 	$(DOCKER) build --platform linux/arm64 -f Dockerfile.cpu -t longbow:$(IMAGE_TAG)-arm64 .
-
-docker-build-tpu:
-	@echo "Building linux/amd64 TPU Docker image..."
-	$(DOCKER) build --platform linux/amd64 -f Dockerfile.tpu -t longbow-tpu:$(IMAGE_TAG) .
 
 docker-build-nvidia:
 	@echo "Building linux/amd64 NVIDIA GPU Docker image..."
@@ -697,7 +693,7 @@ docker-build-emlgo-nvidia:
 	@echo "Building linux/amd64 EMLGo GPU Docker image..."
 	$(DOCKER) build --platform linux/amd64 -f Dockerfile.emlgo-nvidia -t longbow-emlgo-nvidia:$(IMAGE_TAG) .
 
-docker-build-all: docker-build-cpu docker-build-cpu-arm64 docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-cpu-arm64 docker-build-emlgo-nvidia
+docker-build-all: docker-build-cpu docker-build-cpu-arm64 docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-cpu-arm64 docker-build-emlgo-nvidia
 	@echo "All Docker container images built successfully (including linux/arm64 CPU variants)."
 
 release: ci check-version build-release build-adbc soak-ci

@@ -44,11 +44,13 @@ func hashAny[K comparable](key K) uint64 {
 }
 
 // NewMapRCU creates a new sharded concurrent map.
+//
+// Shard hash tables are allocated lazily on first write. Some callers nest
+// MapRCU inside an already-sharded structure (for example BM25's 1,024 term
+// and document shards), so eager allocation would create tens of thousands of
+// empty maps per index even when only a handful of keys are ever stored.
 func NewMapRCU[K comparable, V any]() *MapRCU[K, V] {
 	m := &MapRCU[K, V]{}
-	for i := 0; i < numMapShards; i++ {
-		m.shards[i].data = make(map[K]V, 16)
-	}
 
 	var zeroK K
 	switch any(zeroK).(type) {
@@ -85,6 +87,14 @@ func NewMapRCU[K comparable, V any]() *MapRCU[K, V] {
 	return m
 }
 
+// ensureShardData allocates a shard's hash table. The caller must hold the
+// shard's write lock.
+func ensureShardData[K comparable, V any](s *mapShard[K, V]) {
+	if s.data == nil {
+		s.data = make(map[K]V, 16)
+	}
+}
+
 func (m *MapRCU[K, V]) shardIndex(key K) uint64 {
 	return m.hasher(key) & (numMapShards - 1)
 }
@@ -102,6 +112,7 @@ func (m *MapRCU[K, V]) Get(key K) (V, bool) {
 func (m *MapRCU[K, V]) Store(key K, val V) {
 	s := &m.shards[m.shardIndex(key)]
 	s.mu.Lock()
+	ensureShardData(s)
 	s.data[key] = val
 	s.mu.Unlock()
 }
@@ -145,6 +156,7 @@ func (m *MapRCU[K, V]) BulkStore(updates map[K]V) {
 		}
 		s := &m.shards[i]
 		s.mu.Lock()
+		ensureShardData(s)
 		for _, item := range items {
 			s.data[item.k] = item.v
 		}

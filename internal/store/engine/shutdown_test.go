@@ -31,6 +31,7 @@ func TestShutdownCompletesWithinTimeout(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
+	defer func() { _ = s.Close() }()
 	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +62,7 @@ func TestShutdownFlushesWAL(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
+	defer func() { _ = s.Close() }()
 	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
@@ -98,6 +100,7 @@ func TestWALTruncationAfterSnapshot(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
+	defer func() { _ = s.Close() }()
 	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
@@ -140,6 +143,7 @@ func TestShutdownIdempotent(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
+	defer func() { _ = s.Close() }()
 	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +171,7 @@ func TestConcurrentShutdown(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	s := NewVectorStore(memory.NewGoAllocator(), discardLogger(), 1<<30, 1<<20, time.Hour)
+	defer func() { _ = s.Close() }()
 	if err := s.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: time.Hour}); err != nil {
 		t.Fatal(err)
 	}

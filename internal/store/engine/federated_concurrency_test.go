@@ -40,7 +40,7 @@ func TestFederatedSearchConcurrent(t *testing.T) {
 	s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1024*1024*1024, 0, 0)
 	s.StartIndexingWorkers(2)
 	s.StartIngestionWorkers(2)
-	defer func() { s.StopIndexingWorkers(2); s.StopIngestionWorkers(2) }()
+	defer func() { _ = s.Close() }()
 
 	dsName := "ds1"
 	batch := makeTestBatch(t, 4, 10)
@@ -97,8 +97,10 @@ func FuzzFederatedSearchDirtyFlag(f *testing.F) {
 		s := NewVectorStore(memory.NewGoAllocator(), zerolog.Nop(), 1024*1024*1024, 0, 0)
 		s.federatedDirty.Add(1)
 		if s.federatedDirty.Load() != 1 {
+			_ = s.Close()
 			t.Fatal("dirty flag not set")
 		}
+		_ = s.Close()
 		s.federatedDirty.Store(0)
 		if s.federatedDirty.Load() != 0 {
 			t.Fatal("dirty flag not cleared")

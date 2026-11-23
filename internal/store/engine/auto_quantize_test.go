@@ -55,6 +55,7 @@ func TestAutoQuantize_TuneDatasetIntegration(t *testing.T) {
 	alloc := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(alloc, logger, 1024*1024*1024, 1024*1024, time.Hour)
+	defer vs.Close()
 
 	tuner := NewQuantizationTuner(logger, vs)
 	ds := &Dataset{

@@ -107,9 +107,11 @@ func TestDatasetGetVectorIndex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
+	firstIdx := NewTestHNSWIndex(nil)
+	defer func() { _ = firstIdx.Close() }()
 	ds := &Dataset{
 		Name:  "test",
-		Index: NewTestHNSWIndex(nil),
+		Index: firstIdx,
 	}
 
 	idx := ds.GetVectorIndex()
@@ -118,7 +120,9 @@ func TestDatasetGetVectorIndex(t *testing.T) {
 	}
 
 	// Test manual initialization (simulating startup)
-	ds.Index = NewShardedHNSW(DefaultShardedHNSWConfig(), ds) // Assign to generic Index
+	shardedIdx := NewShardedHNSW(DefaultShardedHNSWConfig(), ds) // Assign to generic Index
+	defer func() { _ = shardedIdx.Close() }()
+	ds.Index = shardedIdx
 	idx = ds.GetVectorIndex()
 	if _, ok := idx.(*ShardedHNSW); !ok {
 		t.Error("expected ShardedHNSW when shardedIndex is set")

@@ -39,13 +39,15 @@ type temporalLeafRef struct {
 
 // TemporalTree is a memory-efficient index structure for geographic or temporal vectors.
 type TemporalTree struct {
-	mu         sync.RWMutex
-	leafArena  *memory.TypedArena[temporalLeaf]
-	entryArena *memory.TypedArena[TemporalEntry]
-	leafRefs   []temporalLeafRef
-	minTs      int64
-	maxTs      int64
-	nodeCount  atomic.Uint32
+	mu          sync.RWMutex
+	releaseOnce sync.Once
+	arena       *memory.SlabArena
+	leafArena   *memory.TypedArena[temporalLeaf]
+	entryArena  *memory.TypedArena[TemporalEntry]
+	leafRefs    []temporalLeafRef
+	minTs       int64
+	maxTs       int64
+	nodeCount   atomic.Uint32
 
 	// columnar holds the immutable struct-of-arrays snapshot that backs the
 	// range/predicate queries. columnarDirty is set before any arena mutation
@@ -65,6 +67,7 @@ func NewTemporalTree(arena *memory.SlabArena) *TemporalTree {
 		arena = memory.NewSlabArena(16 * 1024 * 1024) // 16MB default
 	}
 	return &TemporalTree{
+		arena:      arena,
 		leafArena:  memory.NewTypedArena[temporalLeaf](arena),
 		entryArena: memory.NewTypedArena[TemporalEntry](arena),
 		leafRefs:   make([]temporalLeafRef, 0),
@@ -73,14 +76,18 @@ func NewTemporalTree(arena *memory.SlabArena) *TemporalTree {
 	}
 }
 
-// Release deallocates the arenas used by the temporal tree.
+// Release deallocates the arena used by the temporal tree. Both typed arenas
+// wrap the same SlabArena, so it must be released exactly once.
 func (tt *TemporalTree) Release() {
-	if tt.leafArena != nil {
-		tt.leafArena.Release()
+	if tt == nil {
+		return
 	}
-	if tt.entryArena != nil {
-		tt.entryArena.Release()
-	}
+	tt.releaseOnce.Do(func() {
+		if tt.arena != nil {
+			tt.arena.Release()
+			tt.arena = nil
+		}
+	})
 }
 
 // Insert adds a vector ID and its norm to the tree at the specified timestamp.

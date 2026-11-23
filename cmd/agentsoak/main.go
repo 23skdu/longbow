@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"sort"
@@ -210,9 +211,12 @@ func (g *globalMetrics) stalls(now time.Time) []map[string]any {
 }
 
 func buildSchema(d int) *arrow.Schema {
+	if d <= 0 || d > math.MaxInt32 {
+		d = 128
+	}
 	return arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.BinaryTypes.String},
-		{Name: "embedding", Type: arrow.FixedSizeListOf(int32(d), arrow.PrimitiveTypes.Float32)},
+		{Name: "embedding", Type: arrow.FixedSizeListOf(int32(uint16(min(d, math.MaxUint16))), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 		{Name: "importance", Type: arrow.PrimitiveTypes.Int64},
 		// geo_point is required by GeoSearch so every seeded namespace has a
 		// real geospatial index instead of a FailedPrecondition.
@@ -545,7 +549,7 @@ func (a *agent) execute(ctx context.Context, c *client.SmartClient, rng *rand.Ra
 	case "graphrag", "traverse", "pagerank", "communities", "graph_stats":
 		ns := pickReadable()
 		a.setKeyFor(c, ns, op)
-		nodeID := opts.Graph.StartNode + uint32(rng.Intn(8))
+		nodeID := opts.Graph.StartNode + uint32(rng.Int31n(8)) // #nosec G115
 		return doGraphSearch(ctx, c, ns, op, opts.Graph, nodeID)
 	case "recommend":
 		ns := pickReadable()

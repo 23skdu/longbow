@@ -52,7 +52,7 @@ func TestFederatedSearchConcurrent(t *testing.T) {
 	ds, _ := s.getDataset(dsName)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	for ds.Index == nil || ds.Index.Len() < 10 {
+	for ds.IndexLen() < 10 {
 		select {
 		case <-ctx.Done():
 			t.Fatal("indexing timeout")

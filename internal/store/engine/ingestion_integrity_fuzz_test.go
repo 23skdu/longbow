@@ -123,13 +123,14 @@ func FuzzIngestionIntegrityConcurrent(f *testing.F) {
 		// Wait for Indexing (Background)
 		require.Eventually(t, func() bool {
 			ds, ok := store.getDataset(dsName)
-			if !ok || ds.Index == nil {
+			if !ok {
 				return false
 			}
-			lenOk := ds.Index.Len() >= totalExpected
+			idxLen := ds.IndexLen()
+			lenOk := idxLen >= totalExpected
 			pendingOk := ds.PendingIngestion.Load() == 0
 			if !lenOk || !pendingOk {
-				t.Logf("Waiting for index: Len=%d/%d, Pending=%d", ds.Index.Len(), totalExpected, ds.PendingIngestion.Load())
+				t.Logf("Waiting for index: Len=%d/%d, Pending=%d", idxLen, totalExpected, ds.PendingIngestion.Load())
 			}
 			return lenOk && pendingOk
 		}, 90*time.Second, 1*time.Second, "Index failed to reach expected size or drain pending jobs")

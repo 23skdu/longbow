@@ -48,7 +48,7 @@ func TestDeleteVectorByIDConcurrency(t *testing.T) {
 	ds, _ := s.getDataset(dsName)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	for ds.Index == nil || ds.Index.Len() < 50 {
+	for ds.IndexLen() < 50 {
 		select {
 		case <-ctx.Done():
 			t.Fatal("indexing timeout")

@@ -115,7 +115,7 @@ func runDatasetCycle(ctx context.Context, t *testing.T, s *VectorStore, name str
 	ds, ok := s.getDataset(name)
 	require.True(t, ok)
 	deadline := time.Now().Add(30 * time.Second)
-	for (ds.Index == nil || ds.Index.Len() < numRows) && time.Now().Before(deadline) {
+	for ds.IndexLen() < numRows && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	afterStore := s.currentMemory.Load()

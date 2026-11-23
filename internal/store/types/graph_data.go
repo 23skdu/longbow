@@ -116,6 +116,14 @@ type GraphData struct {
 	// Counts (Layer -> Chunk -> Arena Offset)
 	Counts [][]uint64
 
+	// Analytics snapshots copy topology into Go heap slices so short-lived graph
+	// queries never append to the live off-heap arenas. When set, the chunk
+	// accessors return these instead of resolving Neighbors/Counts/Versions
+	// offsets through the shared typed arenas.
+	snapshotNeighbors [][][]uint32
+	snapshotCounts    [][][]int32
+	snapshotVersions  [][][]uint32
+
 	// Memory Arenas
 	Float32Arena    *memory.TypedArena[float32]
 	Float64Arena    *memory.TypedArena[float64]

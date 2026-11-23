@@ -323,6 +323,12 @@ func (g *GraphData) GetVectorsPQChunkFast(chunkID int) []byte {
 
 // GetCountsChunkFast returns a counts chunk using a non-atomic offset read.
 func (g *GraphData) GetCountsChunkFast(layer, chunkID int) []int32 {
+	if g.snapshotCounts != nil {
+		if layer < len(g.snapshotCounts) && chunkID < len(g.snapshotCounts[layer]) {
+			return g.snapshotCounts[layer][chunkID]
+		}
+		return nil
+	}
 	if layer < len(g.Counts) && chunkID < len(g.Counts[layer]) && g.Int32Arena != nil {
 		offset := atomic.LoadUint64(&g.Counts[layer][chunkID])
 		if offset == 0 {
@@ -335,6 +341,12 @@ func (g *GraphData) GetCountsChunkFast(layer, chunkID int) []int32 {
 
 // GetNeighborsChunkFast returns a neighbors chunk using a non-atomic offset read.
 func (g *GraphData) GetNeighborsChunkFast(layer, chunkID int) []uint32 {
+	if g.snapshotNeighbors != nil {
+		if layer < len(g.snapshotNeighbors) && chunkID < len(g.snapshotNeighbors[layer]) {
+			return g.snapshotNeighbors[layer][chunkID]
+		}
+		return nil
+	}
 	if layer < len(g.Neighbors) && chunkID < len(g.Neighbors[layer]) && g.Uint32Arena != nil {
 		offset := atomic.LoadUint64(&g.Neighbors[layer][chunkID])
 		if offset == 0 && g.OnNeighborsMiss != nil {
@@ -351,6 +363,12 @@ func (g *GraphData) GetNeighborsChunkFast(layer, chunkID int) []uint32 {
 
 // GetVersionsChunkFast returns a versions chunk using a non-atomic offset read.
 func (g *GraphData) GetVersionsChunkFast(layer, chunkID int) []uint32 {
+	if g.snapshotVersions != nil {
+		if layer < len(g.snapshotVersions) && chunkID < len(g.snapshotVersions[layer]) {
+			return g.snapshotVersions[layer][chunkID]
+		}
+		return nil
+	}
 	if layer < len(g.Versions) && chunkID < len(g.Versions[layer]) && g.Uint32Arena != nil {
 		offset := atomic.LoadUint64(&g.Versions[layer][chunkID])
 		if offset == 0 {
@@ -603,6 +621,12 @@ func (g *GraphData) GetCountsChunk(layer, chunkID int) []int32 {
 
 // GetCountsChunkWithGen returns the counts chunk with gen.
 func (g *GraphData) GetCountsChunkWithGen(layer, chunkID int, maxGen uint64) []int32 {
+	if g.snapshotCounts != nil {
+		if layer < len(g.snapshotCounts) && chunkID < len(g.snapshotCounts[layer]) {
+			return g.snapshotCounts[layer][chunkID]
+		}
+		return nil
+	}
 	if layer < len(g.Counts) && chunkID < len(g.Counts[layer]) && g.Int32Arena != nil {
 		offset := atomic.LoadUint64(&g.Counts[layer][chunkID])
 		if offset == 0 {
@@ -620,6 +644,12 @@ func (g *GraphData) GetNeighborsChunk(layer, chunkID int) []uint32 {
 
 // GetNeighborsChunkWithGen returns the neighbors chunk with gen.
 func (g *GraphData) GetNeighborsChunkWithGen(layer, chunkID int, maxGen uint64) []uint32 {
+	if g.snapshotNeighbors != nil {
+		if layer < len(g.snapshotNeighbors) && chunkID < len(g.snapshotNeighbors[layer]) {
+			return g.snapshotNeighbors[layer][chunkID]
+		}
+		return nil
+	}
 	if layer < len(g.Neighbors) && chunkID < len(g.Neighbors[layer]) && g.Uint32Arena != nil {
 		offset := atomic.LoadUint64(&g.Neighbors[layer][chunkID])
 		if offset == 0 && g.OnNeighborsMiss != nil {
@@ -641,6 +671,12 @@ func (g *GraphData) GetVersionsChunk(layer, chunkID int) []uint32 {
 
 // GetVersionsChunkWithGen returns the versions chunk with gen.
 func (g *GraphData) GetVersionsChunkWithGen(layer, chunkID int, maxGen uint64) []uint32 {
+	if g.snapshotVersions != nil {
+		if layer < len(g.snapshotVersions) && chunkID < len(g.snapshotVersions[layer]) {
+			return g.snapshotVersions[layer][chunkID]
+		}
+		return nil
+	}
 	if layer < len(g.Versions) && chunkID < len(g.Versions[layer]) && g.Uint32Arena != nil {
 		offset := atomic.LoadUint64(&g.Versions[layer][chunkID])
 		if offset == 0 {

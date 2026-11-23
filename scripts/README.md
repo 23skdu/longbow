@@ -45,6 +45,11 @@ Supports `cpu`, `metal` (macOS), and `cuda` (Linux) modes. Writes
 - `--threshold`: Regression threshold % for compare (default: 10)
 - `--use-disk`: Enable auto-spill (`LONGBOW_AUTO_SPILL_DISK`); auto-enabled ≥100k
 
+RBAC is always enforced. Export `LONGBOW_RBAC_BOOTSTRAP_KEY` for the server and
+the same value as `LONGBOW_API_KEY` for `bench-tool`. The benchmark client reads
+the key from the environment, so it never appears in a command line or in the
+run's provenance artifacts.
+
 **Usage**:
 
 ```bash

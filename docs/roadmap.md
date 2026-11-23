@@ -16,7 +16,44 @@ Federation, durable secret storage, 100% godoc coverage, 100% package-level
 unit/fuzz coverage, the module-size guardrail, and the observability, accuracy,
 oracle, search, and soak gates must remain green while this work proceeds.
 
-There are no active P0 items.
+The active P0 item protects data after it leaves the process boundary. Local WAL,
+spill, and snapshot files are already encrypted, but remote backup objects still
+need an explicit encryption contract.
+
+## P0 — Encrypt S3 and GCS backups and snapshots at rest
+
+The S3 and GCS `RemoteStorage` paths currently upload object bytes without a
+Longbow-owned encryption contract. Backups must remain private after they leave
+the host, including provider-side copies, cross-region replicas, and restores.
+
+Deliverables:
+
+- Add an encrypted remote-storage decorator (or provider options) that seals every
+  backup/snapshot object with `storage.CipherEngine` before `Put` and opens it on
+  `Get`. Bind bucket, object key, dataset, namespace, and backup version into AAD
+  so ciphertext cannot be swapped between objects or tenants.
+- Support client-side envelope encryption through the existing local/Vault KMS
+  providers and provider-managed keys (S3 SSE-KMS and GCS CMEK) with an explicit
+  per-backup encryption mode. Store only key IDs and algorithm metadata in backup
+  manifests; never log key material, wrapped DEKs, or plaintext content.
+- Fail closed when a remote destination requires encryption and no approved mode
+  is configured. Reject legacy plaintext objects by default and provide an
+  explicit, audited migration path that re-encrypts them in place.
+- Extend backup metadata with encryption mode, key ID, AAD version, and object
+  version so `verify-backup` can attest that a restore used the expected key and
+  object. Keep `RotateDEK` and external key rotation working without rewriting
+  all history in the critical path; lazy rewrap is acceptable if the old key ID
+  is retained for decryption.
+- Add unit/fuzz coverage for the decorator, malformed envelopes, AAD mismatches,
+  wrong-key failures, and manifest parsing, plus emulator integration tests that
+  assert SSE/CMEK headers and successful restore round-trips.
+- Document operator configuration and migration in `security-compliance.md` and
+  `deploy.md`, and add a release gate that fails any remote backup configuration
+  without encryption at rest.
+
+Exit criterion: no S3/GCS backup or snapshot can be written in plaintext, restores
+work across key rotation, tampering and cross-object swaps fail authentication,
+and key material never appears in logs, manifests, or CI artifacts.
 
 ## P2 — Decompose `internal/store/engine`
 
@@ -75,3 +112,4 @@ long soak or release build starts.
 | Search-mode and dtype matrix | [`development/testplan.md`](development/testplan.md) |
 | Soak thresholds and scenario layout | [`development/soaktestplan.md`](development/soaktestplan.md) |
 | Security model and operator setup | [`rbac.md`](rbac.md) |
+| Encryption and key management | [`security-compliance.md`](security-compliance.md) |

@@ -32,7 +32,7 @@ type StreamUploader struct {
 }
 
 func newStreamUploader(sc *client.SmartClient, dataset string, schema *arrow.Schema) (*StreamUploader, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
+	ctx, cancel := context.WithTimeout(sc.WithAuthContext(context.Background()), 3*time.Hour)
 	desc := &flight.FlightDescriptor{
 		Type: flight.DescriptorPATH,
 		Path: []string{dataset},
@@ -77,6 +77,7 @@ func (u *StreamUploader) Close() error {
 // downloadBatch performs a DoGet download and returns count.
 // Retries up to 30s if dataset is empty (persistence worker populates ds.Records async).
 func downloadBatch(ctx context.Context, sc *client.SmartClient, dataset string) (int64, error) {
+	ctx = sc.WithAuthContext(ctx)
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		reqBytes, _ := json.Marshal(map[string]string{"name": dataset})
@@ -105,7 +106,7 @@ func downloadBatch(ctx context.Context, sc *client.SmartClient, dataset string) 
 }
 
 func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, dataset string, timeout time.Duration) string {
-	pollCtx, pollCancel := context.WithTimeout(context.Background(), timeout)
+	pollCtx, pollCancel := context.WithTimeout(sc.WithAuthContext(context.Background()), timeout)
 	defer pollCancel()
 
 	checkBody := []byte(`{"dataset":"` + dataset + `"}`)
@@ -449,6 +450,7 @@ func computeBytesPerElement(dtype string) int64 {
 }
 
 func dropDataset(ctx context.Context, sc *client.SmartClient, dataset string) error {
+	ctx = sc.WithAuthContext(ctx)
 	req := struct {
 		Dataset string `json:"dataset"`
 	}{Dataset: dataset}
@@ -469,6 +471,7 @@ func dropDataset(ctx context.Context, sc *client.SmartClient, dataset string) er
 }
 
 func resetDataset(ctx context.Context, sc *client.SmartClient, dataset string) error {
+	ctx = sc.WithAuthContext(ctx)
 	req := struct {
 		Name string `json:"name"`
 	}{Name: dataset}

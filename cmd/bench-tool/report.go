@@ -142,7 +142,7 @@ type gpuKernelProfileResponse struct {
 // it as JSON, printing the same numbers as a table so a run log carries the
 // attribution without needing the file.
 func writeGPUKernelProfile(path string, sc *client.SmartClient) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(sc.WithAuthContext(context.Background()), 30*time.Second)
 	defer cancel()
 
 	stream, err := sc.DoAction(ctx, &flight.Action{Type: "gpu_kernel_profile"})
@@ -265,7 +265,7 @@ func logLoadHints(sc *client.SmartClient) {
 		Path: []string{"_health"},
 	}
 	// We use a short timeout for this background refresh
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(sc.WithAuthContext(context.Background()), 2*time.Second)
 	defer cancel()
 
 	_, err := sc.GetFlightInfo(ctx, desc)

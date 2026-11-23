@@ -146,7 +146,7 @@ func (s *VectorStore) beginGraphAnalytics(ctx context.Context, ds *Dataset) (*gr
 	var cloned *lbtypes.GraphData
 	if index != nil {
 		if live := graphDataFromIndex(index); live != nil {
-			cloned = live.CloneForSnapshot()
+			cloned = live.CloneForAnalytics()
 		}
 	}
 	s.unlockDatasetForRead(ds)

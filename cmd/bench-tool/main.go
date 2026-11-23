@@ -13,6 +13,16 @@ import (
 	"github.com/23skdu/longbow/pkg/version"
 )
 
+// newBenchClient builds a client that authenticates with the always-on RBAC
+// layer. The key is read from the environment rather than a CLI flag so it
+// cannot leak through process listings or benchmark provenance artifacts.
+func newBenchClient(uri string) (*client.SmartClient, error) {
+	return client.NewSmartClientWithConfig(client.ClientConfig{
+		Addr:   uri,
+		APIKey: os.Getenv("LONGBOW_API_KEY"),
+	})
+}
+
 func main() {
 	// Handle version flags early
 	if len(os.Args) > 1 {
@@ -66,7 +76,7 @@ func main() {
 
 	if *drop {
 		defer func() {
-			sc, err := client.NewSmartClient(*uri)
+			sc, err := newBenchClient(*uri)
 			if err != nil {
 				log.Printf("Failed to create client for drop: %v\n", err)
 				return
@@ -86,7 +96,7 @@ func main() {
 
 	log.Printf("Starting Go Benchmark: Mode=%s, Dataset=%s, Scale=%d, Dim=%d, Type=%s\n", *mode, *dataset, *scale, *dim, *dtype)
 
-	sc, err := client.NewSmartClient(*uri)
+	sc, err := newBenchClient(*uri)
 	if err != nil {
 		log.Fatalf("Failed to connect SmartClient: %v", err)
 	}
@@ -210,7 +220,7 @@ func main() {
 	)
 	if *drop && mmDatasetToDrop != "" {
 		defer func(dsName string) {
-			dsc, derr := client.NewSmartClient(*uri)
+			dsc, derr := newBenchClient(*uri)
 			if derr == nil {
 				defer dsc.Close()
 				_ = dropDataset(context.Background(), dsc, dsName)

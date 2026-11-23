@@ -230,6 +230,7 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 }
 
 func executeAdvancedTextAction(ctx context.Context, sc *client.SmartClient, dataset string, k int) ([]searchHit, error) {
+	ctx = sc.WithAuthContext(ctx)
 	body, err := json.Marshal(map[string]any{
 		"dataset":       dataset,
 		"query":         "sku42 AND electronics",
@@ -265,6 +266,7 @@ func executeAdvancedTextAction(ctx context.Context, sc *client.SmartClient, data
 }
 
 func ensureMultiModalDataset(ctx context.Context, sc *client.SmartClient, mmDataset string) error {
+	ctx = sc.WithAuthContext(ctx)
 	items := []map[string]any{
 		{"id": "mm_0", "modality": "text", "caption": "electronics laptop benchmark vector"},
 		{"id": "mm_1", "modality": "text", "caption": "electronics sensor audio stream"},
@@ -291,6 +293,7 @@ func ensureMultiModalDataset(ctx context.Context, sc *client.SmartClient, mmData
 }
 
 func executeMultiModalAction(ctx context.Context, sc *client.SmartClient, mmDataset string, k int) ([]searchHit, error) {
+	ctx = sc.WithAuthContext(ctx)
 	body, err := json.Marshal(map[string]any{
 		"dataset":    mmDataset,
 		"modality":   "text",
@@ -334,6 +337,7 @@ func executeMultiModalAction(ctx context.Context, sc *client.SmartClient, mmData
 // left no way to tell whether two runs of the same seed had returned the same
 // answers (roadmap Item 31).
 func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) ([]searchHit, error) {
+	ctx = sc.WithAuthContext(ctx)
 	stream, err := sc.DoGet(ctx, ticket)
 	if err != nil {
 		return nil, err

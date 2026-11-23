@@ -5,7 +5,29 @@ import "sync/atomic"
 // CloneForSnapshot creates a deep copy of the graph topology (Neighbors, Counts, Levels)
 // and a shallow copy of vectors (assuming append-only).
 // This allows serialization to proceed concurrently with modifications.
+//
+// Topology chunks are copied into the graph's arenas so serialized offsets stay
+// valid. Callers doing short-lived analytics should use CloneForAnalytics,
+// which copies into Go heap slices instead and leaves the arenas untouched.
 func (g *GraphData) CloneForSnapshot() *GraphData {
+	return g.cloneSnapshot(false)
+}
+
+// CloneForAnalytics copies topology into Go heap slices for bounded, read-only
+// graph analytics. Unlike CloneForSnapshot it never allocates from the live
+// typed arenas, so repeated queries cannot accumulate off-heap slabs.
+func (g *GraphData) CloneForAnalytics() *GraphData {
+	return g.cloneSnapshot(true)
+}
+
+func (g *GraphData) cloneSnapshot(heapTopology bool) *GraphData {
+	// Analytics clones read the copied arena chunks below, so they must not
+	// retain the live packed adjacency (the clone is never Released).
+	var packed []PackedNeighbors
+	if !heapTopology {
+		packed = deepCopyPackedNeighbors(g.PackedNeighbors)
+	}
+
 	clone := GraphData{
 		Capacity:          g.Capacity,
 		Dims:              g.Dims,
@@ -19,13 +41,19 @@ func (g *GraphData) CloneForSnapshot() *GraphData {
 		BackingGraph:      g.BackingGraph,
 		Name:              g.Name,
 		Allocator:         g.Allocator,
-		PackedNeighbors:   deepCopyPackedNeighbors(g.PackedNeighbors),
+		PackedNeighbors:   packed,
 		TurboQuantEnabled: g.TurboQuantEnabled,
 		TurboQuantBits:    g.TurboQuantBits,
 	}
 
 	// Copy Arena pointers for read-only access (persistence will read from them)
 	g.CopyArenaReferences(&clone)
+
+	if heapTopology {
+		clone.snapshotNeighbors = make([][][]uint32, len(g.Neighbors))
+		clone.snapshotCounts = make([][][]int32, len(g.Counts))
+		clone.snapshotVersions = make([][][]uint32, len(g.Versions))
+	}
 
 	// 1. Deep Copy Neighbors (Mutable Topology)
 	clone.Neighbors = make([][]uint64, len(g.Neighbors))
@@ -34,10 +62,17 @@ func (g *GraphData) CloneForSnapshot() *GraphData {
 			continue
 		}
 		clone.Neighbors[l] = make([]uint64, len(g.Neighbors[l]))
+		if heapTopology {
+			clone.snapshotNeighbors[l] = make([][]uint32, len(g.Neighbors[l]))
+		}
 		for c := range g.Neighbors[l] {
 			if offset := g.Neighbors[l][c]; offset != 0 {
 				chunk := g.GetNeighborsChunk(l, c)
 				if chunk == nil {
+					continue
+				}
+				if heapTopology {
+					clone.snapshotNeighbors[l][c] = append([]uint32(nil), chunk...)
 					continue
 				}
 				// Allocate new chunk in arena and copy
@@ -60,10 +95,17 @@ func (g *GraphData) CloneForSnapshot() *GraphData {
 			continue
 		}
 		clone.Counts[l] = make([]uint64, len(g.Counts[l]))
+		if heapTopology {
+			clone.snapshotCounts[l] = make([][]int32, len(g.Counts[l]))
+		}
 		for c := range g.Counts[l] {
 			if offset := g.Counts[l][c]; offset != 0 {
 				chunk := g.GetCountsChunk(l, c)
 				if chunk == nil {
+					continue
+				}
+				if heapTopology {
+					clone.snapshotCounts[l][c] = append([]int32(nil), chunk...)
 					continue
 				}
 				if g.Int32Arena != nil {
@@ -97,10 +139,17 @@ func (g *GraphData) CloneForSnapshot() *GraphData {
 			continue
 		}
 		clone.Versions[l] = make([]uint64, len(g.Versions[l]))
+		if heapTopology {
+			clone.snapshotVersions[l] = make([][]uint32, len(g.Versions[l]))
+		}
 		for c := range g.Versions[l] {
 			if offset := g.Versions[l][c]; offset != 0 {
 				chunk := g.GetVersionsChunk(l, c)
 				if chunk == nil {
+					continue
+				}
+				if heapTopology {
+					clone.snapshotVersions[l][c] = append([]uint32(nil), chunk...)
 					continue
 				}
 				if g.Uint32Arena != nil {

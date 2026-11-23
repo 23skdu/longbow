@@ -221,9 +221,9 @@ func TestShardedSearchWithBitmapFiltering(t *testing.T) {
 	require.Len(t, results, 2)
 
 	// Query [0.1, 0.9] distances:
-	// - ID 1 [1,0]: sqrt(0.81 + 0.81) = 1.273 (farther)
-	// - ID 3 [0,0]: sqrt(0.01 + 0.81) = 0.905 (closer)
+	// - ID 1 [0,1]: sqrt(0.01 + 0.01) = 0.141 (closest)
+	// - ID 3 [0,0]: sqrt(0.01 + 0.81) = 0.905 (farther)
 	// Results should be sorted by distance (closest first)
-	assert.Equal(t, uint32(3), uint32(results[0].ID))
-	assert.Equal(t, uint32(1), uint32(results[1].ID))
+	assert.Equal(t, uint32(1), uint32(results[0].ID))
+	assert.Equal(t, uint32(3), uint32(results[1].ID))
 }

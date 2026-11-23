@@ -16,7 +16,7 @@ import unittest
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _SCRIPTS = os.path.dirname(_HERE)
 _MODULE = os.path.join(_SCRIPTS, "multiagent_config.py")
-_CONFIG = os.path.join(os.path.dirname(_SCRIPTS), "configs", "multiagent_soak.json")
+_CONFIG = os.path.join(_SCRIPTS, "configs", "multiagent_soak.json")
 
 
 def _load():
@@ -141,6 +141,93 @@ class TestConfigOverrides(unittest.TestCase):
             self.assertEqual(len(mc.Topology(cfg).namespaces), 9)
         finally:
             os.unlink(path)
+
+
+class TestSharedWorkloadSchema(unittest.TestCase):
+    def test_built_in_workload_matches_shipped_config(self):
+        cfg = mc.load_config(_CONFIG)
+        self.assertEqual(cfg["workload"], mc.DEFAULT_WORKLOAD)
+        self.assertEqual(cfg["workload"]["dense"], 25)
+        self.assertEqual(cfg["workload"]["delete_ns"], 0.5)
+        self.assertEqual(mc.load_config(None)["workload"], mc.DEFAULT_WORKLOAD)
+
+    def test_workload_choices_are_sorted_and_validated(self):
+        choices = mc.workload_choices(mc.load_config(_CONFIG))
+        self.assertEqual([name for name, _ in choices], sorted(name for name, _ in choices))
+        self.assertEqual(choices[0], ("byid", 3.0))
+        self.assertNotIn("nonesuch", dict(choices))
+
+    def test_workload_zero_disables_op_and_negative_is_rejected(self):
+        choices = mc.workload_choices({"workload": {"dense": 2, "hybrid": 0}})
+        self.assertEqual(choices, [("dense", 2.0)])
+        for bad in ({"dense": -1}, {"dense": 0}, {}, {"bogus": 1}):
+            with self.assertRaises(ValueError):
+                mc.workload_choices({"workload": bad})
+        with self.assertRaises(ValueError):
+            mc.workload_choices({"workload": {"dense": float("nan")}})
+
+    def test_workload_options_defaults_and_overrides(self):
+        cfg = mc.load_config(_CONFIG)
+        opts = cfg["workload_options"]
+        self.assertEqual(opts["k"], 5)
+        self.assertEqual(opts["alpha"], 0.5)
+        self.assertEqual(opts["rrf_k"], 60)
+        self.assertEqual(opts["federated_tags"], ["soak"])
+        self.assertEqual(opts["temporal_window_size"], 50)
+        self.assertEqual(opts["geo"], {"lat": 37.7, "lon": -122.4, "radius_km": 5})
+        self.assertEqual(opts["graph"], {"max_hops": 2, "start_node": 1})
+        raw = {"workload_options": {"k": 9, "geo": {"lat": 1.0}}}
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(raw, f)
+            path = f.name
+        try:
+            merged = mc.load_config(path)["workload_options"]
+            self.assertEqual(merged["k"], 9)
+            self.assertEqual(merged["geo"], {"lat": 1.0, "lon": -122.4, "radius_km": 5})
+        finally:
+            os.unlink(path)
+
+    def test_invalid_workload_options_are_rejected(self):
+        for bad in ({"k": 0}, {"alpha": 1.5}, {"graph": {"start_node": "one"}},
+                    {"federated_tags": "soak"}):
+            with self.assertRaises(ValueError):
+                mc.parse_workload_options(bad)
+
+
+class TestSharedSecuritySchema(unittest.TestCase):
+    def test_security_defaults_have_no_credentials_or_off_switch(self):
+        security = mc.security_config(mc.load_config(_CONFIG))
+        self.assertEqual(security["variant"], "plaintext")
+        self.assertFalse(security["tls"]["enabled"])
+        self.assertEqual(security["tls"]["min_version"], "1.2")
+        self.assertEqual(security["oidc"]["mode"], "none")
+        self.assertEqual(security["oidc"]["ttl_seconds"], 900)
+        self.assertEqual(security["tenant_id"], "")
+        self.assertNotIn("api_key", json.dumps(security))
+        self.assertEqual(set(security["oidc"]), {"mode", "audience", "ttl_seconds", "token_file_env"})
+        self.assertEqual(set(security), {"variant", "tls", "oidc", "tenant_id"})
+
+    def test_security_overrides_are_merged_and_validated(self):
+        raw = {"security": {"variant": "mtls", "tls": {"enabled": True, "ca_file": "/tmp/ca.pem"},
+                            "oidc": {"mode": "aws", "ttl_seconds": 60}, "tenant_id": "acme"}}
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(raw, f)
+            path = f.name
+        try:
+            cfg = mc.load_config(path)
+        finally:
+            os.unlink(path)
+        security = mc.security_config(cfg)
+        self.assertEqual(security["variant"], "mtls")
+        self.assertTrue(security["tls"]["enabled"])
+        self.assertEqual(security["tls"]["ca_file"], "/tmp/ca.pem")
+        self.assertEqual(security["tls"]["key_file"], "")
+        self.assertEqual(security["oidc"]["mode"], "aws")
+        self.assertEqual(security["oidc"]["audience"], "longbow")
+        self.assertEqual(security["tenant_id"], "acme")
+        for bad in ({"variant": "none"}, {"oidc": {"mode": "off"}}, {"oidc": {"ttl_seconds": 0}}):
+            with self.assertRaises(ValueError):
+                mc.security_config({"security": bad})
 
 
 if __name__ == "__main__":

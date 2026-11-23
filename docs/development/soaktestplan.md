@@ -118,7 +118,7 @@ with the workload mix above. Metrics are sampled and persisted every minute.
 Two equivalent simulators drive this scenario: `scripts/agent_soak_scenario.py`
 (Python SDK) and `cmd/agentsoak` (native Go client). Both default to **3 agents
 and 7 namespaces** (`2N + 1`), and both load the same
-[`configs/multiagent_soak.json`](../../configs/multiagent_soak.json). CLI flags
+[`scripts/configs/multiagent_soak.json`](../../scripts/configs/multiagent_soak.json). CLI flags
 override any value in the file.
 
 | Namespace | Owner | Owner access | Other agents |
@@ -151,16 +151,88 @@ Run either simulator (the admin key is read from `LONGBOW_RBAC_BOOTSTRAP_KEY`,
 or can be passed with `--admin-api-key` / `-admin-api-key`):
 
 ```bash
-python3 scripts/agent_soak_scenario.py --config configs/multiagent_soak.json
-./bin/agentsoak -config configs/multiagent_soak.json
+python3 scripts/agent_soak_scenario.py --config scripts/configs/multiagent_soak.json
+./bin/agentsoak -config scripts/configs/multiagent_soak.json
 ```
 
 Customize the layout with flags, for example `--agents 5 --private-prefix own_
 --shared-prefix team_ --common global` (Go uses single-dash equivalents). The
 permission tiers stay fixed; only the names and agent count change. See
-[`configs/README.md`](../../configs/README.md) for the full schema.
+[`scripts/configs/README.md`](../../scripts/configs/README.md) for the full schema.
 
 There is no unauthenticated smoke mode. Both simulators always require the
 bootstrap admin key and abort if the server does not enforce the permission
 boundaries. Use `scripts/verify_rbac.py` for a focused RBAC-only check without
 running the soak workload.
+
+The shared workload schema in `scripts/configs/multiagent_soak.json` is used by both
+simulators. Weight keys are `dense`, `hybrid`, `sparse`, `filtered`, `range`,
+`byid`, `temporal_*`, `geo_*`, `graphrag`, `traverse`, `recommend`,
+`multimodal`, `federated`, `text`, `insert`, `upsert`, `delete`, `delete_ns`,
+`pagerank`, `communities`, `get_vector`, and `graph_stats`. Weights are
+relative; `0` disables an operation. `-workload dense=25,federated=2` (Go) or
+`--workload ...` (Python) overrides the file. Both simulators emit `by_op` and
+`by_op_stats` with per-operation op counts, errors, QPS, p50/p95/p99, plus a
+`stalls` array. RBAC probe denials are reported separately in `audit_denials`
+and never inflate the client-visible error rate.
+
+## 10. Bounded Variants and CI Gates
+
+`make soak-quick` runs the five release-required variants through
+`scripts/run_bounded_soak.sh`. That wrapper starts a disposable RBAC-enforced
+server, samples server RSS into JSONL, runs the Go simulator, and validates the
+report with `scripts/check_soak_report.py`.
+
+| Variant | Agents | Layout | Duration | Focus |
+| --- | --- | --- | --- | --- |
+| `shared-8-agents` | 8 | 2 agents per shared namespace (4 groups + common) | 10 min | dataset-lock convoy |
+| `permission-default` | 3 | default `2N+1` = 7 namespaces | 10 min | scoped-key boundaries |
+| `permission-scaled` | 10 | default `2N+1` = 21 namespaces | 10 min | ACL scale |
+| `federated` | 2 | federated-only workload | 5 min | router membership churn |
+| `analytics` | 2 | writes + PageRank/communities/GraphRAG/traverse | 10 min | analytics/search isolation |
+
+The grouped layout is selected with `-agents-per-namespace 2` (Go) or
+`--agents-per-ns 2` (Python). Agents in the same group share write access to
+the group namespace; other groups remain read-only, so RBAC remains enforced.
+
+Failure criteria for every variant:
+
+- error rate above 1%, including any operation-specific error rate;
+- a QPS drop greater than 50% sustained for two minutes;
+- monotonic RSS growth over the second half of the run;
+- zero cross-agent verification hits;
+- any `stalls` record or simulator-reported `failures` entry.
+
+Go's `-federated-only` mode issues a real `FederatedSearch` action against
+collections registered during provisioning, using a reader key scoped to the
+agent's readable namespaces. The permission assertion calls
+`GetAuditDenialCounts` with the admin key and requires the startup denial
+probes to be queryable.
+
+In `.github/workflows/ci.yml`, the `soak-quick` matrix is a required dependency
+of both release jobs. Reports, RSS samples, and server logs are uploaded as
+artifacts named `soak-<variant>`.
+
+## 11. Secure Variants
+
+Secure variants are dispatch-only (`workflow_dispatch` with `secure_soak=true`
+or `oidc_soak=true`) and can also be run locally with `make soak-secure` and
+`make soak-oidc`. They are not release-required because they need TLS test
+certificates or an external workload-identity issuer.
+
+| Variant | Server settings | Client settings |
+| --- | --- | --- |
+| `tls` | `LONGBOW_TLS_ENABLED=true`, server cert/key | `-tls-enabled` with trusted CA |
+| `mtls` | plus `LONGBOW_TLS_REQUIRE_CLIENT_CERT=true` | plus client cert/key |
+| `encrypted` | `LONGBOW_ENCRYPTION_AT_REST=true`, local KMS key | default scoped keys |
+| `combined` | mTLS + encryption | mTLS client settings |
+| `oidc` | `LONGBOW_OIDC_ENABLED=true`, configured issuer | `-oidc-mode aws` with `AWS_WEB_IDENTITY_TOKEN_FILE` |
+
+`scripts/generate_test_certs.sh` creates one-day CA/server/client certificates
+for local and CI use; never use them in production. The master key used by
+local soak variants is a fixed test value and is never logged. OIDC variants
+require `SOAK_OIDC_ISSUERS`, `SOAK_OIDC_AUDIENCE`, and
+`SOAK_OIDC_TOKEN_FILE_ENV`; they exchange a real workload-identity JWT and do
+not grant admin privileges. See
+[`development/performance.md`](performance.md) for the plaintext-versus-secure
+comparison template.

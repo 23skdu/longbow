@@ -1,0 +1,47 @@
+{
+  "agents": 3,
+  "uri": "grpc://127.0.0.1:3000",
+  "meta_uri": "grpc://127.0.0.1:3001",
+  "duration_hours": 1.0,
+  "dim": 128,
+  "seed": 42,
+  "think_time_ms": 10,
+  "sample_interval_s": 60,
+  "namespaces": {
+    "private_prefix": "private_",
+    "shared_prefix": "shared_",
+    "common": "master"
+  },
+  "rbac": {
+    "admin_api_key_env": "LONGBOW_RBAC_BOOTSTRAP_KEY"
+  },
+  "workload": {
+    "dense": 25, "hybrid": 10, "sparse": 5, "filtered": 5, "range": 3, "byid": 3,
+    "temporal_asof": 3, "temporal_range": 3, "temporal_window": 2,
+    "geo_radius": 2, "geo_box": 2, "geo_hybrid": 1,
+    "graphrag": 2, "traverse": 2, "recommend": 1,
+    "multimodal": 2, "federated": 2, "text": 3,
+    "insert": 12, "upsert": 5, "delete": 3,
+    "delete_ns": 0.5, "pagerank": 0.25, "communities": 0.25,
+    "get_vector": 0.5, "graph_stats": 0.5
+  },
+  "workload_options": {
+    "k": 5, "alpha": 0.5, "rrf_k": 60,
+    "federated_tags": ["soak"],
+    "temporal_window_size": 50,
+    "geo": {"lat": 37.7, "lon": -122.4, "radius_km": 5},
+    "graph": {"max_hops": 2, "start_node": 1}
+  },
+  "security": {
+    "variant": "plaintext",
+    "tls": {
+      "enabled": false, "cert_file": "", "key_file": "", "ca_file": "",
+      "server_name": "", "min_version": "1.2"
+    },
+    "oidc": {
+      "mode": "none", "audience": "longbow", "ttl_seconds": 900,
+      "token_file_env": "AWS_WEB_IDENTITY_TOKEN_FILE"
+    },
+    "tenant_id": ""
+  }
+}

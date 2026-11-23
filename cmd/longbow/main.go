@@ -83,12 +83,20 @@ func run() error {
 		Dur("ttl", cfg.TTL).
 		Int("gc_ballast_g", cfg.GCBallastG).
 		Int("gogc", cfg.GOGC).
+		Bool("encryption_at_rest", cfg.EncryptionAtRest).
+		Str("kms_provider", cfg.KMSProvider).
 		Msg(">>---> Starting Longbow")
+
+	encryptionCfg, restoreEncryption, err := setupStorageEncryption(ctx, &cfg, logger)
+	if err != nil {
+		return err
+	}
+	defer restoreEncryption()
 
 	vectorStore, mem, ballast := initVectorStoreRuntime(ctx, &cfg, logger)
 	defer runtime.KeepAlive(ballast)
 
-	configureStoreAndMath(&cfg, vectorStore, logger)
+	configureStoreAndMath(&cfg, encryptionCfg, vectorStore, logger)
 	wsServer, mqExporter := initFeatureSubsystems(&cfg, vectorStore, logger)
 	_ = mqExporter
 

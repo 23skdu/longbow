@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -34,6 +34,7 @@ type StorageConfig struct {
 	WALCompressionType  string // "snappy", "zstd", "lz4". Default "snappy".
 	SnapshotRateLimit   int    // Bytes per second. 0 = unlimited.
 	SnapshotCompression string // "zstd", "lz4", "uncompressed". Default "zstd".
+	Encryption          EncryptionConfig
 }
 
 // StorageEngine manages the persistence layer (WAL and Snapshots).
@@ -41,6 +42,7 @@ type StorageEngine struct {
 	config          StorageConfig
 	dataPath        string
 	mem             memory.Allocator
+	cipher          *CipherEngine
 	wal             WAL
 	walBatcher      *WALBatcher
 	mu              sync.RWMutex // Protects reconfiguration
@@ -70,10 +72,16 @@ func NewStorageEngine(cfg StorageConfig, mem memory.Allocator) (*StorageEngine, 
 		return nil, fmt.Errorf("storage: failed to create data directory: %w", err)
 	}
 
+	cipher, err := NewCipherEngineFromConfig(context.Background(), cfg.Encryption)
+	if err != nil {
+		return nil, err
+	}
+
 	e := &StorageEngine{
 		config:   cfg,
 		dataPath: cfg.DataPath,
 		mem:      mem,
+		cipher:   cipher,
 		stopChan: make(chan struct{}),
 	}
 	// Note: WAL and Batcher are initialized after Replay in typical flow.
@@ -83,10 +91,22 @@ func NewStorageEngine(cfg StorageConfig, mem memory.Allocator) (*StorageEngine, 
 	return e, nil
 }
 
-// InitWAL initializes the WAL and Batcher.
-func (e *StorageEngine) InitWAL() error {
-	e.wal = NewWAL(e.dataPath)
+// CipherEngine returns the engine's encryption engine, or nil when encryption
+// at rest is disabled.
+func (e *StorageEngine) CipherEngine() *CipherEngine {
+	return e.cipher
+}
 
+// newWAL returns a WAL writer that encrypts at rest when configured.
+func (e *StorageEngine) newWAL() WAL {
+	if e.cipher != nil {
+		return NewEncryptedWAL(e.dataPath, e.cipher)
+	}
+	return NewWAL(e.dataPath)
+}
+
+// newWALBatcherConfig carries the encryption setting into the batched WAL writer.
+func (e *StorageEngine) newWALBatcherConfig() WALBatcherConfig {
 	batcherCfg := DefaultWALBatcherConfig()
 	if e.config.DoPutBatchSize > 0 {
 		batcherCfg.MaxBatchSize = e.config.DoPutBatchSize
@@ -96,7 +116,15 @@ func (e *StorageEngine) InitWAL() error {
 	batcherCfg.UseDirectIO = e.config.UseDirectIO
 	batcherCfg.WALCompression = e.config.WALCompression
 	batcherCfg.WALCompressionType = e.config.WALCompressionType
+	batcherCfg.Cipher = e.cipher
+	return batcherCfg
+}
 
+// InitWAL initializes the WAL and Batcher.
+func (e *StorageEngine) InitWAL() error {
+	e.wal = e.newWAL()
+
+	batcherCfg := e.newWALBatcherConfig()
 	e.walBatcher = NewWALBatcher(e.dataPath, &batcherCfg)
 	if err := e.walBatcher.Start(); err != nil {
 		return fmt.Errorf("failed to start WAL batcher: %w", err)
@@ -280,20 +308,11 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 				log.Error().Err(err).Msg("Snapshot: failed to truncate WAL")
 			}
 		}
-		e.wal = NewWAL(e.dataPath)
+		e.wal = e.newWAL()
 	}
 
 	if hadBatcher {
-		batcherCfg := DefaultWALBatcherConfig()
-		if e.config.DoPutBatchSize > 0 {
-			batcherCfg.MaxBatchSize = e.config.DoPutBatchSize
-		}
-		batcherCfg.AsyncFsync.Enabled = e.config.AsyncFsync
-		batcherCfg.UseIOUring = e.config.UseIOUring
-		batcherCfg.UseDirectIO = e.config.UseDirectIO
-		batcherCfg.WALCompression = e.config.WALCompression
-		batcherCfg.WALCompressionType = e.config.WALCompressionType
-
+		batcherCfg := e.newWALBatcherConfig()
 		e.walBatcher = NewWALBatcher(e.dataPath, &batcherCfg)
 		if err := e.walBatcher.Start(); err != nil {
 			e.mu.Unlock()
@@ -307,104 +326,82 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	return nil
 }
 
-func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) error {
-	limit := e.config.SnapshotRateLimit
-	ctx := context.Background()
+// writeProtectedFile writes a snapshot file, sealing it when encryption at
+// rest is enabled. The file name is used as AAD to prevent swap attacks.
+func (e *StorageEngine) writeProtectedFile(path string, data []byte) error {
+	payload := data
+	if e.cipher != nil {
+		sealed, err := e.cipher.Seal(data, []byte(filepath.Base(path)))
+		if err != nil {
+			return fmt.Errorf("failed to encrypt snapshot file %q: %w", filepath.Base(path), err)
+		}
+		payload = sealed
+	}
+	f, err := os.OpenFile(filepath.Clean(path), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) // #nosec G304
+	if err != nil {
+		return err
+	}
+	w := NewRateLimitedWriter(f, e.config.SnapshotRateLimit, context.Background())
+	if _, err := w.Write(payload); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
 
-	getWriter := func(f *os.File) io.Writer {
-		return NewRateLimitedWriter(f, limit, ctx)
+// readProtectedFile reverses writeProtectedFile.
+func (e *StorageEngine) readProtectedFile(path string) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Clean(path)) // #nosec G304
+	if err != nil {
+		return nil, err
+	}
+	if e.cipher == nil {
+		return data, nil
+	}
+	return e.cipher.Open(context.Background(), data, []byte(filepath.Base(path)))
+}
+
+func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) error {
+	compression := e.config.SnapshotCompression
+	if compression == "" {
+		compression = "zstd"
 	}
 
 	// Write Data Records
 	if len(item.Records) > 0 {
 		path := filepath.Join(tempDir, item.Name+".parquet")
-		f, err := os.Create(filepath.Clean(path))
-		if err != nil {
-			return fmt.Errorf("failed to create record parquet: %w", err)
-		}
-
-		w := getWriter(f)
-		var bw *bufio.Writer
-		if limit > 0 {
-			bw = bufio.NewWriterSize(w, 256*1024)
-			w = bw
-		}
-
-		// Use configured compression
-		compression := e.config.SnapshotCompression
-		if compression == "" {
-			compression = "zstd" // Default
-		}
-
-		if err := writeParquet(w, compression, item.Records...); err != nil {
-			if closeErr := f.Close(); closeErr != nil {
-				log.Error().Err(closeErr).Msg("failed to close parquet file on write error")
-			}
+		var buf bytes.Buffer
+		if err := writeParquet(&buf, compression, item.Records...); err != nil {
 			return fmt.Errorf("failed to write record parquet: %w", err)
 		}
-		if bw != nil {
-			if err := bw.Flush(); err != nil {
-				_ = f.Close()
-				return fmt.Errorf("failed to flush record parquet buffer: %w", err)
-			}
-		}
-		if err := f.Sync(); err != nil {
-			_ = f.Close()
-			return fmt.Errorf("failed to fsync record parquet: %w", err)
-		}
-		if err := f.Close(); err != nil {
-			log.Error().Err(err).Msg("failed to close parquet file after write")
-			return fmt.Errorf("failed to close parquet file: %w", err)
+		if err := e.writeProtectedFile(path, buf.Bytes()); err != nil {
+			return fmt.Errorf("failed to write record parquet: %w", err)
 		}
 	}
 
 	// Write Graph Records
 	if len(item.GraphRecords) > 0 {
 		path := filepath.Join(tempDir, item.Name+".graph.parquet")
-		f, err := os.Create(filepath.Clean(path))
-		if err != nil {
-			return fmt.Errorf("failed to create graph parquet: %w", err)
-		}
-
-		w := getWriter(f)
-		var bw *bufio.Writer
-		if limit > 0 {
-			bw = bufio.NewWriterSize(w, 256*1024)
-			w = bw
-		}
-
-		compression := e.config.SnapshotCompression
-		if compression == "" {
-			compression = "zstd"
-		}
-
+		var buf bytes.Buffer
+		w := &buf
 		for _, rec := range item.GraphRecords {
 			if err := writeGraphParquet(w, compression, rec); err != nil {
-				if closeErr := f.Close(); closeErr != nil {
-					log.Error().Err(closeErr).Msg("failed to close graph parquet file on write error")
-				}
 				return fmt.Errorf("failed to write graph parquet: %w", err)
 			}
 		}
-		if bw != nil {
-			if err := bw.Flush(); err != nil {
-				_ = f.Close()
-				return fmt.Errorf("failed to flush graph parquet buffer: %w", err)
-			}
-		}
-		if err := f.Sync(); err != nil {
-			_ = f.Close()
-			return fmt.Errorf("failed to fsync graph parquet: %w", err)
-		}
-		if err := f.Close(); err != nil {
-			return fmt.Errorf("failed to close graph parquet file: %w", err)
+		if err := e.writeProtectedFile(path, buf.Bytes()); err != nil {
+			return fmt.Errorf("failed to write graph parquet: %w", err)
 		}
 	}
 
 	// Write PQ
 	if len(item.PQCodebook) > 0 {
 		path := filepath.Join(tempDir, item.Name+".pq")
-		if err := os.WriteFile(filepath.Clean(path), item.PQCodebook, 0600); err != nil {
+		if err := e.writeProtectedFile(path, item.PQCodebook); err != nil {
 			return fmt.Errorf("failed to write PQ codebook: %w", err)
 		}
 	}
@@ -412,45 +409,18 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 	// Write Config
 	if len(item.IndexConfig) > 0 || item.IndexConfigWriter != nil {
 		path := filepath.Join(tempDir, item.Name+".config")
-		f, err := os.Create(filepath.Clean(path))
-		if err != nil {
-			return fmt.Errorf("failed to create index config file: %w", err)
-		}
-
-		w := getWriter(f)
-		var bw *bufio.Writer
-		if limit > 0 {
-			bw = bufio.NewWriterSize(w, 256*1024)
-			w = bw
-		}
-
+		var buf bytes.Buffer
+		w := &buf
 		// Priority: Writer > Bytes
 		if item.IndexConfigWriter != nil {
 			if err := item.IndexConfigWriter(w); err != nil {
-				_ = f.Close()
 				return fmt.Errorf("failed to sync index config: %w", err)
 			}
-		} else if len(item.IndexConfig) > 0 {
-			if _, err := w.Write(item.IndexConfig); err != nil {
-				_ = f.Close()
-				return fmt.Errorf("failed to write index config: %w", err)
-			}
+		} else if _, err := w.Write(item.IndexConfig); err != nil {
+			return fmt.Errorf("failed to write index config: %w", err)
 		}
-
-		if bw != nil {
-			if err := bw.Flush(); err != nil {
-				_ = f.Close()
-				return fmt.Errorf("failed to flush index config buffer: %w", err)
-			}
-		}
-
-		if err := f.Sync(); err != nil {
-			_ = f.Close()
-			return fmt.Errorf("failed to fsync index config: %w", err)
-		}
-
-		if err := f.Close(); err != nil {
-			return fmt.Errorf("failed to close index config file: %w", err)
+		if err := e.writeProtectedFile(path, buf.Bytes()); err != nil {
+			return fmt.Errorf("failed to write index config: %w", err)
 		}
 	}
 	return nil
@@ -475,6 +445,9 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 	var loadErrors []error
 
 	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
 		log.Trace().Str("entry", entry.Name()).Msg("LoadSnapshots: Processing entry")
 		ext := filepath.Ext(entry.Name())
 		name := entry.Name()[:len(entry.Name())-len(ext)]
@@ -493,16 +466,22 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 			}
 		}
 
-		f, err := os.Open(filepath.Clean(fullPath))
+		switch entry.Name() {
+		case name + ".parquet", name + ".graph.parquet", name + ".pq", name + ".config":
+		default:
+			// Ignore unrelated files in the snapshot directory.
+			continue
+		}
+
+		data, err := e.readProtectedFile(fullPath)
 		if err != nil {
 			loadErrors = append(loadErrors, fmt.Errorf("snapshot file %q: %w", entry.Name(), err))
 			continue
 		}
-		info, _ := f.Stat()
 
 		switch entry.Name() {
 		case name + ".parquet":
-			rec, err := readParquet(f, info.Size(), e.mem)
+			rec, err := readParquet(bytes.NewReader(data), int64(len(data)), e.mem) // #nosec G115
 			if err == nil && rec != nil {
 				log.Debug().Str("name", name).Int64("rows", rec.NumRows()).Msg("LoadSnapshots: Loaded records")
 				item.Records = append(item.Records, rec)
@@ -511,29 +490,16 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 				loadErrors = append(loadErrors, fmt.Errorf("snapshot %q: %w", name, err))
 			}
 		case name + ".graph.parquet":
-			rec, err := readGraphParquet(f, info.Size(), e.mem)
+			rec, err := readGraphParquet(bytes.NewReader(data), int64(len(data)), e.mem) // #nosec G115
 			if err == nil && rec != nil {
 				item.GraphRecords = append(item.GraphRecords, rec)
 			} else if err != nil {
 				loadErrors = append(loadErrors, fmt.Errorf("snapshot graph %q: %w", name, err))
 			}
 		case name + ".pq":
-			data, err := os.ReadFile(filepath.Clean(fullPath))
-			if err != nil {
-				loadErrors = append(loadErrors, fmt.Errorf("snapshot pq codebook %q: %w", name, err))
-			} else {
-				item.PQCodebook = data
-			}
+			item.PQCodebook = data
 		case name + ".config":
-			data, err := os.ReadFile(filepath.Clean(fullPath))
-			if err != nil {
-				loadErrors = append(loadErrors, fmt.Errorf("snapshot index config %q: %w", name, err))
-			} else {
-				item.IndexConfig = data
-			}
-		}
-		if err := f.Close(); err != nil {
-			log.Error().Err(err).Str("path", fullPath).Msg("failed to close snapshot file")
+			item.IndexConfig = data
 		}
 	}
 
@@ -571,8 +537,12 @@ func (e *StorageEngine) Close() error {
 	return nil
 }
 
-// SetSnapshotBackend sets the snapshot backend.
+// SetSnapshotBackend sets the snapshot backend. When encryption is enabled,
+// external snapshot uploads are sealed before reaching the backend.
 func (e *StorageEngine) SetSnapshotBackend(backend SnapshotBackend) {
+	if e.cipher != nil && backend != nil {
+		backend = NewEncryptedSnapshotBackend(backend, e.cipher)
+	}
 	e.snapshotBackend = backend
 }
 
@@ -664,19 +634,10 @@ func (e *StorageEngine) TruncateWAL(seq uint64) error {
 	}
 
 	// Re-initialize WAL and restart batcher if needed
-	e.wal = NewWAL(e.dataPath)
+	e.wal = e.newWAL()
 
 	if hadBatcher {
-		batcherCfg := DefaultWALBatcherConfig()
-		if e.config.DoPutBatchSize > 0 {
-			batcherCfg.MaxBatchSize = e.config.DoPutBatchSize
-		}
-		batcherCfg.AsyncFsync.Enabled = e.config.AsyncFsync
-		batcherCfg.UseIOUring = e.config.UseIOUring
-		batcherCfg.UseDirectIO = e.config.UseDirectIO
-		batcherCfg.WALCompression = e.config.WALCompression
-		batcherCfg.WALCompressionType = e.config.WALCompressionType
-
+		batcherCfg := e.newWALBatcherConfig()
 		e.walBatcher = NewWALBatcher(e.dataPath, &batcherCfg)
 		if err := e.walBatcher.Start(); err != nil {
 			return fmt.Errorf("failed to restart wal batcher after truncation: %w", err)

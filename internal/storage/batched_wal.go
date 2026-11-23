@@ -40,6 +40,7 @@ type WALBatcherConfig struct {
 	UseDirectIO        bool              // Use Direct I/O if available
 	WALCompression     bool              // Enable block compression
 	WALCompressionType string            // "snappy", "zstd", "lz4"
+	Cipher             *CipherEngine     // Optional encryption at rest for WAL frames
 }
 
 // DefaultWALBatcherConfig returns sensible defaults
@@ -148,6 +149,9 @@ func (w *WALBatcher) Start() error {
 	backend, err := NewWALBackend(walPath, w.config.UseIOUring, w.config.UseDirectIO)
 	if err != nil {
 		return err
+	}
+	if w.config.Cipher != nil {
+		backend = NewEncryptedWALBackend(backend, w.config.Cipher)
 	}
 	w.backend = backend
 	w.running = true

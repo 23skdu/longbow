@@ -17,6 +17,7 @@ import (
 	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/security"
 	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/storage"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/23skdu/longbow/internal/tensor"
 	"github.com/rs/zerolog"
@@ -80,7 +81,7 @@ func initVectorStoreRuntime(ctx context.Context, cfg *Config, logger zerolog.Log
 	return vectorStore, mem, ballast
 }
 
-func configureStoreAndMath(cfg *Config, vectorStore *store.VectorStore, logger zerolog.Logger) {
+func configureStoreAndMath(cfg *Config, encryptionCfg storage.EncryptionConfig, vectorStore *store.VectorStore, logger zerolog.Logger) {
 	// Configure memory management
 	vectorStore.SetMemoryConfig(store.MemoryConfig{
 		MaxMemory:        cfg.MaxMemory,
@@ -238,15 +239,9 @@ func configureStoreAndMath(cfg *Config, vectorStore *store.VectorStore, logger z
 		logger.Info().Dur("interval", checkInterval).Msg("Eviction ticker started")
 	}
 
-	// Initialize Persistence (WAL + Snapshots)
-	storageCfg := store.StorageConfig{
-		DataPath:         cfg.DataPath,
-		SnapshotInterval: cfg.SnapshotInterval,
-		AsyncFsync:       cfg.StorageAsyncFsync,
-		DoPutBatchSize:   cfg.StorageDoPutBatchSize,
-		UseIOUring:       cfg.StorageUseIOUring,
-		UseDirectIO:      cfg.StorageUseDirectIO,
-	}
+	// Initialize Persistence (WAL + Snapshots). Encryption settings flow
+	// through StorageConfig so the storage engine protects both paths.
+	storageCfg := buildStorageConfig(cfg, encryptionCfg)
 	if err := vectorStore.InitPersistence(storageCfg); err != nil {
 		logger.Panic().Err(err).Msg("Failed to initialize persistence")
 	}

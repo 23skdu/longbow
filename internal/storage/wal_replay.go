@@ -69,13 +69,26 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var reader io.Reader = f
+	if e.cipher != nil {
+		frames, err := DecryptWALFrames(ctx, f, e.cipher)
+		if err != nil {
+			return 0, fmt.Errorf("failed to decrypt WAL for replay: %w", err)
+		}
+		var plaintext bytes.Buffer
+		for _, frame := range frames {
+			plaintext.Write(frame)
+		}
+		reader = bytes.NewReader(plaintext.Bytes())
+	}
+
 	// Pipeline channels
 	rawChan := make(chan rawWALBlock, 1000)
 	decodedChan := make(chan DecodedWALEntry, 1000)
 	firstSeqChan := make(chan uint64, 1)
 
 	// 1. Start Reader Goroutine
-	go e.walReaderRoutine(ctx, f, rawChan, firstSeqChan)
+	go e.walReaderRoutine(ctx, reader, rawChan, firstSeqChan)
 
 	numDecoders := runtime.NumCPU()
 	if numDecoders < 1 {
@@ -211,7 +224,7 @@ DispatchLoop:
 	return maxSeq, nil
 }
 
-func (e *StorageEngine) walReaderRoutine(ctx context.Context, f *os.File, out chan<- rawWALBlock, firstSeqChan chan<- uint64) {
+func (e *StorageEngine) walReaderRoutine(ctx context.Context, f io.Reader, out chan<- rawWALBlock, firstSeqChan chan<- uint64) {
 	defer close(out)
 	defer close(firstSeqChan)
 

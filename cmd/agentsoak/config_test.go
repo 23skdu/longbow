@@ -83,6 +83,50 @@ func TestLoadConfigJSONOverrides(t *testing.T) {
 	}
 }
 
+// TestLoadSharedWorkloadAndSecuritySchema verifies the Go side of the config
+// shared with the Python soak simulators.
+func TestLoadSharedWorkloadAndSecuritySchema(t *testing.T) {
+	raw := map[string]any{
+		"workload":          map[string]any{"dense": 10, "federated": 2.5, "pagerank": 0},
+		"workload_options":  map[string]any{"k": 7, "rrf_k": 30, "federated_tags": []string{"soak", "ci"}, "geo": map[string]any{"radius_km": 3}, "graph": map[string]any{"max_hops": 4, "start_node": 9}},
+		"security":          map[string]any{"variant": "mtls", "tenant_id": "tenant-a", "tls": map[string]any{"enabled": true, "cert_file": "client.crt", "ca_file": "ca.crt"}, "oidc": map[string]any{"mode": "aws", "ttl_seconds": 600}},
+		"sample_interval_s": 30,
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "workload.json")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Workload) != 3 || cfg.Workload["federated"] != 2.5 {
+		t.Fatalf("workload not applied: %v", cfg.Workload)
+	}
+	if cfg.WorkloadOptions.K != 7 || cfg.WorkloadOptions.RRFK != 30 || cfg.WorkloadOptions.Geo.RadiusKM != 3 {
+		t.Fatalf("workload options not applied: %+v", cfg.WorkloadOptions)
+	}
+	if cfg.WorkloadOptions.Graph.StartNode != 9 || cfg.WorkloadOptions.Graph.MaxHops != 4 {
+		t.Fatalf("graph options not applied: %+v", cfg.WorkloadOptions.Graph)
+	}
+	if !reflect.DeepEqual(cfg.WorkloadOptions.FederatedTags, []string{"soak", "ci"}) {
+		t.Fatalf("federated tags = %v", cfg.WorkloadOptions.FederatedTags)
+	}
+	if cfg.Security.Variant != "mtls" || cfg.Security.TenantID != "tenant-a" || !cfg.Security.TLS.Enabled {
+		t.Fatalf("security config not applied: %+v", cfg.Security)
+	}
+	if cfg.Security.OIDC.Mode != "aws" || cfg.Security.OIDC.TTLSeconds != 600 {
+		t.Fatalf("oidc config not applied: %+v", cfg.Security.OIDC)
+	}
+	if cfg.SampleIntervalS != 30 {
+		t.Fatalf("sample interval = %d", cfg.SampleIntervalS)
+	}
+}
+
 // TestLoadConfigMissingAndInvalid runs the test load config missing and invalid operation.
 func TestLoadConfigMissingAndInvalid(t *testing.T) {
 	if _, err := loadConfig(filepath.Join(t.TempDir(), "missing.json")); err == nil {
@@ -122,6 +166,43 @@ func TestTopologyPermissionMatrix(t *testing.T) {
 		if !topo.contains(topo.Writable(i), "master") {
 			t.Fatalf("agent %d must write the common namespace", i)
 		}
+	}
+}
+
+// TestTopologyGroupedNamespaces covers the bounded CI layout with two agents
+// sharing each namespace. Cross-group reads stay allowed and writes stay denied.
+func TestTopologyGroupedNamespaces(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Agents = 8
+	cfg.AgentsPerNamespace = 2
+	topo, err := newTopology(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"shared_0", "shared_1", "shared_2", "shared_3", "master"}
+	if !reflect.DeepEqual(topo.Namespaces(), want) {
+		t.Fatalf("namespaces = %v, want %v", topo.Namespaces(), want)
+	}
+	if got, want := topo.Writable(1), []string{"shared_0", "master"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("writable(1) = %v, want %v", got, want)
+	}
+	if got, want := topo.ReadOnly(0), []string{"shared_1", "shared_2", "shared_3"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("readOnly(0) = %v, want %v", got, want)
+	}
+	forbiddenRead, forbiddenWrite := topo.forbidden(0)
+	if forbiddenRead != "shared_1" || forbiddenWrite != "shared_1" {
+		t.Fatalf("forbidden(0) = %q, %q", forbiddenRead, forbiddenWrite)
+	}
+	if topo.contains(topo.Writable(0), "shared_1") {
+		t.Fatal("group 0 must not write group 1's namespace")
+	}
+	if !topo.contains(topo.Readable(0), "shared_1") {
+		t.Fatal("group 0 must read group 1's namespace")
+	}
+
+	cfg.AgentsPerNamespace = 8
+	if _, err := newTopology(cfg); err == nil {
+		t.Fatal("expected error when all agents share one group")
 	}
 }
 

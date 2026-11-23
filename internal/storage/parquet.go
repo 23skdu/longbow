@@ -191,7 +191,7 @@ func writeParquet(w io.Writer, compression string, records ...arrow.RecordBatch)
 }
 
 // readParquet reads a Parquet file and converts it to an Arrow record
-func readParquet(f *os.File, size int64, mem memory.Allocator) (arrow.RecordBatch, error) {
+func readParquet(f io.ReaderAt, size int64, mem memory.Allocator) (arrow.RecordBatch, error) {
 	pf, err := parquet.OpenFile(f, size)
 	if err != nil {
 		return nil, err
@@ -290,7 +290,7 @@ func writeGraphParquet(w io.Writer, compression string, rec arrow.RecordBatch) e
 }
 
 // readGraphParquet reads a Graph Parquet file and converts it to an Arrow record
-func readGraphParquet(f *os.File, size int64, mem memory.Allocator) (arrow.RecordBatch, error) {
+func readGraphParquet(f io.ReaderAt, size int64, mem memory.Allocator) (arrow.RecordBatch, error) {
 	pf, err := parquet.OpenFile(f, size)
 	if err != nil {
 		return nil, err

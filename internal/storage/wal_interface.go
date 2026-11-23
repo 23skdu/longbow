@@ -21,14 +21,21 @@ type WAL interface {
 
 // StdWAL is a standard file-based WAL implementation (fallback).
 type StdWAL struct {
-	dir  string
-	file *os.File
-	mu   sync.Mutex
+	dir    string
+	file   *os.File
+	mu     sync.Mutex
+	cipher *CipherEngine
+	seq    uint64
 }
 
 // NewWAL constructs a new WAL.
 func NewWAL(dir string) WAL {
 	return NewStdWAL(dir)
+}
+
+// NewEncryptedWAL constructs a WAL that seals each entry with the supplied engine.
+func NewEncryptedWAL(dir string, ce *CipherEngine) WAL {
+	return &StdWAL{dir: dir, cipher: ce}
 }
 
 // NewStdWAL constructs a new StdWAL.
@@ -88,13 +95,32 @@ func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBat
 	binary.LittleEndian.PutUint32(header[20:24], nameLen)
 	binary.LittleEndian.PutUint64(header[24:32], recLen)
 
-	if _, err := f.Write(header); err != nil {
+	var entry bytes.Buffer
+	entry.Write(header)
+	entry.Write(nameBytes)
+	entry.Write(recBytes)
+
+	if w.cipher == nil {
+		_, err := f.Write(entry.Bytes())
 		return err
 	}
-	if _, err := f.Write(nameBytes); err != nil {
+
+	// Same frame format as EncryptedWALBackend so replay can decrypt both
+	// the batched and direct WAL paths with DecryptWALFrames.
+	w.seq++
+	var aad [8]byte
+	binary.LittleEndian.PutUint64(aad[:], w.seq)
+	sealed, err := w.cipher.Seal(entry.Bytes(), aad[:])
+	if err != nil {
 		return err
 	}
-	_, err = f.Write(recBytes)
+	var frame bytes.Buffer
+	var frameHeader [12]byte
+	binary.LittleEndian.PutUint64(frameHeader[0:8], w.seq)
+	binary.LittleEndian.PutUint32(frameHeader[8:12], uint32(len(sealed))) // #nosec G115
+	frame.Write(frameHeader[:])
+	frame.Write(sealed)
+	_, err = f.Write(frame.Bytes())
 	return err
 }
 

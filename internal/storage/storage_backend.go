@@ -33,13 +33,26 @@ type Prefetcher interface {
 
 // NewStorageBackend creates a StorageBackend based on the platform and configuration.
 func NewStorageBackend(path string, preferUring, directIO bool) (StorageBackend, error) {
+	var backend StorageBackend
 	if preferUring {
-		backend, err := NewUringStorageBackend(path)
+		uringBackend, err := NewUringStorageBackend(path)
 		if err == nil {
-			return backend, nil
+			backend = uringBackend
 		}
 	}
-	return NewFSStorageBackend(path, directIO)
+	if backend == nil {
+		fsBackend, err := NewFSStorageBackend(path, directIO)
+		if err != nil {
+			return nil, err
+		}
+		backend = fsBackend
+	}
+	// Disk vector spill is created outside StorageEngine; apply the
+	// process-wide encryption setting configured at server startup.
+	if ce := DefaultCipherEngine(); ce != nil {
+		return NewEncryptedStorageBackend(backend, ce, 0), nil
+	}
+	return backend, nil
 }
 
 // FSStorageBackend is a standard os.File implementation.

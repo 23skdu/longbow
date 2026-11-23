@@ -1839,3 +1839,30 @@ Derived from `docs/development/performance.md` §0a (100k/250k/500k, dims 128 & 
 - Add P0-F (uint32 dispatch), P0-I (TurboQuant LUT), P0-J (float64 selectNeighbors), P0-K (string filter), P0-L (memory cap) as P0 blockers in `docs/development/roadmap.md`.
 
 These are tracked as P0 blockers in `docs/development/roadmap.md`.
+
+## 5. Secure Soak Variant Comparison
+
+The bounded soak harness measures the cost of each transport/security control
+with the same weighted workload, agent count, duration, and seed. Generate the
+baseline with `make soak-quick` (use the `permission-default` report) and each
+secure variant with `make soak-secure`, `make soak-oidc`, or the dispatch-only
+CI jobs. Copy the JSON fields into this table when publishing results:
+
+| Variant | Agents | Duration | QPS | p50 (ms) | p95 (ms) | p99 (ms) | Peak RSS | Error rate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| plaintext (baseline) | 3 | 10 min | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| tls | 3 | 5 min | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| mtls | 3 | 5 min | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| oidc workload identity | 3 | 5 min | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| encryption at rest | 3 | 5 min | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| combined (mTLS + encryption) | 3 | 5 min | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+
+The report JSON includes `qps`, `p50_ms`, `p95_ms`, `p99_ms`, `error_rate`,
+`by_op_stats` (per-operation QPS/latency/errors), `stalls`, and `security_variant`.
+RSS samples are stored next to each report in `<report>.rss.jsonl`. Compare
+each secure variant against a plaintext run with the same agent count and
+duration; all variants enforce namespace RBAC, so differences reflect security
+overhead rather than a weaker authorization path.
+
+`oidc` requires a configured issuer and a real workload-identity JWT; it is
+dispatch-only and is not part of the release-required soak matrix.

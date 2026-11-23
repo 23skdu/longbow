@@ -203,6 +203,8 @@ var (
 	ErrInvalidKeepAliveTime = errors.New("keepalive_time must be positive")
 	// ErrInvalidSecrets is a err invalid secrets value.
 	ErrInvalidSecrets = errors.New("secrets provider configuration is invalid")
+	// ErrInvalidEncryption is a err invalid encryption at rest configuration value.
+	ErrInvalidEncryption = errors.New("encryption at rest configuration is invalid")
 )
 
 // ValidateConfig validates the configuration and returns an error if invalid
@@ -250,6 +252,9 @@ func ValidateConfig(cfg *Config) error {
 		}
 	default:
 		return fmt.Errorf("%w: unknown provider %q", ErrInvalidSecrets, cfg.SecretsProvider)
+	}
+	if err := storageEncryptionConfig(cfg).Validate(); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidEncryption, err)
 	}
 	if _, err := ParseStartupNamespacePolicies(cfg.StartupNamespacePolicies); err != nil {
 		return err

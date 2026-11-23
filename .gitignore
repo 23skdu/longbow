@@ -135,6 +135,7 @@ run_*.sh
 crash_repro.sh
 test_*.sh
 !scripts/test_tensor_engine.sh
+!scripts/run_bounded_soak.sh
 /bench-tool
 
 # Root-level dev/scratch artifacts

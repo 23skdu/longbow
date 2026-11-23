@@ -2,6 +2,7 @@ package memory
 
 import (
 	"runtime"
+	"runtime/debug"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -25,7 +26,13 @@ func TestGCTuner_Logic(t *testing.T) {
 	low := 10
 	logger := zerolog.Nop()
 
+	origGOGC := debug.SetGCPercent(100)
+	defer debug.SetGCPercent(origGOGC)
+
 	tuner := NewGCTuner(limit, high, low, &logger)
+	afterNewGOGC := debug.SetGCPercent(-1)
+	debug.SetGCPercent(afterNewGOGC)
+	assert.Equal(t, 100, afterNewGOGC, "NewGCTuner must preserve active GOGC instead of disabling GC")
 	mockReader := &mockMemStatsReader{}
 	tuner.reader = mockReader
 	tuner.EnableGPUTuning = false // Disable GPU tuning for pure heap logic check

@@ -83,13 +83,16 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 		lowGOGC = highGOGC
 	}
 
+	prevGOGC := debug.SetGCPercent(-1)
+	debug.SetGCPercent(prevGOGC)
+
 	tuner := &GCTuner{
 		limitBytes:          limitBytes,
 		highGOGC:            highGOGC,
 		lowGOGC:             lowGOGC,
 		reader:              &defaultMemStatsReader{},
 		logger:              logger,
-		currentGOGC:         debug.SetGCPercent(-1),
+		currentGOGC:         prevGOGC,
 		EnableGPUTuning:     types.GetDeviceCount() > 0,
 		GPUUtilizationHigh:  60.0,
 		GPUUtilizationLow:   20.0,

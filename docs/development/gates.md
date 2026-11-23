@@ -4,7 +4,7 @@
 
 Longbow enforces a strict, defense-in-depth quality and verification architecture. Because Longbow operates as an ultra-high-throughput vector database and analytical query engine leveraging hardware-accelerated SIMD kernels (AVX2, AVX-512, ARM Neon, Metal, and CUDA), traditional unit testing alone is insufficient. Code changes can introduce subtle floating-point precision drifts, algorithmic divergence between CPU and GPU kernels, memory leaks in unmanaged memory allocations, or unbounded resource consumption.
 
-To guarantee zero regressions in correctness, performance, security, and stability, all contributions are subject to thirteen formal **Code Gates**. These gates are codified in local developer tooling ([`Makefile`](https://github.com/23skdu/longbow/blob/main/Makefile)), automated Git pre-commit hooks ([`scripts/verify.sh`](https://github.com/23skdu/longbow/blob/main/scripts/verify.sh), invoked by [`scripts/pre-commit.sh`](https://github.com/23skdu/longbow/blob/main/scripts/pre-commit.sh)), and the consolidated CI pipeline ([`.github/workflows/ci.yml`](https://github.com/23skdu/longbow/blob/main/.github/workflows/ci.yml)).
+To guarantee zero regressions in correctness, performance, security, and stability, all contributions are subject to fifteen formal **Code Gates**. These gates are codified in local developer tooling ([`Makefile`](https://github.com/23skdu/longbow/blob/main/Makefile)), automated Git pre-commit hooks ([`scripts/verify.sh`](https://github.com/23skdu/longbow/blob/main/scripts/verify.sh), invoked by [`scripts/pre-commit.sh`](https://github.com/23skdu/longbow/blob/main/scripts/pre-commit.sh)), and the consolidated CI pipeline ([`.github/workflows/ci.yml`](https://github.com/23skdu/longbow/blob/main/.github/workflows/ci.yml)).
 
 ---
 
@@ -22,8 +22,9 @@ The verification system is organized across three tiers:
                                       v
 +-------------------------------------------------------------------------------+
 | Layer 2: Comprehensive Local Verification Pipeline (make ci)                  |
-| - Complete local verification of all 13 quality, security, and build gates    |
+| - Local verification of 14 quality, security, and build gates                |
 | - Linters, cross-compilers, SIMD check, search-gate, observability, container |
+| - Release-required bounded soaks via `make soak-quick` (separate target)      |
 +-------------------------------------------------------------------------------+
                                       |
                                       v
@@ -304,6 +305,25 @@ go test -run='^$$' -bench='^BenchmarkSearchModesGate$' -benchtime=25ms -benchmem
 
 ---
 
+### Gate 15: Bounded Soak & Stall Detection
+
+- **Identifier**: `soak-quick`
+- **Enforcement Tool**: `make soak-quick`, `make soak-ci`, `scripts/run_bounded_soak.sh`, `scripts/check_soak_report.py`, CI `soak-quick` matrix
+- **Commands**:
+
+```bash
+make build && make build-agentsoak
+make soak-quick
+```
+
+- **Description**:
+  - Runs five bounded, deterministic soak variants: 8 agents with 2 agents per shared namespace, default 3 agents / 7 namespaces, scaled 10 agents / 21 namespaces, a 2-agent federated-only variant, and a 2-agent analytics/writes variant.
+  - Starts a disposable RBAC-enforced server, provisions scoped per-agent API keys, verifies forbidden cross-namespace probes, and asserts that denials are queryable via `GetAuditDenialCounts`; there is no unauthenticated mode.
+  - Fails when error rate exceeds 1% globally or for any operation, QPS drops more than 50% for two minutes, server RSS grows monotonically in the second half, cross-agent verification hits are zero, or the simulator emits stall/failure records.
+  - The `soak-quick` CI matrix is a required dependency of both release jobs. Secure TLS/mTLS/encryption/OIDC variants are dispatch-only and documented in [`development/soaktestplan.md`](soaktestplan.md).
+
+---
+
 ## 4. Gate Execution Matrix
 
 | Gate | Name | Pre-Commit Hook | Local `make ci` | CI Pipeline (`ci.yml`) | Target Makefile Rule |
@@ -322,6 +342,7 @@ go test -run='^$$' -bench='^BenchmarkSearchModesGate$' -benchtime=25ms -benchmem
 | **12** | Benchmark Regression Gate | No | Optional | **Yes** | `make bench-ci`, `make test-bench-harness` |
 | **13** | Search Modes Accuracy & Perf Gate | **Yes** | **Yes** | **Yes** | `make search-gate` |
 | **14** | Module Size Guardrail | **Yes** (staged) | **Yes** | **Yes** | `make module-size-check` |
+| **15** | Bounded Soak & Stall Detection | No | **Yes** (`make soak-quick`) | **Yes** (`soak-quick`) | `make soak-quick`, `make soak-ci` |
 
 ---
 

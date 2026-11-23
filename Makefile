@@ -32,6 +32,7 @@ IMAGE_TAG     ?= $(TAG)
 	test-adbc test-adbc-python test-adbc-so test-version \
 	cross-compile check-simd module-size-check test-bench-harness test-rbac-verifier rbac-verify check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
 	accuracy-gate oracle-gate search-gate observability-inventory observability-check observability-rules \
+	soak-quick soak-shared soak-permissions soak-federated soak-analytics soak-secure soak-tls soak-mtls soak-encrypted soak-combined soak-oidc soak-ci \
 	docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-nvidia docker-build-all \
 	makehooks install-commit-hook install-hooks verify pre-commit
 
@@ -114,6 +115,9 @@ help:
 	@echo "  observability-check  Verify metric declarations and alert rule bindings"
 	@echo "  helm-lint            Lint and dry-run template the Helm chart"
 	@echo "  bench-ci             Run fast Unified Benchmark in CI mode"
+	@echo "  soak-quick           Run all bounded soak variants required for release"
+	@echo "  soak-secure          Run dispatch-only TLS/mTLS/encryption soak variants"
+	@echo "  soak-oidc            Run dispatch-only OIDC workload-identity soak"
 	@echo "  check-simd           Verify generated SIMD kernels are byte-for-byte reproducible"
 	@echo "  module-size-check    Check module LOC targets and enforce new-file 1,200 LOC ceiling"
 	@echo "  verify               Run scripts/verify.sh Git pre-commit verification hook"
@@ -547,6 +551,70 @@ bench-ab:
 	@echo "Running interleaved A/B benchmark verification..."
 	$(PYTHON) scripts/check_index_regression.py --help > /dev/null
 
+# ==============================================================================
+# Bounded soak gates (release-required quick variants, dispatch-only secure ones)
+# ==============================================================================
+
+SOAK_SCRIPT := scripts/run_bounded_soak.sh
+SOAK_ARTIFACTS ?= artifacts
+
+bin/longbow:
+	@mkdir -p bin
+	$(GO) build -o bin/longbow ./cmd/longbow
+
+soak-shared: bin/longbow build-agentsoak
+	$(SOAK_SCRIPT) --duration 10m --agents 8 --agents-per-namespace 2 \
+		--report $(SOAK_ARTIFACTS)/soak-shared.json
+
+soak-permissions: bin/longbow build-agentsoak
+	$(SOAK_SCRIPT) --duration 10m --agents 3 --report $(SOAK_ARTIFACTS)/soak-permissions.json
+	$(SOAK_SCRIPT) --duration 10m --agents 10 --report $(SOAK_ARTIFACTS)/soak-permissions-scaled.json
+
+soak-federated: bin/longbow build-agentsoak
+	$(SOAK_SCRIPT) --duration 5m --agents 2 --federated-only \
+		--report $(SOAK_ARTIFACTS)/soak-federated.json
+
+soak-analytics: bin/longbow build-agentsoak
+	$(SOAK_SCRIPT) --duration 10m --agents 2 \
+		--workload dense=20,insert=10,pagerank=2,communities=2,graphrag=2,traverse=2 \
+		--report $(SOAK_ARTIFACTS)/soak-analytics.json
+
+soak-quick: soak-shared soak-permissions soak-federated soak-analytics
+	@echo "Bounded soak gates passed."
+
+soak-tls: bin/longbow build-agentsoak
+	scripts/generate_test_certs.sh $(SOAK_ARTIFACTS)/soak-certs
+	SOAK_SERVER_ENV="LONGBOW_TLS_ENABLED=true LONGBOW_TLS_CERT_FILE=$(SOAK_ARTIFACTS)/soak-certs/server.crt LONGBOW_TLS_KEY_FILE=$(SOAK_ARTIFACTS)/soak-certs/server.key LONGBOW_TLS_CA_FILE=$(SOAK_ARTIFACTS)/soak-certs/ca.crt LONGBOW_TLS_MIN_VERSION=1.2 LONGBOW_TLS_REQUIRE_CLIENT_CERT=false" \
+		$(SOAK_SCRIPT) --duration 5m --agents 3 --report $(SOAK_ARTIFACTS)/soak-secure-tls.json -tls-enabled -tls-ca $(SOAK_ARTIFACTS)/soak-certs/ca.crt
+
+soak-mtls: bin/longbow build-agentsoak
+	scripts/generate_test_certs.sh $(SOAK_ARTIFACTS)/soak-certs
+	SOAK_SERVER_ENV="LONGBOW_TLS_ENABLED=true LONGBOW_TLS_CERT_FILE=$(SOAK_ARTIFACTS)/soak-certs/server.crt LONGBOW_TLS_KEY_FILE=$(SOAK_ARTIFACTS)/soak-certs/server.key LONGBOW_TLS_CA_FILE=$(SOAK_ARTIFACTS)/soak-certs/ca.crt LONGBOW_TLS_MIN_VERSION=1.2 LONGBOW_TLS_REQUIRE_CLIENT_CERT=true" \
+		$(SOAK_SCRIPT) --duration 5m --agents 3 --report $(SOAK_ARTIFACTS)/soak-secure-mtls.json -tls-enabled -tls-cert $(SOAK_ARTIFACTS)/soak-certs/client.crt -tls-key $(SOAK_ARTIFACTS)/soak-certs/client.key -tls-ca $(SOAK_ARTIFACTS)/soak-certs/ca.crt
+
+soak-encrypted: bin/longbow build-agentsoak
+	SOAK_SERVER_ENV="LONGBOW_ENCRYPTION_AT_REST=true LONGBOW_KMS_PROVIDER=local LONGBOW_KMS_MASTER_KEY=local-soak-master-key-not-for-production" \
+		$(SOAK_SCRIPT) --duration 5m --agents 3 --report $(SOAK_ARTIFACTS)/soak-secure-encrypted.json
+
+soak-combined: bin/longbow build-agentsoak
+	scripts/generate_test_certs.sh $(SOAK_ARTIFACTS)/soak-certs
+	SOAK_SERVER_ENV="LONGBOW_TLS_ENABLED=true LONGBOW_TLS_CERT_FILE=$(SOAK_ARTIFACTS)/soak-certs/server.crt LONGBOW_TLS_KEY_FILE=$(SOAK_ARTIFACTS)/soak-certs/server.key LONGBOW_TLS_CA_FILE=$(SOAK_ARTIFACTS)/soak-certs/ca.crt LONGBOW_TLS_MIN_VERSION=1.2 LONGBOW_TLS_REQUIRE_CLIENT_CERT=true LONGBOW_ENCRYPTION_AT_REST=true LONGBOW_KMS_PROVIDER=local LONGBOW_KMS_MASTER_KEY=local-soak-master-key-not-for-production" \
+		$(SOAK_SCRIPT) --duration 5m --agents 3 --report $(SOAK_ARTIFACTS)/soak-secure-combined.json -tls-enabled -tls-cert $(SOAK_ARTIFACTS)/soak-certs/client.crt -tls-key $(SOAK_ARTIFACTS)/soak-certs/client.key -tls-ca $(SOAK_ARTIFACTS)/soak-certs/ca.crt
+
+soak-secure: soak-tls soak-mtls soak-encrypted soak-combined
+	@echo "Secure soak variants passed; reports are in $(SOAK_ARTIFACTS)/."
+
+soak-oidc: bin/longbow build-agentsoak
+	@test -n "$(SOAK_OIDC_ISSUERS)" || { echo "set SOAK_OIDC_ISSUERS before running soak-oidc" >&2; exit 1; }
+	@test -n "$(SOAK_OIDC_AUDIENCE)" || { echo "set SOAK_OIDC_AUDIENCE before running soak-oidc" >&2; exit 1; }
+	@test -n "$(SOAK_OIDC_TOKEN_FILE_ENV)" || { echo "set SOAK_OIDC_TOKEN_FILE_ENV before running soak-oidc" >&2; exit 1; }
+	SOAK_SERVER_ENV="LONGBOW_OIDC_ENABLED=true LONGBOW_OIDC_ISSUERS='$(SOAK_OIDC_ISSUERS)'" \
+		$(SOAK_SCRIPT) --duration 5m --agents 3 --report $(SOAK_ARTIFACTS)/soak-oidc.json \
+		-oidc-mode aws -oidc-audience "$(SOAK_OIDC_AUDIENCE)" -oidc-ttl 15m
+
+soak-ci: soak-quick
+	@echo "Release-required soak gates passed."
+
 # Git pre-commit hook installation and quality gates
 makehooks:
 	@echo "Installing Git pre-commit hook (scripts/verify.sh -> .git/hooks/pre-commit)..."
@@ -604,7 +672,7 @@ docker-build-emlgo-nvidia:
 docker-build-all: docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-nvidia
 	@echo "All Docker container images built successfully."
 
-release: ci check-version build-release build-adbc
+release: ci check-version build-release build-adbc soak-ci
 	@echo "=========================================================="
 	@echo " ✓ Release build and verification completed successfully!"
 	@echo "=========================================================="

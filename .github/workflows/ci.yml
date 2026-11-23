@@ -14,6 +14,15 @@ name: CI Pipeline (Combined)
 
 on:
   workflow_dispatch:
+    inputs:
+      secure_soak:
+        description: Run the dispatch-only TLS/mTLS/encryption soak variants
+        type: boolean
+        default: false
+      oidc_soak:
+        description: Run the OIDC workload-identity soak (requires SOAK_OIDC_* repository variables)
+        type: boolean
+        default: false
   # push:
   #   branches: [ main ]
   #   paths-ignore:
@@ -332,9 +341,220 @@ jobs:
             --compare-baseline benchmarks/baseline_cpu.json \
             --threshold 10
 
+  soak-quick:
+    name: Bounded Soak (${{ matrix.variant }})
+    needs: [validate, rbac-enforcement]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: shared-8-agents
+            agents: 8
+            per_namespace: 2
+            duration: 10m
+            port_offset: 0
+            extra_args: ""
+          - variant: permission-default
+            agents: 3
+            per_namespace: 0
+            duration: 10m
+            port_offset: 10
+            extra_args: ""
+          - variant: permission-scaled
+            agents: 10
+            per_namespace: 0
+            duration: 10m
+            port_offset: 20
+            extra_args: ""
+          - variant: federated
+            agents: 2
+            per_namespace: 0
+            duration: 5m
+            port_offset: 30
+            extra_args: "-federated-only"
+          - variant: analytics
+            agents: 2
+            per_namespace: 0
+            duration: 10m
+            port_offset: 40
+            extra_args: "-workload dense=20,insert=10,pagerank=2,communities=2,graphrag=2,traverse=2"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Build soak binaries
+        run: |
+          mkdir -p bin
+          go build -o bin/longbow ./cmd/longbow
+          go build -o bin/agentsoak ./cmd/agentsoak
+
+      - name: Run ${{ matrix.variant }} soak
+        env:
+          LONGBOW_RBAC_BOOTSTRAP_KEY: ci-soak-admin-key-0123456789
+        run: |
+          set -euo pipefail
+          PORT_BASE=$((31000 + ${{ matrix.port_offset }}))
+          export LONGBOW_LISTEN_ADDR="127.0.0.1:${PORT_BASE}"
+          export LONGBOW_META_ADDR="127.0.0.1:$((PORT_BASE + 1))"
+          export LONGBOW_METRICS_ADDR="127.0.0.1:$((PORT_BASE + 2))"
+          REPORT="artifacts/soak-${{ matrix.variant }}.json"
+          scripts/run_bounded_soak.sh \
+            --duration "${{ matrix.duration }}" \
+            --agents "${{ matrix.agents }}" \
+            --agents-per-namespace "${{ matrix.per_namespace }}" \
+            --report "$REPORT" \
+            ${{ matrix.extra_args }}
+
+      - name: Upload soak report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: soak-${{ matrix.variant }}
+          path: |
+            artifacts/soak-${{ matrix.variant }}.json
+            artifacts/soak-${{ matrix.variant }}.rss.jsonl
+            artifacts/soak-${{ matrix.variant }}.server.log
+          if-no-files-found: warn
+
+  soak-secure:
+    name: Secure Soak (${{ matrix.variant }})
+    if: github.event_name == 'workflow_dispatch' && inputs.secure_soak
+    needs: [validate, rbac-enforcement]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: tls
+            require_client_cert: "false"
+            encryption: "false"
+            client_args: "-tls-enabled"
+          - variant: mtls
+            require_client_cert: "true"
+            encryption: "false"
+            client_args: "-tls-enabled -tls-cert {certs}/client.crt -tls-key {certs}/client.key"
+          - variant: encrypted
+            require_client_cert: "false"
+            encryption: "true"
+            client_args: ""
+          - variant: combined
+            require_client_cert: "true"
+            encryption: "true"
+            client_args: "-tls-enabled -tls-cert {certs}/client.crt -tls-key {certs}/client.key"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Build soak binaries
+        run: |
+          mkdir -p bin
+          go build -o bin/longbow ./cmd/longbow
+          go build -o bin/agentsoak ./cmd/agentsoak
+
+      - name: Generate short-lived test certificates
+        run: scripts/generate_test_certs.sh "$RUNNER_TEMP/soak-certs"
+
+      - name: Run ${{ matrix.variant }} secure soak
+        env:
+          LONGBOW_RBAC_BOOTSTRAP_KEY: ci-soak-admin-key-0123456789
+        run: |
+          set -euo pipefail
+          CERTS="$RUNNER_TEMP/soak-certs"
+          PORT_BASE=32000
+          export LONGBOW_LISTEN_ADDR="127.0.0.1:${PORT_BASE}"
+          export LONGBOW_META_ADDR="127.0.0.1:$((PORT_BASE + 1))"
+          export LONGBOW_METRICS_ADDR="127.0.0.1:$((PORT_BASE + 2))"
+          export SOAK_SERVER_ENV="LONGBOW_TLS_ENABLED=true LONGBOW_TLS_CERT_FILE=$CERTS/server.crt LONGBOW_TLS_KEY_FILE=$CERTS/server.key LONGBOW_TLS_CA_FILE=$CERTS/ca.crt LONGBOW_TLS_MIN_VERSION=1.2 LONGBOW_TLS_REQUIRE_CLIENT_CERT=${{ matrix.require_client_cert }} LONGBOW_ENCRYPTION_AT_REST=${{ matrix.encryption }} LONGBOW_KMS_PROVIDER=local LONGBOW_KMS_MASTER_KEY=ci-soak-master-key-not-for-production"
+          CLIENT_ARGS="${{ matrix.client_args }}"
+          CLIENT_ARGS="${CLIENT_ARGS//\{certs\}/$CERTS}"
+          REPORT="artifacts/soak-secure-${{ matrix.variant }}.json"
+          # shellcheck disable=SC2086
+          scripts/run_bounded_soak.sh \
+            --duration 5m --agents 3 --report "$REPORT" $CLIENT_ARGS
+
+      - name: Upload secure soak report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: soak-secure-${{ matrix.variant }}
+          path: |
+            artifacts/soak-secure-${{ matrix.variant }}.json
+            artifacts/soak-secure-${{ matrix.variant }}.rss.jsonl
+            artifacts/soak-secure-${{ matrix.variant }}.server.log
+          if-no-files-found: warn
+
+  soak-oidc:
+    name: OIDC Workload-Identity Soak
+    if: github.event_name == 'workflow_dispatch' && inputs.oidc_soak
+    needs: [validate, rbac-enforcement]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Check OIDC soak configuration
+        run: |
+          test -n "${{ vars.SOAK_OIDC_ISSUERS }}" || { echo "SOAK_OIDC_ISSUERS repository variable is required" >&2; exit 1; }
+          test -n "${{ vars.SOAK_OIDC_AUDIENCE }}" || { echo "SOAK_OIDC_AUDIENCE repository variable is required" >&2; exit 1; }
+          test -n "${{ vars.SOAK_OIDC_TOKEN_FILE_ENV }}" || { echo "SOAK_OIDC_TOKEN_FILE_ENV repository variable is required" >&2; exit 1; }
+
+      - name: Build soak binaries
+        run: |
+          mkdir -p bin
+          go build -o bin/longbow ./cmd/longbow
+          go build -o bin/agentsoak ./cmd/agentsoak
+
+      - name: Run OIDC workload-identity soak
+        env:
+          LONGBOW_RBAC_BOOTSTRAP_KEY: ci-soak-admin-key-0123456789
+        run: |
+          set -euo pipefail
+          export LONGBOW_LISTEN_ADDR="127.0.0.1:33000"
+          export LONGBOW_META_ADDR="127.0.0.1:33001"
+          export LONGBOW_METRICS_ADDR="127.0.0.1:33002"
+          export SOAK_SERVER_ENV="LONGBOW_OIDC_ENABLED=true LONGBOW_OIDC_ISSUERS='${{ vars.SOAK_OIDC_ISSUERS }}'"
+          scripts/run_bounded_soak.sh \
+            --duration 5m --agents 3 \
+            --report artifacts/soak-oidc.json \
+            -oidc-mode aws -oidc-audience "${{ vars.SOAK_OIDC_AUDIENCE }}" \
+            -oidc-ttl 15m
+
+      - name: Upload OIDC soak report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: soak-oidc
+          path: |
+            artifacts/soak-oidc.json
+            artifacts/soak-oidc.rss.jsonl
+            artifacts/soak-oidc.server.log
+          if-no-files-found: warn
+
   release-containers:
     name: Build & Push Release Containers
-    needs: [validate, security, observability, helm-and-docs, oidc-federation-security, rbac-enforcement]
+    needs: [validate, security, observability, helm-and-docs, oidc-federation-security, rbac-enforcement, soak-quick]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -585,7 +805,7 @@ jobs:
 
   release-darwin-arm64:
     name: Release Darwin ARM64 Artifacts
-    needs: [validate, macos-15-verify, darwin-arm64-verify]
+    needs: [validate, macos-15-verify, darwin-arm64-verify, soak-quick]
     runs-on: macos-15
     steps:
       - name: Checkout repository

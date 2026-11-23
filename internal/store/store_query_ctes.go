@@ -134,6 +134,7 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]types.Sear
 
 	ds.dataMu.RLock()
 	defer ds.dataMu.RUnlock()
+	tombstones := ds.GetTombstones()
 
 	var results []types.SearchResult
 	limit := int(query.Limit)
@@ -167,7 +168,7 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]types.Sear
 		}
 
 		// Apply tombstones
-		ts := ds.Tombstones[i]
+		ts := tombstones[i]
 
 		numRows := int(rec.NumRows())
 		for rowIdx := 0; rowIdx < numRows; rowIdx++ {

@@ -225,12 +225,14 @@ func (s *VectorStore) HybridSearch(ctx context.Context, name string, queryVec []
 		return nil, status.Errorf(codes.NotFound, "dataset %s not found", name)
 	}
 
+	// Build the candidate bitmap under the dataset read lock, then release it
+	// before entering the index. ArrowHNSW search workers re-acquire the same
+	// dataset read lock internally; holding it here would let a queued writer
+	// deadlock both paths.
 	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
-
 	var filterBitmap *types.Bitset
 	hasFilters := len(filters) > 0
-
+	emptyFilter := false
 	if hasFilters {
 		for col, val := range filters {
 			idx, ok := ds.InvertedIndexes[col]
@@ -241,15 +243,20 @@ func (s *VectorStore) HybridSearch(ctx context.Context, name string, queryVec []
 			bm := idx.Get(val)
 			if bm == nil {
 				// Term not found in this column, empty result
-				return nil, nil
+				emptyFilter = true
+				break
 			}
 
 			if filterBitmap == nil {
-				filterBitmap = types.NewBitsetFromRoaring(bm)
+				filterBitmap = types.NewBitsetFromRoaring(bm.Clone())
 			} else {
 				filterBitmap.And(bm)
 			}
 		}
+	}
+	ds.dataMu.RUnlock()
+	if emptyFilter {
+		return nil, nil
 	}
 
 	var results []SearchResult

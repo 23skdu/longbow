@@ -39,6 +39,11 @@ class CheckSoakReportTests(unittest.TestCase):
         failures = self.check(_report(error_rate=0.02))
         self.assertTrue(any("error_rate" in item for item in failures))
 
+    def test_per_operation_error_rate_gate(self):
+        report = _report(by_op_stats={"dense": {"ops": 100, "errors": 5, "error_rate": 0.05}})
+        failures = self.check(report)
+        self.assertTrue(any("operation dense error_rate" in item for item in failures))
+
     def test_stall_and_cross_verification_gates(self):
         failures = self.check(_report(stalls=[{"op": "dense"}], cross_verified=0))
         self.assertTrue(any("stall" in item for item in failures))
@@ -56,6 +61,22 @@ class CheckSoakReportTests(unittest.TestCase):
         failures = self.check(_report(samples=samples))
         self.assertTrue(any("QPS dropped" in item for item in failures))
         self.assertTrue(any("RSS grew monotonically" in item for item in failures))
+
+    def test_small_monotonic_rss_drift_is_allowed(self):
+        values = (1000, 1100, 1200, 1210, 1220, 1230)
+        samples = [{"t_s": index * 120, "rss_bytes": value} for index, value in enumerate(values)]
+        self.assertEqual(self.check(_report(samples=samples)), [])
+
+    def test_ten_percent_monotonic_rss_growth_fails(self):
+        values = (1000, 1100, 1200, 1250, 1300, 1350)
+        samples = [{"t_s": index * 120, "rss_bytes": value} for index, value in enumerate(values)]
+        failures = self.check(_report(samples=samples))
+        self.assertTrue(any("RSS grew monotonically" in item for item in failures))
+
+    def test_short_runs_skip_rss_growth_gate(self):
+        values = (1000, 1100, 1200, 1400, 1600, 1800)
+        samples = [{"t_s": index * 5, "rss_bytes": value} for index, value in enumerate(values)]
+        self.assertEqual(self.check(_report(samples=samples)), [])
 
     def test_merge_external_rss_samples(self):
         report = checker.merge_rss_samples(

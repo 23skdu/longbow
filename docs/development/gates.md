@@ -319,7 +319,7 @@ make soak-quick
 - **Description**:
   - Runs five bounded, deterministic soak variants: 8 agents with 2 agents per shared namespace, default 3 agents / 7 namespaces, scaled 10 agents / 21 namespaces, a 2-agent federated-only variant, and a 2-agent analytics/writes variant.
   - Starts a disposable RBAC-enforced server, provisions scoped per-agent API keys, verifies forbidden cross-namespace probes, and asserts that denials are queryable via `GetAuditDenialCounts`; there is no unauthenticated mode.
-  - Fails when error rate exceeds 1% globally or for any operation, QPS drops more than 50% for two minutes, server RSS grows monotonically in the second half, cross-agent verification hits are zero, or the simulator emits stall/failure records.
+  - Fails when error rate exceeds 1% globally or for any operation, QPS drops more than 50% for two minutes, server RSS grows monotonically by at least 5% in the second half (with at least two minutes of samples), cross-agent verification hits are zero, or the simulator emits stall/failure records.
   - The `soak-quick` CI matrix is a required dependency of both release jobs. Secure TLS/mTLS/encryption/OIDC variants are dispatch-only and documented in [`development/soaktestplan.md`](soaktestplan.md).
 
 ---

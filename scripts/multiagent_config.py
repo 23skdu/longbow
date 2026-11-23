@@ -75,6 +75,8 @@ OIDC_MODES = ("none", "aws", "google")
 
 BASE_DEFAULTS = {
     "agents": 3,
+    # Zero keeps the default private-per-agent (2N+1) layout, matching Go.
+    "agents_per_namespace": 0,
     "uri": "grpc://127.0.0.1:3000",
     "meta_uri": "grpc://127.0.0.1:3001",
     "duration_hours": 1.0,
@@ -209,7 +211,7 @@ def load_config(path=DEFAULT_CONFIG):
         raw = json.load(f)
     if not isinstance(raw, dict):
         raise ValueError("config must be a JSON object")
-    for key in ("agents", "uri", "meta_uri", "duration_hours", "dim", "seed"):
+    for key in ("agents", "agents_per_namespace", "uri", "meta_uri", "duration_hours", "dim", "seed"):
         if key in raw:
             cfg[key] = raw[key]
     if "think_time_ms" in raw:
@@ -235,6 +237,12 @@ def load_config(path=DEFAULT_CONFIG):
     workload_choices(cfg)
     if int(cfg["agents"]) < 2:
         raise ValueError("scenario requires at least 2 agents for cross-agent reads")
+    per_ns = int(cfg["agents_per_namespace"])
+    if per_ns < 0:
+        raise ValueError("agents_per_namespace must not be negative")
+    if per_ns > 1 and per_ns >= int(cfg["agents"]):
+        raise ValueError("agents_per_namespace must be smaller than agents so RBAC has at least two groups")
+    cfg["agents_per_namespace"] = per_ns
     return cfg
 
 

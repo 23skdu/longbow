@@ -199,9 +199,15 @@ Failure criteria for every variant:
 
 - error rate above 1%, including any operation-specific error rate;
 - a QPS drop greater than 50% sustained for two minutes;
-- monotonic RSS growth over the second half of the run;
+- monotonic RSS growth of at least 5% over the second half of the run (at least two minutes of second-half samples);
 - zero cross-agent verification hits;
 - any `stalls` record or simulator-reported `failures` entry.
+
+Requests already in flight when a bounded run's deadline fires are excluded
+from error counts; cancellations during an active run and all non-cancellation
+failures still count. ID-based operations retry a `NotFound` response for a
+bounded window because ingestion is asynchronous; persistent `NotFound`
+responses still fail the operation and the run.
 
 Go's `-federated-only` mode issues a real `FederatedSearch` action against
 collections registered during provisioning, using a reader key scoped to the

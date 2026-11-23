@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -29,6 +30,14 @@ func (i *nestedReadIndex) GetDimension() uint32 { return 1 }
 func (i *nestedReadIndex) Close() error         { return nil }
 
 func (i *nestedReadIndex) SearchVectors(context.Context, any, int, []core.Filter, any) ([]types.SearchResult, error) {
+	return i.nestedSearch()
+}
+
+func (i *nestedReadIndex) SearchVectorsWithBitmap(context.Context, any, int, *roaring.Bitmap, any) ([]types.SearchResult, error) {
+	return i.nestedSearch()
+}
+
+func (i *nestedReadIndex) nestedSearch() ([]types.SearchResult, error) {
 	close(i.entered)
 	<-i.release
 	i.dataset.RLockData()
@@ -122,6 +131,42 @@ func TestDatasetSearchLockDoesNotStarveWriters(t *testing.T) {
 			require.NoError(t, err)
 		case <-time.After(3 * time.Second):
 			t.Fatal("VectorSearch action deadlocked with a pending dataset writer")
+		}
+	})
+
+	// Hybrid filtered search builds a bitmap under the dataset lock and then
+	// calls the same nested-read index; it must not hold dataMu across that call.
+	t.Run("HybridSearch", func(t *testing.T) {
+		s, ds, idx := newFakeStore(t)
+		textIndex := NewInvertedIndex()
+		textIndex.Add("soak", 1)
+		ds.InvertedIndexes = map[string]*InvertedIndex{"text": textIndex}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		done := make(chan error, 1)
+		go func() {
+			_, err := s.HybridSearch(ctx, "lock-regression", []float32{1}, 1, map[string]string{"text": "soak"})
+			done <- err
+		}()
+		<-idx.entered
+
+		writerAcquired := make(chan struct{})
+		go func() {
+			ds.dataMu.Lock()
+			close(writerAcquired)
+			time.Sleep(20 * time.Millisecond)
+			ds.dataMu.Unlock()
+		}()
+		requireWriterAcquired(t, writerAcquired)
+
+		close(idx.release)
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-ctx.Done():
+			t.Fatal("HybridSearch deadlocked with a pending dataset writer")
 		}
 	})
 }

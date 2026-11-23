@@ -164,8 +164,20 @@ func provision(cfg *soakConfig, topo *topology, adminKey string) (map[int]agentK
 	defer admin.Close() // #nosec G104
 
 	ctx := context.Background()
-	if err := applyOIDC(ctx, admin, cfg); err != nil {
-		return nil, fmt.Errorf("admin OIDC identity: %w", err)
+	if cfg.Security.OIDC.Mode != "" && cfg.Security.OIDC.Mode != "none" {
+		// Exchange on a disposable client. ExchangeOIDCToken replaces the
+		// client's active credential with a session key that is normally a
+		// reader; using the admin client here would strip its bootstrap rights
+		// before any namespace or API-key provisioning runs.
+		oidcProbe, oidcErr := newClient(cfg, adminKey)
+		if oidcErr != nil {
+			return nil, fmt.Errorf("OIDC identity connect: %w", oidcErr)
+		}
+		oidcErr = applyOIDC(ctx, oidcProbe, cfg)
+		_ = oidcProbe.Close() // #nosec G104
+		if oidcErr != nil {
+			return nil, fmt.Errorf("admin OIDC identity: %w", oidcErr)
+		}
 	}
 	rng := rand.New(rand.NewSource(cfg.Seed)) // #nosec G404
 	for _, ns := range topo.Namespaces() {

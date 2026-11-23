@@ -69,13 +69,9 @@ func (s *VectorStore) DeleteVectorByID(_ context.Context, datasetName, rawID str
 		return NewNotFoundError("vector", rawID)
 	}
 
-	ds.TombstoneMu.Lock()
-	if ds.Tombstones[loc.BatchIdx] == nil {
-		ds.Tombstones[loc.BatchIdx] = types.NewBitset()
+	if setTombstoneIfAbsent(ds, loc.BatchIdx, loc.RowIdx) {
+		metrics.TombstonesTotal.WithLabelValues(datasetName).Inc()
 	}
-	ds.Tombstones[loc.BatchIdx].Set(loc.RowIdx)
-	ds.TombstoneMu.Unlock()
-	metrics.TombstonesTotal.WithLabelValues(datasetName).Inc()
 	return nil
 }
 
@@ -197,7 +193,7 @@ func (s *VectorStore) inspectDataset(name string) (*DatasetInfo, error) {
 		}
 	}
 	tombCount := 0
-	for _, ts := range ds.Tombstones {
+	for _, ts := range ds.GetTombstones() {
 		if ts != nil {
 			tombCount += int(ts.Count()) // #nosec G115
 		}
@@ -231,12 +227,24 @@ func (s *VectorStore) listDatasetInfos(ctx context.Context) []DatasetInfo {
 	return out
 }
 
-// setTombstone marks a row as deleted under the tombstone lock.
-func setTombstone(ds *Dataset, batchIdx, rowIdx int) {
+// setTombstoneIfAbsent marks a row as deleted under the tombstone lock and
+// reports whether the row was newly tombstoned.
+func setTombstoneIfAbsent(ds *Dataset, batchIdx, rowIdx int) bool {
 	ds.TombstoneMu.Lock()
 	defer ds.TombstoneMu.Unlock()
-	if ds.Tombstones[batchIdx] == nil {
-		ds.Tombstones[batchIdx] = types.NewBitset()
+	ts := ds.Tombstones[batchIdx]
+	if ts != nil && ts.Contains(rowIdx) {
+		return false
 	}
-	ds.Tombstones[batchIdx].Set(rowIdx)
+	if ts == nil {
+		ts = types.NewBitset()
+		ds.Tombstones[batchIdx] = ts
+	}
+	ts.Set(rowIdx)
+	return true
+}
+
+// setTombstone marks a row as deleted under the tombstone lock.
+func setTombstone(ds *Dataset, batchIdx, rowIdx int) {
+	_ = setTombstoneIfAbsent(ds, batchIdx, rowIdx)
 }

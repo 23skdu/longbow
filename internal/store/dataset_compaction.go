@@ -27,12 +27,7 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 		r.Retain()
 		oldRecords[i] = r
 	}
-	oldTombstones := make(map[int]*types.Bitset)
-	for i, ts := range d.Tombstones {
-		if ts != nil {
-			oldTombstones[i] = ts.Clone()
-		}
-	}
+	oldTombstones := d.GetTombstones()
 	// Copy PrimaryIndex for mapping discovery
 	primarySnapshot := make(map[string]RowLocation)
 	for id, loc := range d.PrimaryIndex {
@@ -111,7 +106,7 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 			rec.Retain()
 			newRecords = append(newRecords, rec)
 			if tombstones != nil {
-				newTombstones[newBatchIdx] = tombstones.Clone()
+				newTombstones[newBatchIdx] = tombstones
 			}
 			for row := 0; row < int(rec.NumRows()); row++ {
 				oldLoc := Location{BatchIdx: oldBatchIdx, RowIdx: row}
@@ -141,7 +136,7 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 
 	finalRecords := append(newRecords, addedDuring...)
 	d.replaceRecords(finalRecords)
-	d.Tombstones = newTombstones
+	d.replaceTombstones(newTombstones)
 
 	// Update PrimaryIndex for remapped IDs
 	for _, locAny := range indexMapping {

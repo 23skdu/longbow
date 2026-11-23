@@ -1,5 +1,6 @@
 {
   "agents": 3,
+  "agents_per_namespace": 0,
   "uri": "grpc://127.0.0.1:3000",
   "meta_uri": "grpc://127.0.0.1:3001",
   "duration_hours": 1.0,

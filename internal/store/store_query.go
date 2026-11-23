@@ -331,7 +331,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	}
 
 	chunkStrategy := lbflight.NewAdaptiveChunkStrategy(minChunkRows, maxChunkRows, 2.0)
-	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records.Read(), ds.Tombstones, chunkStrategy)
+	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records.Read(), ds.GetTombstones(), chunkStrategy)
 	ds.dataMu.RUnlock() // RELEASE LOCK IMMEDIATELY AFTER CLONING REFERENCES
 
 	s.logger.Debug().Str("name", name).Int("batches", len(recordsToProcess)).Msg("DoGet streaming started")

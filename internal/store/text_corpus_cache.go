@@ -91,7 +91,7 @@ func (m *AdvancedTextSearchManager) corpusFor(dataset string) (*cachedTextCorpus
 
 	ds.dataMu.RLock()
 	records := ds.Records.Read()
-	tombstones := ds.Tombstones
+	tombstones := ds.GetTombstones()
 
 	m.mu.RLock()
 	prev := m.corpusCache[dataset]

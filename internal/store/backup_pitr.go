@@ -135,9 +135,8 @@ func BuildSnapshotArchive(ds *Dataset, backupID string, walSeq uint64) ([]byte, 
 	if ds.Index != nil {
 		dim = ds.Index.GetDimension()
 	}
-	ds.metadataMu.Lock()
 	var tombstones [][2]int
-	for batchIdx, bs := range ds.Tombstones {
+	for batchIdx, bs := range ds.GetTombstones() {
 		if bs == nil {
 			continue
 		}
@@ -152,7 +151,6 @@ func BuildSnapshotArchive(ds *Dataset, backupID string, walSeq uint64) ([]byte, 
 			}
 		}
 	}
-	ds.metadataMu.Unlock()
 	ds.dataMu.RUnlock()
 
 	defer func() {

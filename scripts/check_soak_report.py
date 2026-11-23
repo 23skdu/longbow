@@ -3,9 +3,10 @@
 
 The soak simulators emit JSON reports with slightly different field names. This
 checker normalizes the common fields and fails on:
-  * error rate above 1%;
+  * error rate above 1%, including operation-specific rates;
   * >50% QPS drop sustained for two minutes;
-  * monotonic RSS growth over the second half of a run;
+  * monotonic RSS growth of at least 5% over the second half of a run
+    (requires at least two minutes of second-half samples);
   * missing cross-agent verification hits.
 """
 
@@ -85,17 +86,36 @@ def _qps_stall(samples: list[dict[str, Any]], window_s: float, drop_pct: float) 
     return None
 
 
-def _rss_growth(samples: list[dict[str, Any]]) -> str | None:
-    """Detect steady RSS growth over the second half of the run."""
-    values = [_sample_rss(s) for s in samples]
-    points = [v for v in values if v is not None]
+def _rss_growth(
+    samples: list[dict[str, Any]], min_growth_pct: float, min_window_s: float
+) -> str | None:
+    """Detect steady RSS growth over the second half of the run.
+
+    A small monotonic drift is normal while Arrow/Go allocators warm up. The
+    gate fires only when the second half spans at least ``min_window_s``, is
+    non-decreasing, and grows by at least ``min_growth_pct`` from its first to
+    its last sample.
+    """
+    points = [
+        (_sample_time(sample, index), value)
+        for index, sample in enumerate(samples)
+        if (value := _sample_rss(sample)) is not None
+    ]
     if len(points) < 4:
         return None
-    tail = points[len(points) // 2 :]
-    if len(tail) < 3 or tail[0] <= 0:
+    midpoint = (points[0][0] + points[-1][0]) / 2
+    tail = [(t, v) for t, v in points if t >= midpoint]
+    if len(tail) < 3 or tail[-1][0] - tail[0][0] < min_window_s:
         return None
-    if all(b >= a for a, b in zip(tail, tail[1:])) and tail[-1] > tail[0] * 1.2:
-        return f"RSS grew monotonically in the second half: {tail[0]:.0f} -> {tail[-1]:.0f} bytes"
+    values = [v for _, v in tail]
+    if values[0] <= 0:
+        return None
+    growth_pct = (values[-1] / values[0] - 1) * 100
+    if all(b >= a for a, b in zip(values, values[1:])) and growth_pct >= min_growth_pct:
+        return (
+            f"RSS grew monotonically in the second half by {growth_pct:.1f}%: "
+            f"{values[0]:.0f} -> {values[-1]:.0f} bytes"
+        )
     return None
 
 
@@ -119,6 +139,8 @@ def check_report(
     max_error_rate: float,
     qps_drop_pct: float,
     qps_window_s: float,
+    min_rss_growth_pct: float = 5.0,
+    min_rss_window_s: float = 120.0,
 ) -> list[str]:
     failures: list[str] = []
     declared = report.get("failures")
@@ -156,7 +178,7 @@ def check_report(
     if qps_stall:
         failures.append(qps_stall)
 
-    rss_growth = _rss_growth(_samples(report))
+    rss_growth = _rss_growth(_samples(report), min_rss_growth_pct, min_rss_window_s)
     if rss_growth:
         failures.append(rss_growth)
 
@@ -234,6 +256,8 @@ def main() -> int:
     parser.add_argument("--max-error-rate", type=float, default=0.01)
     parser.add_argument("--qps-drop-pct", type=float, default=50.0)
     parser.add_argument("--qps-window-s", type=float, default=120.0)
+    parser.add_argument("--min-rss-growth-pct", type=float, default=5.0)
+    parser.add_argument("--min-rss-window-s", type=float, default=120.0)
     parser.add_argument(
         "--rss-samples",
         help="Optional JSONL file of server RSS samples collected during the soak",
@@ -248,6 +272,8 @@ def main() -> int:
             max_error_rate=args.max_error_rate,
             qps_drop_pct=args.qps_drop_pct,
             qps_window_s=args.qps_window_s,
+            min_rss_growth_pct=args.min_rss_growth_pct,
+            min_rss_window_s=args.min_rss_window_s,
         )
         if failures:
             failed = True

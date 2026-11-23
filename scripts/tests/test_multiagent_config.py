@@ -36,6 +36,7 @@ class TestDefaultConfig(unittest.TestCase):
     def test_built_in_defaults_are_three_agents(self):
         cfg = mc.load_config(None)
         self.assertEqual(cfg["agents"], 3)
+        self.assertEqual(cfg["agents_per_namespace"], 0)
         self.assertEqual(cfg["private_prefix"], "private_")
         self.assertEqual(cfg["shared_prefix"], "shared_")
         self.assertEqual(cfg["common"], "master")
@@ -43,10 +44,21 @@ class TestDefaultConfig(unittest.TestCase):
     def test_shipped_config_matches_defaults(self):
         cfg = mc.load_config(_CONFIG)
         self.assertEqual(cfg["agents"], 3)
+        self.assertEqual(cfg["agents_per_namespace"], 0)
         self.assertEqual(cfg["dim"], 128)
         self.assertEqual(cfg["seed"], 42)
         self.assertNotIn("require_rbac", cfg)  # RBAC has no off switch
         self.assertEqual(cfg["think_time"], 0.01)
+
+    def test_config_file_overrides_grouping_default(self):
+        with open(_CONFIG, encoding="utf-8") as f:
+            raw = json.load(f)
+        raw["agents_per_namespace"] = 2
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "soak.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(raw, f)
+            self.assertEqual(mc.load_config(path)["agents_per_namespace"], 2)
 
     def test_missing_config_file_raises(self):
         with self.assertRaises(FileNotFoundError):

@@ -324,25 +324,23 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 		ds.dataMu.RLock()
 		found := false
+		tombstones := ds.GetTombstones()
 		ds.metadataMu.Lock()
 
 		// Use PrimaryIndex for O(1) lookup
 		if ds.PrimaryIndex != nil {
 			if loc, ok := ds.PrimaryIndex[req.ID]; ok {
 				// We found the location!
-
-				// Check if already deleted
-				if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
+				if ts := tombstones[loc.BatchIdx]; ts != nil && ts.Contains(loc.RowIdx) {
 					// Already deleted, treat as success
 					found = true
 				} else {
-					// Set tombstone.
-					if ds.Tombstones[loc.BatchIdx] == nil {
-						ds.Tombstones[loc.BatchIdx] = types.NewBitset()
+					// A concurrent delete may have won between the snapshot and
+					// this write; either way the row is no longer visible.
+					if setTombstoneIfAbsent(ds, loc.BatchIdx, loc.RowIdx) {
+						ds.RecordBatchDeletion(loc.BatchIdx)
+						metrics.TombstonesTotal.WithLabelValues(ds.Name).Inc()
 					}
-					ds.Tombstones[loc.BatchIdx].Set(loc.RowIdx)
-					ds.RecordBatchDeletion(loc.BatchIdx)
-					metrics.TombstonesTotal.WithLabelValues(ds.Name).Inc()
 					found = true
 				}
 			}
@@ -399,20 +397,20 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 				if rowIdx != -1 {
 					// Check if already deleted
-					ts := ds.Tombstones[i]
-					if ts != nil && ts.Contains(rowIdx) {
+					if ts := tombstones[i]; ts != nil && ts.Contains(rowIdx) {
 						found = true // Already deleted
 						break
 					}
 
+					newlyTombstoned := setTombstoneIfAbsent(ds, i, rowIdx)
 					ds.metadataMu.Lock()
-					if ds.Tombstones[i] == nil {
-						ds.Tombstones[i] = types.NewBitset()
+					if newlyTombstoned {
+						ds.RecordBatchDeletion(i)
 					}
-					ds.Tombstones[i].Set(rowIdx)
-					ds.RecordBatchDeletion(i)
 					ds.metadataMu.Unlock()
-					metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
+					if newlyTombstoned {
+						metrics.TombstonesTotal.WithLabelValues(req.Dataset).Inc()
+					}
 					found = true
 					break
 				}
@@ -560,15 +558,9 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		loc := locRaw.(Location)
 
 		// set tombstone
-		ds.TombstoneMu.Lock()
-		if ds.Tombstones[loc.BatchIdx] == nil {
-			ds.Tombstones[loc.BatchIdx] = types.NewBitset()
+		if setTombstoneIfAbsent(ds, loc.BatchIdx, loc.RowIdx) {
+			metrics.TombstonesTotal.WithLabelValues(dsName).Inc()
 		}
-		ts := ds.Tombstones[loc.BatchIdx]
-		ds.TombstoneMu.Unlock()
-
-		ts.Set(loc.RowIdx)
-		metrics.TombstonesTotal.WithLabelValues(dsName).Inc()
 
 		if err := stream.Send(&flight.Result{Body: []byte("deleted")}); err != nil {
 			return err

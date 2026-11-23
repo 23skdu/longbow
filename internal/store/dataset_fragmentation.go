@@ -27,6 +27,7 @@ type BatchLayoutDetail struct {
 func (d *Dataset) GetDiskLayoutInfo() DiskLayoutInfo {
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
+	tombstones := d.GetTombstones()
 
 	info := DiskLayoutInfo{
 		TotalBatches: len(d.Records.Read()),
@@ -38,8 +39,8 @@ func (d *Dataset) GetDiskLayoutInfo() DiskLayoutInfo {
 	for i, rec := range d.Records.Read() {
 		rows := int(rec.NumRows())
 		deleted := 0
-		if d.Tombstones[i] != nil {
-			deleted = int(d.Tombstones[i].Count()) // #nosec G115
+		if tombstones[i] != nil {
+			deleted = int(tombstones[i].Count()) // #nosec G115
 		}
 
 		density := 0.0

@@ -27,35 +27,38 @@ func (s *VectorStore) GeoSearch(ctx context.Context, req *types.GeoSearchRequest
 		return nil, status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
 	}
 
-	if ds.GeoIndex == nil {
+	// Snapshot the index under the dataset read lock, then release it before
+	// searching. Index search workers re-acquire the same dataset lock; holding
+	// it here lets a queued writer block both paths at shutdown.
+	ds.dataMu.RLock()
+	geoIndex := ds.GeoIndex
+	ds.dataMu.RUnlock()
+	if geoIndex == nil {
 		return nil, status.Error(codes.FailedPrecondition, "dataset has no geospatial index")
 	}
 
-	ds.dataMu.RLock()
 	var results []types.SearchResult
 	var err error
 
 	switch req.SearchType {
 	case "radius":
-		results, err = ds.GeoIndex.SearchRadius(ctx, req.Center, req.RadiusKm, req.K)
+		results, err = geoIndex.SearchRadius(ctx, req.Center, req.RadiusKm, req.K)
 	case "box":
 		if req.Box == nil {
-			ds.dataMu.RUnlock()
 			return nil, status.Error(codes.InvalidArgument, "bounding box required for 'box' search")
 		}
-		results, err = ds.GeoIndex.SearchBox(ctx, *req.Box, req.K)
+		results, err = geoIndex.SearchBox(ctx, *req.Box, req.K)
 	case "hybrid":
-		results, err = ds.GeoIndex.HybridSearch(ctx, req.QueryVector, req.Center, req.RadiusKm, req.K)
+		results, err = geoIndex.HybridSearch(ctx, req.QueryVector, req.Center, req.RadiusKm, req.K)
 	default:
-		ds.dataMu.RUnlock()
 		return nil, status.Errorf(codes.InvalidArgument, "invalid search_type: %s", req.SearchType)
 	}
 
 	if err != nil {
-		ds.dataMu.RUnlock()
 		return nil, status.Errorf(codes.Internal, "geospatial search failed: %v", err)
 	}
 
+	ds.dataMu.RLock()
 	results = s.mapInternalToUserIDsLocked(ds, results)
 	ds.dataMu.RUnlock()
 

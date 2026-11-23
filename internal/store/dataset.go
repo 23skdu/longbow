@@ -312,15 +312,26 @@ func (d *Dataset) GetSchema() *arrow.Schema {
 	return d.Schema
 }
 
-// GetTombstones returns a copy of the tombstones for the dataset.
+// GetTombstones returns a snapshot of the tombstone map. The bitsets are
+// shared but internally synchronized; they are never returned to the pool, so
+// a snapshot stays valid after ResetTombstones, Compact, or Close.
 func (d *Dataset) GetTombstones() map[int]*types.Bitset {
-	d.dataMu.RLock()
-	defer d.dataMu.RUnlock()
+	d.TombstoneMu.RLock()
+	defer d.TombstoneMu.RUnlock()
 	cp := make(map[int]*types.Bitset, len(d.Tombstones))
 	for k, v := range d.Tombstones {
 		cp[k] = v
 	}
 	return cp
+}
+
+// replaceTombstones swaps the tombstone map under the dedicated lock. Previous
+// bitsets are left to GC rather than returned to the pool because map
+// snapshots can still hold references to them.
+func (d *Dataset) replaceTombstones(next map[int]*types.Bitset) {
+	d.TombstoneMu.Lock()
+	d.Tombstones = next
+	d.TombstoneMu.Unlock()
 }
 
 // GetPQEncoder returns the PQ encoder for the dataset
@@ -343,9 +354,7 @@ func (d *Dataset) RUnlockData() {
 
 // ResetTombstones clears all tombstones in the dataset
 func (d *Dataset) ResetTombstones() {
-	d.dataMu.Lock()
-	defer d.dataMu.Unlock()
-	d.Tombstones = make(map[int]*types.Bitset)
+	d.replaceTombstones(make(map[int]*types.Bitset))
 }
 
 // SetAdmission associates an AdmissionController with the dataset.
@@ -489,10 +498,9 @@ func (d *Dataset) Close() {
 	d.dataMu.Lock()
 	defer d.dataMu.Unlock()
 
-	for _, ts := range d.Tombstones {
-		ts.Release()
-	}
+	d.TombstoneMu.Lock()
 	d.Tombstones = make(map[int]*types.Bitset)
+	d.TombstoneMu.Unlock()
 
 	for _, idx := range d.InvertedIndexes {
 		idx.Close()

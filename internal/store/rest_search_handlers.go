@@ -430,7 +430,7 @@ func (s *VectorStore) runDatasetAggregation(dsName string, groupBy []string, agg
 	}
 	ds.dataMu.RLock()
 	batches := ds.Records.Read()
-	tombstones := ds.Tombstones
+	tombstones := ds.GetTombstones()
 	ds.dataMu.RUnlock()
 
 	rows, sourceRows := AggregateBatches(batches, tombstones, MaterializedViewSpec{

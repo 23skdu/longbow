@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -21,6 +22,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -145,14 +148,19 @@ func (g *globalMetrics) byOpStats(now time.Time) map[string]any {
 	for op, st := range g.ByOp {
 		lats := append([]float64{}, st.Lats...)
 		sort.Float64s(lats)
+		opErrorRate := float64(0)
+		if st.Ops > 0 {
+			opErrorRate = float64(st.Errors) / float64(st.Ops)
+		}
 		out[op] = map[string]any{
-			"ops":       st.Ops,
-			"errors":    st.Errors,
-			"qps":       float64(st.Ops) / elapsed,
-			"p50_ms":    percentileMS(lats, 50),
-			"p95_ms":    percentileMS(lats, 95),
-			"p99_ms":    percentileMS(lats, 99),
-			"last_op_s": now.Sub(st.Last).Seconds(),
+			"ops":        st.Ops,
+			"errors":     st.Errors,
+			"error_rate": opErrorRate,
+			"qps":        float64(st.Ops) / elapsed,
+			"p50_ms":     percentileMS(lats, 50),
+			"p95_ms":     percentileMS(lats, 95),
+			"p99_ms":     percentileMS(lats, 99),
+			"last_op_s":  now.Sub(st.Last).Seconds(),
 		}
 	}
 	return out
@@ -399,6 +407,9 @@ func (a *agent) run(ctx context.Context) {
 		}
 		t0 := time.Now()
 		err := a.execute(ctx, c, rng, op, readable, writable, opts)
+		if !shouldRecordOperation(ctx, err) {
+			return
+		}
 		a.metrics.record(op, time.Since(t0).Seconds(), err == nil)
 		if err == nil && a.isCrossVerification(op) {
 			a.verified.Add(1)
@@ -408,6 +419,54 @@ func (a *agent) run(ctx context.Context) {
 		}
 		time.Sleep(time.Duration(a.cfg.ThinkTimeMS) * time.Millisecond)
 	}
+}
+
+// shouldRecordOperation drops only cancellations caused by the bounded soak
+// deadline. Requests already in flight when the session ends are expected to
+// fail; counting them would make short, low-volume operations breach the 1%
+// per-operation gate at shutdown.
+func shouldRecordOperation(ctx context.Context, err error) bool {
+	if err == nil || ctx.Err() == nil {
+		return true
+	}
+	// gRPC converts context cancellation into a status error, so errors.Is
+	// alone does not recognize the in-flight requests aborted at shutdown.
+	code := status.Code(err)
+	return code != codes.Canceled && code != codes.DeadlineExceeded &&
+		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
+}
+
+// retryIDNotFound tolerates the server's asynchronous ingest visibility for
+// IDs created earlier in the same soak. Only NotFound is retried; any other
+// failure is returned immediately, and a persistent NotFound still fails the
+// operation once the bounded window expires.
+func retryIDNotFound(ctx context.Context, fn func() error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	err := fn()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err == nil || status.Code(err) != codes.NotFound {
+		return err
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(25 * time.Millisecond):
+		}
+		err = fn()
+		if err == nil || status.Code(err) != codes.NotFound {
+			return err
+		}
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 // isCrossVerification reports whether a successful operation proves that an
@@ -472,7 +531,9 @@ func (a *agent) execute(ctx context.Context, c *client.SmartClient, rng *rand.Ra
 		if id == "" {
 			id = fmt.Sprintf("seed_%s", ns)
 		}
-		return doByID(ctx, c, ns, id, opts.K)
+		return retryIDNotFound(ctx, func() error {
+			return doByID(ctx, c, ns, id, opts.K)
+		})
 	case "temporal_asof", "temporal_range", "temporal_window":
 		ns := pickReadable()
 		a.setKeyFor(c, ns, op)
@@ -493,7 +554,9 @@ func (a *agent) execute(ctx context.Context, c *client.SmartClient, rng *rand.Ra
 		if id == "" {
 			id = fmt.Sprintf("seed_%s", ns)
 		}
-		return doRecommend(ctx, c, ns, id, opts.K, opts.Alpha, opts.Graph.MaxHops)
+		return retryIDNotFound(ctx, func() error {
+			return doRecommend(ctx, c, ns, id, opts.K, opts.Alpha, opts.Graph.MaxHops)
+		})
 	case "multimodal":
 		ns := pickReadable()
 		a.setKeyFor(c, ns, op)
@@ -533,7 +596,9 @@ func (a *agent) execute(ctx context.Context, c *client.SmartClient, rng *rand.Ra
 		if id == "" {
 			return nil
 		}
-		return doDelete(ctx, c, ns, id)
+		return retryIDNotFound(ctx, func() error {
+			return doDelete(ctx, c, ns, id)
+		})
 	case "delete_ns":
 		// Bounded session cleanup: remove every tracked ID in one owned
 		// namespace without dropping the namespace itself, so other agents'
@@ -545,7 +610,9 @@ func (a *agent) execute(ctx context.Context, c *client.SmartClient, rng *rand.Ra
 			if id == "" {
 				return nil
 			}
-			if err := doDelete(ctx, c, ns, id); err != nil {
+			if err := retryIDNotFound(ctx, func() error {
+				return doDelete(ctx, c, ns, id)
+			}); err != nil {
 				return err
 			}
 		}
@@ -752,9 +819,25 @@ Loop:
 		errorRate = float64(gm.Errors.Load()) / float64(gm.Ops.Load())
 	}
 	stalls := gm.stalls(finished)
+	byOpStats := gm.byOpStats(finished)
 	failures := make([]string, 0)
 	if errorRate > 0.01 {
 		failures = append(failures, fmt.Sprintf("error_rate %.4f exceeds 1%%", errorRate))
+	}
+	opNames := make([]string, 0, len(byOpStats))
+	for op := range byOpStats {
+		opNames = append(opNames, op)
+	}
+	sort.Strings(opNames)
+	for _, op := range opNames {
+		stats, ok := byOpStats[op].(map[string]any)
+		if !ok {
+			continue
+		}
+		opRate, ok := stats["error_rate"].(float64)
+		if ok && opRate > 0.01 {
+			failures = append(failures, fmt.Sprintf("operation %s error_rate %.4f exceeds 1%%", op, opRate))
+		}
 	}
 	if verified == 0 {
 		failures = append(failures, "no cross-agent verification hits")
@@ -780,7 +863,7 @@ Loop:
 		"cross_verified":   verified,
 		"by_op":            gm.byOpCounts(),
 		"by_op_errors":     gm.ByErr,
-		"by_op_stats":      gm.byOpStats(finished),
+		"by_op_stats":      byOpStats,
 		"stalls":           stalls,
 		"audit_denials":    auditDenials,
 		"failures":         failures,

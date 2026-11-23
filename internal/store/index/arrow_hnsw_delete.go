@@ -31,8 +31,6 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 
 // CleanupTombstones runs the cleanup tombstones operation.
 func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
-	h.dataset.RLockData()
-
 	shouldReset := false
 	totalPruned := 0
 	for _, ts := range h.dataset.GetTombstones() {
@@ -46,8 +44,6 @@ func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
 			break
 		}
 	}
-	h.dataset.RUnlockData()
-
 	if shouldReset {
 		h.dataset.ResetTombstones()
 	}

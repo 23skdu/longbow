@@ -59,17 +59,37 @@ def make_vector(dim, rng):
 
 
 class GroupedTopology:
-    """Map agents onto shared namespaces using the standard Topology layout.
+    """Map agents onto namespaces using the standard Topology layout.
 
-    The ``agents_per_ns`` agents in a group share one namespace and one scoped
-    key set. Names and permission tiers come from multiagent_config.Topology,
-    so the RBAC bootstrap is identical to the scenario simulator's.
+    With ``agents_per_ns`` of 0 or 1, this is the default private-per-agent
+    layout (2N+1 namespaces). Above 1, each group of agents shares one
+    namespace and one scoped key set. Names and permission tiers come from
+    multiagent_config.Topology, so the RBAC bootstrap is identical to the
+    scenario simulator's.
     """
 
     def __init__(self, agents, agents_per_ns, cfg):
-        if agents < 2 or agents_per_ns < 1:
-            raise ValueError("agents must be >= 2 and agents-per-ns must be positive")
-        self.groups = max(2, int(math.ceil(agents / float(agents_per_ns))))
+        if agents < 2:
+            raise ValueError("agents must be >= 2")
+        if agents_per_ns < 0:
+            raise ValueError("agents-per-ns must not be negative")
+        if agents_per_ns > 1 and agents_per_ns >= agents:
+            raise ValueError("agents-per-ns must be smaller than agents so RBAC has at least two groups")
+
+        self.grouped = agents_per_ns > 1
+        if not self.grouped:
+            self.base = Topology(cfg)
+            self.groups = agents
+            self.agents = agents
+            self.private = list(self.base.private)
+            self.shared = list(self.base.shared)
+            self.common = self.base.common
+            self.namespaces = self.private + self.shared + [self.common]
+            return
+
+        self.groups = int(math.ceil(agents / float(agents_per_ns)))
+        # Provision and verify one scoped key set per group.
+        self.agents = self.groups
         base_cfg = dict(cfg)
         base_cfg["agents"] = self.groups
         self.base = Topology(base_cfg)
@@ -80,12 +100,18 @@ class GroupedTopology:
         self.namespaces = self.private + [self.common]
 
     def writable(self, group):
+        if not self.grouped:
+            return self.base.writable(group)
         return [self.private[group], self.common]
 
     def read_only(self, group):
+        if not self.grouped:
+            return self.base.read_only(group)
         return [ns for i, ns in enumerate(self.private) if i != group]
 
     def readable(self, group):
+        if not self.grouped:
+            return self.base.readable(group)
         return self.writable(group) + self.read_only(group)
 
 
@@ -205,7 +231,8 @@ def main():
     ap.add_argument("--uri")
     ap.add_argument("--meta-uri", dest="meta_uri")
     ap.add_argument("--agents", type=int)
-    ap.add_argument("--agents-per-ns", type=int, default=10, dest="agents_per_ns")
+    ap.add_argument("--agents-per-ns", type=int, default=None, dest="agents_per_ns",
+                    help="Agents sharing one namespace (overrides config; 0 keeps the private-per-agent layout)")
     ap.add_argument("--admin-api-key", dest="admin_api_key", help="RBAC bootstrap key (or set the configured env var)")
     ap.add_argument("--duration-hours", type=float, dest="duration_hours")
     ap.add_argument("--dim", type=int)
@@ -229,13 +256,16 @@ def main():
         value = getattr(args, key)
         if value is not None:
             cfg[key] = value
+    if args.agents_per_ns is not None:
+        cfg["agents_per_namespace"] = args.agents_per_ns
     try:
         workload = workload_choices(cfg)
     except ValueError as e:
         ap.error(str(e))
     if not HAS_SDK:
         ap.error("Longbow Python SDK is required for the RBAC-provisioned soak")
-    topology = GroupedTopology(int(cfg["agents"]), args.agents_per_ns, cfg)
+    agents_per_ns = int(cfg["agents_per_namespace"])
+    topology = GroupedTopology(int(cfg["agents"]), agents_per_ns, cfg)
 
     admin_key = args.admin_api_key or os.environ.get(cfg["admin_api_key_env"], "")
     if not admin_key:
@@ -252,7 +282,7 @@ def main():
     metrics = Metrics()
     stop_event = threading.Event()
     agents = [
-        Agent(i, cfg, topology, keys, metrics, workload, args.agents_per_ns)
+        Agent(i, cfg, topology, keys, metrics, workload, agents_per_ns)
         for i in range(int(cfg["agents"]))
     ]
     threads = []

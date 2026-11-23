@@ -200,12 +200,7 @@ func (m *MaterializedViewManager) RefreshView(ctx context.Context, name string) 
 				r.Retain()
 				batches[i] = r
 			}
-			if len(ds.Tombstones) > 0 {
-				tombstones = make(map[int]*types.Bitset, len(ds.Tombstones))
-				for k, v := range ds.Tombstones {
-					tombstones[k] = v
-				}
-			}
+			tombstones = ds.GetTombstones()
 			ds.dataMu.RUnlock()
 		}
 	}

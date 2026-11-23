@@ -13,6 +13,7 @@ Command-line flags override any value loaded from the file.
 | Field | Meaning |
 | --- | --- |
 | `agents` | Number of simulated agents. |
+| `agents_per_namespace` | Agents sharing one namespace. `0` (default) keeps the private-per-agent `2N+1` layout; values above `1` enable group namespaces and must be smaller than `agents`. |
 | `uri` / `meta_uri` | Arrow Flight data/control plane addresses. |
 | `duration_hours` | Run duration. |
 | `dim` | Vector dimension. |

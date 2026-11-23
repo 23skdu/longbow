@@ -70,15 +70,36 @@ RSS_FILE="${REPORT%.json}.rss.jsonl"
 SERVER_LOG="${REPORT%.json}.server.log"
 SERVER_PID=""
 SAMPLER_PID=""
+STOP_TIMEOUT_S=30
+
+# stop_process sends SIGTERM, waits for a bounded shutdown, and force-stops a
+# child that ignores it. A hung soak server must fail, never stall CI forever.
+stop_process() {
+  local pid="$1"
+  [[ -n "$pid" ]] || return 0
+  if ! kill -0 "$pid" 2>/dev/null; then
+    wait "$pid" 2>/dev/null || true
+    return 0
+  fi
+  kill "$pid" 2>/dev/null || true
+  local i state
+  for ((i = 0; i < STOP_TIMEOUT_S; i++)); do
+    state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+    if [[ -z "$state" || "$state" == Z* ]]; then
+      wait "$pid" 2>/dev/null || true
+      return 0
+    fi
+    sleep 1
+  done
+  kill -KILL "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  return 1
+}
 
 cleanup() {
-  if [[ -n "$SAMPLER_PID" ]]; then
-    kill "$SAMPLER_PID" 2>/dev/null || true
-    wait "$SAMPLER_PID" 2>/dev/null || true
-  fi
-  if [[ -n "$SERVER_PID" ]]; then
-    kill "$SERVER_PID" 2>/dev/null || true
-    wait "$SERVER_PID" 2>/dev/null || true
+  stop_process "$SAMPLER_PID" || true
+  if ! stop_process "$SERVER_PID"; then
+    echo "soak server did not shut down within ${STOP_TIMEOUT_S}s; force-stopped" >&2
   fi
   rm -rf "$DATA_DIR"
 }
@@ -157,9 +178,14 @@ if ! "$AGENTSOAK_BIN" "${soak_args[@]}" "$@"; then
   status=1
 fi
 
-kill "$SAMPLER_PID" 2>/dev/null || true
-wait "$SAMPLER_PID" 2>/dev/null || true
+stop_process "$SAMPLER_PID" || true
 SAMPLER_PID=""
+
+if ! stop_process "$SERVER_PID"; then
+  echo "soak server did not shut down within ${STOP_TIMEOUT_S}s; force-stopped" >&2
+  status=1
+fi
+SERVER_PID=""
 
 if ! python3 scripts/check_soak_report.py "$REPORT" --rss-samples "$RSS_FILE"; then
   status=1

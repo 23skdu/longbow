@@ -9,7 +9,6 @@ Completed milestones are not repeated here; their results are recorded in
 Priorities are deliberately narrow:
 
 - **P0** blocks a release or leaves a shipped kernel/artifact incorrect.
-- **P1** protects multi-agent concurrency, security, and soak stability.
 - **P2** is structural or test-depth work that reduces future risk.
 
 Guardrails are not roadmap items. Always-on RBAC, namespace ACLs, OIDC

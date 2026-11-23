@@ -17,6 +17,18 @@ import multiagent_config as mc  # noqa: E402
 
 
 class TestGroupedTopology(unittest.TestCase):
+    def test_config_default_uses_private_per_agent_layout(self):
+        cfg = mc.load_config(None)
+        topology = soak.GroupedTopology(3, cfg["agents_per_namespace"], cfg)
+        self.assertEqual(topology.groups, 3)
+        self.assertEqual(topology.agents, 3)
+        self.assertEqual(
+            topology.namespaces,
+            ["private_0", "private_1", "private_2", "shared_0", "shared_1", "shared_2", "master"],
+        )
+        self.assertEqual(topology.writable(0), ["private_0", "shared_0", "master"])
+        self.assertEqual(topology.read_only(0), ["shared_1", "shared_2"])
+
     def test_eight_agents_two_per_namespace_share_group_namespaces(self):
         cfg = mc.load_config(None)
         topology = soak.GroupedTopology(8, 2, cfg)

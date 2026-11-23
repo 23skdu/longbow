@@ -365,6 +365,6 @@ go test ./internal/security/secrets/... ./internal/store/rbac/... ./cmd/longbow 
 python3 -m unittest scripts.tests.test_multiagent_config scripts.tests.test_verify_rbac
 ```
 
-See [`configs/README.md`](../configs/README.md) and
+See [`scripts/configs/README.md`](../scripts/configs/README.md) and
 [`docs/development/soaktestplan.md`](development/soaktestplan.md) for the
 authenticated multiagent soak scenario.

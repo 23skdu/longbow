@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/internal/core"
@@ -110,6 +111,75 @@ func (cr *CollectionRegistry) DeleteCollection(name string) error {
 	return nil
 }
 
+// UpsertCollectionInfo inserts or refreshes metadata for a collection. Fresh
+// metrics always win; descriptive fields are preserved when the caller does
+// not supply them (for example during a dataset metrics refresh).
+func (cr *CollectionRegistry) UpsertCollectionInfo(info *CollectionInfo) {
+	if info == nil || info.Name == "" {
+		return
+	}
+	fresh := cloneCollectionInfo(info)
+	cr.mu.Lock()
+	defer cr.mu.Unlock()
+	if existing, ok := cr.collections[fresh.Name]; ok && existing != nil {
+		existing.Dimension = fresh.Dimension
+		existing.VectorCount = fresh.VectorCount
+		if len(fresh.Tags) > 0 {
+			existing.Tags = fresh.Tags
+		}
+		if fresh.Description != "" {
+			existing.Description = fresh.Description
+		}
+		if len(fresh.Metadata) > 0 {
+			existing.Metadata = fresh.Metadata
+		}
+		if fresh.CreatedAt != 0 {
+			existing.CreatedAt = fresh.CreatedAt
+		}
+		if fresh.UpdatedAt != 0 {
+			existing.UpdatedAt = fresh.UpdatedAt
+		}
+		if len(fresh.Shards) > 0 {
+			existing.Shards = fresh.Shards
+		}
+		cr.collections[fresh.Name] = existing
+		return
+	}
+	cr.collections[fresh.Name] = fresh
+}
+
+// RemoveRoutingRulesForCollection drops tag rules that point at a removed
+// collection so stale routing cannot resurrect a deleted dataset.
+func (cr *CollectionRegistry) RemoveRoutingRulesForCollection(name string) {
+	cr.mu.Lock()
+	defer cr.mu.Unlock()
+	for tag, rule := range cr.routingRules {
+		if rule != nil && rule.Collection == name {
+			delete(cr.routingRules, tag)
+		}
+	}
+}
+
+func cloneCollectionInfo(info *CollectionInfo) *CollectionInfo {
+	if info == nil {
+		return nil
+	}
+	clone := *info
+	if info.Tags != nil {
+		clone.Tags = append([]string(nil), info.Tags...)
+	}
+	if info.Shards != nil {
+		clone.Shards = append([]string(nil), info.Shards...)
+	}
+	if info.Metadata != nil {
+		clone.Metadata = make(map[string]string, len(info.Metadata))
+		for k, v := range info.Metadata {
+			clone.Metadata[k] = v
+		}
+	}
+	return &clone
+}
+
 // RegisterRoutingRule adds a new routing rule to the registry.
 func (cr *CollectionRegistry) RegisterRoutingRule(rule *RoutingRule) error {
 	cr.mu.Lock()
@@ -149,86 +219,77 @@ type VectorSearcher interface {
 }
 
 // FederatedQueryRouter routes search queries to multiple collections and merges results.
+// Searcher lookup uses a copy-on-write map so searches are never serialized by
+// a membership refresh or a dirty-flag resync.
 type FederatedQueryRouter struct {
-	mu           sync.RWMutex
+	mu           sync.RWMutex // protects configuration fields only
 	registry     *CollectionRegistry
-	searchers    map[string]VectorSearcher
+	searchers    atomic.Pointer[map[string]VectorSearcher]
 	defaultRRF   float64
 	defaultLimit int
 }
 
 // NewFederatedQueryRouter creates a new federated query router with default settings.
 func NewFederatedQueryRouter() *FederatedQueryRouter {
-	return &FederatedQueryRouter{
+	empty := make(map[string]VectorSearcher)
+	router := &FederatedQueryRouter{
 		registry:     NewCollectionRegistry(),
-		searchers:    make(map[string]VectorSearcher),
 		defaultRRF:   0.6,
 		defaultLimit: 100,
 	}
+	router.searchers.Store(&empty)
+	return router
 }
 
 // RegisterCollection registers a searcher and its metadata with the router.
 func (fqr *FederatedQueryRouter) RegisterCollection(name string, searcher VectorSearcher, info *CollectionInfo) error {
-	fqr.mu.Lock()
-	defer fqr.mu.Unlock()
-
-	fqr.searchers[name] = searcher
-
-	info.Dimension = searcher.GetDimension()
-	return fqr.registry.RegisterCollection(info)
+	if name == "" {
+		return fmt.Errorf("collection name cannot be empty")
+	}
+	if searcher == nil {
+		return fmt.Errorf("searcher for collection %s is nil", name)
+	}
+	fresh := cloneCollectionInfo(info)
+	if fresh == nil {
+		fresh = &CollectionInfo{}
+	}
+	fresh.Name = name
+	fresh.Dimension = searcher.GetDimension()
+	if err := fqr.registry.RegisterCollection(fresh); err != nil {
+		return err
+	}
+	fqr.replaceSearcher(name, searcher)
+	return nil
 }
 
-// SearcherCount registers or refreshes a collection searcher and metadata idempotently.
 // SearcherCount returns the number of registered collections.
 func (fqr *FederatedQueryRouter) SearcherCount() int {
-	fqr.mu.RLock()
-	defer fqr.mu.RUnlock()
-	return len(fqr.searchers)
+	return len(fqr.snapshotSearchers())
 }
 
 // UpsertCollection runs the upsert collection operation.
 func (fqr *FederatedQueryRouter) UpsertCollection(name string, searcher VectorSearcher, info *CollectionInfo) {
-	fqr.mu.Lock()
-	defer fqr.mu.Unlock()
-
-	fqr.searchers[name] = searcher
-	if info == nil {
-		info = &CollectionInfo{Name: name}
+	if name == "" || searcher == nil {
+		return
 	}
-	if info.Name == "" {
-		info.Name = name
+	fresh := cloneCollectionInfo(info)
+	if fresh == nil {
+		fresh = &CollectionInfo{}
 	}
-	info.Dimension = searcher.GetDimension()
-	if err := fqr.registry.RegisterCollection(info); err != nil {
-		fqr.registry.mu.Lock()
-		if existing, ok := fqr.registry.collections[name]; ok {
-			existing.Dimension = info.Dimension
-			existing.VectorCount = info.VectorCount
-			if len(info.Tags) > 0 {
-				existing.Tags = info.Tags
-			}
-			if info.Description != "" {
-				existing.Description = info.Description
-			}
-			if len(info.Metadata) > 0 {
-				existing.Metadata = info.Metadata
-			}
-		}
-		fqr.registry.mu.Unlock()
-	}
+	fresh.Name = name
+	// GetDimension may take a dataset lock; keep it outside every router lock.
+	fresh.Dimension = searcher.GetDimension()
+	fqr.registry.UpsertCollectionInfo(fresh)
+	fqr.replaceSearcher(name, searcher)
 }
 
 // ListCollections returns metadata for all registered federated collections.
 func (fqr *FederatedQueryRouter) ListCollections() []*CollectionInfo {
-	fqr.mu.RLock()
-	defer fqr.mu.RUnlock()
 	return fqr.registry.ListCollections()
 }
 
 // RegisterRoutingRule registers a tag-to-collection routing rule with the router.
 func (fqr *FederatedQueryRouter) RegisterRoutingRule(rule *RoutingRule) error {
-	fqr.mu.RLock()
-	defer fqr.mu.RUnlock()
 	return fqr.registry.RegisterRoutingRule(rule)
 }
 
@@ -239,15 +300,14 @@ func (fqr *FederatedQueryRouter) Search(ctx context.Context, query []float32, co
 
 // SearchWithRRFK performs a parallel search across specified collections and merges results using RRF with rrfK.
 func (fqr *FederatedQueryRouter) SearchWithRRFK(ctx context.Context, query []float32, collections []string, k, rrfK int) ([]lbtypes.SearchResult, error) {
-	// Capture searchers under lock, then release to allow concurrent searches.
-	fqr.mu.RLock()
+	// Copy-on-write snapshot: no router lock is held while searches run.
+	allSearchers := fqr.snapshotSearchers()
 	searchers := make(map[string]VectorSearcher, len(collections))
 	for _, col := range collections {
-		if s, ok := fqr.searchers[col]; ok {
+		if s, ok := allSearchers[col]; ok {
 			searchers[col] = s
 		}
 	}
-	fqr.mu.RUnlock()
 
 	resultChan := make(chan partialResult, len(collections))
 	var wg sync.WaitGroup
@@ -286,10 +346,7 @@ func (fqr *FederatedQueryRouter) SearchWithRRFK(ctx context.Context, query []flo
 
 // SearchByTags routes a search query to collections matching the specified tags.
 func (fqr *FederatedQueryRouter) SearchByTags(ctx context.Context, query []float32, tags []string, k int) ([]lbtypes.SearchResult, error) {
-	fqr.mu.RLock()
 	collections := fqr.getCollectionsForTags(tags)
-	fqr.mu.RUnlock()
-
 	return fqr.Search(ctx, query, collections, k)
 }
 
@@ -306,7 +363,7 @@ func (fqr *FederatedQueryRouter) getCollectionsForTags(tags []string) []string {
 	}
 
 	if len(collectionSet) == 0 {
-		for name := range fqr.searchers {
+		for name := range fqr.snapshotSearchers() {
 			collectionSet[name] = true
 		}
 	}
@@ -416,9 +473,7 @@ func (fqr *FederatedQueryRouter) GetRRFFactor() float64 {
 
 // GetCollectionCount returns the number of registered collections.
 func (fqr *FederatedQueryRouter) GetCollectionCount() int {
-	fqr.mu.RLock()
-	defer fqr.mu.RUnlock()
-	return len(fqr.searchers)
+	return len(fqr.snapshotSearchers())
 }
 
 // FederatedBenchmark provides tools for benchmarking federated search performance.

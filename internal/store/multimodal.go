@@ -752,18 +752,23 @@ func (s *VectorStore) SearchDatasetVectors(ctx context.Context, dataset string, 
 		return nil, status.Errorf(codes.NotFound, "dataset not found: %s", dataset)
 	}
 	ds.dataMu.RLock()
-	if ds.Index == nil {
-		ds.dataMu.RUnlock()
+	idx := ds.Index
+	ds.dataMu.RUnlock()
+	if idx == nil {
 		return nil, status.Error(codes.FailedPrecondition, "dataset has no HNSW index")
 	}
-	results, err := ds.Index.SearchVectors(ctx, queryVec, k, filters, types.SearchOptions{})
-	if err == nil {
-		results = s.mapInternalToUserIDsLocked(ds, results)
-	}
-	ds.dataMu.RUnlock()
+
+	// Index searches re-acquire the dataset read lock from parallel result
+	// workers. Do not hold it here: a pending writer would otherwise block
+	// both the search and the worker's nested read lock.
+	results, err := idx.SearchVectors(ctx, queryVec, k, filters, types.SearchOptions{})
 	if err != nil {
 		return nil, err
 	}
+
+	ds.dataMu.RLock()
+	results = s.mapInternalToUserIDsLocked(ds, results)
+	ds.dataMu.RUnlock()
 	return s.FilterResultsByRLS(ctx, dataset, results), nil
 }
 

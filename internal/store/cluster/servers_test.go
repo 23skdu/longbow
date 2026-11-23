@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -247,6 +248,33 @@ func TestDataServerDoGetNotFound(t *testing.T) {
 	if st.Code() != codes.NotFound {
 		t.Errorf("Expected NotFound, got %v", st.Code())
 	}
+}
+
+// TestDataServerDoActionEnforcesRBACOnVectorSearch verifies the data-plane
+// VectorSearch fast path cannot bypass the backing store's authorization.
+func TestDataServerDoActionEnforcesRBACOnVectorSearch(t *testing.T) {
+	client, vs := setupDataServerTest(t)
+
+	mgr := store.NewRBACManager()
+	vs.EnableRBAC(mgr)
+	_, rawKey, err := mgr.CreateAPIKeyWithOptions(store.APIKeyOptions{
+		Name:      "scoped-reader",
+		Role:      store.RoleReader,
+		Namespace: "allowed",
+		Datasets:  []string{"allowed/docs"},
+	})
+	require.NoError(t, err)
+
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+rawKey)
+	stream, err := client.DoAction(ctx, &flight.Action{
+		Type: "VectorSearch",
+		Body: []byte(`{"dataset":"forbidden/docs","vector":[0.1,0.2],"k":1}`),
+	})
+	require.NoError(t, err)
+	_, err = stream.Recv()
+	st, ok := status.FromError(err)
+	require.True(t, ok, "expected gRPC status, got %v", err)
+	require.Equal(t, codes.PermissionDenied, st.Code())
 }
 
 // TestDataServerDoActionUnimplemented tests Unimplemented response

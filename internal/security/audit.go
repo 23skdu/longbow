@@ -2,6 +2,8 @@ package security
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -21,11 +24,29 @@ type AuditEntry struct {
 	Operation string    `json:"operation"`
 	Resource  string    `json:"resource"`
 	IPAddress string    `json:"ip_address"`
+	Transport string    `json:"transport,omitempty"`
 	Success   bool      `json:"success"`
 	Reason    string    `json:"reason,omitempty"`
 }
 
 const defaultAuditBufferSize = 4096
+
+// middlewareAuditLogger retains the HTTP middleware's audit entries so they
+// can be queried (and tested) rather than being discarded per request.
+var middlewareAuditLogger = NewAuditLogger()
+
+// knownAuditTransports are the transport tokens callers pass through the
+// legacy RecordEvent ip argument. Other non-empty values are remote addresses.
+var knownAuditTransports = map[string]bool{
+	"auth":        true,
+	"flight":      true,
+	"grpc":        true,
+	"grpc-stream": true,
+	"http":        true,
+	"internal":    true,
+	"rpc":         true,
+	"websocket":   true,
+}
 
 // AuditLogger handles security audit logging with an in-memory queryable ring buffer.
 type AuditLogger struct {
@@ -67,6 +88,16 @@ func (a *AuditLogger) LogAuditEntry(ctx context.Context, entry *AuditEntry) {
 	}
 	a.mu.Unlock()
 
+	// Only failures count as denials. The label values are sanitized before
+	// they reach Prometheus, so no raw reason or API key is ever exported.
+	if !rec.Success {
+		metrics.SecurityAuditDenials.WithLabelValues(
+			auditDenialCategory(rec.Reason),
+			safeAuditLabel(rec.Operation, "unknown"),
+			auditTransport(rec),
+		).Inc()
+	}
+
 	event := a.logger.Info().
 		Str("operation", rec.Operation).
 		Str("resource", rec.Resource).
@@ -105,6 +136,113 @@ func (a *AuditLogger) RecentEntries(limit int) []AuditEntry {
 		out = append(out, a.entries[i])
 	}
 	return out
+}
+
+// DenialCounts summarizes unsuccessful entries held in the in-memory ring
+// buffer, keyed by "category|operation|transport". It is intended for operators
+// and soaks that need denial counts without scraping raw audit logs: no user
+// IDs, tokens, reasons or resource paths are included in the result.
+func (a *AuditLogger) DenialCounts() map[string]int {
+	counts := make(map[string]int)
+	if a == nil {
+		return counts
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	for _, rec := range a.entries {
+		if rec.Success {
+			continue
+		}
+		key := strings.Join([]string{
+			auditDenialCategory(rec.Reason),
+			safeAuditLabel(rec.Operation, "unknown"),
+			auditTransport(rec),
+		}, "|")
+		counts[key]++
+	}
+	return counts
+}
+
+// auditDenialCategory maps a free-form (and potentially sensitive) denial
+// reason to a small, fixed set of label values. Raw reason strings are never
+// used as Prometheus label values.
+func auditDenialCategory(reason string) string {
+	r := strings.ToLower(strings.TrimSpace(reason))
+	switch {
+	case r == "":
+		return "other"
+	case containsAny(r, "missing credential", "missing http credential", "missing api key", "missing authentication", "missing token", "unauthenticated"):
+		return "missing_credentials"
+	case containsAny(r, "invalid api key", "invalid credential", "invalid token", "invalid jwt", "malformed token"):
+		return "invalid_api_key"
+	case containsAny(r, "disabled api key", "api key disabled", "key disabled", "revoked"):
+		return "disabled_api_key"
+	case containsAny(r, "permission denied", "insufficient permission", "insufficient_permission", "not permitted", "forbidden", "admin required"):
+		return "permission_denied"
+	case containsAny(r, "namespace mismatch", "tenant isolation", "tenant mismatch", "cross-tenant"):
+		return "namespace_mismatch"
+	case containsAny(r, "dataset not authorized", "dataset"):
+		return "dataset_not_authorized"
+	case containsAny(r, "invalid input", "invalid json", "invalid request", "validation failed"):
+		return "invalid_input"
+	default:
+		return "other"
+	}
+}
+
+// containsAny reports whether s contains at least one of the needles.
+func containsAny(s string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(s, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// safeAuditLabel bounds an operation or transport label to a short, known
+// character set. This prevents caller-controlled values from creating
+// unbounded Prometheus series or leaking tokens into labels.
+func safeAuditLabel(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	var b strings.Builder
+	for _, r := range value {
+		if b.Len() >= 64 {
+			break
+		}
+		switch {
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + ('a' - 'A'))
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_', r == '-', r == '.', r == ':':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return fallback
+	}
+	return b.String()
+}
+
+// auditTransport resolves the transport label for an entry. Newer callers may
+// set AuditEntry.Transport directly; older RecordEvent callers pass a transport
+// token in the ip argument and everything else is treated as a remote address.
+func auditTransport(rec AuditEntry) string {
+	if t := strings.TrimSpace(rec.Transport); t != "" {
+		return safeAuditLabel(t, "unknown")
+	}
+	ip := strings.ToLower(strings.TrimSpace(rec.IPAddress))
+	if knownAuditTransports[ip] {
+		return safeAuditLabel(ip, "unknown")
+	}
+	if ip != "" {
+		return "http"
+	}
+	return "unknown"
 }
 
 // RecordEvent creates and logs a structured AuditEntry.
@@ -151,6 +289,16 @@ func ValidateInput(input string) error {
 	return nil
 }
 
+// redactToken turns a raw API key into a non-reversible identifier suitable
+// for audit records. The raw key is never retained.
+func redactToken(token string) string {
+	if token == "" {
+		return "redacted"
+	}
+	sum := sha256.Sum256([]byte(token))
+	return "token_" + hex.EncodeToString(sum[:4])
+}
+
 // AuthenticationMiddleware provides basic authentication middleware
 func AuthenticationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -174,18 +322,18 @@ func AuthenticationMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Log authentication attempt
-		auditLogger := NewAuditLogger()
+		// Log authentication attempt with a non-reversible token identifier.
 		entry := AuditEntry{
 			Timestamp: time.Now(),
-			UserID:    token,
+			UserID:    redactToken(token),
 			Operation: "authenticate",
 			Resource:  r.URL.Path,
 			IPAddress: getClientIP(r),
+			Transport: "http",
 			Success:   true,
 			Reason:    "",
 		}
-		auditLogger.LogAuditEntry(r.Context(), &entry)
+		middlewareAuditLogger.LogAuditEntry(r.Context(), &entry)
 
 		// Call next handler
 		next.ServeHTTP(w, r)

@@ -122,6 +122,10 @@ type VectorStore struct {
 	// Federated search sync dirty flag (incremented on dataset changes).
 	federatedDirty atomic.Int64
 
+	// analyticsGuard bounds snapshot creation and heavy graph algorithms so
+	// analytics cannot exhaust CPU or hold dataset locks while ingest/search run.
+	analyticsGuard atomic.Pointer[analyticsLimiter]
+
 	// Disk IO Scheduler for background tasks
 	DiskIO *DiskIOScheduler
 
@@ -766,6 +770,13 @@ func (vs *VectorStore) DropDataset(ctx context.Context, name string) error {
 
 		if vs.datasets.CompareAndSwap(oldMapPtr, &newMap) {
 			// Unlink successful - Resource is ostensibly "gone" from new readers.
+			// Drop its federated registration immediately; a recreated dataset
+			// will be refreshed by the normal dirty-flag sync path.
+			vs.federatedDirty.Add(1)
+			if router := vs.federatedRouterIfInitialized(); router != nil {
+				router.RemoveCollection(name)
+			}
+
 			// Schedule Async Cleanup
 			droppedDS := oldMap[name]
 			metrics.StoreDroppedDatasets.Inc()
@@ -884,30 +895,50 @@ func (vs *VectorStore) broadcastCDC(dataset string, batches []arrow.RecordBatch)
 	}
 }
 
-// GetNeighborsBulk retrieves the adjacency lists for multiple nodes in the vector index.
+// GetNeighborsBulk retrieves adjacency lists for GraphRAG expansion. It reads
+// a bounded, cloned graph snapshot so expansion cannot observe half-applied
+// topology changes or hold the dataset lock while walking many nodes.
 func (vs *VectorStore) GetNeighborsBulk(ctx context.Context, datasetName string, nodeIDs []uint32) (map[uint32][]uint32, error) {
 	ds, ok := vs.getDataset(datasetName)
 	if !ok {
 		return nil, fmt.Errorf("dataset %s not found", datasetName)
 	}
 
-	ds.dataMu.RLock()
-	idx := ds.Index
-	ds.dataMu.RUnlock()
+	results := make(map[uint32][]uint32, len(nodeIDs))
+	lease, err := vs.beginGraphAnalytics(ctx, ds)
+	if err == nil {
+		defer lease.done()
+		for _, id := range nodeIDs {
+			if int64(id) < int64(lease.data.Capacity) {
+				results[id] = lease.data.GetNeighbors(0, id, nil)
+			}
+		}
+		return results, nil
+	}
+	if !errors.Is(err, errAnalyticsIndexUnavailable) && !errors.Is(err, errAnalyticsGraphUnsupported) {
+		return nil, err
+	}
 
-	if idx == nil {
+	// Indexes without an HNSW GraphData keep their diagnostic behavior, but the
+	// live read is still admitted by the analytics semaphore.
+	ds.dataMu.RLock()
+	index := ds.Index
+	ds.dataMu.RUnlock()
+	if index == nil {
 		return nil, fmt.Errorf("index for dataset %s not initialized", datasetName)
 	}
-
-	results := make(map[uint32][]uint32, len(nodeIDs))
-	for _, id := range nodeIDs {
-		neighbors, err := idx.GetRawNeighbors(id)
-		if err != nil {
-			continue // Or log error
+	if err := vs.withAnalyticsSlot(ctx, func() error {
+		for _, id := range nodeIDs {
+			neighbors, err := index.GetRawNeighbors(id)
+			if err != nil {
+				continue
+			}
+			results[id] = neighbors
 		}
-		results[id] = neighbors
+		return nil
+	}); err != nil {
+		return nil, err
 	}
-
 	return results, nil
 }
 

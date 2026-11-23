@@ -86,11 +86,11 @@ func (s *VectorStore) handleAddEdge(body []byte, stream flight.FlightService_DoA
 	}
 
 	// Ensure GraphStore exists
-	ds.dataMu.Lock()
+	s.lockDatasetForWrite(ds)
 	if ds.Graph == nil {
 		ds.Graph = NewGraphStore()
 	}
-	ds.dataMu.Unlock()
+	s.unlockDatasetForWrite(ds)
 
 	edge := Edge{
 		Subject:   VectorID(req.Subject),
@@ -185,15 +185,20 @@ func (s *VectorStore) handleTraverseGraph(body []byte, stream flight.FlightServi
 		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 	}
 
-	ds.dataMu.RLock()
-	if ds.Graph == nil || ds.Graph.EdgeCount() == 0 {
-		ds.dataMu.RUnlock()
-		// Return empty list
+	// Copy the adjacency lists before running the BFS. The traversal holds an
+	// analytics slot instead of the dataset read lock, so ingest and search are
+	// not blocked by a long walk.
+	lease, err := s.beginGraphTraversal(stream.Context(), ds)
+	if err != nil {
+		return analyticsSetupError(err, "graph traversal unavailable")
+	}
+	defer lease.done()
+
+	if lease.graph == nil || (len(lease.graph.adjList) == 0 && len(lease.graph.bwdAdjList) == 0) {
 		emptyJSON, _ := json.Marshal([]Path{})
 		return stream.Send(&flight.Result{Body: emptyJSON})
 	}
-	graph := ds.Graph
-	ds.dataMu.RUnlock()
+	graph := lease.graph
 
 	opts := DefaultTraverseOptions()
 	opts.MaxHops = req.MaxHops
@@ -248,7 +253,7 @@ func (s *VectorStore) handleGetGraphStats(body []byte, stream flight.FlightServi
 		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 	}
 
-	ds.dataMu.RLock()
+	s.lockDatasetForRead(ds)
 	var edgeCount int
 	var nodeCount int
 	var preds []string
@@ -259,13 +264,13 @@ func (s *VectorStore) handleGetGraphStats(body []byte, stream flight.FlightServi
 		// So it's safe to call them without holding ds.dataMu, assuming ds.Graph pointer doesn't change
 		// (which likely doesn't happen often, or we should hold RLock to snag the pointer).
 		g := ds.Graph
-		ds.dataMu.RUnlock()
+		s.unlockDatasetForRead(ds)
 
 		edgeCount = g.EdgeCount()
 		nodeCount = g.NodeCount()
 		preds = g.PredicateVocabulary()
 	} else {
-		ds.dataMu.RUnlock()
+		s.unlockDatasetForRead(ds)
 		preds = []string{}
 	}
 
@@ -348,36 +353,15 @@ func (s *VectorStore) handleCalculatePageRank(body []byte, stream flight.FlightS
 		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 	}
 
-	ds.dataMu.RLock()
-	index := ds.Index
-	ds.dataMu.RUnlock()
-
-	if index == nil {
-		return status.Error(codes.FailedPrecondition, "index not initialized")
+	// Snapshot the HNSW topology under a short dataset read lock; the PageRank
+	// iterations then run on the clone under a bounded analytics slot.
+	lease, err := s.beginGraphAnalytics(stream.Context(), ds)
+	if err != nil {
+		return analyticsSetupError(err, "PageRank not supported for this index type")
 	}
+	defer lease.done()
 
-	// GraphAnalytics works on types.GraphData
-	// We need to extract the graph data from the index
-	var gd *lbtypes.GraphData
-
-	switch h := index.(type) {
-	case interface{ GetData() *lbtypes.GraphData }:
-		gd = h.GetData()
-	case interface{ GetShardedIndex() *ShardedHNSW }:
-		// For sharded, we might need a composite view or run per shard?
-		// PageRank is global. For now, we'll support single-node un-sharded HNSW.
-		sharded := h.GetShardedIndex()
-		if sharded != nil && sharded.NumShards() > 0 {
-			// Fallback: use first shard for now or return error
-			gd = sharded.GetShardIndex(0).(interface{ GetData() *lbtypes.GraphData }).GetData()
-		}
-	}
-
-	if gd == nil {
-		return status.Error(codes.Unimplemented, "PageRank not supported for this index type")
-	}
-
-	ga := NewGraphAnalytics(func() *lbtypes.GraphData { return gd })
+	ga := NewGraphAnalytics(func() *lbtypes.GraphData { return lease.data })
 	config := DefaultPageRankConfig()
 	if req.DampingFactor > 0 {
 		config.DampingFactor = req.DampingFactor
@@ -457,30 +441,15 @@ func (s *VectorStore) handleDetectCommunities(body []byte, stream flight.FlightS
 		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 	}
 
-	ds.dataMu.RLock()
-	index := ds.Index
-	ds.dataMu.RUnlock()
-
-	if index == nil {
-		return status.Error(codes.FailedPrecondition, "index not initialized")
+	// LPA walks the whole layer-0 graph; run it on a clone under the bounded
+	// analytics semaphore rather than holding ds.dataMu.RLock.
+	lease, err := s.beginGraphAnalytics(stream.Context(), ds)
+	if err != nil {
+		return analyticsSetupError(err, "Community detection not supported for this index type")
 	}
+	defer lease.done()
 
-	var gd *lbtypes.GraphData
-	switch h := index.(type) {
-	case interface{ GetData() *lbtypes.GraphData }:
-		gd = h.GetData()
-	case interface{ GetShardedIndex() *ShardedHNSW }:
-		sharded := h.GetShardedIndex()
-		if sharded != nil && sharded.NumShards() > 0 {
-			gd = sharded.GetShardIndex(0).(interface{ GetData() *lbtypes.GraphData }).GetData()
-		}
-	}
-
-	if gd == nil {
-		return status.Error(codes.Unimplemented, "Community detection not supported for this index type")
-	}
-
-	ga := NewGraphAnalytics(func() *lbtypes.GraphData { return gd })
+	ga := NewGraphAnalytics(func() *lbtypes.GraphData { return lease.data })
 	maxIter := req.MaxIterations
 	if maxIter <= 0 {
 		maxIter = 10

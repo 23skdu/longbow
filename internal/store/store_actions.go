@@ -602,6 +602,33 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	case "detect-communities":
 		return s.handleDetectCommunities(action.Body, stream)
 
+	case "TemporalSearch":
+		return s.handleTemporalSearch(action, stream)
+
+	case "TemporalRangeSearch":
+		return s.handleTemporalRangeSearch(action, stream)
+
+	case "TemporalVersionHistory":
+		return s.handleTemporalVersionHistory(action, stream)
+
+	case "TemporalAggregation":
+		return s.handleTemporalAggregation(action, stream)
+
+	case "GraphRAGExpand":
+		return s.handleGraphRAGExpand(action, stream)
+
+	case "Recommend":
+		var req core.RecommendRequest
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+		results, err := s.Recommend(stream.Context(), &req)
+		if err != nil {
+			return status.Errorf(codes.Internal, "recommendation failed: %v", err)
+		}
+		body, _ := json.Marshal(results)
+		return stream.Send(&flight.Result{Body: body})
+
 	case "HybridSearch":
 		var req struct {
 			Dataset    string          `json:"dataset"`

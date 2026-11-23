@@ -150,12 +150,14 @@ func (s *VectorStore) HandleVectorSearchExchange(stream flight.FlightService_DoE
 		ds.dataMu.RUnlock()
 		return status.Errorf(codes.Unavailable, "dataset %s is being evicted", datasetName)
 	}
-	if ds.Index == nil {
-		ds.dataMu.RUnlock()
+	idx := ds.Index
+	ds.dataMu.RUnlock()
+	if idx == nil {
 		return status.Error(codes.FailedPrecondition, "dataset has no index")
 	}
 
-	// Perform Search
+	// Perform Search. The index re-acquires the dataset read lock from parallel
+	// result workers, so it must not be held by this caller.
 	searchOpts := SearchOptions{
 		IncludeVectors: false,
 		Ef:             ef,
@@ -163,8 +165,7 @@ func (s *VectorStore) HandleVectorSearchExchange(stream flight.FlightService_DoE
 		TurboQuantBits: tqb,
 	}
 
-	searchResults, err := ds.Index.SearchVectors(stream.Context(), queryVec, k, nil, searchOpts)
-	ds.dataMu.RUnlock() // Unlock early
+	searchResults, err := idx.SearchVectors(stream.Context(), queryVec, k, nil, searchOpts)
 
 	if err != nil {
 		return status.Errorf(codes.Internal, "search failed: %v", err)

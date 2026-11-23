@@ -123,7 +123,9 @@ func (s *VectorStore) HandleVectorSearchAction(action *flight.Action, stream fli
 				return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
 			}
 
-			// Acquire read lock (SearchHybrid manages its own locks, but here we do it manually)
+			// Acquire read lock for validation, then release before searching.
+			// Index searches re-acquire the dataset read lock from parallel
+			// result workers; holding it here deadlocks with a pending writer.
 			ds.dataMu.RLock()
 			if ds.evicting.Load() {
 				ds.dataMu.RUnlock()
@@ -131,14 +133,16 @@ func (s *VectorStore) HandleVectorSearchAction(action *flight.Action, stream fli
 				return status.Errorf(codes.Unavailable, "dataset %s is being evicted", req.Dataset)
 			}
 
-			if ds.Index == nil {
+			idx := ds.Index
+			graph := ds.Graph
+			if idx == nil {
 				ds.dataMu.RUnlock()
 				metrics.VectorSearchActionErrors.Inc()
 				return status.Error(codes.FailedPrecondition, "dataset has no HNSW index")
 			}
 
 			// Validate dimension
-			expectedDim := ds.Index.GetDimension()
+			expectedDim := idx.GetDimension()
 			actualDim := uint32(len(queryVec)) // #nosec G115
 			dsType := InferVectorDataType(ds.Schema, "vector")
 
@@ -160,10 +164,11 @@ func (s *VectorStore) HandleVectorSearchAction(action *flight.Action, stream fli
 				metrics.VectorSearchActionErrors.Inc()
 				return status.Errorf(codes.InvalidArgument, "dimension mismatch: expected %d, got %d", expectedDim, actualDim)
 			}
+			ds.dataMu.RUnlock()
 
-			// Perform search
+			// Perform search without the dataset lock held.
 			var errSearch error
-			searchResults, errSearch = ds.Index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
+			searchResults, errSearch = idx.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 				FilterExpr:     ParseFilter(req.FilterExpr),
@@ -172,7 +177,6 @@ func (s *VectorStore) HandleVectorSearchAction(action *flight.Action, stream fli
 				TurboQuantBits: req.TurboQuantBits,
 			})
 			if errSearch != nil {
-				ds.dataMu.RUnlock()
 				metrics.VectorSearchActionErrors.Inc()
 				return status.Errorf(codes.Internal, "vector search failed: %v", errSearch)
 			}
@@ -181,25 +185,18 @@ func (s *VectorStore) HandleVectorSearchAction(action *flight.Action, stream fli
 				metrics.VectorSearchEfSearch.Observe(float64(req.EfSearch))
 			}
 
-			// Graph Re-ranking (Standard Path)
-			if req.GraphAlpha > 0 && ds.Graph != nil {
-				// RankWithGraph expects VectorID (internal) which we have here.
-				// It returns expanded set, we might keep it or trim?
-				// SearchHybrid trims at the end. Here we just return what RankWithGraph gives?
-				// But we should probably clamp to K?
-				// RankWithGraph already dedupes.
-				// Note: ds.dataMu is RLocked here, which RankWithGraph expects?
-				// RankWithGraph calls TraverseParallel -> Traverse -> gs.dataMu.RLock().
-				// gs (GraphStore) has its OWN lock. ds.Graph is just a pointer.
-				// So calling it while holding ds.dataMu RLock is safe (assuming no lock inversion).
+			// Graph Re-ranking (Standard Path). GraphStore has its own lock;
+			// no dataset lock is needed while ranking.
+			if req.GraphAlpha > 0 && graph != nil {
 				graphDepth := 2
-				ranked := ds.Graph.RankWithGraph(req.Dataset, req.Vector, searchResults, req.GraphAlpha, graphDepth)
+				ranked := graph.RankWithGraph(req.Dataset, req.Vector, searchResults, req.GraphAlpha, graphDepth)
 				if len(ranked) > 0 {
 					searchResults = ranked
 				}
 			}
 
-			// Map internal IDs to User IDs
+			// Map internal IDs to User IDs under the dataset lock.
+			ds.dataMu.RLock()
 			searchResults = s.mapInternalToUserIDsLocked(ds, searchResults)
 			ds.dataMu.RUnlock()
 		}

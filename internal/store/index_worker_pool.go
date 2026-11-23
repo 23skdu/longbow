@@ -165,7 +165,9 @@ func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
 
 				if qLen > 100 && currWorkers < maxWorkers {
 					s.StartIngestionWorkers(1)
-					return
+					// Stay alive: a single scale-up must not terminate the
+					// autoscaler before it can later scale back down.
+					continue
 				}
 				pending, waiters := s.pendingScaleDownWork()
 				if CanScaleDownIngestion(pending, waiters, currWorkers, MinIngestionWorkers) && qLen == 0 {
@@ -177,12 +179,13 @@ func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
 }
 
 // pendingScaleDownWork returns the job backlog and dataset-lock waiter count
-// used by both worker-pool autoscalers. A lock waiter is a real busy signal:
-// during a shared-namespace convoy the job counters can be empty while callers
-// are still blocked on a dataset lock.
+// used by both worker-pool autoscalers. The backlog includes queued index jobs
+// in addition to in-flight per-dataset counters. A lock waiter is a real busy
+// signal: during a shared-namespace convoy the job counters can be empty while
+// callers are still blocked on a dataset lock.
 func (s *VectorStore) pendingScaleDownWork() (pending, waiters int64) {
 	waiters = s.datasetLockWaiters.Load()
-	pending = s.pendingOverflowJobs.Load()
+	pending = s.pendingOverflowJobs.Load() + int64(s.TotalIndexQueueDepth())
 	if datasets := s.datasets.Load(); datasets != nil {
 		for _, ds := range *datasets {
 			if ds == nil {
@@ -337,9 +340,9 @@ func (s *VectorStore) runIndexWorker(ctx context.Context, workerNodeIDs ...int) 
 
 				var docIDs []uint32
 				var addErr error
-				ds.dataMu.RLock()
+				s.lockDatasetForRead(ds)
 				idx := ds.Index
-				ds.dataMu.RUnlock()
+				s.unlockDatasetForRead(ds)
 
 				if idx != nil {
 					if adaptive, ok := idx.(interface{ SetEfConstruction(int) }); ok && !DeterministicIngestEnabled() {
@@ -400,7 +403,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context, workerNodeIDs ...int) 
 						if len(stringCols) > 0 {
 							invIndexes := make(map[int]*InvertedIndex)
 
-							ds.dataMu.Lock()
+							s.lockDatasetForWrite(ds)
 							if ds.InvertedIndexes == nil {
 								ds.InvertedIndexes = make(map[string]*InvertedIndex)
 							}
@@ -413,7 +416,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context, workerNodeIDs ...int) 
 								}
 								invIndexes[colIdx] = invIdx
 							}
-							ds.dataMu.Unlock()
+							s.unlockDatasetForWrite(ds)
 
 							for r := 0; r < numRows; r++ {
 								docID := docIDs[docIDIdx]

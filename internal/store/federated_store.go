@@ -31,17 +31,17 @@ func (a *storeDatasetSearcher) GetDimension() int {
 	if !ok {
 		return 0
 	}
-	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
+	a.store.lockDatasetForRead(ds)
+	defer a.store.unlockDatasetForRead(ds)
 	if ds.Index == nil {
 		return 0
 	}
 	return int(ds.Index.GetDimension())
 }
 
-func datasetCollectionMetrics(ds *Dataset) (vecCount, dim int) {
-	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
+func datasetCollectionMetrics(s *VectorStore, ds *Dataset) (vecCount, dim int) {
+	s.lockDatasetForRead(ds)
+	defer s.unlockDatasetForRead(ds)
 	if ds.Index != nil {
 		vecCount = ds.Index.Len()
 		dim = int(ds.Index.GetDimension())
@@ -49,26 +49,49 @@ func datasetCollectionMetrics(ds *Dataset) (vecCount, dim int) {
 	return vecCount, dim
 }
 
-// syncDatasetToFederatedRouter ensures live store datasets are indexed in the federated router.
+// syncDatasetToFederatedRouter reconciles store-owned federated collections
+// with the live dataset map. Deleted datasets are removed, recreated datasets
+// get a fresh searcher, and existing registrations have their metrics
+// refreshed. All expensive work happens before any map publication, so
+// searches never wait for a full resync under an exclusive router lock.
 func (s *VectorStore) syncDatasetToFederatedRouter(router *FederatedQueryRouter, names []string) {
+	live := make(map[string]struct{}, len(names))
 	for _, name := range names {
 		ds, ok := s.getDataset(name)
-		if !ok {
+		if !ok || ds == nil {
 			continue
 		}
-		// Skip if already registered to avoid taking the router lock on every search.
-		router.mu.RLock()
-		_, exists := router.searchers[name]
-		router.mu.RUnlock()
-		if exists {
-			continue
+		live[name] = struct{}{}
+
+		vecCount, dim := datasetCollectionMetrics(s, ds)
+		searcher, registered := router.searcherFor(name)
+		if storeSearcher, ok := searcher.(*storeDatasetSearcher); !registered || !ok || storeSearcher.store != s || storeSearcher.dataset != name {
+			searcher = &storeDatasetSearcher{store: s, dataset: name}
 		}
-		vecCount, dim := datasetCollectionMetrics(ds)
-		router.UpsertCollection(name, &storeDatasetSearcher{store: s, dataset: name}, &CollectionInfo{
+		router.RefreshCollection(name, searcher, &CollectionInfo{
 			Name:        name,
 			Dimension:   dim,
 			VectorCount: vecCount,
 		})
+	}
+
+	// Drop registrations whose dataset disappeared. Only collections owned by
+	// this store are removed; externally registered searchers are left alone.
+	for _, info := range router.ListCollections() {
+		if info == nil {
+			continue
+		}
+		if _, ok := live[info.Name]; ok {
+			continue
+		}
+		searcher, ok := router.searcherFor(info.Name)
+		if !ok {
+			continue
+		}
+		storeSearcher, ok := searcher.(*storeDatasetSearcher)
+		if ok && storeSearcher.store == s {
+			router.RemoveCollection(info.Name)
+		}
 	}
 }
 
@@ -88,9 +111,10 @@ func (s *VectorStore) FederatedSearch(ctx context.Context, collections, tags []s
 
 	router := s.GetFederatedRouter()
 	active := s.GetActiveDatasets()
-	// Only re-sync when the store has changed since last sync, to avoid
-	// taking the router/dataset locks on every search.
-	if s.federatedDirty.Load() > 0 || router.SearcherCount() == 0 {
+	// Only re-sync when the store has changed or a recreated dataset is
+	// missing. Searcher lookup uses a COW snapshot, so the sync never holds an
+	// exclusive lock while searches are in flight.
+	if s.federatedDirty.Load() > 0 || router.SearcherCount() == 0 || router.hasMissingCollection(active) {
 		s.syncDatasetToFederatedRouter(router, active)
 		s.federatedDirty.Store(0)
 	}
@@ -184,7 +208,7 @@ func (s *VectorStore) handleFederatedAction(action *flight.Action, stream flight
 		vecCount := 0
 		dim := 0
 		if ok {
-			vecCount, dim = datasetCollectionMetrics(ds)
+			vecCount, dim = datasetCollectionMetrics(s, ds)
 		}
 		info := &CollectionInfo{
 			Name:        name,

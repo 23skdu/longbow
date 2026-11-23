@@ -193,7 +193,7 @@ func permissionAndDatasetForAction(action *flight.Action) (Permission, string) {
 		"traverse-graph", "GetGraphStats", "calculate-pagerank", "detect-communities",
 		"GraphRAGExpand", "ListNamespaces", "ListDatasetsInNamespace", "ExplainSearch", "DebugSearchPath",
 		"SearchFacets", "SearchAnalytics", "AdvancedTextSearch", "QueryMaterializedView", "ListMaterializedViews", "GetProvenance",
-		"Rerank", "RewriteQuery", "EvaluateReranker", "MultiModalSearch", "ValidateSchema", "GetSchemaRegistry", "GetTenantUsage",
+		"Rerank", "RewriteQuery", "EvaluateReranker", "Recommend", "MultiModalSearch", "ValidateSchema", "GetSchemaRegistry", "GetTenantUsage",
 		"ListStreamConnectors", "GetStreamStats", "GetCloudCluster", "ListCloudClusters", "GetCloudSLAReport",
 		"GraphQLQuery":
 		return PermRead, target
@@ -211,7 +211,7 @@ func permissionAndDatasetForAction(action *flight.Action) (Permission, string) {
 		"CreateStreamConnector", "StopStreamConnector", "RegisterStreamSchema", "TuneBM25", "MigrateSchema",
 		"CreateCloudCluster", "ScaleCloudCluster", "AddReplicaRegion", "PromoteClusterRegion", "DeleteCloudCluster":
 		return PermManageTenant, target
-	case "GetAuditLog", "ReplicateWAL", "cluster-status", "MeshIdentity", "MeshStatus", "DiscoveryStatus",
+	case "GetAuditLog", "GetAuditDenialCounts", "ReplicateWAL", "cluster-status", "MeshIdentity", "MeshStatus", "DiscoveryStatus",
 		"GetAutoScaleConfig", "SetAutoScaleConfig", "TriggerShardSplit", "TriggerShardMerge",
 		"TriggerRebalance", "GetClusterTopology",
 		"ListOIDCProviders", "AddOIDCProvider", "RemoveOIDCProvider":
@@ -345,6 +345,18 @@ func (s *VectorStore) handleRBACAction(action *flight.Action, stream flight.Flig
 		}
 		entries := s.AuditLogger().RecentEntries(req.Limit)
 		body, _ := json.Marshal(map[string]any{"entries": entries})
+		return true, stream.Send(&flight.Result{Body: body})
+
+	case "GetAuditDenialCounts":
+		if _, err := s.AuthorizeDatasetAccess(ctx, PermAdmin, ""); err != nil {
+			return true, err
+		}
+		counts := s.AuditLogger().DenialCounts()
+		total := 0
+		for _, n := range counts {
+			total += n
+		}
+		body, _ := json.Marshal(map[string]any{"counts": counts, "total": total})
 		return true, stream.Send(&flight.Result{Body: body})
 
 	case "ListOIDCProviders":

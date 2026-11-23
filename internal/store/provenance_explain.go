@@ -189,12 +189,18 @@ func (pm *ProvenanceManager) ExplainSearch(ctx context.Context, req ExplainSearc
 			return nil, fmt.Errorf("dataset %q not found", req.Dataset)
 		}
 		ds.dataMu.RLock()
-		if ds.Index != nil {
-			indexType = ds.Index.GetIndexType()
-			entryPoint = ds.Index.GetEntryPoint()
+		idx := ds.Index
+		if idx != nil {
+			indexType = idx.GetIndexType()
+			entryPoint = idx.GetEntryPoint()
+		}
+		ds.dataMu.RUnlock()
+		if idx != nil {
 			if len(req.Vector) > 0 {
-				denseRes, _ = ds.Index.SearchVectors(ctx, req.Vector, req.K, nil, SearchOptions{})
-				hops = traceIndexHops(ds.Index, entryPoint, denseRes, req.MaxHops)
+				// The index re-acquires the dataset read lock from parallel
+				// result workers, so call it without the caller's lock held.
+				denseRes, _ = idx.SearchVectors(ctx, req.Vector, req.K, nil, SearchOptions{})
+				hops = traceIndexHops(idx, entryPoint, denseRes, req.MaxHops)
 			}
 			userIDs = make(map[core.VectorID]string, len(denseRes))
 			for _, r := range denseRes {
@@ -207,7 +213,6 @@ func (pm *ProvenanceManager) ExplainSearch(ctx context.Context, req ExplainSearc
 				}
 			}
 		}
-		ds.dataMu.RUnlock()
 	}
 
 	// Sparse BM25 contribution if TextQuery specified

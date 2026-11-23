@@ -88,12 +88,10 @@ func (s *DataServer) GetSchema(ctx context.Context, desc *flight.FlightDescripto
 	return result, types.ToGRPCStatus(err)
 }
 
-// DoAction handles actions on DataServer. Supports VectorSearch for data plane.
+// DoAction handles actions on DataServer. All actions, including VectorSearch,
+// go through the backing store's central DoAction so RBAC authorization is
+// never bypassed on the data plane.
 func (s *DataServer) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	if action != nil && action.Type == "VectorSearch" {
-		return s.HandleVectorSearchAction(action, stream)
-	}
-	// Delegate to base VectorStore for other actions (like "delete", "cluster-status")
 	return s.FlightBackend.DoAction(action, stream)
 }
 

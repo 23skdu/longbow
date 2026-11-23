@@ -79,13 +79,15 @@ func (s *VectorStore) executeInternalSearch(ctx context.Context, req *qry.Vector
 	}
 
 	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
-
-	if ds.Index == nil {
+	idx := ds.Index
+	ds.dataMu.RUnlock()
+	if idx == nil {
 		return nil, fmt.Errorf("index not initialized for %s", req.Dataset)
 	}
 
-	res, err := ds.Index.SearchVectors(ctx, queryVec, req.K, req.Filters, SearchOptions{
+	// The index re-acquires the dataset read lock from parallel result workers;
+	// holding the caller's read lock here can deadlock with a pending writer.
+	res, err := idx.SearchVectors(ctx, queryVec, req.K, req.Filters, SearchOptions{
 		IncludeVectors: req.IncludeVectors,
 		VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 		FilterExpr:     ParseFilter(req.FilterExpr),
@@ -94,7 +96,10 @@ func (s *VectorStore) executeInternalSearch(ctx context.Context, req *qry.Vector
 		return nil, err
 	}
 
-	return s.mapInternalToUserIDsLocked(ds, res), nil
+	ds.dataMu.RLock()
+	res = s.mapInternalToUserIDsLocked(ds, res)
+	ds.dataMu.RUnlock()
+	return res, nil
 }
 
 func (s *VectorStore) executeInternalTicket(ctx context.Context, query *qry.TicketQuery) ([]types.SearchResult, error) {

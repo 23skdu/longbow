@@ -110,7 +110,7 @@ type TemporalIndex struct {
 	ingestScratch       []temporalIngestTask
 	ingestWorkerRunning bool
 	ingestClosed        bool
-	ingestWg            sync.WaitGroup
+	workerDone          chan struct{}
 	asyncIngest         atomic.Bool
 	closed              atomic.Bool
 }
@@ -234,14 +234,15 @@ func (ti *TemporalIndex) SetAsyncIngestion(async bool) {
 		return
 	}
 	ti.asyncIngest.Store(async)
+	done := ti.workerDone
 	ti.ingestMu.Unlock()
-	if !async {
-		ti.ingestWg.Wait()
+	if !async && done != nil {
+		<-done
 	}
 }
 
 func (ti *TemporalIndex) dispatchTreeTask(task temporalIngestTask) {
-	if ti.asyncIngest.Load() && ti.enqueueAsyncTask(task) {
+	if ti.enqueueAsyncTask(task) {
 		return
 	}
 	ti.applyTreeTask(task)
@@ -256,8 +257,9 @@ func (ti *TemporalIndex) enqueueAsyncTask(task temporalIngestTask) bool {
 	ti.ingestQueue = append(ti.ingestQueue, task)
 	if !ti.ingestWorkerRunning {
 		ti.ingestWorkerRunning = true
-		ti.ingestWg.Add(1)
-		go ti.runIngestWorker()
+		done := make(chan struct{})
+		ti.workerDone = done
+		go ti.runIngestWorker(done)
 	}
 	ti.ingestMu.Unlock()
 	return true
@@ -280,14 +282,21 @@ func (ti *TemporalIndex) applyTreeTask(task temporalIngestTask) {
 
 // runIngestWorker drains queued tree updates on demand and exits once empty so
 // idle TemporalIndex instances keep zero background goroutines.
-func (ti *TemporalIndex) runIngestWorker() {
-	defer ti.ingestWg.Done()
-	for {
+func (ti *TemporalIndex) runIngestWorker(done chan struct{}) {
+	defer func() {
 		ti.ingestMu.Lock()
-		if len(ti.ingestQueue) == 0 {
+		if ti.workerDone == done {
 			ti.ingestWorkerRunning = false
 			ti.ingestQueue = nil
 			ti.ingestScratch = nil
+			ti.workerDone = nil
+		}
+		ti.ingestMu.Unlock()
+		close(done)
+	}()
+	for {
+		ti.ingestMu.Lock()
+		if len(ti.ingestQueue) == 0 {
 			ti.ingestMu.Unlock()
 			return
 		}
@@ -303,9 +312,6 @@ func (ti *TemporalIndex) runIngestWorker() {
 
 		ti.ingestMu.Lock()
 		if len(ti.ingestQueue) == 0 {
-			ti.ingestWorkerRunning = false
-			ti.ingestQueue = nil
-			ti.ingestScratch = nil
 			ti.ingestMu.Unlock()
 			return
 		}
@@ -318,8 +324,11 @@ func (ti *TemporalIndex) stopIngestWorker() {
 	ti.ingestMu.Lock()
 	ti.ingestClosed = true
 	ti.asyncIngest.Store(false)
+	done := ti.workerDone
 	ti.ingestMu.Unlock()
-	ti.ingestWg.Wait()
+	if done != nil {
+		<-done
+	}
 }
 
 // Add inserts a new vector with a timestamp into the temporal index.

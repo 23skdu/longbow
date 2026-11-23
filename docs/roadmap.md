@@ -16,43 +16,9 @@ Federation, durable secret storage, 100% godoc coverage, 100% package-level
 unit/fuzz coverage, the module-size guardrail, and the observability, accuracy,
 oracle, search, and soak gates must remain green while this work proceeds.
 
-Two P0 items block release: unbounded off-heap retention in index lifecycles and
-encryption of remote backups. Local WAL, spill, and snapshot files are already
-encrypted, but remote backup objects still need an explicit encryption contract.
-
-## P0 — Stop off-heap arena retention in HNSW index lifecycles
-
-A full `internal/store/engine` test-binary run currently retains off-heap memory
-across independent tests. `globalOffHeap` grows from roughly 0.5 GB at startup to
-over 15 GB by the end of the run, and peak RSS reaches about 17.6 GB. Later fuzz
-targets then spend most of their time under memory pressure and can be killed even
-though their own seed inputs are small; this is a release blocker, not a test
-tuning problem. Traces point to arena-backed graph/adjacency allocations whose
-`SlabArena`/`TypedArena` references survive index close, snapshot replacement, and
-dataset drop, plus a secondary bug where kilobyte-scale scratch arenas were
-promoted to 4 MB off-heap slabs.
-
-Deliverables:
-
-- Audit and fix reference-counted release for `GraphData`, `PackedNeighbors` /
-  `FlatAdjacency`, `TypedArena`, and `SlabArena`, including `ArrowHNSW.Close`,
-  dataset drop, graph snapshot replacement, and short-lived analytics clones.
-  Every arena must be freed exactly once, with no use-after-free for readers that
-  already acquired a snapshot reference.
-- Keep small scratch allocations on the Go heap at their requested size instead of
-  promoting them into the global 4 MB off-heap slab pools, and add regression tests
-  proving small arenas do not grow the pools.
-- Add memory-lifecycle tests that repeatedly create, search, snapshot, and close
-  HNSW indexes and assert `globalOffHeap` and pool active counts return to their
-  pre-test baselines.
-- Add a bounded-memory gate for the full engine package to release verification so
-  later fuzz targets cannot inherit gigabytes of retained state. Do not mask the
-  problem by skipping fuzz targets, shrinking the benchmark matrix, or raising
-  resource limits.
-
-Exit criterion: repeated HNSW index lifecycles leave off-heap and RSS flat, the
-full engine package completes under its memory budget without OOM/kill, and fuzz
-targets see only their own working set.
+The active P0 item protects data after it leaves the process boundary. Local WAL,
+spill, and snapshot files are already encrypted, but remote backup objects still
+need an explicit encryption contract.
 
 ## P0 — Encrypt S3 and GCS backups and snapshots at rest
 

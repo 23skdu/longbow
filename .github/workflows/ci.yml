@@ -609,6 +609,23 @@ jobs:
             artifacts/soak-oidc.server.log
           if-no-files-found: warn
 
+  engine-memory-gate:
+    name: Engine Bounded Memory Gate
+    needs: [validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Run bounded-memory engine release gate
+        run: make mem-engine-gate
+
   # Release container platform policy:
   #   * Dockerfile.cpu and Dockerfile.emlgo-cpu use golang:1.27.4-bookworm +
   #     scratch and publish linux/amd64 AND linux/arm64 multi-arch manifests.
@@ -623,7 +640,7 @@ jobs:
   # publishes only with `publish: true`. PRs/default dispatch stay build-only.
   release-containers:
     name: Build (and optionally publish) Release Containers
-    needs: [validate, security, observability, helm-and-docs, oidc-federation-security, rbac-enforcement, soak-quick, emulation]
+    needs: [validate, security, observability, helm-and-docs, oidc-federation-security, rbac-enforcement, soak-quick, engine-memory-gate, emulation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -985,7 +1002,7 @@ jobs:
 
   release-darwin-arm64:
     name: Release Darwin ARM64 Artifacts
-    needs: [validate, macos-15-verify, darwin-arm64-verify, soak-quick, emulation]
+    needs: [validate, macos-15-verify, darwin-arm64-verify, soak-quick, engine-memory-gate, emulation]
     runs-on: macos-15
     steps:
       - name: Checkout repository

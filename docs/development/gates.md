@@ -4,7 +4,7 @@
 
 Longbow enforces a strict, defense-in-depth quality and verification architecture. Because Longbow operates as an ultra-high-throughput vector database and analytical query engine leveraging hardware-accelerated SIMD kernels (AVX2, AVX-512, ARM Neon, Metal, and CUDA), traditional unit testing alone is insufficient. Code changes can introduce subtle floating-point precision drifts, algorithmic divergence between CPU and GPU kernels, memory leaks in unmanaged memory allocations, or unbounded resource consumption.
 
-To guarantee zero regressions in correctness, performance, security, and stability, all contributions are subject to fifteen formal **Code Gates**. These gates are codified in local developer tooling ([`Makefile`](https://github.com/23skdu/longbow/blob/main/Makefile)), automated Git pre-commit hooks ([`scripts/verify.sh`](https://github.com/23skdu/longbow/blob/main/scripts/verify.sh), invoked by [`scripts/pre-commit.sh`](https://github.com/23skdu/longbow/blob/main/scripts/pre-commit.sh)), and the consolidated CI pipeline ([`.github/workflows/ci.yml`](https://github.com/23skdu/longbow/blob/main/.github/workflows/ci.yml)).
+To guarantee zero regressions in correctness, performance, security, and stability, all contributions are subject to sixteen formal **Code Gates**. These gates are codified in local developer tooling ([`Makefile`](https://github.com/23skdu/longbow/blob/main/Makefile)), automated Git pre-commit hooks ([`scripts/verify.sh`](https://github.com/23skdu/longbow/blob/main/scripts/verify.sh), invoked by [`scripts/pre-commit.sh`](https://github.com/23skdu/longbow/blob/main/scripts/pre-commit.sh)), and the consolidated CI pipeline ([`.github/workflows/ci.yml`](https://github.com/23skdu/longbow/blob/main/.github/workflows/ci.yml)).
 
 ---
 
@@ -324,6 +324,22 @@ make soak-quick
 
 ---
 
+### Gate 16: Engine Bounded Memory Gate
+
+- **Identifier**: `mem-engine-gate`
+- **Enforcement Tool**: `make mem-engine-gate`, [`scripts/check_engine_memory.sh`](https://github.com/23skdu/longbow/blob/main/scripts/check_engine_memory.sh), CI `engine-memory-gate` job
+- **Command**:
+
+```bash
+make mem-engine-gate
+```
+
+- **Description**:
+  - Verifies small-slab Go-heap placement (`TestGetSlab_SmallCapacityUsesHeap`, `TestSlabArena_SmallSlabDoesNotGrowPool`), graph analytics isolation (`TestCloneForAnalyticsDoesNotAllocateArenas`), and repeated HNSW/`VectorStore` off-heap lifecycle flatness (`TestP0_ArrowHNSW_OffHeapLifecycleBounded`, `TestP0_VectorStore_SnapshotLifecycleBounded`).
+  - Compiles and runs the full `internal/store/engine` test binary (all unit, integration, scalability, and fuzz seeds, without `-short`) and enforces `LONGBOW_ENGINE_MAX_RSS_KB` (4 GiB default) with zero stray `*_vectors.bin` working-tree artifacts.
+
+---
+
 ## 4. Gate Execution Matrix
 
 | Gate | Name | Pre-Commit Hook | Local `make ci` | CI Pipeline (`ci.yml`) | Target Makefile Rule |
@@ -343,6 +359,7 @@ make soak-quick
 | **13** | Search Modes Accuracy & Perf Gate | **Yes** | **Yes** | **Yes** | `make search-gate` |
 | **14** | Module Size Guardrail | **Yes** (staged) | **Yes** | **Yes** | `make module-size-check` |
 | **15** | Bounded Soak & Stall Detection | No | **Yes** (`make soak-quick`) | **Yes** (`soak-quick`) | `make soak-quick`, `make soak-ci` |
+| **16** | Engine Bounded Memory Gate | No | **Yes** (`make release`) | **Yes** (`engine-memory-gate`) | `make mem-engine-gate` |
 
 ---
 

@@ -26,7 +26,7 @@ IMAGE_TAG     ?= $(TAG)
 .PHONY: all help ci release build build-release build-debug build-race build-adbc build-bench build-verify build-wasm-client clean \
 	deps deps-upgrade lint lint-fast lint-fix lint-docs actionlint lint-workflows install-tools godoc-check vet staticcheck deadcode fmt fmt-check gosec govulncheck trivy checkov \
 	security sec sec-gosec sec-vulncheck sec-audit \
-	perf perf-check cpu-profile profile-check mem mem-check mem-bench mem-escape mem-profile mem-asan mem-valgrind \
+	perf perf-check cpu-profile profile-check mem mem-check mem-engine-gate mem-bench mem-escape mem-profile mem-asan mem-valgrind \
 	fuzz test-fuzz fuzz-coverage \
 	test test-short test-all test-wasm test-features race test-coverage coverage-gate coverage-html test-docker \
 	test-adbc test-adbc-python test-adbc-so test-version \
@@ -82,6 +82,7 @@ help:
 	@echo "  cpu-profile          Generate CPU profile (cpu.out) from index/SIMD workloads"
 	@echo "  profile-check        Run combined CPU and heap memory profiling check"
 	@echo "  mem-check            Run memory allocation benchmark & escape analysis check"
+	@echo "  mem-engine-gate      Run bounded-memory gate for HNSW lifecycles and full engine package"
 	@echo "  mem-bench            Run memory allocation benchmarks (-benchmem)"
 	@echo "  mem-escape           Analyze compiler escape analysis and inlining decisions"
 	@echo "  mem-profile          Run tests with memory and CPU profiling enabled"
@@ -394,6 +395,10 @@ mem-check: mem-escape
 	@echo "Running bounded memory allocation check..."
 	$(GO) test -short -run='^$$' -bench='BenchmarkSlabArena|BenchmarkEuclidean' -benchtime=50ms -benchmem ./internal/memory/ ./internal/simd/
 
+mem-engine-gate:
+	@echo "Running bounded-memory gate for HNSW lifecycles and full engine package..."
+	./scripts/check_engine_memory.sh
+
 mem-bench:
 	@echo "Running memory allocation benchmarks..."
 	$(GO) test -short -run='^$$' -bench=. -benchtime=50ms -benchmem ./internal/store/... ./internal/simd/... ./internal/memory/...
@@ -696,7 +701,7 @@ docker-build-emlgo-nvidia:
 docker-build-all: docker-build-cpu docker-build-cpu-arm64 docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-cpu-arm64 docker-build-emlgo-nvidia
 	@echo "All Docker container images built successfully (including linux/arm64 CPU variants)."
 
-release: ci check-version build-release build-adbc soak-ci
+release: ci check-version build-release build-adbc mem-engine-gate soak-ci
 	@echo "=========================================================="
 	@echo " ✓ Release build and verification completed successfully!"
 	@echo "=========================================================="

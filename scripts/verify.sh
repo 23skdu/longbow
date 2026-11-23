@@ -87,12 +87,12 @@ echo "    ✓ Gate 5 passed: All numerical precision tolerances and backends val
 
 # 6. Ground-Truth Oracle Parity Gate
 echo "--> Gate 6/8: Running Oracle Gate (Ground-Truth Parity vs Reference Oracles)..."
-go test -v ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/ -run='Parity'
+go test -v ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/... -run='Parity'
 echo "    ✓ Gate 6 passed: All implementations match ground-truth reference oracles."
 
 # 7. Search Modes Accuracy & Performance Regression Gate
 echo "--> Gate 7/8: Running Search Modes Gate (21 search types accuracy & latency)..."
-go test -short -count=1 ./internal/store -run='^TestSearchModesGate$'
+go test -short -count=1 ./internal/store/... -run='^TestSearchModesGate$'
 echo "    ✓ Gate 7 passed: All 21 search types passed accuracy and latency gates."
 
 # 8. Release Version Consistency Gate

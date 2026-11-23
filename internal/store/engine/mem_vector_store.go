@@ -1,0 +1,211 @@
+package engine
+
+import (
+	"errors"
+	"sync"
+
+	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
+)
+
+// MemStoreOptions defines configuration options for the MemVectorStore.
+type MemStoreOptions struct {
+	UseArena   bool
+	UseOffHeap bool
+	Dim        int
+}
+
+// MemVectorStore is an in-memory vector storage engine.
+// It supports both legacy [][]float32 and optimized SlabArena storage.
+type MemVectorStore struct {
+	mu       sync.RWMutex
+	useArena bool
+	dim      int
+
+	// Legacy storage
+	vectors map[string][]float32
+
+	// Arena storage
+	baseArena  *memory.SlabArena
+	floatArena *memory.TypedArena[float32]
+	indices    map[string]memory.SliceRef
+
+	// Tombstone deletion - mark keys as deleted without freeing memory
+	// This matches ArrowHNSW's approach for consistency across store types
+	deleted map[string]bool
+}
+
+// NewMemVectorStore creates a new in-memory vector store with the provided options.
+func NewMemVectorStore(opts MemStoreOptions) (*MemVectorStore, error) {
+	ms := &MemVectorStore{
+		useArena: opts.UseArena || opts.UseOffHeap,
+		dim:      opts.Dim,
+		vectors:  make(map[string][]float32),
+		indices:  make(map[string]memory.SliceRef),
+		deleted:  make(map[string]bool),
+	}
+
+	if opts.UseOffHeap {
+		alloc := memory.NewOffHeapAllocator()
+		ms.baseArena = memory.NewSlabArenaWithAllocator(1024*1024*64, alloc)
+		ms.floatArena = memory.NewTypedArena[float32](ms.baseArena)
+	} else if opts.UseArena {
+		ms.baseArena = memory.NewSlabArena(1024 * 1024 * 64)
+		ms.floatArena = memory.NewTypedArena[float32](ms.baseArena)
+	}
+
+	return ms, nil
+}
+
+// Set stores a vector in the memory store under the given key.
+func (ms *MemVectorStore) Set(key string, vec []float32) error {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	if ms.dim > 0 && len(vec) != ms.dim {
+		return errors.New("vector dimension mismatch")
+	}
+
+	if ms.useArena {
+		// Check for overwrite to track metrics accurately
+		_, exists := ms.indices[key]
+
+		// AllocSlice
+		ref, err := ms.floatArena.AllocSlice(len(vec))
+		if err != nil {
+			return err
+		}
+
+		metrics.ArenaAllocationTotal.Inc()
+		metrics.ArenaBytesAllocated.Add(float64(len(vec) * 4))
+
+		// Copy data
+		dest := ms.floatArena.Get(ref)
+		if dest == nil || len(dest) != len(vec) {
+			return errors.New("allocated slice invalid")
+		}
+		copy(dest, vec)
+
+		ms.indices[key] = ref
+
+		if ms.baseArena.IsOffHeap() {
+			metrics.ArenaOffHeapBytes.Add(float64(len(vec) * 4))
+		}
+
+		if !exists {
+			metrics.StoreVectorsManagedCount.Inc()
+		}
+	} else {
+		// Legacy
+		vCopy := make([]float32, len(vec))
+		copy(vCopy, vec)
+		ms.vectors[key] = vCopy
+	}
+	return nil
+}
+
+// Get retrieves a vector from the memory store by its key.
+func (ms *MemVectorStore) Get(key string) ([]float32, bool) {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+
+	if ms.useArena {
+		ref, ok := ms.indices[key]
+		if !ok {
+			return nil, false
+		}
+		// Return a copy? Or view?
+		// Usually stores return view for zero-copy read.
+		// But SliceRef data is volatile if we supported compaction (we don't yet).
+		// For safety in this high-level API, let's return copy or view?
+		// Test expects `assert.Equal(t, vec, out)`.
+		// Let's return view for performance (Zero-Copy Goal).
+		return ms.floatArena.Get(ref), true
+	}
+
+	vec, ok := ms.vectors[key]
+	return vec, ok
+}
+
+// Delete marks a vector as deleted via tombstone (consistent with ArrowHNSW).
+// Returns true if the key existed and was marked deleted, false otherwise.
+func (ms *MemVectorStore) Delete(key string) bool {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	if ms.useArena {
+		_, ok := ms.indices[key]
+		if !ok {
+			return false
+		}
+		ms.deleted[key] = true
+		metrics.StoreVectorsManagedCount.Dec()
+		return true
+	}
+
+	_, ok := ms.vectors[key]
+	if ok {
+		ms.deleted[key] = true
+		delete(ms.vectors, key)
+		metrics.StoreVectorsManagedCount.Dec()
+		return true
+	}
+	return false
+}
+
+// DeleteBatch marks multiple vectors as deleted via tombstone.
+// Returns the count of successfully deleted vectors.
+func (ms *MemVectorStore) DeleteBatch(keys []string) int {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	deleted := 0
+	if ms.useArena {
+		for _, key := range keys {
+			if _, ok := ms.indices[key]; ok {
+				ms.deleted[key] = true
+				delete(ms.indices, key)
+				deleted++
+			}
+		}
+	} else {
+		for _, key := range keys {
+			if _, ok := ms.vectors[key]; ok {
+				ms.deleted[key] = true
+				delete(ms.vectors, key)
+				deleted++
+			}
+		}
+	}
+
+	metrics.StoreVectorsManagedCount.Add(float64(-deleted))
+	return deleted
+}
+
+// IsDeleted checks if a key is marked as deleted.
+func (ms *MemVectorStore) IsDeleted(key string) bool {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.deleted[key]
+}
+
+// Close releases all resources associated with the memory store.
+func (ms *MemVectorStore) Close() error {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	if ms.baseArena != nil {
+		if ms.baseArena.IsOffHeap() {
+			// We subtract the used bytes from the global metric
+			// Note: ArenaAllocatedBytes handles slab-level tracking, but ArenaOffHeapBytes is for vector-level visibility
+			// For simplicity, we just reset it or subtract if we tracked it per allocation
+			// Let's use the arena stats to be precise.
+			ms.baseArena.Release()
+			metrics.ArenaOffHeapBytes.Add(0) // Just to ensure it's initialized if needed, but we don't have a global "total" we can easily subtract without tracking.
+			// Actually, let's just let the Release handle its own slab metrics and we focus on vector tracking.
+		} else {
+			ms.baseArena.Release()
+		}
+	}
+	return nil
+}

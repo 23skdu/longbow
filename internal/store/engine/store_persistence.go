@@ -1,0 +1,256 @@
+package engine
+
+import (
+	"github.com/23skdu/longbow/internal/store/wal"
+
+	"bytes"
+	"fmt"
+	"time"
+
+	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/storage"
+	"github.com/apache/arrow-go/v18/arrow"
+)
+
+// InitPersistence initializes the storage layer, replays Write-Ahead Log (WAL), and loads snapshots for disaster recovery.
+func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+
+	if s.engine.Load() != nil {
+		return fmt.Errorf("persistence already initialized")
+	}
+
+	// 1. Initialize Storage Engine
+	engine, err := storage.NewStorageEngine(cfg, s.mem)
+	if err != nil {
+		return fmt.Errorf("failed to create storage engine: %w", err)
+	}
+	s.engine.Store(engine)
+	s.dataPath = cfg.DataPath
+
+	// 2. Initialize WAL (and Batcher)
+	if err := engine.InitWAL(); err != nil {
+		return fmt.Errorf("failed to initialize WAL: %w", err)
+	}
+
+	// 2.5 Initialize WAL Replicator for HA if Mesh is active
+	if s.Mesh != nil {
+		replicator := wal.NewFlightWALReplicator(s.pool, s.Mesh)
+		engine.SetReplicator(replicator)
+	}
+
+	// 3. Load Snapshots first (Establish baseline dataset state & records)
+	err = engine.LoadSnapshots(s.loadSnapshotItem)
+	if err != nil {
+		return fmt.Errorf("failed to load snapshots: %w", err)
+	}
+
+	// 4. Replay WAL on top of restored baseline
+	maxSeq, err := engine.ReplayWAL(s.applyReplayBatch)
+	if err != nil {
+		return fmt.Errorf("failed to replay WAL: %w", err)
+	}
+	s.sequence.Store(maxSeq)
+
+	s.logger.Info().
+		Uint64("max_seq", maxSeq).
+		Msg("Persistence initialized (Snapshots loaded, WAL replayed)")
+
+	return nil
+}
+
+// applyReplayBatch applies a batch from WAL replay to memory.
+func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {
+	if rec == nil || rec.NumRows() == 0 {
+		return nil
+	}
+
+	rec.Retain()
+	defer rec.Release()
+
+	// 1. Get/Create Dataset
+	ds, _ := s.getOrCreateDataset(name, func() *Dataset {
+		d := NewDataset(name, rec.Schema())
+		d.Logger = s.logger
+		d.Topo = s.numaTopology
+
+		// Initialize Index
+		hasVectorColumn := false
+		var vectorDim int
+		for _, f := range rec.Schema().Fields() {
+			if f.Name == "vector" {
+				if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
+					hasVectorColumn = true
+					vectorDim = int(fst.Len())
+					dataType := InferVectorDataType(rec.Schema(), "vector")
+					if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+						vectorDim /= 2
+					}
+				}
+				break
+			}
+		}
+
+		if hasVectorColumn {
+			config := s.autoShardingConfig
+			if config.ShardThreshold == 0 {
+				config.ShardThreshold = 10000
+				config.Enabled = true
+			}
+			aIdx := NewAutoShardingIndex(d, config)
+			if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
+				setter.SetInitialDimension(vectorDim)
+			}
+			d.Index = aIdx
+		}
+
+		return d
+	})
+
+	// 2. Update Schema (Evolution)
+	if err := ds.SchemaManager.Evolve(rec.Schema()); err != nil {
+		return fmt.Errorf("schema mismatch during replay: %w", err)
+	}
+	ds.dataMu.Lock()
+	ds.Schema = ds.SchemaManager.GetCurrentSchema()
+	ds.dataMu.Unlock()
+
+	// 3. Apply to Memory (LWW)
+	// We reuse logic similar to ingestion but skip WAL write
+	// Note: We need to ensure we don't double-count metrics or re-trigger WAL
+
+	// Update LWW
+	s.updateLWWAndMerkle(ds, rec, ts)
+
+	// Add to Records
+	ds.dataMu.Lock()
+	defer ds.dataMu.Unlock()
+
+	rec.Retain() // Dataset takes ownership
+	batchIdx := ds.appendRecordLocked(rec, -1)
+
+	// Update Primary Index and natively process RowLocation tombstones for Upserts
+	ds.UpdatePrimaryIndex(batchIdx, ds.ExtractIDs(rec))
+
+	ds.SizeBytes.Add(estimateBatchSize(rec))
+	s.currentMemory.Add(estimateBatchSize(rec))
+
+	// Note: Indexing should happen?
+	// If we replay WAL, we might re-index.
+	// Usually snapshots contain the index or we rebuild it.
+	// If we have snapshots, WAL only contains recent changes.
+	// We should probably just add to dataset and let async indexer handle it?
+	// But during startup we want to be ready?
+	// For now, let's assume we just add to memory.
+	// Indexing will happen if we enqueue it or if we reconstruct index.
+	// Ideally we should rebuild index or load it.
+
+	// If we are just replaying WAL, we should queue for indexing?
+	// Yes, usually WAL replay feeds into memory and index.
+	// But we must NOT write to WAL again.
+
+	// queue for indexing with high priority during replay phase to accelerate startup
+	ds.PendingIndexJobs.Add(rec.NumRows())
+	bIdx := len(ds.Records.Read()) - 1
+	s.logger.Debug().Str("dataset", name).Int("batch_idx", bIdx).Msg("Sending high-priority indexing job (replay)")
+	s.indexQueue.Send(IndexJob{
+		DatasetName:  name,
+		Record:       rec,
+		CreatedAt:    time.Now(),
+		BatchIdx:     bIdx,
+		HighPriority: true, // Prioritize replay indexing
+	})
+	rec.Retain() // For Queue
+
+	return nil
+}
+
+// loadSnapshotItem loads a snapshot item into memory.
+func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
+	if len(item.Records) == 0 {
+		return nil
+	}
+
+	// Get Schema from first record
+	schema := item.Records[0].Schema()
+
+	ds, _ := s.getOrCreateDataset(item.Name, func() *Dataset {
+		d := NewDataset(item.Name, schema)
+		d.Logger = s.logger
+		d.Topo = s.numaTopology
+
+		// Restore PQ Encoder
+		if len(item.PQCodebook) > 0 {
+			if enc, err := pq.DeserializePQEncoder(item.PQCodebook); err == nil {
+				d.PQEncoder = enc
+			} else {
+				s.logger.Error().Err(err).Msg("Failed to deserialize PQ encoder from snapshot")
+			}
+		}
+
+		// Initialize Index (Same logic as applyReplayBatch)
+		hasVectorColumn := false
+		var vectorDim int
+		for _, f := range schema.Fields() {
+			if f.Name == "vector" {
+				if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
+					hasVectorColumn = true
+					vectorDim = int(fst.Len())
+					dataType := InferVectorDataType(schema, "vector")
+					if dataType == VectorTypeComplex64 || dataType == VectorTypeComplex128 {
+						vectorDim /= 2
+					}
+				}
+				break
+			}
+		}
+
+		if hasVectorColumn {
+			config := s.autoShardingConfig
+			if config.ShardThreshold == 0 {
+				config.ShardThreshold = 10000
+				config.Enabled = true
+			}
+			dataType := InferVectorDataType(schema, "vector")
+			hnswCfg := DefaultArrowHNSWConfig()
+			hnswCfg.DataType = dataType
+			config.IndexConfig = &hnswCfg
+			aIdx := NewAutoShardingIndex(d, config)
+			if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
+				setter.SetInitialDimension(vectorDim)
+			}
+			d.Index = aIdx
+
+			// Restore Index Graph
+			if len(item.IndexConfig) > 0 {
+				if err := d.Index.ImportGraph(bytes.NewReader(item.IndexConfig)); err != nil {
+					s.logger.Error().Err(err).Msg("Failed to import index graph from snapshot")
+				}
+			}
+		}
+
+		return d
+	})
+
+	ds.dataMu.Lock()
+	defer ds.dataMu.Unlock()
+
+	for _, rec := range item.Records {
+		ds.appendRecordLocked(rec, -1)
+
+		size := estimateBatchSize(rec)
+		ds.SizeBytes.Add(size)
+		s.currentMemory.Add(size)
+
+		// Indexing?
+		// Snapshots might contain GraphRecords usage in HNSW/DiskGraph
+		// If "IndexConfig" exists, passing to index...
+		// For now just load data.
+	}
+
+	// If there are graph records or config, we might restore index state.
+	// But ArrowHNSW restores from DiskGraph usually.
+
+	return nil
+}

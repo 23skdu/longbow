@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+	"unsafe"
 )
 
 // Parity of the VBMI TurboQuant packer with the generic reference.
@@ -47,6 +48,36 @@ func tq2VBMIProbe(dim int, seed int64) []float32 {
 	return src
 }
 
+// tq2GridEdges returns the points where PackTQ2Generic changes code, plus the
+// clamp endpoints. qf = (v + 3*PI/4) * (2/PI), so the thresholds between
+// adjacent codes are v = -PI/2, 0, PI/2 and the code centres are
+// v = -3*PI/4, -PI/4, PI/4, 3*PI/4. Each appears with its immediate float32
+// neighbours: a kernel using the old [-PI, PI] grid or a round-to-nearest
+// convert diverges on one side of these points.
+func tq2GridEdges(n int) []float32 {
+	pi := float32(math.Pi)
+	points := []float32{
+		-4 * pi, -3 * pi / 4, -pi / 2, -pi / 4,
+		0, pi / 4, pi / 2, 3 * pi / 4, 4 * pi,
+	}
+	out := make([]float32, 0, n)
+	for len(out) < n {
+		for _, p := range points {
+			for _, v := range []float32{
+				math.Nextafter32(p, float32(math.Inf(-1))),
+				p,
+				math.Nextafter32(p, float32(math.Inf(1))),
+			} {
+				if len(out) == n {
+					break
+				}
+				out = append(out, v)
+			}
+		}
+	}
+	return out
+}
+
 // TestPackTQ2AVX512VBMIMatchesGeneric runs the test pack tq2 avx512 vbmi matches generic operation.
 func TestPackTQ2AVX512VBMIMatchesGeneric(t *testing.T) {
 	if !features.HasAVX512 || !features.HasVBMI {
@@ -56,8 +87,10 @@ func TestPackTQ2AVX512VBMIMatchesGeneric(t *testing.T) {
 		t.Run(fmt.Sprintf("n%d", n), func(t *testing.T) {
 			inputs := packInputs(n)
 			// The distributions packInputs already covers, plus a probe that
-			// lands on the rounding boundaries the generic packer rounds at.
+			// lands on the generic grid boundaries and a randomized input.
 			inputs["probe"] = tq2VBMIProbe(n, int64(n)+1)
+			inputs["gridEdges"] = tq2GridEdges(n)
+			inputs["random"] = tq2VBMIProbe(n, int64(n)+2)
 			for name, src := range inputs {
 				want := make([]byte, (n+3)/4)
 				PackTQ2Generic(src, want)
@@ -66,6 +99,40 @@ func TestPackTQ2AVX512VBMIMatchesGeneric(t *testing.T) {
 				for i := range want {
 					if got[i] != want[i] {
 						t.Fatalf("%s idx %d (src %v): vbmi = %08b, generic = %08b",
+							name, i, src[i], got[i], want[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestPackTQ2AVX512VBMIKernelMatchesGeneric calls the assembly kernel directly,
+// so a regression that reintroduces an unconditional fallback in the exported
+// wrapper cannot hide a broken kernel. The wrapper test above separately pins
+// that the wrapper dispatches to this kernel on VBMI-capable CPUs.
+func TestPackTQ2AVX512VBMIKernelMatchesGeneric(t *testing.T) {
+	if !features.HasAVX512 || !features.HasVBMI {
+		t.Skip("AVX512 VBMI not supported")
+	}
+	for _, n := range packSizes {
+		t.Run(fmt.Sprintf("n%d", n), func(t *testing.T) {
+			inputs := map[string][]float32{
+				"probe":     tq2VBMIProbe(n, int64(n)+3),
+				"gridEdges": tq2GridEdges(n),
+			}
+			for name, src := range inputs {
+				want := make([]byte, (n+3)/4)
+				PackTQ2Generic(src, want)
+				got := make([]byte, (n+3)/4)
+				packTQ2AVX512VBMIKernel(
+					unsafe.Pointer(&src[0]), // #nosec G103 -- test-owned slice
+					unsafe.Pointer(&got[0]), // #nosec G103 -- test-owned slice
+					n,
+				)
+				for i := range want {
+					if got[i] != want[i] {
+						t.Fatalf("%s idx %d (src %v): kernel = %08b, generic = %08b",
 							name, i, src[i], got[i], want[i])
 					}
 				}

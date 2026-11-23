@@ -1,0 +1,187 @@
+package hnsw
+
+import (
+	"testing"
+	"unsafe"
+
+	basecore "github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/stretchr/testify/require"
+)
+
+// TestFloat32ToFloat32Computer runs the test float32 to float32 computer operation.
+func TestFloat32ToFloat32Computer(t *testing.T) {
+	gd := &types.GraphData{
+		Dims: 2,
+		Type: types.VectorTypeFloat32,
+	}
+
+	// Create some chunks
+	gd.Vectors = make([][]float32, 2)
+	// Chunk 0: vectors 0, 1, 2 padded to 8 dims
+	gd.Vectors[0] = make([]float32, 24)
+	gd.Vectors[0][0], gd.Vectors[0][1] = 1.0, 1.0
+	gd.Vectors[0][8], gd.Vectors[0][9] = 2.0, 2.0
+
+	// Chunk 1 is nil, simulating paged out
+
+	h := &ArrowHNSW{
+		distFunc: func(a, b []float32) (float32, error) {
+			return 1.0, nil
+		},
+		distFuncSquared: func(a, b []float32) (float32, error) {
+			return 1.0, nil
+		},
+		config: types.ArrowHNSWConfig{Metric: basecore.MetricEuclidean},
+	}
+
+	c := &float32ToFloat32Computer{
+		squared:   false,
+		data:      gd,
+		q:         []float32{0.0, 0.0},
+		dims:      2,
+		h:         h,
+		diskGraph: nil,
+		maxGen:    ^uint64(0),
+	}
+
+	dst := make([]float32, 2)
+
+	// Test ComputeBatch
+	dists, err := c.ComputeBatch([]uint32{0, 1}, dst)
+	require.NoError(t, err)
+	require.Len(t, dists, 2)
+
+	// Test with a chunk that is nil (paged out)
+	_, _ = c.ComputeBatch([]uint32{0, types.ChunkSize}, dst)
+
+	// Test Prefetch
+	c.Prefetch(0)
+	c.Prefetch(types.ChunkSize)
+}
+
+// TestSearchContextChunkCache runs the test search context chunk cache operation.
+func TestSearchContextChunkCache(t *testing.T) {
+	const dims = 16
+	const nChunks = 3
+	g := batchParityGraphData(t, types.VectorTypeFloat32, dims, nChunks)
+
+	sctx := NewArrowSearchContext()
+	require.Equal(t, uint32(1), sctx.chunkEpoch)
+
+	// Fetch vector 0 (chunk 0)
+	v0 := sctx.GetVectorF32(g, 0, dims, ^uint64(0))
+	require.NotNil(t, v0)
+	require.Len(t, v0, dims)
+	require.Equal(t, uint32(1), sctx.cachedChunksF32[0].epoch)
+
+	// Cache hit on second call
+	v0Again := sctx.GetVectorF32(g, 0, dims, ^uint64(0))
+	require.Equal(t, v0, v0Again)
+	require.Equal(t, unsafe.Pointer(&v0[0]), unsafe.Pointer(&v0Again[0]))
+
+	// Fetch vector in chunk 1 (id = ChunkSize)
+	v1024 := sctx.GetVectorF32(g, types.ChunkSize, dims, ^uint64(0))
+	require.NotNil(t, v1024)
+	require.Equal(t, uint32(1), sctx.cachedChunksF32[1].epoch)
+
+	// Verify float32ToFloat32Computer with sctx produces identical results
+	h := newBatchBenchHNSW()
+	q := make([]float32, dims)
+	for i := range q {
+		q[i] = float32(i) * 0.5
+	}
+
+	compNoCtx := &float32ToFloat32Computer{
+		data:    g,
+		q:       q,
+		dims:    dims,
+		h:       h,
+		maxGen:  ^uint64(0),
+		squared: false,
+	}
+
+	compWithCtx := &float32ToFloat32Computer{
+		data:    g,
+		q:       q,
+		dims:    dims,
+		h:       h,
+		maxGen:  ^uint64(0),
+		squared: false,
+		sctx:    sctx,
+	}
+
+	for id := uint32(0); id < uint32(nChunks*types.ChunkSize); id += 257 {
+		d1, err1 := compNoCtx.ComputeSingle(id)
+		require.NoError(t, err1)
+		d2, err2 := compWithCtx.ComputeSingle(id)
+		require.NoError(t, err2)
+		require.Equal(t, d1, d2, "mismatch at id %d", id)
+	}
+
+	// Verify Reset() advances epoch and invalidates cache
+	sctx.Reset()
+	require.Equal(t, uint32(2), sctx.chunkEpoch)
+	require.NotEqual(t, sctx.chunkEpoch, sctx.cachedChunksF32[0].epoch)
+
+	// After Reset, resolving again updates to new epoch
+	v0AfterReset := sctx.GetVectorF32(g, 0, dims, ^uint64(0))
+	require.Equal(t, v0, v0AfterReset)
+	require.Equal(t, uint32(2), sctx.cachedChunksF32[0].epoch)
+}
+
+// TestSearchContextTQReconCache runs the test search context tq recon cache operation.
+func TestSearchContextTQReconCache(t *testing.T) {
+	sctx := NewArrowSearchContext()
+	require.Equal(t, uint32(1), sctx.tqReconEpoch)
+
+	// 1. Initial state: cache miss
+	d, hit := sctx.ProbeTQRecon(42)
+	require.False(t, hit)
+	require.Equal(t, float32(0), d)
+
+	// 2. Insert distance
+	sctx.InsertTQRecon(42, 1.2345)
+	d, hit = sctx.ProbeTQRecon(42)
+	require.True(t, hit)
+	require.Equal(t, float32(1.2345), d)
+
+	// Different ID misses
+	_, hit = sctx.ProbeTQRecon(43)
+	require.False(t, hit)
+
+	// 3. Test vector memoization
+	const pow2 = 16
+	sctx.EnsureTQReconCapacity(pow2)
+	vec := make([]float32, pow2)
+	for i := range vec {
+		vec[i] = float32(i) * 1.5
+	}
+	sctx.InsertTQReconWithVector(99, 2.718, vec)
+
+	d, hit = sctx.ProbeTQRecon(99)
+	require.True(t, hit)
+	require.Equal(t, float32(2.718), d)
+
+	cachedVec, ok := sctx.ProbeTQReconVector(99)
+	require.True(t, ok)
+	require.Equal(t, vec, cachedVec)
+
+	// 4. Reset invalidates without allocation
+	sctx.Reset()
+	require.Equal(t, uint32(2), sctx.tqReconEpoch)
+
+	// Previous entries are now misses
+	_, hit = sctx.ProbeTQRecon(42)
+	require.False(t, hit)
+	_, hit = sctx.ProbeTQRecon(99)
+	require.False(t, hit)
+	_, ok = sctx.ProbeTQReconVector(99)
+	require.False(t, ok)
+
+	// 5. New insertions in new epoch work cleanly
+	sctx.InsertTQRecon(42, 3.1415)
+	d, hit = sctx.ProbeTQRecon(42)
+	require.True(t, hit)
+	require.Equal(t, float32(3.1415), d)
+}

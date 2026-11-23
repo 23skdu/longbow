@@ -1,0 +1,219 @@
+package engine
+
+import (
+	"context"
+	"math"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+
+	"github.com/apache/arrow-go/v18/arrow/flight"
+
+	lbmem "github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/mesh"
+	qry "github.com/23skdu/longbow/internal/query"
+	types "github.com/23skdu/longbow/internal/store/types"
+)
+
+// ListFlights returns a list of available datasets as FlightInfo objects.
+
+// GeoSearch executes geospatial radius, bounding-box, or geo+vector hybrid search,
+// including optional global mesh scatter-gather and RLS filtering.
+func (s *VectorStore) GeoSearch(ctx context.Context, req *types.GeoSearchRequest) ([]SearchResult, error) {
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+	}
+
+	// Snapshot the index under the dataset read lock, then release it before
+	// searching. Index search workers re-acquire the same dataset lock; holding
+	// it here lets a queued writer block both paths at shutdown.
+	ds.dataMu.RLock()
+	geoIndex := ds.GeoIndex
+	ds.dataMu.RUnlock()
+	if geoIndex == nil {
+		return nil, status.Error(codes.FailedPrecondition, "dataset has no geospatial index")
+	}
+
+	var results []types.SearchResult
+	var err error
+
+	switch req.SearchType {
+	case "radius":
+		results, err = geoIndex.SearchRadius(ctx, req.Center, req.RadiusKm, req.K)
+	case "box":
+		if req.Box == nil {
+			return nil, status.Error(codes.InvalidArgument, "bounding box required for 'box' search")
+		}
+		results, err = geoIndex.SearchBox(ctx, *req.Box, req.K)
+	case "hybrid":
+		results, err = geoIndex.HybridSearch(ctx, req.QueryVector, req.Center, req.RadiusKm, req.K)
+	default:
+		return nil, status.Errorf(codes.InvalidArgument, "invalid search_type: %s", req.SearchType)
+	}
+
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "geospatial search failed: %v", err)
+	}
+
+	ds.dataMu.RLock()
+	results = s.mapInternalToUserIDsLocked(ds, results)
+	ds.dataMu.RUnlock()
+
+	md, _ := metadata.FromIncomingContext(ctx)
+	isGlobal := false
+	if vals := md.Get("x-longbow-global"); len(vals) > 0 && vals[0] == "true" {
+		isGlobal = true
+	}
+
+	if isGlobal && s.Mesh != nil {
+		var matchedNodeIDs []string
+		if s.Mesh.Config.Delegate != nil {
+			if router, ok := s.Mesh.Config.Delegate.(interface {
+				RouteGeo(dataset string, lat, lon float64, radiusKm float64) []string
+			}); ok {
+				lat := req.Center.Lat
+				lon := req.Center.Lon
+				radius := req.RadiusKm
+				if req.SearchType == "box" && req.Box != nil {
+					lat = (req.Box.MinLat + req.Box.MaxLat) / 2
+					lon = (req.Box.MinLon + req.Box.MaxLon) / 2
+					dLat := req.Box.MaxLat - req.Box.MinLat
+					dLon := req.Box.MaxLon - req.Box.MinLon
+					radius = math.Sqrt(dLat*dLat+dLon*dLon) * 111.0 / 2
+				}
+				matchedNodeIDs = router.RouteGeo(req.Dataset, lat, lon, radius)
+			}
+		}
+
+		var remotePeers []mesh.Member
+		selfID := s.Mesh.GetIdentity().ID
+		matchedSet := make(map[string]bool)
+		for _, id := range matchedNodeIDs {
+			matchedSet[id] = true
+		}
+
+		for _, p := range s.Mesh.GetMembers() {
+			if p.ID != selfID && (len(matchedNodeIDs) == 0 || matchedSet[p.ID]) {
+				remotePeers = append(remotePeers, p)
+			}
+		}
+
+		if s.coordinator != nil {
+			var globalErr error
+			results, globalErr = s.coordinator.GlobalGeoSearch(ctx, results, req, remotePeers)
+			if globalErr != nil {
+				s.logger.Warn().Err(globalErr).Msg("GlobalGeoSearch partial failure")
+			}
+		}
+	}
+
+	return s.FilterResultsByRLS(ctx, req.Dataset, results), nil
+}
+
+func (s *VectorStore) handleDoGetGeoSearch(req *types.GeoSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
+	results, err := s.GeoSearch(stream.Context(), req)
+	if err != nil {
+		return err
+	}
+	return s.streamSearchResults(results, wfs, stream, mem)
+}
+
+// TemporalSearch executes as_of, range, sliding_window, or sliding_window_time queries,
+// including optional global mesh scatter-gather and RLS filtering.
+func (s *VectorStore) TemporalSearch(ctx context.Context, req *types.TemporalSearchRequest) ([]SearchResult, error) {
+	if !s.temporalConfig.Enabled {
+		return nil, status.Error(codes.FailedPrecondition, "temporal index not enabled")
+	}
+
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+	}
+
+	var results []types.SearchResult
+	var err error
+
+	switch req.SearchType {
+	case "as_of":
+		results, err = ds.TemporalIndex.SearchAsOf(ctx, req.Timestamp, req.K)
+	case "range":
+		results, err = ds.TemporalIndex.SearchRange(ctx, req.StartTime, req.EndTime, req.K)
+	case "sliding_window":
+		results, err = ds.TemporalIndex.SearchSlidingWindow(ctx, req.WindowSize, req.K)
+	case "sliding_window_time":
+		results, err = ds.TemporalIndex.SearchSlidingWindowByTime(ctx, req.Duration, req.K)
+	default:
+		return nil, status.Errorf(codes.InvalidArgument, "invalid temporal search_type: %s", req.SearchType)
+	}
+
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "temporal search failed: %v", err)
+	}
+
+	ds.dataMu.RLock()
+	results = s.mapInternalToUserIDsLocked(ds, results)
+	ds.dataMu.RUnlock()
+
+	md, _ := metadata.FromIncomingContext(ctx)
+	isGlobal := false
+	if vals := md.Get("x-longbow-global"); len(vals) > 0 && vals[0] == "true" {
+		isGlobal = true
+	}
+
+	if isGlobal && s.Mesh != nil {
+		var matchedNodeIDs []string
+		if s.Mesh.Config.Delegate != nil {
+			if router, ok := s.Mesh.Config.Delegate.(interface {
+				RouteTemporal(dataset string, startTime, endTime int64) []string
+			}); ok {
+				var startTime, endTime int64
+				switch req.SearchType {
+				case "as_of":
+					startTime = 0
+					endTime = req.Timestamp
+				case "range":
+					startTime = req.StartTime
+					endTime = req.EndTime
+				case "sliding_window", "sliding_window_time":
+					startTime = 0
+					endTime = time.Now().UnixNano()
+				}
+				matchedNodeIDs = router.RouteTemporal(req.Dataset, startTime, endTime)
+			}
+		}
+
+		var remotePeers []mesh.Member
+		selfID := s.Mesh.GetIdentity().ID
+		matchedSet := make(map[string]bool)
+		for _, id := range matchedNodeIDs {
+			matchedSet[id] = true
+		}
+
+		for _, p := range s.Mesh.GetMembers() {
+			if p.ID != selfID && (len(matchedNodeIDs) == 0 || matchedSet[p.ID]) {
+				remotePeers = append(remotePeers, p)
+			}
+		}
+
+		if s.coordinator != nil {
+			var globalErr error
+			results, globalErr = s.coordinator.GlobalTemporalSearch(ctx, results, req, remotePeers)
+			if globalErr != nil {
+				s.logger.Warn().Err(globalErr).Msg("GlobalTemporalSearch partial failure")
+			}
+		}
+	}
+
+	return s.FilterResultsByRLS(ctx, req.Dataset, results), nil
+}
+
+func (s *VectorStore) handleDoGetTemporalSearch(req *types.TemporalSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
+	results, err := s.TemporalSearch(stream.Context(), req)
+	if err != nil {
+		return err
+	}
+	return s.streamSearchResults(results, wfs, stream, mem)
+}

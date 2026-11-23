@@ -1,0 +1,60 @@
+package engine
+
+import (
+	"context"
+	"testing"
+
+	"github.com/23skdu/longbow/internal/core"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+type mockMLModel struct {
+	scores []float32
+	err    error
+}
+
+// Embed runs the embed operation.
+func (m *mockMLModel) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return nil, nil
+}
+
+// Score runs the score operation.
+func (m *mockMLModel) Score(ctx context.Context, query string, documents []string) ([]float32, error) {
+	return m.scores, m.err
+}
+
+// Dimension runs the dimension operation.
+func (m *mockMLModel) Dimension() int { return 0 }
+
+// Close runs the close operation.
+func (m *mockMLModel) Close() error { return nil }
+
+// TestONNXReranker runs the test onnx reranker operation.
+func TestONNXReranker(t *testing.T) {
+	mock := &mockMLModel{
+		scores: []float32{0.9, 0.1, 0.5},
+	}
+
+	r := &ONNXReranker{
+		backend: mock,
+	}
+
+	results := []SearchResult{
+		{ID: 1, Distance: 0.1},
+		{ID: 2, Distance: 0.5},
+		{ID: 3, Distance: 0.2},
+	}
+
+	results[0].Metadata, _ = core.EncodeMetadata(map[string]interface{}{"content": "doc1"})
+	results[1].Metadata, _ = core.EncodeMetadata(map[string]interface{}{"content": "doc2"})
+	results[2].Metadata, _ = core.EncodeMetadata(map[string]interface{}{"content": "doc3"})
+
+	reranked, err := r.Rerank(context.Background(), "query", results)
+	require.NoError(t, err)
+	assert.Equal(t, len(results), len(reranked))
+
+	// Score for doc1 (0.9) should be highest
+	assert.Equal(t, uint32(1), uint32(reranked[0].ID))
+	assert.Greater(t, reranked[0].Score, reranked[1].Score)
+}

@@ -1,0 +1,152 @@
+package engine
+
+import (
+	"testing"
+	"time"
+
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// TestDoPut_AdaptiveBatchingAlignment runs the test do put_adaptive batching alignment operation.
+func TestDoPut_AdaptiveBatchingAlignment(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer mem.AssertSize(t, 0)
+
+	logger := zerolog.Nop()
+	s := &VectorStore{
+		mem:              mem,
+		logger:           logger,
+		persistenceQueue: make(chan persistenceJob, 100),
+		ingestionQueue:   NewIngestionRingBuffer(100),
+		pooledMem:        mem,
+		Breakers:         NewCircuitBreakerRegistry(DefaultCircuitBreakerConfig()),
+	}
+	emptyMap := make(map[string]*Dataset)
+	s.datasets.Store(&emptyMap)
+	defer close(s.persistenceQueue)
+
+	// Create a large record (e.g., 2MB)
+	dim := 1024    // float32 = 4KB per vector
+	numRows := 512 // 512 * 4KB = 2MB
+
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+	}, nil)
+
+	builder := array.NewRecordBuilder(mem, schema)
+	defer builder.Release()
+
+	vBuilder := builder.Field(0).(*array.FixedSizeListBuilder)
+	fBuilder := vBuilder.ValueBuilder().(*array.Float32Builder)
+
+	for i := 0; i < numRows; i++ {
+		vBuilder.Append(true)
+		for j := 0; j < dim; j++ {
+			fBuilder.Append(float32(j))
+		}
+	}
+
+	rec := builder.NewRecordBatch()
+	defer rec.Release()
+
+	// Encode record into FlightData correctly
+	recvCh := make(chan *flight.FlightData, 20)
+	clientStream := &mockClientStream{recvChunks: recvCh}
+
+	// Create a writer that sends to our mock client stream
+	w := flight.NewRecordWriter(clientStream, ipc.WithSchema(schema), ipc.WithAllocator(mem))
+
+	// Collect chunks from channel with timeout
+	chunks := make([]*flight.FlightData, 0)
+	collectDone := make(chan struct{})
+	go func() {
+		for fd := range recvCh {
+			chunks = append(chunks, fd)
+		}
+		close(collectDone)
+	}()
+
+	for i := 0; i < 10; i++ {
+		err := w.Write(rec)
+		require.NoError(t, err)
+	}
+	err := w.Close()
+	require.NoError(t, err)
+	_ = clientStream.CloseSend()
+
+	// Wait for collection to finish with timeout
+	select {
+	case <-collectDone:
+		// Success
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for FlightData chunks")
+	}
+
+	// Add descriptor to the first chunk (schema)
+	if len(chunks) > 0 {
+		chunks[0].FlightDescriptor = &flight.FlightDescriptor{Path: []string{"test_ds"}}
+	}
+
+	// Use mockPutStream (server-side) to play back these chunks
+	mockStream := &mockPutStream{
+		chunks: chunks,
+	}
+
+	// Run DoPut
+	err = s.DoPut(mockStream)
+	require.NoError(t, err)
+
+	// Drain persistenceQueue to count flushes
+	// We might need to wait a tiny bit since s.DoPut sends to channels
+	time.Sleep(500 * time.Millisecond)
+
+	flushCount := 0
+drain_p:
+	for {
+		select {
+		case job := <-s.persistenceQueue:
+			job.batch.Release()
+			flushCount++
+		default:
+			break drain_p
+		}
+	}
+	t.Logf("Flush count: %d", flushCount)
+
+	// Drain ingestionQueue to avoid leaks
+	ingestCount := 0
+drain_i:
+	for {
+		job, ok := s.ingestionQueue.Pop()
+		if !ok {
+			break drain_i
+		}
+		job.Batch.Release()
+		ingestCount++
+	}
+	t.Logf("Ingest count: %d", ingestCount)
+
+	// With 32MB batching limit:
+	// Each rec is 2MB. 10 records = 20MB total.
+	// All records fit in one batch (< 32MB), so only 1 flush occurs.
+
+	assert.Equal(t, 1, flushCount, "Should have flushed 1 time with 32MB limit")
+}
+
+// Helpers for testing
+// Methods needed for TestDoPut_AdaptiveBatchingAlignment used structures defined elsewhere (mockClientStream etc)
+// or relied on these unused ones?
+// Actually TestDoPut_AdaptiveBatchingAlignment uses `mockClientStream` and `mockPutStream` which are NOT these unused ones.
+// These seem to be leftover copy-paste artifacts.
+
+// Removed unused types: mockPutStreamRecvOnly, mockPutClient, ipcWriterWrapper

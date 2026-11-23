@@ -1,8 +1,8 @@
 # Longbow Roadmap (Developer Index)
 
 The active, prioritized roadmap is [`../roadmap.md`](../roadmap.md). It contains
-only remaining work, grouped into P0 release blockers, P1 concurrency and
-security hardening, and P2 structural improvements.
+only remaining work, grouped into P0 release blockers and P2 structural and
+test-depth improvements.
 
 This file is retained as a stable link target for older documentation and
 scripts. It no longer duplicates active items or completed checklists.

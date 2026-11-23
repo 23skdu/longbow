@@ -1,0 +1,237 @@
+package engine
+
+import (
+	"context"
+	"os"
+	"sync/atomic"
+	"time"
+
+	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/metrics"
+)
+
+// shutdown state constants
+const (
+	stateRunning  int32 = 0
+	stateShutdown int32 = 1
+)
+
+// hotpathFlushStopTimeout bounds the final publish of the sharded query hot
+// path metrics during shutdown.
+const hotpathFlushStopTimeout = 5 * time.Second
+
+// stopWorkers cancels the store context and stops background workers.
+func (s *VectorStore) stopWorkers() {
+	s.stopOnce.Do(func() {
+		if s.evictionManager != nil {
+			s.evictionManager.Stop()
+		}
+		if s.compactionWorker != nil {
+			s.compactionWorker.Stop()
+		}
+		if s.nodeMonitor != nil {
+			s.nodeMonitor.Stop()
+		}
+		if s.ttlPolicy != nil {
+			s.ttlPolicy.Stop()
+		}
+		if s.stopChan != nil {
+			close(s.stopChan)
+		}
+		// Cancel the store context so workers that select on ctx.Done()
+		// (e.g. runIndexWorker, runIngestionWorkerWithCtx) exit immediately
+		// instead of waiting for the next time.Sleep tick.
+		if s.cancel != nil {
+			s.cancel()
+		}
+		// Publish what the sharded query hot path metrics still hold before the
+		// store goes away. The flusher goroutine only exists while a store holds
+		// a reference, so this is where it exits.
+		flushCtx, cancelFlush := context.WithTimeout(context.Background(), hotpathFlushStopTimeout)
+		defer cancelFlush()
+		if err := metrics.StopHotpathFlushers(flushCtx); err != nil {
+			s.logger.Warn().Err(err).Msg("Timed out stopping the hotpath metric flusher")
+		}
+	})
+}
+
+// Close performs a graceful shutdown with a default timeout.
+// It is an alias for Shutdown(context.Background()) but handy for defer.
+func (s *VectorStore) Close() error {
+	if s.replicator != nil {
+		s.replicator.Stop()
+	}
+	timeout := 120 * time.Second
+	if isTestMode() {
+		timeout = 2 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return s.Shutdown(ctx)
+}
+
+// Shutdown performs a graceful shutdown of the VectorStore.
+// It stops accepting new requests, drains the index queue, flushes the WAL,
+// and closes all file handles. The context controls the shutdown timeout.
+func (s *VectorStore) Shutdown(ctx context.Context) error {
+	// Idempotent shutdown - only first call does work
+	if !atomic.CompareAndSwapInt32(&s.shutdownState, stateRunning, stateShutdown) {
+		s.logger.Info().Msg("Shutdown already in progress or completed")
+		return nil
+	}
+
+	s.logger.Info().Msg("Starting graceful shutdown...")
+	start := time.Now()
+	var shutdownErr error
+
+	// Step 0: Drain hybrid text indexing while its workers are still running.
+	//
+	// This has to happen before stopWorkers, which closes stopChan and cancels the
+	// store context: after that the text indexers exit and anything still queued
+	// would never release the Arrow record it retained.
+	s.logger.Info().Msg("Draining hybrid text index queue...")
+	s.drainTextIndexing()
+
+	// Step 1: Signal background workers to stop
+	s.logger.Info().Msg("Signaling background workers to stop")
+	s.stopWorkers()
+
+	// Step 1.5: Wait for pending overflow jobs (spinners) to enqueue
+	s.logger.Info().Msg("Waiting for pending overflow jobs...")
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+waitLoop:
+	for s.pendingOverflowJobs.Load() > 0 {
+		select {
+		case <-ctx.Done():
+			s.logger.Warn().Int64("count", s.pendingOverflowJobs.Load()).Msg("Shutdown timeout waiting for overflow jobs")
+			break waitLoop
+		case <-ticker.C:
+			// Check again
+		}
+	}
+
+	// Step 2: Drain the index queue
+	s.logger.Info().Msg("Draining index queue...")
+	if err := s.drainIndexQueue(ctx); err != nil {
+		s.logger.Error().Err(err).Msg("Failed to drain index queue")
+		shutdownErr = core.NewShutdownError("drain", "index_queue", err)
+	} else {
+		s.logger.Info().Msg("Index queue drained successfully")
+	}
+
+	// Step 3: Wait for workers to finish (tickers, etc.)
+	// This ensures no background usage of persistence (e.g. Snapshot Ticker) occurs
+	// before we close it.
+	s.logger.Info().Msg("Waiting for workers to finish...")
+	done := make(chan struct{})
+	go func() {
+		s.workerWg.Wait()
+		s.cleanupWg.Wait() // Wait for DropDataset cleanups
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		s.logger.Info().Msg("All workers finished")
+	case <-ctx.Done():
+		s.logger.Warn().Err(ctx.Err()).Msg("Shutdown timeout waiting for workers")
+		if shutdownErr == nil {
+			shutdownErr = ctx.Err()
+		}
+	}
+
+	// Step 4: Create final snapshot
+	// Safe now as workers are stopped.
+	if os.Getenv("LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT") == "true" {
+		s.logger.Info().Msg("Skipping final snapshot (LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT=true)")
+	} else {
+		select {
+		case <-ctx.Done():
+			s.logger.Warn().Msg("Shutdown timeout, skipping final snapshot")
+		default:
+			s.logger.Info().Msg("Creating final snapshot...")
+			if err := s.Snapshot(ctx); err != nil {
+				s.logger.Error().Err(err).Msg("Failed to create final snapshot")
+			} else {
+				s.logger.Info().Msg("Final snapshot created successfully")
+			}
+		}
+	}
+
+	// Step 5: Close Persistence (WAL Batcher, Engine)
+	if err := s.ClosePersistence(); err != nil {
+		shutdownErr = core.NewShutdownError("close", "persistence", err)
+		s.logger.Error().Err(err).Msg("Failed to close persistence")
+	} else {
+		s.logger.Info().Msg("Persistence closed successfully")
+	}
+
+	// Step 6: Close remaining datasets when shutdown completed cleanly so
+	// indices, temporal arenas, and Arrow records do not outlive the store.
+	if ctx.Err() == nil {
+		s.closeDatasets()
+	}
+
+	elapsed := time.Since(start)
+	if shutdownErr != nil {
+		s.logger.Error().
+			Dur("elapsed", elapsed).
+			Err(shutdownErr).
+			Msg("Graceful shutdown completed with errors")
+	} else {
+		s.logger.Info().Dur("elapsed", elapsed).Msg("Graceful shutdown completed successfully")
+	}
+
+	return shutdownErr
+}
+
+// drainIndexQueue closes the index channel and waits for pending jobs to complete
+func (s *VectorStore) drainIndexQueue(ctx context.Context) error {
+	// Close channel to signal workers to stop accepting new jobs
+	if s.indexQueue != nil {
+		s.indexQueue.Stop()
+	}
+	for _, q := range s.numaIndexQueues {
+		if q != nil {
+			q.Stop()
+		}
+	}
+
+	// Wait for index workers to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		s.indexWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// isShutdown returns true if Shutdown has been called
+func (s *VectorStore) isShutdown() bool {
+	return atomic.LoadInt32(&s.shutdownState) == stateShutdown
+}
+
+// closeDatasets detaches and closes all remaining datasets in the store.
+func (s *VectorStore) closeDatasets() {
+	var toClose []*Dataset
+	s.UpdateDatasets(func(m map[string]*Dataset) {
+		toClose = make([]*Dataset, 0, len(m))
+		for k, ds := range m {
+			if ds != nil {
+				toClose = append(toClose, ds)
+			}
+			delete(m, k)
+		}
+	})
+	for _, ds := range toClose {
+		ds.Close()
+	}
+}

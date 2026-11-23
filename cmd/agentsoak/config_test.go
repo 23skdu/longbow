@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 )
 
 // repoConfigPath locates the shared config from this package's directory.
@@ -260,4 +262,310 @@ func TestResolveConfigFlagOverrides(t *testing.T) {
 	if cfg.Namespaces.Common != "master" {
 		t.Fatalf("non-overridden config value changed: %+v", cfg)
 	}
+}
+
+// TestLoadConfigEmptyPathUsesDefaults pins the no-config path used when the
+// shared file is absent and no -config flag was supplied.
+func TestLoadConfigEmptyPathUsesDefaults(t *testing.T) {
+	cfg, err := loadConfig("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := defaultConfig()
+	if !reflect.DeepEqual(cfg, want) {
+		t.Fatalf("loadConfig(\"\") = %+v, want %+v", cfg, want)
+	}
+}
+
+// TestLoadConfigValidationMatrix covers the validation rules that keep a soak
+// from starting with a config that cannot produce a meaningful report.
+func TestLoadConfigValidationMatrix(t *testing.T) {
+	cases := []struct {
+		name, raw, wantErr string
+	}{
+		{"malformed json", `{`, "parse config"},
+		{"wrong field type", `{"agents":"three"}`, "parse config"},
+		{"too few agents", `{"agents":1}`, "agents must be at least 2"},
+		{"negative group size", `{"agents_per_namespace":-1}`, "must not be negative"},
+		{"group size equals agents", `{"agents":3,"agents_per_namespace":3}`, "smaller than agents"},
+		{"non-positive dimension", `{"dim":0}`, "dim must be positive"},
+		{"non-positive duration", `{"duration_hours":0}`, "duration_hours must be positive"},
+		{"non-positive sample interval", `{"sample_interval_s":0}`, "sample_interval_s must be positive"},
+		{"blank uri", `{"uri":"   "}`, "uri must not be empty"},
+		{"empty workload", `{"workload":{}}`, "workload must contain at least one"},
+		{"zero total weight", `{"workload":{"dense":0}}`, "weights must sum to a positive value"},
+		{"unknown op", `{"workload":{"unsupported":1}}`, "unknown workload operation"},
+		{"negative weight", `{"workload":{"dense":-1}}`, "must be non-negative"},
+		{"non-positive k", `{"workload_options":{"k":0}}`, "k must be positive"},
+		{"alpha out of range", `{"workload_options":{"alpha":1.5}}`, "between 0 and 1"},
+		{"unknown security variant", `{"security":{"variant":"bogus"}}`, "unknown security variant"},
+		{"unknown oidc mode", `{"security":{"oidc":{"mode":"bogus"}}}`, "unknown oidc mode"},
+		{"non-positive oidc ttl", `{"security":{"oidc":{"ttl_seconds":0}}}`, "ttl_seconds must be positive"},
+		{"duplicate namespace", `{"agents":2,"namespaces":{"private_prefix":"ns_","shared_prefix":"ns_"}}`, "must be unique"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(tc.raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := loadConfig(path)
+			if err == nil {
+				t.Fatalf("expected error containing %q, got config %+v", tc.wantErr, cfg)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error = %q, want substring %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// saveResolveFlags snapshots the flag-backed globals mutated by resolveConfig
+// tests and resets them to their CLI defaults. Every test restores them even
+// when it fails, so flag state never leaks between subtests.
+func saveResolveFlags(t *testing.T) {
+	t.Helper()
+	flagSetOrig := flagSet
+	configPathOrig, uriOrig, agentsOrig, agentsPerNSOrig := *configPath, *uri, *agents, *agentsPerNS
+	durationOrig, dimOrig, seedOrig, thinkTimeOrig, sampleIntervalOrig := *duration, *dim, *seed, *thinkTime, *sampleInterval
+	privatePrefixOrig, sharedPrefixOrig, commonOrig := *privatePrefix, *sharedPrefix, *common
+	adminAPIKeyOrig, workloadFlagOrig, federatedOnlyOrig := *adminAPIKey, *workloadFlag, *federatedOnly
+	tlsEnabledOrig, tlsCertOrig, tlsKeyOrig, tlsCAOrig := *tlsEnabled, *tlsCert, *tlsKey, *tlsCA
+	tlsServerNameOrig, tlsMinVersionOrig := *tlsServerName, *tlsMinVersion
+	oidcModeOrig, oidcAudienceOrig, oidcTTLOrig, tenantIDOrig := *oidcMode, *oidcAudience, *oidcTTL, *tenantID
+	outputJSONOrig, verboseOrig := *outputJSON, *verbose
+	t.Cleanup(func() {
+		flagSet = flagSetOrig
+		*configPath, *uri, *agents, *agentsPerNS = configPathOrig, uriOrig, agentsOrig, agentsPerNSOrig
+		*duration, *dim, *seed, *thinkTime, *sampleInterval = durationOrig, dimOrig, seedOrig, thinkTimeOrig, sampleIntervalOrig
+		*privatePrefix, *sharedPrefix, *common = privatePrefixOrig, sharedPrefixOrig, commonOrig
+		*adminAPIKey, *workloadFlag, *federatedOnly = adminAPIKeyOrig, workloadFlagOrig, federatedOnlyOrig
+		*tlsEnabled, *tlsCert, *tlsKey, *tlsCA = tlsEnabledOrig, tlsCertOrig, tlsKeyOrig, tlsCAOrig
+		*tlsServerName, *tlsMinVersion = tlsServerNameOrig, tlsMinVersionOrig
+		*oidcMode, *oidcAudience, *oidcTTL, *tenantID = oidcModeOrig, oidcAudienceOrig, oidcTTLOrig, tenantIDOrig
+		*outputJSON, *verbose = outputJSONOrig, verboseOrig
+	})
+
+	*configPath, *uri, *agents, *agentsPerNS = defaultConfigPath, "", 0, 0
+	*duration, *dim, *seed, *thinkTime, *sampleInterval = 0, 0, 0, 0, 0
+	*privatePrefix, *sharedPrefix, *common, *adminAPIKey, *workloadFlag = "", "", "", "", ""
+	*federatedOnly, *tlsEnabled, *tlsCert, *tlsKey, *tlsCA = false, false, "", "", ""
+	*tlsServerName, *tlsMinVersion, *oidcMode, *oidcAudience = "", "", "", ""
+	*oidcTTL = 0
+	*tenantID, *outputJSON, *verbose = "", "", false
+}
+
+// TestResolveConfigFlagPrecedence verifies that explicit flags win over the
+// shared config (including zero values), that validation runs after overrides,
+// and that a missing shared file only falls back when -config was not set.
+func TestResolveConfigFlagPrecedence(t *testing.T) {
+	cases := []struct {
+		name    string
+		config  string
+		missing bool
+		set     map[string]bool
+		apply   func()
+		wantErr string
+		check   func(*testing.T, *soakConfig)
+	}{
+		{
+			name: "workload flag replaces shared workload",
+			set:  map[string]bool{"workload": true},
+			apply: func() {
+				*workloadFlag = " dense=25, hybrid = 5 "
+			},
+			check: func(t *testing.T, cfg *soakConfig) {
+				if len(cfg.Workload) != 2 || cfg.Workload["dense"] != 25 || cfg.Workload["hybrid"] != 5 {
+					t.Fatalf("workload override not applied: %v", cfg.Workload)
+				}
+			},
+		},
+		{
+			name: "federated only wins over workload flag",
+			set:  map[string]bool{"workload": true},
+			apply: func() {
+				*workloadFlag = "dense=25"
+				*federatedOnly = true
+			},
+			check: func(t *testing.T, cfg *soakConfig) {
+				if len(cfg.Workload) != 1 || cfg.Workload["federated"] != 1 {
+					t.Fatalf("federated-only workload = %v", cfg.Workload)
+				}
+			},
+		},
+		{
+			name:    "malformed workload override fails",
+			set:     map[string]bool{"workload": true},
+			apply:   func() { *workloadFlag = "dense=maybe" },
+			wantErr: "invalid weight",
+		},
+		{
+			name:    "invalid flag override fails validation",
+			set:     map[string]bool{"agents": true},
+			apply:   func() { *agents = 1 },
+			wantErr: "agents must be at least 2",
+		},
+		{
+			name:  "zero seed remains a valid override",
+			set:   map[string]bool{"seed": true},
+			apply: func() { *seed = 0 },
+			check: func(t *testing.T, cfg *soakConfig) {
+				if cfg.Seed != 0 {
+					t.Fatalf("seed = %d, want explicit zero", cfg.Seed)
+				}
+			},
+		},
+		{
+			name: "duration and topology flags override config",
+			set: map[string]bool{
+				"duration": true, "think-time": true, "sample-interval": true,
+				"agents-per-namespace": true, "common": true, "uri": true, "dim": true,
+			},
+			apply: func() {
+				*duration = 90 * time.Second
+				*thinkTime = 25 * time.Millisecond
+				*sampleInterval = 30 * time.Second
+				*agentsPerNS = 2
+				*common = "all"
+				*uri = "grpc://example:3000"
+				*dim = 64
+			},
+			check: func(t *testing.T, cfg *soakConfig) {
+				if cfg.DurationHours != 0.025 || cfg.ThinkTimeMS != 25 || cfg.SampleIntervalS != 30 {
+					t.Fatalf("timing overrides not applied: %+v", cfg)
+				}
+				if cfg.AgentsPerNamespace != 2 || cfg.Namespaces.Common != "all" || cfg.URI != "grpc://example:3000" || cfg.Dim != 64 {
+					t.Fatalf("topology/connection overrides not applied: %+v", cfg)
+				}
+			},
+		},
+		{
+			name:   "tls flag promotes plaintext variant",
+			config: `{"agents":2,"security":{"variant":"plaintext"}}`,
+			set:    map[string]bool{"tls-enabled": true},
+			apply:  func() { *tlsEnabled = true },
+			check: func(t *testing.T, cfg *soakConfig) {
+				if cfg.Security.Variant != "tls" || !cfg.Security.TLS.Enabled {
+					t.Fatalf("TLS variant = %q, enabled = %v", cfg.Security.Variant, cfg.Security.TLS.Enabled)
+				}
+			},
+		},
+		{
+			name:   "tls flag promotes oidc variant to combined",
+			config: `{"agents":2,"security":{"variant":"oidc","oidc":{"mode":"aws","ttl_seconds":600}}}`,
+			set:    map[string]bool{"tls-enabled": true},
+			apply:  func() { *tlsEnabled = true },
+			check: func(t *testing.T, cfg *soakConfig) {
+				if cfg.Security.Variant != "combined" {
+					t.Fatalf("security variant = %q, want combined", cfg.Security.Variant)
+				}
+			},
+		},
+		{
+			name:    "explicit missing config is fatal",
+			missing: true,
+			set:     map[string]bool{"config": true},
+			wantErr: "read config",
+		},
+		{
+			name:    "missing shared config falls back to defaults",
+			missing: true,
+			set:     map[string]bool{"agents": true},
+			apply:   func() { *agents = 4 },
+			check: func(t *testing.T, cfg *soakConfig) {
+				if cfg.Agents != 4 || cfg.Seed != 42 || cfg.Dim != 128 {
+					t.Fatalf("fallback config lost defaults or flag override: %+v", cfg)
+				}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			saveResolveFlags(t)
+			switch {
+			case tc.config != "":
+				path := filepath.Join(t.TempDir(), "config.json")
+				if err := os.WriteFile(path, []byte(tc.config), 0600); err != nil {
+					t.Fatal(err)
+				}
+				*configPath = path
+			case tc.missing:
+				*configPath = filepath.Join(t.TempDir(), "missing.json")
+			default:
+				*configPath = repoConfigPath(t)
+			}
+			flagSet = func(name string) bool { return tc.set[name] }
+			if tc.apply != nil {
+				tc.apply()
+			}
+			cfg, err := resolveConfig()
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want substring %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.check != nil {
+				tc.check(t, cfg)
+			}
+		})
+	}
+}
+
+// FuzzLoadConfigJSON exercises the shared config parser with arbitrary JSON,
+// checking that every accepted config is internally consistent and yields a
+// usable topology. Oversized inputs are skipped to keep fuzzing bounded.
+func FuzzLoadConfigJSON(f *testing.F) {
+	f.Add([]byte(`{}`))
+	f.Add([]byte(`{"agents":2,"workload":{"dense":1}}`))
+	f.Add([]byte(`{"agents":1}`))
+	f.Add([]byte(`{"workload":{"unsupported":1}}`))
+	f.Add([]byte(`{"agents":3,"agents_per_namespace":3}`))
+	f.Add([]byte(`{"security":{"variant":"mtls","oidc":{"mode":"aws","ttl_seconds":600}}}`))
+	f.Add([]byte(`{"namespaces":{"private_prefix":"p_","shared_prefix":"s_","common":"all"}}`))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > 8192 {
+			return
+		}
+		path := filepath.Join(t.TempDir(), "config.json")
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := loadConfig(path)
+		if err != nil {
+			return
+		}
+		if cfg == nil {
+			t.Fatal("loadConfig returned nil config without an error")
+		}
+		if cfg.Agents > 512 {
+			return // keep topology allocation bounded for random large agents
+		}
+		if err := cfg.validate(); err != nil {
+			t.Fatalf("loaded config failed validation: %v", err)
+		}
+		topo, err := newTopology(cfg)
+		if err != nil {
+			t.Fatalf("loaded config has invalid topology: %v", err)
+		}
+		seen := make(map[string]bool)
+		for _, ns := range topo.Namespaces() {
+			if seen[ns] {
+				t.Fatalf("duplicate namespace %q", ns)
+			}
+			seen[ns] = true
+		}
+		for i := 0; i < cfg.Agents; i++ {
+			if !topo.contains(topo.Readable(i), topo.common) {
+				t.Fatalf("agent %d cannot read common namespace %q", i, topo.common)
+			}
+			blockedRead, blockedWrite := topo.forbidden(i)
+			if blockedRead == "" || blockedWrite == "" {
+				t.Fatalf("agent %d has no forbidden probe namespaces", i)
+			}
+		}
+	})
 }

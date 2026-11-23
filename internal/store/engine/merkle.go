@@ -1,0 +1,120 @@
+package engine
+
+import (
+	"crypto/sha256"
+	"encoding/binary"
+	"sync"
+)
+
+const (
+	// MerkleFanout is the number of children per node in the Merkle Tree.
+	MerkleFanout = 16
+	// MerkleDepth is the depth of the Merkle Tree.
+	MerkleDepth = 4
+)
+
+// MerkleNode represents a node in the Merkle Tree
+type MerkleNode struct {
+	Hash     [32]byte
+	Children [MerkleFanout]*MerkleNode
+}
+
+// MerkleTree manages consistency hashes for a Dataset
+type MerkleTree struct {
+	root *MerkleNode
+	mu   sync.RWMutex
+}
+
+// NewMerkleTree creates a new Merkle Tree for dataset consistency tracking.
+func NewMerkleTree() *MerkleTree {
+	return &MerkleTree{
+		root: &MerkleNode{},
+	}
+}
+
+// Update updates the hash for a given VectorID with its latest timestamp
+func (t *MerkleTree) Update(id VectorID, ts int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// 1. Traverse to leaf
+	node := t.root
+	path := t.getPath(id)
+
+	nodes := make([]*MerkleNode, MerkleDepth+1)
+	nodes[0] = node
+
+	for i := 0; i < MerkleDepth; i++ {
+		slot := path[i]
+		if node.Children[slot] == nil {
+			node.Children[slot] = &MerkleNode{}
+		}
+		node = node.Children[slot]
+		nodes[i+1] = node
+	}
+
+	// 2. Update Leaf Hash (XOR or hash atomic updates)
+	// For simplicity, we hash (ID | TS) and XOR into leaf
+	// Using XOR allows commutativity and easier updates
+	h := sha256.New()
+	_ = binary.Write(h, binary.LittleEndian, uint32(id))
+	_ = binary.Write(h, binary.LittleEndian, ts)
+	itemHash := h.Sum(nil)
+
+	for i := 0; i < 32; i++ {
+		node.Hash[i] ^= itemHash[i]
+	}
+
+	// 3. Re-hash parents
+	for i := MerkleDepth - 1; i >= 0; i-- {
+		parent := nodes[i]
+		h := sha256.New()
+		for _, child := range parent.Children {
+			if child != nil {
+				h.Write(child.Hash[:])
+			} else {
+				h.Write(make([]byte, 32)) // Empty child
+			}
+		}
+		copy(parent.Hash[:], h.Sum(nil))
+	}
+}
+
+// RootHash returns the current root hash of the Merkle Tree.
+func (t *MerkleTree) RootHash() [32]byte {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.root.Hash
+}
+
+// GetNode retrieves the hash and child hashes for a node at the specified path.
+func (t *MerkleTree) GetNode(path []int) (hash [32]byte, children [][32]byte, found bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	node := t.root
+	for _, slot := range path {
+		if node.Children[slot] == nil {
+			return [32]byte{}, nil, false
+		}
+		node = node.Children[slot]
+	}
+
+	childHashes := make([][32]byte, MerkleFanout)
+	for i, child := range node.Children {
+		if child != nil {
+			childHashes[i] = child.Hash
+		}
+	}
+	return node.Hash, childHashes, true
+}
+
+func (t *MerkleTree) getPath(id VectorID) []int {
+	path := make([]int, MerkleDepth)
+	val := uint32(id)
+	for i := 0; i < MerkleDepth; i++ {
+		path[MerkleDepth-1-i] = int(val % MerkleFanout)
+		val /= MerkleFanout
+	}
+	return path
+}

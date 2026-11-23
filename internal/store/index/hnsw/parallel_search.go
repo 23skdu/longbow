@@ -1,0 +1,452 @@
+package hnsw
+
+import (
+	"context"
+	"runtime"
+	"sort"
+	"sync"
+	"unsafe"
+
+	basecore "github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
+	qry "github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
+	"github.com/apache/arrow-go/v18/arrow"
+)
+
+// flatBufferPool pools []float32 slices used in processChunkInternal to avoid
+// per-search allocations that drive GC pressure at large vector scales.
+var flatBufferPool = sync.Pool{
+	New: func() any {
+		s := make([]float32, 0, 4096)
+		return &s
+	},
+}
+
+// flatBufferPoolF64 pools []float64 slices for high-precision refinement.
+var flatBufferPoolF64 = sync.Pool{
+	New: func() any {
+		s := make([]float64, 0, 4096)
+		return &s
+	},
+}
+
+// ParallelSearchHost abstracts index-specific operations needed for parallel result processing.
+type ParallelSearchHost[T float32 | float64] interface {
+	GetDataset() types.IndexDataProvider
+	GetLocationForParallel(id uint32) (types.Location, bool)
+	ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []T) error
+	GetParallelSearchConfig() types.ParallelSearchConfig
+	GetDistanceFuncForParallel() func(a, b []T) float32
+	ExtractVectorByIDToBufferForParallel(id uint32, dst []T) error
+	GetDistanceMetric() basecore.DistanceMetric
+	IsDeleted(id uint32) bool
+	GetNUMAConfig() (*memory.NUMATopology, int)
+}
+
+// SearchAttemptBuffers holds transient slices used during processChunkInternal
+// to avoid repeated allocations on the heap.
+type SearchAttemptBuffers struct {
+	Locations []types.Location
+	Found     []bool
+	ValidIDs  []uint32
+	Scores    []float32
+}
+
+// EnsureCapacity grows the internal slices to accommodate at least n elements.
+func (b *SearchAttemptBuffers) EnsureCapacity(n int) {
+	if cap(b.Locations) < n {
+		b.Locations = make([]types.Location, n)
+	} else {
+		b.Locations = b.Locations[:n]
+	}
+	if cap(b.Found) < n {
+		b.Found = make([]bool, n)
+	} else {
+		b.Found = b.Found[:n]
+	}
+	if cap(b.ValidIDs) < n {
+		b.ValidIDs = make([]uint32, n)
+	} else {
+		b.ValidIDs = b.ValidIDs[:n]
+	}
+	if cap(b.Scores) < n {
+		b.Scores = make([]float32, n)
+	} else {
+		b.Scores = b.Scores[:n]
+	}
+}
+
+// Reset clears the buffers for reuse without releasing underlying memory.
+func (b *SearchAttemptBuffers) Reset() {
+	b.Locations = b.Locations[:0]
+	b.Found = b.Found[:0]
+	b.ValidIDs = b.ValidIDs[:0]
+	b.Scores = b.Scores[:0]
+}
+
+var attemptBuffersPool = sync.Pool{
+	New: func() any {
+		return &SearchAttemptBuffers{
+			Locations: make([]types.Location, 0, 512),
+			Found:     make([]bool, 0, 512),
+			ValidIDs:  make([]uint32, 0, 512),
+			Scores:    make([]float32, 0, 512),
+		}
+	},
+}
+
+// processResultsParallelInternal is the generalized parallel result processing routine.
+func processResultsParallelInternal[T float32 | float64](ctx context.Context, h ParallelSearchHost[T], query []T, candidates []types.Candidate, k int, filters []qry.Filter, bitmap *roaring.Bitmap) []types.SearchResult {
+	cfg := h.GetParallelSearchConfig()
+	numWorkers := cfg.Workers
+	if numWorkers <= 0 {
+		numWorkers = runtime.NumCPU()
+	}
+
+	neighborCount := len(candidates)
+	dataset := h.GetDataset()
+	dsName := "unknown"
+	if dataset != nil {
+		dsName = dataset.GetName()
+	}
+
+	targetChunks := numWorkers * 3
+	chunkSize := neighborCount / targetChunks
+
+	// Apply min/max constraints
+	if chunkSize < cfg.MinChunkSize {
+		chunkSize = cfg.MinChunkSize
+	}
+	if chunkSize > cfg.MaxChunkSize {
+		chunkSize = cfg.MaxChunkSize
+	}
+
+	// Record metrics
+	metrics.HnswAdaptiveChunkSize.WithLabelValues(dsName, "parallel").Observe(float64(chunkSize))
+	metrics.HnswParallelSearchWorkerCount.WithLabelValues(dsName).Observe(float64(numWorkers))
+
+	// Determine if parallel processing is worthwhile
+	if !cfg.Enabled || neighborCount < chunkSize*2 {
+		metrics.HnswSerialFallbackTotal.WithLabelValues(dsName, getFallbackReason(cfg, neighborCount, chunkSize)).Inc()
+		// Serial fallback implementation here is simplified to just reuse the chunk logic in serial
+		res := processChunkInternal(ctx, h, query, candidates, filters, bitmap)
+		sort.Slice(res, func(i, j int) bool {
+			return res[i].Distance < res[j].Distance
+		})
+		if len(res) > k {
+			res = res[:k]
+		}
+		return res
+	}
+
+	metrics.HnswParallelSearchSplits.WithLabelValues(dsName).Inc()
+
+	// Calculate efficiency metric
+	efficiency := float64(neighborCount) / float64(numWorkers*chunkSize)
+	metrics.HnswParallelSearchEfficiency.WithLabelValues(dsName).Observe(efficiency)
+
+	// Pre-allocate results array of arrays
+	chunksResults := make([][]types.SearchResult, numWorkers)
+	var wg sync.WaitGroup
+	pool := GetSharedPool()
+
+	for i := 0; i < numWorkers; i++ {
+		start := i * chunkSize
+		if start >= neighborCount {
+			break
+		}
+		end := start + chunkSize
+		if end > neighborCount {
+			end = neighborCount
+		}
+
+		workerID := i
+		chunk := candidates[start:end]
+		wg.Add(1)
+
+		topo, node := h.GetNUMAConfig()
+		task := func() {
+			defer wg.Done()
+			chunksResults[workerID] = processChunkInternal(ctx, h, query, chunk, filters, bitmap)
+		}
+
+		if topo != nil && node >= 0 {
+			pool.SubmitToNode(node, task)
+		} else {
+			pool.Submit(task)
+		}
+	}
+	wg.Wait()
+
+	// Merge results
+	totalLen := 0
+	for _, res := range chunksResults {
+		totalLen += len(res)
+	}
+
+	allResults := make([]types.SearchResult, 0, totalLen)
+	for _, res := range chunksResults {
+		allResults = append(allResults, res...)
+	}
+
+	// Sort and limit
+	sort.Slice(allResults, func(i, j int) bool {
+		return allResults[i].Distance < allResults[j].Distance
+	})
+
+	if len(allResults) > k {
+		allResults = allResults[:k]
+	}
+
+	return allResults
+}
+
+// getFallbackReason returns the reason for serial fallback
+func getFallbackReason(cfg types.ParallelSearchConfig, neighborCount, chunkSize int) string {
+	if !cfg.Enabled {
+		return "disabled"
+	}
+	if neighborCount < chunkSize*2 {
+		return "small_set"
+	}
+	return "efficiency"
+}
+
+// processChunkInternal processes a chunk of HNSW neighbors using generic ParallelSearchHost.
+func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSearchHost[T], query []T, candidates []types.Candidate, filters []qry.Filter, bitmap *roaring.Bitmap) []types.SearchResult {
+	results := make([]types.SearchResult, 0, len(candidates))
+	dataset := h.GetDataset()
+
+	// Step 1: Batch location lookup from pool
+	buf := attemptBuffersPool.Get().(*SearchAttemptBuffers)
+	buf.EnsureCapacity(len(candidates))
+	defer func() {
+		buf.Reset()
+		attemptBuffersPool.Put(buf)
+	}()
+
+	locations := buf.Locations
+	found := buf.Found
+	for i := range found {
+		found[i] = false
+	}
+
+	prefetchCount := 4 // Prefetch 4 items ahead
+	prefetchOps := 0
+
+	// Prefetch first batch of candidates
+	for i := 0; i < prefetchCount && i < len(candidates); i++ {
+		simd.Prefetch(unsafe.Pointer(&candidates[i])) // #nosec G103
+		prefetchOps++
+	}
+
+	for i, n := range candidates {
+		// Software prefetch next candidate
+		nextIdx := i + prefetchCount
+		if nextIdx < len(candidates) {
+			simd.Prefetch(unsafe.Pointer(&candidates[nextIdx])) // #nosec G103
+			prefetchOps++
+		}
+
+		// Context check every 32 items
+		if i&31 == 0 {
+			metrics.HnswContextCheckSharded.Inc()
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+			}
+		}
+
+		nodeID := n.ID
+		if h.IsDeleted(nodeID) {
+			continue
+		}
+		if bitmap != nil && !bitmap.Contains(nodeID) {
+			continue
+		}
+		if dataset == nil {
+			found[i] = true
+			hotpathBranchLocationFound.Inc()
+			continue
+		}
+
+		loc, ok := h.GetLocationForParallel(nodeID)
+		if ok {
+			hotpathBranchLocationFound.Inc()
+			locations[i] = loc
+			found[i] = true
+		} else {
+			hotpathBranchLocationMiss.Inc()
+		}
+	}
+
+	metrics.PrefetchOperationsSharded.Add(float64(prefetchOps))
+
+	// Step 2 & 3: Extract vectors and compute distances
+	dims := len(query)
+	need := len(candidates) * dims
+
+	// Reuse a pooled buffer to avoid per-search heap allocations.
+	var pBuf any
+	var flatBuffer []T
+
+	// Selection logic for the correct type pool
+	var dummy T
+	switch any(dummy).(type) {
+	case float32:
+		pb := flatBufferPool.Get().(*[]float32)
+		if cap(*pb) < need {
+			*pb = make([]float32, need)
+		} else {
+			*pb = (*pb)[:need]
+		}
+		pBuf = pb
+		flatBuffer = any(*pb).([]T)
+	case float64:
+		pb := flatBufferPoolF64.Get().(*[]float64)
+		if cap(*pb) < need {
+			*pb = make([]float64, need)
+		} else {
+			*pb = (*pb)[:need]
+		}
+		pBuf = pb
+		flatBuffer = any(*pb).([]T)
+	}
+
+	defer func() {
+		switch any(dummy).(type) {
+		case float32:
+			pb := pBuf.(*[]float32)
+			*pb = (*pb)[:0]
+			flatBufferPool.Put(pb)
+		case float64:
+			pb := pBuf.(*[]float64)
+			*pb = (*pb)[:0]
+			flatBufferPoolF64.Put(pb)
+		}
+	}()
+
+	validIDs := buf.ValidIDs[:0]
+	count := 0
+
+	evaluators := make(map[int]*qry.FilterEvaluator)
+	if dataset != nil {
+		dataset.RLockData()
+		records := dataset.GetRecords()
+		if len(filters) > 0 && len(records) > 0 {
+			ev, err := qry.NewFilterEvaluator(records[0], filters)
+			if err == nil {
+				evaluators[0] = ev
+			}
+		}
+	}
+
+	for i, n := range candidates {
+		if i&31 == 0 {
+			metrics.HnswContextCheckSharded.Inc()
+			select {
+			case <-ctx.Done():
+				if dataset != nil {
+					dataset.RUnlockData()
+				}
+				return nil
+			default:
+			}
+		}
+
+		if !found[i] {
+			continue
+		}
+
+		dst := flatBuffer[count*dims : (count+1)*dims]
+		var err error
+
+		if dataset != nil {
+			loc := locations[i]
+			records := dataset.GetRecords()
+			if loc.BatchIdx < 0 || loc.BatchIdx >= len(records) {
+				err = h.ExtractVectorByIDToBufferForParallel(n.ID, dst)
+				if err == nil {
+					validIDs = append(validIDs, n.ID)
+					count++
+				}
+				continue
+			}
+			rec := records[loc.BatchIdx]
+
+			if len(evaluators) > 0 {
+				ev, ok := evaluators[loc.BatchIdx]
+				if !ok {
+					ev, err = qry.NewFilterEvaluator(records[loc.BatchIdx], filters)
+					if err != nil {
+						continue
+					}
+					evaluators[loc.BatchIdx] = ev
+				}
+				if !ev.Matches(loc.RowIdx) {
+					hotpathBranchFilterMiss.Inc()
+					continue
+				}
+				hotpathBranchFilterMatch.Inc()
+			}
+
+			err = h.ExtractVectorToBufferForParallel(rec, loc.RowIdx, dst)
+		} else {
+			if len(filters) > 0 {
+				continue
+			}
+			err = h.ExtractVectorByIDToBufferForParallel(n.ID, dst)
+		}
+
+		if err == nil {
+			validIDs = append(validIDs, n.ID)
+			count++
+		}
+	}
+	if dataset != nil {
+		dataset.RUnlockData()
+	}
+
+	if count == 0 {
+		return results
+	}
+
+	scores := buf.Scores[:count]
+	usedBatch := false
+	metric := h.GetDistanceMetric()
+
+	// Optimized batch SIMD path for float32
+	switch any(dummy).(type) {
+	case float32:
+		f32Buf := any(flatBuffer).([]float32)
+		f32Query := any(query).([]float32)
+		if metric == basecore.MetricEuclidean {
+			if err := simd.EuclideanDistanceBatchFlat(f32Query, f32Buf[:count*dims], count, dims, scores); err == nil {
+				usedBatch = true
+			}
+		}
+	}
+
+	if !usedBatch {
+		distFunc := h.GetDistanceFuncForParallel()
+		for i := 0; i < count; i++ {
+			scores[i] = distFunc(query, flatBuffer[i*dims:(i+1)*dims])
+		}
+	}
+
+	for i := 0; i < count; i++ {
+		dist := scores[i]
+		results = append(results, types.SearchResult{
+			ID:       types.VectorID(validIDs[i]),
+			Distance: dist,
+			Score:    1.0 / (1.0 + dist),
+		})
+	}
+
+	return results
+}

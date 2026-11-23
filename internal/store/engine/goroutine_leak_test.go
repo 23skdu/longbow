@@ -1,0 +1,49 @@
+package engine
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
+)
+
+// TestVectorStore_GoroutineLeak runs the test vector store_goroutine leak operation.
+func TestVectorStore_GoroutineLeak(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	logger := zerolog.Nop()
+	mem := memory.DefaultAllocator
+
+	for i := 0; i < 3; i++ {
+		s := NewVectorStore(mem, logger, 1024*1024, 0, 0)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		s.StartLifecycleManager(ctx)
+		s.StartEvictionTicker(10 * time.Millisecond)
+
+		schema := arrow.NewSchema([]arrow.Field{
+			{Name: "vector", Type: arrow.FixedSizeListOf(128, arrow.PrimitiveTypes.Float32)},
+		}, nil)
+		s.PrewarmDataset("test_ds", schema)
+
+		if ds, ok := s.getDataset("test_ds"); ok {
+			if hnsw, ok := ds.Index.(*ArrowHNSW); ok {
+				hnsw.StartRepairWorker(ctx, 10*time.Millisecond, 100)
+			}
+		}
+
+		err := s.DropDataset(context.Background(), "test_ds")
+		assert.NoError(t, err)
+
+		time.Sleep(50 * time.Millisecond)
+
+		cancel()
+		err = s.Close()
+		assert.NoError(t, err)
+	}
+}

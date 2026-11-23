@@ -1,0 +1,244 @@
+package engine
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow"
+	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// buildSmallDataset creates a dataset with n float32 vectors of dimension dim
+// in a single Arrow record batch and inserts them into an ArrowHNSW index.
+func buildSmallDataset(t *testing.T, n, dim int) (*Dataset, *ArrowHNSW) {
+	t.Helper()
+	mem := memory.NewGoAllocator()
+
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+	}, nil)
+
+	bID := arrowarray.NewInt64Builder(mem)
+	defer bID.Release()
+	bVec := arrowarray.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32)
+	defer bVec.Release()
+	bVecValues := bVec.ValueBuilder().(*arrowarray.Float32Builder)
+
+	for i := 0; i < n; i++ {
+		bID.Append(int64(i))
+		bVec.Append(true)
+		vec := make([]float32, dim)
+		for j := 0; j < dim; j++ {
+			vec[j] = float32(i*dim+j) * 0.01
+		}
+		bVecValues.AppendValues(vec, nil)
+	}
+
+	arrID := bID.NewArray()
+	defer arrID.Release()
+	arrVec := bVec.NewArray()
+	defer arrVec.Release()
+
+	batch := arrowarray.NewRecordBatch(schema, []arrow.Array{arrID, arrVec}, int64(n))
+
+	ds := NewDataset("test_gn", schema)
+	batch.Retain()
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), batch))
+
+	t.Cleanup(func() {
+		for _, r := range ds.Records.Read() {
+			r.Release()
+		}
+	})
+
+	cfg := DefaultArrowHNSWConfig()
+	cfg.Dims = dim
+	cfg.M = 4
+	cfg.MMax = 8
+	cfg.MMax0 = 8
+	cfg.EfConstruction = 50
+	cfg.InitialCapacity = n + 10
+
+	idx := NewArrowHNSW(ds, &cfg, nil)
+	ds.Index = idx
+	t.Cleanup(func() { _ = idx.Close() })
+
+	rowIdxs := make([]int, n)
+	batchIdxs := make([]int, n)
+	for i := range rowIdxs {
+		rowIdxs[i] = i
+	}
+	ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{batch}, rowIdxs, batchIdxs)
+	require.NoError(t, err)
+	require.Len(t, ids, n)
+
+	return ds, idx
+}
+
+// TestLookupNeighbors_HNSW_ReturnsTrueNeighbors verifies that after insertion the
+// graph has recorded neighbors for the queried node. All returned IDs must be
+// valid node indices.
+func TestLookupNeighbors_HNSW_ReturnsTrueNeighbors(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	const n, dim = 50, 4
+	ds, _ := buildSmallDataset(t, n, dim)
+
+	results, err := LookupNeighbors(context.Background(), ds, 25, 0)
+	require.NoError(t, err)
+	for _, r := range results {
+		assert.Less(t, r.ID, uint64(n), "neighbor ID must be a valid node index")
+	}
+}
+
+// TestLookupNeighbors_HNSW_KLimitRespected verifies that k=2 returns at most 2 results.
+func TestLookupNeighbors_HNSW_KLimitRespected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	const n, dim = 50, 4
+	ds, _ := buildSmallDataset(t, n, dim)
+
+	results, err := LookupNeighbors(context.Background(), ds, 25, 2)
+	require.NoError(t, err)
+	assert.LessOrEqual(t, len(results), 2, "k=2 must return at most 2 results")
+}
+
+// TestLookupNeighbors_UnknownID verifies that an ID not in the index returns
+// ErrVectorNotFound.
+func TestLookupNeighbors_UnknownID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	const n, dim = 10, 4
+	ds, _ := buildSmallDataset(t, n, dim)
+
+	_, err := LookupNeighbors(context.Background(), ds, 9999, 0)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrVectorNotFound), "unknown ID must return ErrVectorNotFound")
+}
+
+// TestLookupNeighbors_NonHNSW_ReturnsNotSupported verifies that non-ArrowHNSW
+// index types return ErrGetNeighborsNotSupported.
+//
+// ShardedHNSW is a full VectorIndex implementation, but is not *ArrowHNSW,
+// so LookupNeighbors should reject it with the appropriate sentinel.
+func TestLookupNeighbors_NonHNSW_ReturnsNotSupported(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vector", Type: arrow.FixedSizeListOf(4, arrow.PrimitiveTypes.Float32)},
+	}, nil)
+	ds := NewDataset("sharded_ds", schema)
+
+	shardedCfg := DefaultShardedHNSWConfig()
+	shardedCfg.Dimension = 4
+	shardedCfg.NumShards = 1
+	shardedIdx := NewShardedHNSW(shardedCfg, ds)
+	defer func() { _ = shardedIdx.Close() }()
+
+	_, err := LookupNeighbors(context.Background(), ds, 0, 0)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrGetNeighborsNotSupported),
+		"ShardedHNSW must return ErrGetNeighborsNotSupported")
+}
+
+// TestLookupNeighbors_NilDataset ensures the function does not panic on nil input.
+func TestLookupNeighbors_NilDataset(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	_, err := LookupNeighbors(context.Background(), nil, 0, 0)
+	require.Error(t, err)
+}
+
+// TestLookupNeighbors_NonFloat32_NonZeroDistance verifies that LookupNeighbors computes
+// real non-zero distance for non-float32 data types (e.g. Float64) and translates IDs to external IDs.
+func TestLookupNeighbors_NonFloat32_NonZeroDistance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	const n, dim = 30, 4
+	mem := memory.NewGoAllocator()
+
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float64)},
+	}, nil)
+
+	bID := arrowarray.NewInt64Builder(mem)
+	defer bID.Release()
+	bVec := arrowarray.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float64)
+	defer bVec.Release()
+	bVecValues := bVec.ValueBuilder().(*arrowarray.Float64Builder)
+
+	const baseID = 5000
+	for i := 0; i < n; i++ {
+		bID.Append(int64(baseID + i))
+		bVec.Append(true)
+		vec := make([]float64, dim)
+		for j := 0; j < dim; j++ {
+			vec[j] = float64(i*dim+j) * 0.1
+		}
+		bVecValues.AppendValues(vec, nil)
+	}
+
+	arrID := bID.NewArray()
+	defer arrID.Release()
+	arrVec := bVec.NewArray()
+	defer arrVec.Release()
+
+	batch := arrowarray.NewRecordBatch(schema, []arrow.Array{arrID, arrVec}, int64(n))
+
+	ds := NewDataset("test_gn_f64", schema)
+	batch.Retain()
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), batch))
+	t.Cleanup(func() {
+		for _, r := range ds.Records.Read() {
+			r.Release()
+		}
+	})
+
+	cfg := DefaultArrowHNSWConfig()
+	cfg.Dims = dim
+	cfg.DataType = types.VectorTypeFloat64
+	cfg.M = 4
+	cfg.MMax = 8
+	cfg.MMax0 = 8
+	cfg.EfConstruction = 50
+	cfg.InitialCapacity = n + 10
+
+	idx := NewArrowHNSW(ds, &cfg, nil)
+	ds.Index = idx
+	t.Cleanup(func() { _ = idx.Close() })
+
+	rowIdxs := make([]int, n)
+	batchIdxs := make([]int, n)
+	for i := range rowIdxs {
+		rowIdxs[i] = i
+	}
+	_, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{batch}, rowIdxs, batchIdxs)
+	require.NoError(t, err)
+
+	// Query for external ID (baseID + 15)
+	results, err := LookupNeighbors(context.Background(), ds, baseID+15, 0)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+
+	for _, r := range results {
+		// External ID must be in the mapped [baseID, baseID+n) range, not internal 0..n-1
+		assert.GreaterOrEqual(t, r.ID, uint64(baseID), "Neighbor ID must map to external ID")
+		assert.Less(t, r.ID, uint64(baseID+n), "Neighbor ID must map to external ID")
+		// Non-float32 distance must be strictly positive (not 0.0)
+		assert.Greater(t, r.Distance, float32(0.0), "Distance for float64 vectors must be non-zero")
+	}
+}

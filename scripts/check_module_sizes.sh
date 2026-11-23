@@ -28,23 +28,15 @@ ALLOWLIST_KEYS=(
     "cmd/tensor-verify/main.go"
     "internal/simd/int16_kernels_amd64.s"
     "internal/store/types/graph_data.go"
-    "internal/store/store.go"
-    "internal/store/index/neighbor_ops.go"
-    "internal/store/cloud_control_plane.go"
+    "internal/store/index/hnsw/neighbor_ops.go"
     "internal/tensor/ops.go"
-    "internal/store/index/ivf_flat.go"
     "internal/store/types/serialization.go"
     "longbowclientsdk/validate_sdk_coverage.py"
-    "internal/store/store_actions.go"
-    "internal/store/graph_store.go"
+    "internal/store/engine/reranker_advanced.go"
     "internal/simd/simd_blocked.go"
     "internal/store/types/graph_data_chunks.go"
-    "internal/store/index/diskann.go"
+    "internal/store/index/hnsw/diskann.go"
     "internal/mesh/gossip.go"
-    "internal/store/index/sharded_hnsw.go"
-    "internal/store/index/ivf_pq_index.go"
-    "internal/store/reranker_advanced.go"
-    "internal/store/multimodal.go"
 )
 
 allowlist_base() {
@@ -56,23 +48,15 @@ allowlist_base() {
         "cmd/tensor-verify/main.go") echo 1050 ;;
         "internal/simd/int16_kernels_amd64.s") echo 1035 ;;
         "internal/store/types/graph_data.go") echo 1008 ;;
-        "internal/store/store.go") echo 967 ;;
-        "internal/store/index/neighbor_ops.go") echo 964 ;;
-        "internal/store/cloud_control_plane.go") echo 957 ;;
+        "internal/store/index/hnsw/neighbor_ops.go") echo 964 ;;
         "internal/tensor/ops.go") echo 940 ;;
-        "internal/store/index/ivf_flat.go") echo 939 ;;
         "internal/store/types/serialization.go") echo 928 ;;
         "longbowclientsdk/validate_sdk_coverage.py") echo 908 ;;
-        "internal/store/store_actions.go") echo 905 ;;
-        "internal/store/graph_store.go") echo 895 ;;
+        "internal/store/engine/reranker_advanced.go") echo 827 ;;
         "internal/simd/simd_blocked.go") echo 891 ;;
         "internal/store/types/graph_data_chunks.go") echo 881 ;;
-        "internal/store/index/diskann.go") echo 873 ;;
+        "internal/store/index/hnsw/diskann.go") echo 873 ;;
         "internal/mesh/gossip.go") echo 869 ;;
-        "internal/store/index/sharded_hnsw.go") echo 867 ;;
-        "internal/store/index/ivf_pq_index.go") echo 857 ;;
-        "internal/store/reranker_advanced.go") echo 827 ;;
-        "internal/store/multimodal.go") echo 812 ;;
         *) echo 0 ;;
     esac
 }

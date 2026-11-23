@@ -41,6 +41,10 @@ DATA tq_max4<>+0x00(SB)/4, $15.0
 DATA tq_max2<>+0x00(SB)/4, $3.0
 DATA tq_one<>+0x00(SB)/4, $1.0
 
+// Midpoint grid shared with PackTQ2Generic: (v+3*pi/4)*(2/pi), clamp [0,3], +0.5.
+DATA tq_tq2_offset<>+0x00(SB)/4, $2.356194496154785
+DATA tq_tq2_invscale<>+0x00(SB)/4, $0.6366197466850281
+
 GLOBL tq_pi<>(SB), RODATA, $4
 GLOBL tq_inv2pi<>(SB), RODATA, $4
 GLOBL tq_half<>(SB), RODATA, $4
@@ -48,6 +52,8 @@ GLOBL tq_max8<>(SB), RODATA, $4
 GLOBL tq_max4<>(SB), RODATA, $4
 GLOBL tq_max2<>(SB), RODATA, $4
 GLOBL tq_one<>(SB), RODATA, $4
+GLOBL tq_tq2_offset<>(SB), RODATA, $4
+GLOBL tq_tq2_invscale<>(SB), RODATA, $4
 
 // Control masks for VPMULTISHIFTQB packing (TQ2)
 // Each qword lane has 8 bytes. We want to extract 2 bits from each and pack into 2 bytes.
@@ -95,11 +101,11 @@ DATA vbmi_tq2_pack_ctrl_3<>+0x30(SB)/8, $0x0000000000003212
 DATA vbmi_tq2_pack_ctrl_3<>+0x38(SB)/8, $0x0000000000003212
 GLOBL vbmi_tq2_pack_ctrl_3<>(SB), RODATA, $64
 
-// collect_mask: selects byte 0 and 1 from each qword
-DATA vbmi_tq2_collect_mask<>+0x00(SB)/8, $0x0b0a090803020100
-DATA vbmi_tq2_collect_mask<>+0x08(SB)/8, $0x1b1a191813121110
-DATA vbmi_tq2_collect_mask<>+0x10(SB)/8, $0x2b2a292823222120
-DATA vbmi_tq2_collect_mask<>+0x18(SB)/8, $0x3b3a393833323130
+// VPERMB gathers bytes 0,1 of each qword; gathering 0..3 interleaves zero bytes.
+DATA vbmi_tq2_collect_mask<>+0x00(SB)/8, $0x1918111009080100
+DATA vbmi_tq2_collect_mask<>+0x08(SB)/8, $0x3938313029282120
+DATA vbmi_tq2_collect_mask<>+0x10(SB)/8, $0x0000000000000000
+DATA vbmi_tq2_collect_mask<>+0x18(SB)/8, $0x0000000000000000
 DATA vbmi_tq2_collect_mask<>+0x20(SB)/8, $0x0000000000000000
 DATA vbmi_tq2_collect_mask<>+0x28(SB)/8, $0x0000000000000000
 DATA vbmi_tq2_collect_mask<>+0x30(SB)/8, $0x0000000000000000
@@ -583,34 +589,30 @@ done_tq2_vbmi:
     RET
 
 // func packTQ2AVX512VBMIKernel(src, dst unsafe.Pointer, n int)
+// Uses PackTQ2Generic's midpoint grid; VRNDSCALEPS down gives floor(qf+0.5).
+// VPMULTISHIFTQB + VPERMB assemble two output bytes per qword lane.
 TEXT ·packTQ2AVX512VBMIKernel(SB), NOSPLIT, $0-24
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
-    
-    VBROADCASTSS tq_pi<>(SB), Z0 // PI
-    VBROADCASTSS tq_inv2pi<>(SB), Z1 // 1/2PI
-    VBROADCASTSS tq_max2<>(SB), Z2 // 3.0
-    VBROADCASTSS tq_half<>(SB), Z3 // 0.5
-    VPXORD  Z4, Z4, Z4  // 0.0
-    VBROADCASTSS tq_one<>(SB), Z5 // 1.0
-    
+    VBROADCASTSS tq_tq2_offset<>(SB), Z0  // 3*PI/4
+    VBROADCASTSS tq_tq2_invscale<>(SB), Z1 // 2/PI
+    VBROADCASTSS tq_max2<>(SB), Z2        // 3.0
+    VBROADCASTSS tq_half<>(SB), Z3        // 0.5
+    VPXORD  Z4, Z4, Z4                    // 0.0
 loop_pack2_vbmi:
     CMPQ    CX, $64
     JL      tail_pack2_vbmi
-    
     // Load 64 floats
     VMOVDQU32 (SI), Z6
     VMOVDQU32 64(SI), Z7
     VMOVDQU32 128(SI), Z8
     VMOVDQU32 192(SI), Z9
-    
-    // Quantize 
-    VADDPS  Z0, Z6, Z6; VMULPS  Z1, Z6, Z6; VMAXPS  Z4, Z6, Z6; VMINPS  Z5, Z6, Z6; VMULPS  Z2, Z6, Z6; VADDPS  Z3, Z6, Z6; VRNDSCALEPS $0x01, Z6, Z6; VCVTPS2DQ Z6, Z6
-    VADDPS  Z0, Z7, Z7; VMULPS  Z1, Z7, Z7; VMAXPS  Z4, Z7, Z7; VMINPS  Z5, Z7, Z7; VMULPS  Z2, Z7, Z7; VADDPS  Z3, Z7, Z7; VRNDSCALEPS $0x01, Z7, Z7; VCVTPS2DQ Z7, Z7
-    VADDPS  Z0, Z8, Z8; VMULPS  Z1, Z8, Z8; VMAXPS  Z4, Z8, Z8; VMINPS  Z5, Z8, Z8; VMULPS  Z2, Z8, Z8; VADDPS  Z3, Z8, Z8; VRNDSCALEPS $0x01, Z8, Z8; VCVTPS2DQ Z8, Z8
-    VADDPS  Z0, Z9, Z9; VMULPS  Z1, Z9, Z9; VMAXPS  Z4, Z9, Z9; VMINPS  Z5, Z9, Z9; VMULPS  Z2, Z9, Z9; VADDPS  Z3, Z9, Z9; VRNDSCALEPS $0x01, Z9, Z9; VCVTPS2DQ Z9, Z9
-    
+    // Quantize on the generic midpoint grid, clamping qf itself to [0,3].
+    VADDPS  Z0, Z6, Z6; VMULPS  Z1, Z6, Z6; VMAXPS  Z4, Z6, Z6; VMINPS  Z2, Z6, Z6; VADDPS  Z3, Z6, Z6; VRNDSCALEPS $0x01, Z6, Z6; VCVTPS2DQ Z6, Z6
+    VADDPS  Z0, Z7, Z7; VMULPS  Z1, Z7, Z7; VMAXPS  Z4, Z7, Z7; VMINPS  Z2, Z7, Z7; VADDPS  Z3, Z7, Z7; VRNDSCALEPS $0x01, Z7, Z7; VCVTPS2DQ Z7, Z7
+    VADDPS  Z0, Z8, Z8; VMULPS  Z1, Z8, Z8; VMAXPS  Z4, Z8, Z8; VMINPS  Z2, Z8, Z8; VADDPS  Z3, Z8, Z8; VRNDSCALEPS $0x01, Z8, Z8; VCVTPS2DQ Z8, Z8
+    VADDPS  Z0, Z9, Z9; VMULPS  Z1, Z9, Z9; VMAXPS  Z4, Z9, Z9; VMINPS  Z2, Z9, Z9; VADDPS  Z3, Z9, Z9; VRNDSCALEPS $0x01, Z9, Z9; VCVTPS2DQ Z9, Z9
     // Narrow to bytes
     VPMOVDB Z6, X6
     VPMOVDB Z7, X7
@@ -662,12 +664,11 @@ loop_pack2_vbmi:
 tail_pack2_vbmi:
     TESTQ   CX, CX
     JZ      done_pack2_vbmi
-    VMOVSS  tq_pi<>(SB), X0
-    VMOVSS  tq_inv2pi<>(SB), X1
+    VMOVSS  tq_tq2_offset<>(SB), X0
+    VMOVSS  tq_tq2_invscale<>(SB), X1
     VMOVSS  tq_max2<>(SB), X2
     VMOVSS  tq_half<>(SB), X3
     VPXOR   X4, X4, X4
-    VMOVSS  tq_one<>(SB), X6
 
     XORL    R8, R8       // byte under construction
     MOVQ    $4, R13      // elements still wanted in that byte
@@ -677,8 +678,7 @@ tail_elem2_vbmi:
     VADDSS  X0, X5, X5
     VMULSS  X1, X5, X5
     VMAXSS  X4, X5, X5
-    VMINSS  X6, X5, X5
-    VMULSS  X2, X5, X5
+    VMINSS  X2, X5, X5
     VADDSS  X3, X5, X5
     VROUNDPS $1, X5, X5
     VCVTSS2SI X5, R11

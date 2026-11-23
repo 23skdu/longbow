@@ -60,34 +60,70 @@ helm install my-release ./helm/longbow
 
 ### Docker & Multi-Platform Support
 
-Official images are available on GitHub Container Registry (`ghcr.io/23skdu/longbow`). `.github/workflows/release.yml` builds exactly two of them:
+Official images are published to GitHub Container Registry (`ghcr.io/23skdu/longbow`) by the `release-containers` job in `.github/workflows/ci.yml`. Each image is tagged `latest` (plus the suffix below), `sha-<short-sha>`, and the git tag name on a tag push. The Helm chart defaults to `image.tag: "latest"`.
 
-- **Standard image** -- Multi-arch (`linux/amd64`, `linux/arm64`), published as `latest`. The `linux/arm64` slice covers ARM64 hosts such as AWS Graviton.
-- **NVIDIA image** -- `linux/amd64` only, built from `Dockerfile.nvidia` with the custom CUDA kernels and zero-copy tensor bridge, published with the `-nvidia` suffix as `latest-nvidia`.
+| Image tag | Dockerfile | Published platforms |
+| :--- | :--- | :--- |
+| `latest` | `Dockerfile.cpu` | `linux/amd64`, `linux/arm64` |
+| `latest-emlgo-cpu` | `Dockerfile.emlgo-cpu` | `linux/amd64`, `linux/arm64` |
+| `latest-nvidia` | `Dockerfile.nvidia` | `linux/amd64` only |
+| `latest-emlgo-nvidia` | `Dockerfile.emlgo-nvidia` | `linux/amd64` only |
+| `latest-tpu` | `Dockerfile.tpu` | `linux/amd64` only |
 
-Each is also published under a `sha-<short-sha>` tag and, on a git tag push, under the tag name. The Helm chart defaults to `image.tag: "latest"`.
+The GPU and TPU variants are amd64-only because their base toolchains require it: both CUDA images install a `linux-amd64` Go toolchain and compile `nvcc` kernels for amd64, and the Cloud TPU image links the x86_64-only `libtpu`/PJRT stack. The CPU and EMLGo CPU images use `golang:1.27.4-bookworm` plus `scratch`, so they publish a real multi-arch manifest with both slices. `Dockerfile.metal` is not in the release matrix, and darwin/arm64 OCI images are not published: OCI images are Linux artifacts, and Metal requires a native macOS binary.
 
-Two caveats when reproducing this locally:
+Publishing is opt-in. Pull requests and plain `workflow_dispatch` runs build every platform for validation but do not push. A tag ref, or a dispatch with `publish: true`, pushes the images, verifies each manifest and tag by digest, generates SPDX SBOMs from the pushed digests, and signs those digests with Cosign. The SBOMs are attached to the same digests.
 
-- The standard-image build step sets no `file:`, so it resolves to a `Dockerfile` at the repository root. The repo does not track one -- the only Dockerfiles present are `Dockerfile.cpu`, `Dockerfile.metal`, `Dockerfile.nvidia`, `Dockerfile.tpu`, and `Dockerfile.emlgo-cpu` / `Dockerfile.emlgo-nvidia`. Pass `-f` explicitly when building.
-- There is no separate Metal, CPU-only, or EMLGo image tag. `Dockerfile.metal` and the `Dockerfile.emlgo-*` variants are not referenced by any workflow, so build them yourself if you need those configurations (see below).
+### Apple Silicon (ARM64) Supported Paths
+
+There are two supported paths on Apple Silicon; they are not interchangeable.
+
+1. **Native Darwin ARM64 binaries with Metal for local development.** Run the macOS binary directly so the Metal backend is available:
+
+   ```bash
+   # Same artifact as the release-darwin-arm64 CI job
+   GOOS=darwin GOARCH=arm64 go build -o dist/longbow-darwin-arm64 ./cmd/longbow
+
+   # Metal acceleration needs the native binary built with the gpu tag
+   CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -tags gpu -o dist/longbow-metal ./cmd/longbow
+   ```
+
+   The `darwin-arm64-verify` CI job builds, vets, and tests this configuration on a macOS runner, and `release-darwin-arm64` uploads the `longbow-darwin-arm64` binary. Use this path when you need Metal GPU acceleration; a Linux container cannot expose Metal to the guest.
+
+2. **linux/arm64 containers on Apple Silicon Docker hosts.** Docker Desktop and Colima run a Linux VM, so `linux/arm64` OCI slices are the correct container artifacts:
+
+   ```bash
+   docker run --platform linux/arm64 ghcr.io/23skdu/longbow:latest
+   docker run --platform linux/arm64 ghcr.io/23skdu/longbow:latest-emlgo-cpu
+   ```
+
+   These are the same manifest lists published for AWS Graviton and other ARM64 Linux hosts. GPU acceleration inside the container requires a CUDA-capable Linux host; Metal is not available in this path.
+
+darwin/arm64 OCI images are not published. Use the native binary for macOS/Metal and the `linux/arm64` image for containers.
 
 ### Building Docker Images Locally
 
 ```bash
-# Standard CPU build
-docker build -f Dockerfile.cpu -t longbow:cpu .
+# Standard CPU build (linux/amd64)
+make docker-build-cpu
+# linux/arm64 CPU slice for Apple Silicon Docker hosts
+make docker-build-cpu-arm64
 
-# NVIDIA GPU build
-docker build -f Dockerfile.nvidia -t longbow:nvidia .
+# EMLGo CPU builds (high-performance SIMD math; NEON on arm64)
+make docker-build-emlgo-cpu
+make docker-build-emlgo-cpu-arm64
 
-# EMLGo CPU build (high-performance SIMD math)
-docker build -f Dockerfile.emlgo-cpu -t longbow:emlgo-cpu .
+# AMD64-only accelerator builds
+make docker-build-nvidia
+make docker-build-emlgo-nvidia
+make docker-build-tpu
 
-# EMLGo GPU build (CUDA + SIMD math)
-docker build -f Dockerfile.emlgo-nvidia -t longbow:emlgo-nvidia .
+# Equivalent raw docker commands
+docker build --platform linux/amd64 -f Dockerfile.cpu -t longbow:cpu .
+docker build --platform linux/arm64 -f Dockerfile.cpu -t longbow:cpu-arm64 .
+docker build --platform linux/arm64 -f Dockerfile.emlgo-cpu -t longbow:emlgo-cpu-arm64 .
 
-# With io_uring support
+# With io_uring support (Linux 5.1+)
 docker build -f Dockerfile.cpu -t longbow:cpu-iouring . --build-arg ENABLE_IOURING=true
 docker build -f Dockerfile.emlgo-cpu -t longbow:emlgo-cpu-iouring . --build-arg ENABLE_IOURING=true
 ```

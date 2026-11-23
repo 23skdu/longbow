@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"sort"
 	"strconv"
@@ -14,6 +15,10 @@ import (
 	"github.com/23skdu/longbow/client"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 )
+
+func finiteWeight(w float64) bool {
+	return !math.IsNaN(w) && !math.IsInf(w, 0)
+}
 
 // workloadOps is the canonical set of operations in the shared soak workload.
 // Both Go and Python simulators use the same names in
@@ -56,8 +61,8 @@ func newWeightedSelector(weights map[string]float64) (*weightedSelector, error) 
 		if !knownWorkloadOp(op) {
 			return nil, fmt.Errorf("unknown workload op %q", op)
 		}
-		if weight < 0 {
-			return nil, fmt.Errorf("negative weight for %q", op)
+		if !finiteWeight(weight) || weight < 0 {
+			return nil, fmt.Errorf("invalid weight for %q", op)
 		}
 		if weight == 0 {
 			continue
@@ -110,7 +115,7 @@ func parseWorkloadOverride(s string) (map[string]float64, error) {
 			return nil, fmt.Errorf("unknown workload operation %q", op)
 		}
 		weight, err := strconv.ParseFloat(strings.TrimSpace(kv[1]), 64)
-		if err != nil || weight < 0 {
+		if err != nil || !finiteWeight(weight) || weight < 0 {
 			return nil, fmt.Errorf("invalid weight for %q", op)
 		}
 		out[op] = weight

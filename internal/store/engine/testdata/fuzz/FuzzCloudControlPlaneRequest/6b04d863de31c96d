@@ -1,0 +1,8 @@
+go test fuzz v1
+string("")
+string("0")
+string("0")
+rune('\x00')
+string("0")
+string("")
+float32(-95)

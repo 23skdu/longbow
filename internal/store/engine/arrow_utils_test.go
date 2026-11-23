@@ -1,0 +1,327 @@
+package engine
+
+import (
+	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/float16"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+)
+
+// TestExtractVectorFromArrow runs the test extract vector from arrow operation.
+func TestExtractVectorFromArrow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	// Create a simple Arrow record with vector column
+	pool := memory.NewGoAllocator()
+
+	// Define schema: vector column as FixedSizeList of float32
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "id", Type: arrow.PrimitiveTypes.Uint32},
+			{Name: "vector", Type: arrow.FixedSizeListOf(3, arrow.PrimitiveTypes.Float32)},
+		},
+		nil,
+	)
+
+	// Build record with 3 vectors
+	builder := array.NewRecordBuilder(pool, schema)
+	defer builder.Release()
+
+	idBuilder := builder.Field(0).(*array.Uint32Builder)
+	vecBuilder := builder.Field(1).(*array.FixedSizeListBuilder)
+	floatBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
+
+	// Vector 0: [1.0, 2.0, 3.0]
+	idBuilder.Append(0)
+	vecBuilder.Append(true)
+	floatBuilder.AppendValues([]float32{1.0, 2.0, 3.0}, nil)
+
+	// Vector 1: [4.0, 5.0, 6.0]
+	idBuilder.Append(1)
+	vecBuilder.Append(true)
+	floatBuilder.AppendValues([]float32{4.0, 5.0, 6.0}, nil)
+
+	// Vector 2: [7.0, 8.0, 9.0]
+	idBuilder.Append(2)
+	vecBuilder.Append(true)
+	floatBuilder.AppendValues([]float32{7.0, 8.0, 9.0}, nil)
+
+	rec := builder.NewRecordBatch()
+	defer rec.Release()
+
+	// Test extracting each vector
+	vec0, err := ExtractVectorFromArrow(rec, 0, 1) // Column 1 is vector
+	if err != nil {
+		t.Fatalf("extractVector(0) failed: %v", err)
+	}
+	if len(vec0) != 3 || vec0[0] != 1.0 || vec0[1] != 2.0 || vec0[2] != 3.0 {
+		t.Errorf("vec0 = %v, want [1 2 3]", vec0)
+	}
+
+	vec1, err := ExtractVectorFromArrow(rec, 1, 1)
+	if err != nil {
+		t.Fatalf("extractVector(1) failed: %v", err)
+	}
+	if len(vec1) != 3 || vec1[0] != 4.0 || vec1[1] != 5.0 || vec1[2] != 6.0 {
+		t.Errorf("vec1 = %v, want [4 5 6]", vec1)
+	}
+
+	vec2, err := ExtractVectorFromArrow(rec, 2, 1)
+	if err != nil {
+		t.Fatalf("extractVector(2) failed: %v", err)
+	}
+	if len(vec2) != 3 || vec2[0] != 7.0 || vec2[1] != 8.0 || vec2[2] != 9.0 {
+		t.Errorf("vec2 = %v, want [7 8 9]", vec2)
+	}
+}
+
+// TestExtractVectorCopy runs the test extract vector copy operation.
+func TestExtractVectorCopy(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	pool := memory.NewGoAllocator()
+
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
+		},
+		nil,
+	)
+
+	builder := array.NewRecordBuilder(pool, schema)
+	defer builder.Release()
+
+	vecBuilder := builder.Field(0).(*array.FixedSizeListBuilder)
+	floatBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
+
+	vecBuilder.Append(true)
+	floatBuilder.AppendValues([]float32{1.0, 2.0}, nil)
+
+	rec := builder.NewRecordBatch()
+	defer rec.Release()
+
+	// Get copy
+	vec, err := ExtractVectorFromArrow(rec, 0, 0) // Column 0 is vector
+	if err != nil {
+		t.Fatalf("ExtractVectorFromArrow failed: %v", err)
+	}
+
+	// Modify copy - should not affect original
+	vec[0] = 999.0
+
+	// Get original again
+	original, err := ExtractVectorFromArrow(rec, 0, 0)
+	if err != nil {
+		t.Fatalf("ExtractVectorFromArrow failed: %v", err)
+	}
+	if original[0] != 1.0 {
+		t.Errorf("original was modified! got %f, want 1.0", original[0])
+	}
+}
+
+// BenchmarkExtractVectorZeroCopy runs the benchmark extract vector zero copy operation.
+func BenchmarkExtractVectorZeroCopy(b *testing.B) {
+	pool := memory.NewGoAllocator()
+
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "vector", Type: arrow.FixedSizeListOf(384, arrow.PrimitiveTypes.Float32)},
+		},
+		nil,
+	)
+
+	builder := array.NewRecordBuilder(pool, schema)
+	defer builder.Release()
+
+	vecBuilder := builder.Field(0).(*array.FixedSizeListBuilder)
+	floatBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
+
+	// Add 1000 vectors
+	for i := 0; i < 1000; i++ {
+		vecBuilder.Append(true)
+		vec := make([]float32, 384)
+		for j := range vec {
+			vec[j] = float32(i*384 + j)
+		}
+		floatBuilder.AppendValues(vec, nil)
+	}
+
+	rec := builder.NewRecordBatch()
+	defer rec.Release()
+
+	b.ResetTimer()
+	i := 0
+	for b.Loop() {
+		_, _ = ExtractVectorFromArrow(rec, i%1000, 0)
+		i++
+	}
+}
+
+// BenchmarkExtractVectorCopy runs the benchmark extract vector copy operation.
+func BenchmarkExtractVectorCopy(b *testing.B) {
+	pool := memory.NewGoAllocator()
+
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "vector", Type: arrow.FixedSizeListOf(384, arrow.PrimitiveTypes.Float32)},
+		},
+		nil,
+	)
+
+	builder := array.NewRecordBuilder(pool, schema)
+	defer builder.Release()
+
+	vecBuilder := builder.Field(0).(*array.FixedSizeListBuilder)
+	floatBuilder := vecBuilder.ValueBuilder().(*array.Float32Builder)
+
+	// Add 1000 vectors
+	for i := 0; i < 1000; i++ {
+		vecBuilder.Append(true)
+		vec := make([]float32, 384)
+		for j := range vec {
+			vec[j] = float32(i*384 + j)
+		}
+		floatBuilder.AppendValues(vec, nil)
+	}
+
+	rec := builder.NewRecordBatch()
+	defer rec.Release()
+
+	b.ResetTimer()
+	i := 0
+	for b.Loop() {
+		_, _ = ExtractVectorFromArrow(rec, i%1000, 0)
+		i++
+	}
+}
+
+// TestExtractVectorF16FromArrow runs the test extract vector f16 from arrow operation.
+func TestExtractVectorF16FromArrow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	pool := memory.NewGoAllocator()
+
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "v_f16", Type: arrow.FixedSizeListOf(2, &arrow.Float16Type{})},
+			{Name: "v_f32", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
+		},
+		nil,
+	)
+
+	builder := array.NewRecordBuilder(pool, schema)
+	defer builder.Release()
+
+	f16Builder := builder.Field(0).(*array.FixedSizeListBuilder)
+	f16Vals := f16Builder.ValueBuilder().(*array.Float16Builder)
+
+	f32Builder := builder.Field(1).(*array.FixedSizeListBuilder)
+	f32Vals := f32Builder.ValueBuilder().(*array.Float32Builder)
+
+	// Append [1.0, 2.0] as F16
+	f16Builder.Append(true)
+	f16Vals.AppendValues([]float16.Num{float16.New(1.0), float16.New(2.0)}, nil)
+
+	// Append [3.0, 4.0] as F32
+	f32Builder.Append(true)
+	f32Vals.AppendValues([]float32{3.0, 4.0}, nil)
+
+	rec := builder.NewRecordBatch()
+	defer rec.Release()
+
+	// 1. Extract F16 from F16 (Zero-Copy)
+	vecF16, err := ExtractVectorF16FromArrow(rec, 0, 0)
+	if err != nil {
+		t.Fatalf("ExtractVectorF16FromArrow(F16) failed: %v", err)
+	}
+	if len(vecF16) != 2 || vecF16[0].Float32() != 1.0 || vecF16[1].Float32() != 2.0 {
+		t.Errorf("ExtractVectorF16FromArrow(F16) = %v, want [1.0, 2.0]", vecF16)
+	}
+
+	// 2. Extract F16 from F32 (Conversion)
+	vecF16C, err := ExtractVectorF16FromArrow(rec, 0, 1)
+	if err != nil {
+		t.Fatalf("ExtractVectorF16FromArrow(F32) failed: %v", err)
+	}
+	if len(vecF16C) != 2 || vecF16C[0].Float32() != 3.0 || vecF16C[1].Float32() != 4.0 {
+		t.Errorf("ExtractVectorF16FromArrow(F32) = %v, want [3.0, 4.0]", vecF16C)
+	}
+
+	// 3. Extract F32 from F16 (Conversion via ExtractVectorFromArrow)
+	vecF32C, err := ExtractVectorFromArrow(rec, 0, 0)
+	if err != nil {
+		t.Fatalf("ExtractVectorFromArrow(F16) failed: %v", err)
+	}
+	if len(vecF32C) != 2 || vecF32C[0] != 1.0 || vecF32C[1] != 2.0 {
+		t.Errorf("ExtractVectorFromArrow(F16) = %v, want [1.0, 2.0]", vecF32C)
+	}
+}
+
+// TestInferVectorDataType_Float64 runs the test infer vector data type_float64 operation.
+func TestInferVectorDataType_Float64(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	// Create float64 vector schema without metadata
+	fieldType := arrow.FixedSizeListOf(128, arrow.PrimitiveTypes.Float64)
+	fields := []arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vector", Type: fieldType},
+	}
+	schema := arrow.NewSchema(fields, nil)
+
+	dt := InferVectorDataType(schema, "vector")
+	if dt != VectorTypeFloat64 {
+		t.Errorf("InferVectorDataType = %v, want VectorTypeFloat64", dt)
+	}
+}
+
+// TestExtractVectorFromArrow_Float64 runs the test extract vector from arrow_float64 operation.
+func TestExtractVectorFromArrow_Float64(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	pool := memory.NewGoAllocator()
+	b := array.NewRecordBuilder(pool, arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float64)},
+		}, nil,
+	))
+	defer b.Release()
+
+	lb := b.Field(0).(*array.FixedSizeListBuilder)
+	vb := lb.ValueBuilder().(*array.Float64Builder)
+
+	lb.Append(true)
+	vb.AppendValues([]float64{1.1, 2.2}, nil)
+
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	// 1. Check ExtractVectorFromArrow (should return float32)
+	vecF32, err := ExtractVectorFromArrow(rec, 0, 0)
+	if err != nil {
+		t.Fatalf("ExtractVectorFromArrow failed: %v", err)
+	}
+	if len(vecF32) != 2 || vecF32[0] < 1.09 || vecF32[0] > 1.11 { // InDelta check manually
+		t.Errorf("Expected 1.1, got %v", vecF32[0])
+	}
+
+	// 2. Check ExtractVectorAny (should return []float64)
+	vecAny, err := ExtractVectorAny(rec, 0, 0)
+	if err != nil {
+		t.Fatalf("ExtractVectorAny failed: %v", err)
+	}
+	vecF64, ok := vecAny.([]float64)
+	if !ok {
+		t.Fatalf("ExtractVectorAny returned %T, want []float64", vecAny)
+	}
+	if len(vecF64) != 2 || vecF64[0] != 1.1 || vecF64[1] != 2.2 {
+		t.Errorf("ExtractVectorAny unexpected value: got %v, want [1.1 2.2]", vecF64)
+	}
+}

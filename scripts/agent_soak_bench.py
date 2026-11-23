@@ -34,6 +34,10 @@ def run_once(binary, args, out_path=None, timeout=None):
             data = json.load(f)
     except Exception as e:
         data = {"error": f"cannot read JSON report {out_path}: {e}", "stderr": proc.stderr[-500:]}
+    if not isinstance(data, dict):
+        # The tool writes an object; keep malformed output as an error report so
+        # validate_run reports a clear ValueError instead of raising TypeError.
+        data = {"error": f"JSON report {out_path} must be an object, got {type(data).__name__}"}
     data["_elapsed"] = elapsed
     data["_returncode"] = proc.returncode
     return data
@@ -62,6 +66,8 @@ def _stall_counts(run):
             if not isinstance(item, dict) or "op" not in item:
                 raise ValueError("stalls entries must be objects with an 'op' field")
             op = item["op"]
+            if not isinstance(op, str) or not op:
+                raise ValueError("stalls entries must have a non-empty string 'op' field")
             counts[op] = counts.get(op, 0) + 1
     else:
         total = int(_number(stalls, "stalls"))

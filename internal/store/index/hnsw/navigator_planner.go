@@ -1,0 +1,31 @@
+package hnsw
+
+// QueryPlanner determines the best navigation strategy for a given query.
+type QueryPlanner struct {
+	bfs         NavigationStrategy
+	astar       NavigationStrategy
+	parallelBfs NavigationStrategy
+}
+
+// NewQueryPlanner creates a new QueryPlanner with default navigation strategies.
+func NewQueryPlanner() *QueryPlanner {
+	return &QueryPlanner{
+		bfs:         &BFSStrategy{},
+		astar:       &AStarStrategy{},
+		parallelBfs: NewParallelBFSStrategy(8), // Default to 8 workers
+	}
+}
+
+// Plan selects the appropriate strategy based on the query.
+func (p *QueryPlanner) Plan(query NavigatorQuery) NavigationStrategy {
+	if query.TargetID != query.StartID {
+		return p.astar
+	}
+
+	// If MaxHops is large or unspecified (exploration), use parallel.
+	if query.MaxHops > 4 {
+		return p.parallelBfs
+	}
+
+	return p.bfs
+}

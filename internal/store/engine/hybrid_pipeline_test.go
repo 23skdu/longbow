@@ -1,0 +1,440 @@
+package engine
+
+import (
+	"context"
+	"testing"
+
+	"github.com/23skdu/longbow/internal/query"
+	"github.com/RoaringBitmap/roaring/v2"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+)
+
+// TestHybridPipelineConfigDefaults tests
+func TestHybridPipelineConfigDefaults(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultHybridPipelineConfig()
+	if cfg.Alpha != 0.5 {
+		t.Errorf("expected Alpha=0.5, got %v", cfg.Alpha)
+	}
+	if cfg.RRFk != 60 {
+		t.Errorf("expected RRFk=60, got %v", cfg.RRFk)
+	}
+	if cfg.FusionMode != FusionModeRRF {
+		t.Errorf("expected FusionModeRRF")
+	}
+	if !cfg.UseColumnIndex {
+		t.Error("expected UseColumnIndex=true")
+	}
+}
+
+// TestHybridPipelineConfigValidation runs the test hybrid pipeline config validation operation.
+func TestHybridPipelineConfigValidation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	tests := []struct {
+		name    string
+		modify  func(*HybridPipelineConfig)
+		wantErr bool
+	}{
+		{"valid defaults", func(c *HybridPipelineConfig) {}, false},
+		{"alpha below 0", func(c *HybridPipelineConfig) { c.Alpha = -0.1 }, true},
+		{"alpha above 1", func(c *HybridPipelineConfig) { c.Alpha = 1.1 }, true},
+		{"alpha=0 valid", func(c *HybridPipelineConfig) { c.Alpha = 0.0 }, false},
+		{"alpha=1 valid", func(c *HybridPipelineConfig) { c.Alpha = 1.0 }, false},
+		{"RRFk=0 invalid", func(c *HybridPipelineConfig) { c.RRFk = 0 }, true},
+		{"invalid fusion mode", func(c *HybridPipelineConfig) { c.FusionMode = 99 }, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultHybridPipelineConfig()
+			tt.modify(&cfg)
+			err := cfg.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error=%v, wantErr=%v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestFusionModeConstants runs the test fusion mode constants operation.
+func TestFusionModeConstants(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	if FusionModeRRF != 0 {
+		t.Error("FusionModeRRF should be 0")
+	}
+	if FusionModeLinear != 1 {
+		t.Error("FusionModeLinear should be 1")
+	}
+	if FusionModeCascade != 2 {
+		t.Error("FusionModeCascade should be 2")
+	}
+}
+
+// TestHybridSearchQueryDefaults runs the test hybrid search query defaults operation.
+func TestHybridSearchQueryDefaults(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	q := DefaultHybridSearchQuery()
+	if q.K != 10 {
+		t.Errorf("expected K=10, got %d", q.K)
+	}
+}
+
+// TestHybridSearchQueryValidation runs the test hybrid search query validation operation.
+func TestHybridSearchQueryValidation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	tests := []struct {
+		name    string
+		query   HybridSearchQuery
+		wantErr bool
+	}{
+		{"empty query invalid", HybridSearchQuery{K: 10}, true},
+		{"vector only valid", HybridSearchQuery{Vector: []float32{1, 2, 3}, K: 10}, false},
+		{"keyword only valid", HybridSearchQuery{KeywordQuery: "test", K: 10}, false},
+		{"both valid", HybridSearchQuery{Vector: []float32{1}, KeywordQuery: "test", K: 10}, false},
+		{"K=0 invalid", HybridSearchQuery{Vector: []float32{1}, K: 0}, true},
+		{"K negative invalid", HybridSearchQuery{Vector: []float32{1}, K: -1}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.query.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error=%v, wantErr=%v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestNewHybridSearchPipeline runs the test new hybrid search pipeline operation.
+func TestNewHybridSearchPipeline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultHybridPipelineConfig()
+	p := NewHybridSearchPipeline(cfg)
+	if p == nil {
+		t.Fatal("expected non-nil pipeline")
+	}
+	if p.config.Alpha != 0.5 {
+		t.Error("config not set")
+	}
+}
+
+// TestPipelineSetters runs the test pipeline setters operation.
+func TestPipelineSetters(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
+
+	// Set nil indexes - should not panic
+	p.SetColumnIndex(nil)
+	p.SetBM25Index(nil)
+	p.SetHNSWIndex(nil)
+
+	// Set real column index
+	colIdx := NewColumnInvertedIndex()
+	p.SetColumnIndex(colIdx)
+	if p.columnIndex != colIdx {
+		t.Error("column index not set")
+	}
+
+	// Set real BM25 index
+	bm25 := NewBM25InvertedIndex(DefaultBM25Config())
+	p.SetBM25Index(bm25)
+	if p.bm25Index != bm25 {
+		t.Error("BM25 index not set")
+	}
+}
+
+// TestFuseRRF runs the test fuse rrf operation.
+func TestFuseRRF(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	dense := []SearchResult{
+		{ID: 1, Score: 0.9},
+		{ID: 2, Score: 0.8},
+		{ID: 3, Score: 0.7},
+	}
+	sparse := []SearchResult{
+		{ID: 2, Score: 5.0}, // overlap with dense
+		{ID: 4, Score: 4.0},
+		{ID: 5, Score: 3.0},
+	}
+
+	results := FuseRRF("test_dataset", dense, sparse, 60, 5)
+
+	if len(results) == 0 {
+		t.Fatal("expected results")
+	}
+
+	// ID 2 should rank higher (appears in both)
+	found2 := false
+	for i, r := range results {
+		if r.ID == 2 {
+			found2 = true
+			if i > 1 {
+				t.Errorf("ID 2 should rank high, got rank %d", i)
+			}
+		}
+	}
+	if !found2 {
+		t.Error("ID 2 should be in results")
+	}
+}
+
+// TestFuseRRFEmpty runs the test fuse rrf empty operation.
+func TestFuseRRFEmpty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	results := FuseRRF("test_dataset", nil, nil, 60, 10)
+	if len(results) != 0 {
+		t.Error("expected empty results")
+	}
+}
+
+// TestFuseLinear runs the test fuse linear operation.
+func TestFuseLinear(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	dense := []SearchResult{
+		{ID: 1, Score: 1.0},
+		{ID: 2, Score: 0.5},
+	}
+	sparse := []SearchResult{
+		{ID: 2, Score: 1.0}, // boost ID 2
+		{ID: 3, Score: 0.5},
+	}
+
+	// alpha=0.5 means equal weight
+	results := FuseLinear(dense, sparse, 0.5, 5)
+
+	if len(results) == 0 {
+		t.Fatal("expected results")
+	}
+
+	// Results should contain IDs 1,2,3
+	ids := make(map[VectorID]bool)
+	for _, r := range results {
+		ids[r.ID] = true
+	}
+	if !ids[1] || !ids[2] || !ids[3] {
+		t.Error("expected IDs 1,2,3 in results")
+	}
+}
+
+// TestFuseCascade runs the test fuse cascade operation.
+func TestFuseCascade(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	exactIDs := roaring.New()
+	exactIDs.Add(1)
+	exactIDs.Add(2)
+	keyword := []SearchResult{{ID: 1, Score: 5.0}, {ID: 3, Score: 4.0}}
+	vector := []SearchResult{{ID: 2, Score: 0.9}, {ID: 4, Score: 0.8}}
+
+	results := FuseCascade(exactIDs, keyword, vector, 5)
+
+	// Only IDs in exactIDs should appear
+	for _, r := range results {
+		if r.ID != 1 && r.ID != 2 {
+			t.Errorf("unexpected ID %d (not in exact filter)", r.ID)
+		}
+	}
+}
+
+// TestFuseCascadeNoFilters runs the test fuse cascade no filters operation.
+func TestFuseCascadeNoFilters(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	keyword := []SearchResult{{ID: 1, Score: 5.0}}
+	vector := []SearchResult{{ID: 2, Score: 0.9}}
+
+	// No exact filters - should combine all
+	results := FuseCascade(nil, keyword, vector, 5)
+
+	if len(results) != 2 {
+		t.Errorf("expected 2 results, got %d", len(results))
+	}
+}
+
+// BenchmarkFuseRRF runs the benchmark fuse rrf operation.
+func BenchmarkFuseRRF(b *testing.B) {
+	dense := make([]SearchResult, 100)
+	sparse := make([]SearchResult, 100)
+	for i := 0; i < 100; i++ {
+		dense[i] = SearchResult{ID: VectorID(i), Score: float32(100 - i)}
+		sparse[i] = SearchResult{ID: VectorID(i + 50), Score: float32(100 - i)}
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		FuseRRF("test_dataset", dense, sparse, 60, 10)
+	}
+}
+
+// BenchmarkFuseLinear runs the benchmark fuse linear operation.
+func BenchmarkFuseLinear(b *testing.B) {
+	dense := make([]SearchResult, 100)
+	sparse := make([]SearchResult, 100)
+	for i := 0; i < 100; i++ {
+		dense[i] = SearchResult{ID: VectorID(i), Score: float32(100 - i)}
+		sparse[i] = SearchResult{ID: VectorID(i + 50), Score: float32(100 - i)}
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		FuseLinear(dense, sparse, 0.5, 10)
+	}
+}
+
+// TestRerankMock is a mock reranker for testing
+type TestRerankMock struct {
+	Called bool
+}
+
+// Rerank runs the rerank operation.
+func (r *TestRerankMock) Rerank(ctx context.Context, text string, results []SearchResult) ([]SearchResult, error) {
+	r.Called = true
+	// Reverse results as a detectable change
+	for i, j := 0, len(results)-1; i < j; i, j = i+1, j-1 {
+		results[i], results[j] = results[j], results[i]
+	}
+	return results, nil
+}
+
+// TestHybridSearchPipeline_Reranking runs the test hybrid search pipeline_reranking operation.
+func TestHybridSearchPipeline_Reranking(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
+
+	// Create some dummy results by setting up BM25 index
+	bm25 := NewBM25InvertedIndex(DefaultBM25Config())
+	bm25.Add(1, "hello world")
+	bm25.Add(2, "hello testing")
+	p.SetBM25Index(bm25)
+
+	mock := &TestRerankMock{}
+	p.SetReranker(mock)
+
+	q := &HybridSearchQuery{
+		KeywordQuery: "hello",
+		K:            10,
+	}
+
+	results, err := p.Search(q)
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+
+	if !mock.Called {
+		t.Error("reranker was not called")
+	}
+
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(results))
+	}
+}
+
+// TestHybridSearchPipeline_ExactFilters runs the test hybrid search pipeline_exact filters operation.
+func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
+
+	// Create record batch with vectors so AddByLocation can extract them
+	recordBatch := createHybridTestRecordBatch()
+	ds := &Dataset{
+		Name:    "test_ds",
+		Records: NewLockFreeSlice[arrow.RecordBatch](),
+	}
+	ds.Records.UpdateInPlace([]arrow.RecordBatch{recordBatch})
+	p.SetDataset(ds)
+
+	// Set up column index
+	colIdx := NewColumnInvertedIndex()
+	colIdx.IndexRecord(0, recordBatch, []string{"category"})
+	p.SetColumnIndex(colIdx)
+
+	// Set up HNSW with locations
+	hnsw := NewTestHNSWIndex(ds)
+	for i := 0; i < 10; i++ {
+		_, _ = hnsw.AddByLocation(context.Background(), 0, i)
+	}
+	p.SetHNSWIndex(hnsw)
+
+	// Set up BM25 results
+	bm25 := NewBM25InvertedIndex(DefaultBM25Config())
+	bm25.Add(5, "find me") // Matches RowIdx 5
+	bm25.Add(6, "skip me")
+	p.SetBM25Index(bm25)
+
+	q := &HybridSearchQuery{
+		KeywordQuery: "find",
+		ExactFilters: []query.Filter{
+			{Field: "category", Operator: "=", Value: "electronics"},
+		},
+		K: 10,
+	}
+
+	// For this test to work, we need createTestRecordBatch to actually have "electronics" at RowIdx 5
+	// But since we are testing applyExactFilters logic, we can also just mock what columnIndex returns.
+
+	results, err := p.Search(q)
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+
+	// If filtering worked, results should only contain ID 5
+	// (ID 6 matches "find" but not "electronics")
+	for _, r := range results {
+		if r.ID != 5 {
+			t.Errorf("expected only ID 5, got %d", r.ID)
+		}
+	}
+}
+
+func createHybridTestRecordBatch() arrow.RecordBatch {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "category", Type: arrow.BinaryTypes.String},
+		{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
+	}, nil)
+
+	pool := memory.NewGoAllocator()
+	bldr := array.NewRecordBuilder(pool, schema)
+	defer bldr.Release()
+
+	catBldr := bldr.Field(0).(*array.StringBuilder)
+	vecBldr := bldr.Field(1).(*array.FixedSizeListBuilder)
+	floatBldr := vecBldr.ValueBuilder().(*array.Float32Builder)
+
+	for i := 0; i < 10; i++ {
+		if i == 5 {
+			catBldr.Append("electronics")
+		} else {
+			catBldr.Append("books")
+		}
+		vecBldr.Append(true)
+		floatBldr.AppendValues([]float32{float32(i), float32(i)}, nil)
+	}
+
+	return bldr.NewRecordBatch()
+}

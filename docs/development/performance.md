@@ -1866,3 +1866,17 @@ overhead rather than a weaker authorization path.
 
 `oidc` requires a configured issuer and a real workload-identity JWT; it is
 dispatch-only and is not part of the release-required soak matrix.
+
+## 6. AVX-512 / VBMI SIMD coverage (Intel SDE)
+
+2026-11-22: `bash scripts/check_avx512_coverage.sh` passed locally with Intel
+SDE 10.13.1-2026-07-28. All emulated lanes ran with no supported-feature skips:
+`-skx` (1186 tests), `-icx` (1233 tests), and `-spr` (1233 tests).
+
+## 7. ARM64 release artifact matrix
+
+2026-11-22: `./scripts/check_observability.sh`, `actionlint
+.github/workflows/ci.yml`, and `make -n docker-build-all` passed. The release
+artifact list contains `linux/amd64` and `linux/arm64` CPU and EMLGo CPU
+images, amd64-only NVIDIA/EMLGo-NVIDIA/TPU images, and the native
+`darwin/arm64` binary. No `darwin/arm64` OCI image is promised.

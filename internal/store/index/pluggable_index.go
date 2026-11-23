@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/index/hnsw"
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
@@ -138,11 +139,7 @@ func createHNSWIndex(cfg IndexConfig) (PluggableVectorIndex, error) {
 	if cfg.HNSWConfig != nil {
 		config = *cfg.HNSWConfig
 	}
-	return &HNSWPluggableAdapter{
-		dimension:  cfg.Dimension,
-		vectors:    make(map[uint64][]float32),
-		hnswConfig: config,
-	}, nil
+	return hnsw.NewHNSWPluggableAdapter(cfg.Dimension, config), nil
 }
 
 // createIVFFlatIndex creates an IVF-Flat index

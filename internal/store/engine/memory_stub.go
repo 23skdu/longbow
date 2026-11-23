@@ -1,0 +1,22 @@
+//go:build !linux
+
+package engine
+
+import "unsafe"
+
+func pinThreadToCoreLinux(_ int) error {
+	return nil
+}
+
+func getNumaNodeLinux(_ unsafe.Pointer) (int, error) {
+	return -1, nil
+}
+
+func pinThreadToNodeLinux(_ int) error {
+	return nil
+}
+
+// SaveThreadAffinity is a no-op on non-Linux platforms.
+func SaveThreadAffinity() func() {
+	return func() {}
+}

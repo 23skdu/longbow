@@ -30,10 +30,10 @@ IMAGE_TAG     ?= $(TAG)
 	fuzz test-fuzz fuzz-coverage \
 	test test-short test-all test-wasm test-features race test-coverage coverage-gate coverage-html test-docker \
 	test-adbc test-adbc-python test-adbc-so test-version \
-	cross-compile check-simd module-size-check test-bench-harness test-rbac-verifier rbac-verify check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
-	accuracy-gate oracle-gate search-gate observability-inventory observability-check observability-rules \
+	cross-compile check-simd check-avx512-coverage module-size-check test-bench-harness test-rbac-verifier rbac-verify check-version bump-version helm-lint markdown-lint bench-ci bench-ab \
+	accuracy-gate oracle-gate search-gate observability-inventory observability-check observability-rules release-artifacts-check \
 	soak-quick soak-shared soak-permissions soak-federated soak-analytics soak-secure soak-tls soak-mtls soak-encrypted soak-combined soak-oidc soak-ci \
-	docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-nvidia docker-build-all \
+	docker-build-cpu docker-build-cpu-arm64 docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-cpu-arm64 docker-build-emlgo-nvidia docker-build-all \
 	makehooks install-commit-hook install-hooks verify pre-commit
 
 # Default target
@@ -112,13 +112,15 @@ help:
 	@echo "  accuracy-gate        Verify numerical precision tolerances across 15 vector dtypes"
 	@echo "  oracle-gate          Verify ground-truth mathematical parity vs reference oracles"
 	@echo "  search-gate          Verify accuracy and latency regression across all 21 search modes"
-	@echo "  observability-check  Verify metric declarations and alert rule bindings"
+	@echo "  observability-check  Verify metric declarations, alert rules and release artifact matrix"
+	@echo "  release-artifacts-check Verify published image/binary matrix matches CI and ARM64 variants"
 	@echo "  helm-lint            Lint and dry-run template the Helm chart"
 	@echo "  bench-ci             Run fast Unified Benchmark in CI mode"
 	@echo "  soak-quick           Run all bounded soak variants required for release"
 	@echo "  soak-secure          Run dispatch-only TLS/mTLS/encryption soak variants"
 	@echo "  soak-oidc            Run dispatch-only OIDC workload-identity soak"
 	@echo "  check-simd           Verify generated SIMD kernels are byte-for-byte reproducible"
+	@echo "  check-avx512-coverage Verify AVX-512/VBMI lanes under Intel SDE"
 	@echo "  module-size-check    Check module LOC targets and enforce new-file 1,200 LOC ceiling"
 	@echo "  verify               Run scripts/verify.sh Git pre-commit verification hook"
 	@echo "  pre-commit           Alias for verify"
@@ -127,18 +129,20 @@ help:
 	@echo ""
 	@echo "Container & Release Targets:"
 	@echo "  release              Run full CI pipeline and build release binaries"
-	@echo "  docker-build-cpu     Build CPU Docker container image"
-	@echo "  docker-build-tpu     Build TPU Docker container image"
-	@echo "  docker-build-nvidia  Build NVIDIA GPU Docker container image"
-	@echo "  docker-build-emlgo-cpu Build EMLGo CPU Docker container image"
-	@echo "  docker-build-emlgo-nvidia Build EMLGo GPU Docker container image"
-	@echo "  docker-build-all     Build all Docker container images"
+	@echo "  docker-build-cpu     Build linux/amd64 CPU Docker container image"
+	@echo "  docker-build-cpu-arm64 Build linux/arm64 CPU Docker container image"
+	@echo "  docker-build-tpu     Build linux/amd64 TPU Docker container image"
+	@echo "  docker-build-nvidia  Build linux/amd64 NVIDIA GPU Docker container image"
+	@echo "  docker-build-emlgo-cpu Build linux/amd64 EMLGo CPU Docker container image"
+	@echo "  docker-build-emlgo-cpu-arm64 Build linux/arm64 EMLGo CPU Docker container image"
+	@echo "  docker-build-emlgo-nvidia Build linux/amd64 EMLGo GPU Docker container image"
+	@echo "  docker-build-all     Build all Docker container images (including ARM64 CPU variants)"
 
 # ==============================================================================
 # Combined Local CI Pipeline
 # ==============================================================================
 
-ci: fmt-check lint vet build build-adbc cross-compile check-simd module-size-check test-coverage fuzz-coverage test-docker test-bench-harness test-rbac-verifier test-version check-version accuracy-gate oracle-gate search-gate observability-check observability-rules sec-gosec helm-lint
+ci: fmt-check lint vet build build-adbc cross-compile check-simd check-avx512-coverage module-size-check test-coverage fuzz-coverage test-docker test-bench-harness test-rbac-verifier test-version check-version accuracy-gate oracle-gate search-gate observability-check observability-rules sec-gosec helm-lint
 	@echo "=========================================================="
 	@echo " ✓ Complete local CI verification pipeline passed 100%!"
 	@echo "=========================================================="
@@ -196,6 +200,10 @@ cross-compile:
 check-simd:
 	@echo "Verifying SIMD generation is byte-for-byte reproducible..."
 	./scripts/check_simd_generation.sh
+
+check-avx512-coverage:
+	@echo "Verifying AVX-512/VBMI SIMD lanes under Intel SDE..."
+	bash scripts/check_avx512_coverage.sh
 
 deps:
 	@echo "Resolving dependencies..."
@@ -506,7 +514,7 @@ test-wasm: build-wasm-client
 test-features: test-wasm
 	@echo "Running roadmap Items 1-15 feature & fuzz tests..."
 	$(GO) test -v ./internal/security/... ./internal/middleware/... ./internal/storage -run 'TestEncrypted|FuzzEncrypt|TestTenant|TestAudit|TestAuth|FuzzToken'
-	$(GO) test -v ./internal/store -run 'TestCloudControlPlane|TestRESTAPI|TestGraphQL|TestRBAC|TestOnlineBackup|TestStreamingConnector|TestUsageMeter|TestMultiModal|TestAdvancedReranker|TestElasticSharding|TestItem12|TestItem13|TestItems14And15|TestHTTPHandlersAndEdgeClientRoundtrip|TestDoActionFeatureDispatchEndToEnd|Fuzz'
+	$(GO) test -v ./internal/store/... -run 'TestCloudControlPlane|TestRESTAPI|TestGraphQL|TestRBAC|TestOnlineBackup|TestStreamingConnector|TestUsageMeter|TestMultiModal|TestAdvancedReranker|TestElasticSharding|TestItem12|TestItem13|TestItems14And15|TestHTTPHandlersAndEdgeClientRoundtrip|TestDoActionFeatureDispatchEndToEnd|Fuzz'
 
 accuracy-gate:
 	@echo "Running Accuracy Gate (numerical precision across 15 vector dtypes + batch/dispatch tiers)..."
@@ -514,12 +522,12 @@ accuracy-gate:
 
 oracle-gate:
 	@echo "Running Oracle Gate (ground-truth parity vs reference oracles)..."
-	$(GO) test -v ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/ -run='Parity'
+	$(GO) test -v ./internal/simd/... ./internal/pq/... ./internal/tensor/... ./internal/memory/... ./internal/store/index/... -run='Parity'
 
 search-gate:
 	@echo "Running Search Modes Gate (accuracy & performance regression across all 21 search types)..."
-	$(GO) test -v -count=1 ./internal/store -run='^TestSearchModesGate$$'
-	$(GO) test -run='^$$' -bench='^BenchmarkSearchModesGate$$' -benchtime=25ms -benchmem ./internal/store
+	$(GO) test -v -count=1 ./internal/store/... -run='^TestSearchModesGate$$'
+	$(GO) test -run='^$$' -bench='^BenchmarkSearchModesGate$$' -benchtime=25ms -benchmem ./internal/store/...
 
 module-size-check:
 	@echo "Checking module size budgets (warn >800 LOC, fail >1,200 LOC new files)..."
@@ -529,8 +537,14 @@ module-size-check:
 observability-inventory:
 	$(GO) run ./tools/metrics-inventory > internal/observability/testdata/registered_metrics.tsv
 
-observability-check: observability-inventory
+observability-check: observability-inventory release-artifacts-check
 	$(GO) test ./internal/observability/ -count=1
+
+# Release-artifact conformance gate: the ARM64 variants checked here must match
+# the images produced by .github/workflows/ci.yml release-containers.
+release-artifacts-check:
+	@echo "Checking release artifact matrix (including linux/arm64 variants)..."
+	@./scripts/check_observability.sh
 
 observability-rules:
 	grafana/tests/test-rules.sh
@@ -649,28 +663,42 @@ fuzz: test-fuzz
 # Container & Release Targets (mirrors release-containers in CI)
 # ==============================================================================
 
+# Platform policy mirrors .github/workflows/ci.yml release-containers:
+#   CPU and EMLGo CPU publish linux/amd64 + linux/arm64 (multi-arch manifests).
+#   CUDA/NVIDIA and TPU variants are amd64-only: the CUDA devel base installs a
+#   linux-amd64 Go toolchain / nvcc kernels, and Cloud TPU libtpu is x86_64.
+#   No darwin/arm64 image is produced; Apple Silicon uses the native binary or
+#   the linux/arm64 container.
 docker-build-cpu:
-	@echo "Building Standard CPU Docker image..."
-	$(DOCKER) build -f Dockerfile.cpu -t longbow:$(IMAGE_TAG) .
+	@echo "Building linux/amd64 Standard CPU Docker image..."
+	$(DOCKER) build --platform linux/amd64 -f Dockerfile.cpu -t longbow:$(IMAGE_TAG) .
+
+docker-build-cpu-arm64:
+	@echo "Building linux/arm64 Standard CPU Docker image..."
+	$(DOCKER) build --platform linux/arm64 -f Dockerfile.cpu -t longbow:$(IMAGE_TAG)-arm64 .
 
 docker-build-tpu:
-	@echo "Building TPU Docker image..."
-	$(DOCKER) build -f Dockerfile.tpu -t longbow-tpu:$(IMAGE_TAG) .
+	@echo "Building linux/amd64 TPU Docker image..."
+	$(DOCKER) build --platform linux/amd64 -f Dockerfile.tpu -t longbow-tpu:$(IMAGE_TAG) .
 
 docker-build-nvidia:
-	@echo "Building NVIDIA GPU Docker image..."
-	$(DOCKER) build -f Dockerfile.nvidia -t longbow-nvidia:$(IMAGE_TAG) .
+	@echo "Building linux/amd64 NVIDIA GPU Docker image..."
+	$(DOCKER) build --platform linux/amd64 -f Dockerfile.nvidia -t longbow-nvidia:$(IMAGE_TAG) .
 
 docker-build-emlgo-cpu:
-	@echo "Building EMLGo CPU Docker image..."
-	$(DOCKER) build -f Dockerfile.emlgo-cpu -t longbow-emlgo-cpu:$(IMAGE_TAG) .
+	@echo "Building linux/amd64 EMLGo CPU Docker image..."
+	$(DOCKER) build --platform linux/amd64 -f Dockerfile.emlgo-cpu -t longbow-emlgo-cpu:$(IMAGE_TAG) .
+
+docker-build-emlgo-cpu-arm64:
+	@echo "Building linux/arm64 EMLGo CPU Docker image..."
+	$(DOCKER) build --platform linux/arm64 -f Dockerfile.emlgo-cpu -t longbow-emlgo-cpu:$(IMAGE_TAG)-arm64 .
 
 docker-build-emlgo-nvidia:
-	@echo "Building EMLGo GPU Docker image..."
-	$(DOCKER) build -f Dockerfile.emlgo-nvidia -t longbow-emlgo-nvidia:$(IMAGE_TAG) .
+	@echo "Building linux/amd64 EMLGo GPU Docker image..."
+	$(DOCKER) build --platform linux/amd64 -f Dockerfile.emlgo-nvidia -t longbow-emlgo-nvidia:$(IMAGE_TAG) .
 
-docker-build-all: docker-build-cpu docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-nvidia
-	@echo "All Docker container images built successfully."
+docker-build-all: docker-build-cpu docker-build-cpu-arm64 docker-build-tpu docker-build-nvidia docker-build-emlgo-cpu docker-build-emlgo-cpu-arm64 docker-build-emlgo-nvidia
+	@echo "All Docker container images built successfully (including linux/arm64 CPU variants)."
 
 release: ci check-version build-release build-adbc soak-ci
 	@echo "=========================================================="

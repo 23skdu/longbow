@@ -5,13 +5,13 @@ go 1.27.4
 require (
 	cloud.google.com/go/storage v1.71.0
 	github.com/23skdu/emlgo v0.9.0
-	github.com/IBM/sarama v1.62.0
+	github.com/IBM/sarama v1.61.1
 	github.com/RoaringBitmap/roaring/v2 v2.30.0
 	github.com/apache/arrow-adbc/go/adbc v1.13.0
 	github.com/apache/arrow-go/v18 v18.9.0
 	github.com/apache/pulsar-client-go v0.21.0
 	github.com/aws/aws-sdk-go-v2 v1.48.0
-	github.com/aws/aws-sdk-go-v2/config v1.33.20
+	github.com/aws/aws-sdk-go-v2/config v1.33.21
 	github.com/aws/aws-sdk-go-v2/credentials v1.21.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.116.0
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -24,12 +24,12 @@ require (
 	github.com/iceber/iouring-go v0.0.0-20230403020409-002cfd2e2a90
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/klauspost/compress v1.20.5
+	github.com/klauspost/compress v1.20.4
 	github.com/klauspost/cpuid/v2 v2.4.2
 	github.com/leanovate/gopter v0.2.11
 	github.com/mmcloughlin/avo v0.6.0
 	github.com/parquet-go/parquet-go v0.32.1
-	github.com/pierrec/lz4/v4 v4.1.34
+	github.com/pierrec/lz4/v4 v4.1.33
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/rs/zerolog v1.35.1
@@ -165,7 +165,7 @@ require (
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/exp v0.0.0-20261113113407-e3970619a1a4 // indirect
 	golang.org/x/mod v0.43.0 // indirect
-	golang.org/x/net v0.63.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/tools v0.52.1-0.20261106145633-d407941a339a // indirect
 	google.golang.org/genproto v0.0.0-20261110000943-09e21b237f2c // indirect

@@ -9,4 +9,4 @@ requests>=2.34.2
 grpcio>=1.85.3
 grpcio-tools>=1.85.3
 protobuf>=7.36.2
-pydantic>=2.14.3
+pydantic>=2.14.4

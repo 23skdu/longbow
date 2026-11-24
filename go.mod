@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	cloud.google.com/go/storage v1.71.0
 	github.com/23skdu/emlgo v0.9.0
-	github.com/IBM/sarama v1.61.1
+	github.com/IBM/sarama v1.62.0
 	github.com/RoaringBitmap/roaring/v2 v2.30.0
 	github.com/apache/arrow-adbc/go/adbc v1.13.0
 	github.com/apache/arrow-go/v18 v18.9.0
@@ -165,7 +165,7 @@ require (
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/exp v0.0.0-20261113113407-e3970619a1a4 // indirect
 	golang.org/x/mod v0.43.0 // indirect
-	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/tools v0.52.1-0.20261106145633-d407941a339a // indirect
 	google.golang.org/genproto v0.0.0-20261110000943-09e21b237f2c // indirect

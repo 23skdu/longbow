@@ -214,3 +214,7 @@ docker run -p 3000:3000 -p 3001:3001 -p 9090:9090 longbow
 - [Systems Architecture](docs/architecture.md)
 - [Vector Search Architecture](docs/vectorsearch.md)
 - [Metrics Documentation](docs/metrics.md)
+
+## License
+
+This project is released into the public domain under the [Unlicense](https://unlicense.org). See [LICENSE](LICENSE) for details.

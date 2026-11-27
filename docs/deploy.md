@@ -750,3 +750,11 @@ Trigger checksum-verified online backups and WAL PITR restores via Arrow Flight 
 longbow-cli backup -dataset production_docs -dest /backups/longbow
 longbow-cli restore -backup-id <backup-id> -dataset production_docs -pitr-ts 1762980000000000000
 ```
+
+Remote S3/GCS backups require an approved encryption mode. Longbow seals objects
+client-side with `LONGBOW_ENCRYPTION_AT_REST=true`, or uses provider-managed
+SSE-KMS/CMEK when configured on the backend. `verify-backup` reports
+`encryption_mode`, `key_id`, `aad_version`, and `object_version` from the
+snapshot manifest. Legacy plaintext remote objects are rejected by default and
+must be migrated with `MigrateRemoteObjectToEncrypted` / `ReencryptRemoteObject`.
+

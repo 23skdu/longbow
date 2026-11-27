@@ -222,3 +222,32 @@ gcloud iam service-accounts add-iam-policy-binding \
 2. **Acquire & Exchange Cloud Tokens** using the Go SDK (`client.AcquireAWSWebIdentityToken()` / `client.AcquireGoogleIDToken(...)` + `sc.ExchangeOIDCToken(...)`) or Python SDK (`LongbowClient.acquire_aws_web_identity_token()` / `acquire_google_id_token(...)` + `exchange_oidc_token(...)`).
 3. **Verify Audit Attribution** in `GET /api/v1/rbac/audit` (`oidc:<provider>:<sub>`) and monitor `grafana/dashboards/oidc-federation.json`.
 4. **Revoke Legacy API Keys** via `longbow-cli revoke-api-key` or `POST /api/v1/rbac/keys` rotation once workloads exclusively authenticate via OIDC.
+
+---
+
+## 6. Remote Backup and Snapshot Encryption at Rest
+
+S3 and GCS backups use Longbow-owned envelope encryption before objects leave the
+host. `EncryptedRemoteStorage` seals every `Put` payload with `storage.CipherEngine`
+and opens it on `Get`; AAD binds bucket, object key, dataset, namespace, and backup
+version so ciphertext cannot be swapped between objects or tenants. Legacy
+plaintext objects are rejected by default; `MigrateRemoteObjectToEncrypted` /
+`ReencryptRemoteObject` provide an explicit migration path.
+
+Provider-managed keys are also supported:
+- S3: `sse-s3` (`AES256`) or `sse-kms` with `SSEKMSKeyID`/`KMSKeyID`.
+- GCS: `cmek` with `CMEKKeyID`/`KMSKeyID`.
+
+Approved modes are validated by `S3BackendConfig.ValidateRemoteEncryption` and
+`GCSBackendConfig.ValidateRemoteEncryption`. Remote destinations fail closed when
+no approved mode is configured (`ErrRemoteBackupEncryptionRequired`).
+
+Backup metadata and `SnapshotManifest` now record `encryption_mode`, `key_id`,
+`aad_version`, and `object_version`. `RestoreVerificationReport` carries the same
+fields so `verify-backup` can attest that a restore used the expected key and
+object. `RotateDEK` and external key rotation remain supported without rewriting
+all history in the critical path; lazy rewrap is acceptable when the old key ID
+is retained for decryption.
+
+Key material, wrapped DEKs, and plaintext content are never logged or stored in
+manifests.

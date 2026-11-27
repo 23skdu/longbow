@@ -13,11 +13,18 @@ import (
 
 // GCSRemoteStorage is a GCP Cloud Storage implementation of RemoteStorage.
 type GCSRemoteStorage struct {
-	client *storage.Client
-	bucket *storage.BucketHandle
+	client     *storage.Client
+	bucket     *storage.BucketHandle
+	bucketName string
 }
 
 var _ RemoteStorage = (*GCSRemoteStorage)(nil)
+
+// Bucket returns the configured GCS bucket name.
+func (g *GCSRemoteStorage) Bucket() string { return g.bucketName }
+
+// Provider returns the remote storage provider label.
+func (g *GCSRemoteStorage) Provider() string { return "gcs" }
 
 // NewGCSRemoteStorage constructs a GCS-backed RemoteStorage.
 func NewGCSRemoteStorage(ctx context.Context, bucketName string, opts ...option.ClientOption) (*GCSRemoteStorage, error) {
@@ -26,8 +33,9 @@ func NewGCSRemoteStorage(ctx context.Context, bucketName string, opts ...option.
 		return nil, err
 	}
 	return &GCSRemoteStorage{
-		client: client,
-		bucket: client.Bucket(bucketName),
+		client:     client,
+		bucket:     client.Bucket(bucketName),
+		bucketName: bucketName,
 	}, nil
 }
 

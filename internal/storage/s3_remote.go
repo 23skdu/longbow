@@ -24,6 +24,12 @@ type S3RemoteStorage struct {
 
 var _ RemoteStorage = (*S3RemoteStorage)(nil)
 
+// Bucket returns the configured S3 bucket name.
+func (s *S3RemoteStorage) Bucket() string { return s.bucket }
+
+// Provider returns the remote storage provider label.
+func (s *S3RemoteStorage) Provider() string { return "s3" }
+
 // NewS3RemoteStorage constructs an S3-backed RemoteStorage.
 func NewS3RemoteStorage(ctx context.Context, region, bucket, endpoint, accessKey, secretKey string) (*S3RemoteStorage, error) {
 	if region == "" {

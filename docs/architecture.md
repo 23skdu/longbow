@@ -294,6 +294,15 @@ longbow-cli import -dataset my-collection -input gs://my-bucket/data.parquet
 longbow-cli export -dataset my-collection -file gs://my-bucket/exports/today.arrow
 ```
 
+#### Remote Backup Encryption
+
+S3/GCS backup and snapshot objects require an approved encryption mode. Longbow
+seals objects client-side with `LONGBOW_ENCRYPTION_AT_REST=true` or uses
+provider-managed SSE-KMS (S3) / CMEK (GCS). `verify-backup` reports
+`encryption_mode`, `key_id`, `aad_version`, and `object_version` from the snapshot
+manifest; legacy plaintext remote objects are rejected by default.
+
+
 ### 3.9 Tiered Storage Configuration
 
 The remote backends are configured **programmatically, not by environment variable**. There is no env-var path for tiered storage: neither `internal/storage/s3_remote.go` nor `internal/storage/gcs_backend.go` reads `os.Getenv`, and the server has no `STORAGE_REMOTE_TYPE`, `S3_BUCKET`, `S3_ENDPOINT`, `GCS_BUCKET`, or `GOOGLE_APPLICATION_CREDENTIALS` binding.

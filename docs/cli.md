@@ -152,7 +152,7 @@ longbow-cli oidc-exchange -token "$LONGBOW_OIDC_TOKEN" -ttl 900
 | :--- | :--- | :--- |
 | `backup` | `[-dataset <ds>] [-dest <dir>]` | Trigger an online checksummed snapshot backup (`TriggerBackup`) |
 | `list-backups` | `-uri <uri>` | List available backup manifests (`ListBackups`) |
-| `verify-backup` | `-backup-id <id>` | Verify SHA-256 file checksums of a backup manifest (`VerifyBackup`) |
+| `verify-backup` | `-backup-id <id>` | Verify SHA-256 file checksums and encryption-at-rest attestation (`encryption_mode`, `key_id`, `aad_version`, `object_version`) of a backup manifest (`VerifyBackup`) |
 | `restore` | `-backup-id <id> [-dataset <ds>] [-pitr-ts <unix-ns>]` | Restore a backup and optionally replay WAL entries up to `-pitr-ts` (`RestoreBackup`) |
 
 ```bash

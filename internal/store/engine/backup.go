@@ -21,6 +21,12 @@ type BackupConfig struct {
 	Incremental    bool
 	Compression    bool
 	Destination    string
+
+	// Remote encryption-at-rest settings for S3/GCS destinations.
+	EncryptionMode string
+	KeyID          string
+	AADVersion     int
+	ObjectVersion  string
 }
 
 // BackupMetadata stores information about a specific backup.
@@ -36,6 +42,12 @@ type BackupMetadata struct {
 	WALSequence  uint64
 	RowCount     int64
 	Destination  string
+
+	// Encryption-at-rest attestation for remote backups.
+	EncryptionMode string `json:"encryption_mode,omitempty"`
+	KeyID          string `json:"key_id,omitempty"`
+	AADVersion     int    `json:"aad_version,omitempty"`
+	ObjectVersion  string `json:"object_version,omitempty"`
 }
 
 // IncrementalBackup represents a backup containing only changes since a parent backup.

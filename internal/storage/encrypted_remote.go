@@ -40,6 +40,8 @@ type RemoteEncryptionOptions struct {
 	// ProviderManagedKeyID requests provider-side encryption (SSE-KMS/CMEK)
 	// in addition to Longbow client-side envelope encryption.
 	ProviderManagedKeyID string
+	// AllowLegacyPlaintext permits reading pre-encryption objects during migration.
+	AllowLegacyPlaintext bool
 }
 
 // EncryptedRemoteStorage seals every object with storage.CipherEngine before
@@ -146,6 +148,9 @@ func (e *EncryptedRemoteStorage) Get(ctx context.Context, key string) (io.ReadCl
 	}
 	plain, err := e.ce.Open(ctx, sealed, e.aadFor(ctx, key))
 	if err != nil {
+		if e.opts.AllowLegacyPlaintext && len(sealed) > 0 && !bytes.HasPrefix(sealed, []byte{0x4c, 0x42, 0x45, 0x31}) {
+			return io.NopCloser(bytes.NewReader(sealed)), nil
+		}
 		return nil, err
 	}
 	return io.NopCloser(bytes.NewReader(plain)), nil
@@ -157,4 +162,49 @@ func (e *EncryptedRemoteStorage) Delete(ctx context.Context, key string) error {
 
 func (e *EncryptedRemoteStorage) Exists(ctx context.Context, key string) (bool, error) {
 	return e.inner.Exists(ctx, key)
+}
+
+// MigrateRemoteObjectToEncrypted reads a legacy plaintext object, seals it with
+// ce, and writes the ciphertext back to the same key. Already-sealed objects are
+// left untouched.
+func MigrateRemoteObjectToEncrypted(ctx context.Context, inner RemoteStorage, key string, ce *CipherEngine, opts ...RemoteEncryptionOptions) error {
+	return reencryptRemoteObject(ctx, inner, key, ce, opts...)
+}
+
+// ReencryptRemoteObject is an alias for MigrateRemoteObjectToEncrypted.
+func ReencryptRemoteObject(ctx context.Context, inner RemoteStorage, key string, ce *CipherEngine, opts ...RemoteEncryptionOptions) error {
+	return reencryptRemoteObject(ctx, inner, key, ce, opts...)
+}
+
+func reencryptRemoteObject(ctx context.Context, inner RemoteStorage, key string, ce *CipherEngine, opts ...RemoteEncryptionOptions) error {
+	if inner == nil {
+		return errors.New("storage: remote storage is required")
+	}
+	if ce == nil {
+		return errors.New("storage: cipher engine is required")
+	}
+	var o RemoteEncryptionOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	if o.AADVersion <= 0 {
+		o.AADVersion = RemoteEncryptionAADVersion
+	}
+	enc, err := NewEncryptedRemoteStorage(inner, ce, o)
+	if err != nil {
+		return err
+	}
+	rc, err := inner.Get(ctx, key)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rc.Close() }()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return err
+	}
+	if len(data) >= 4 && bytes.Equal(data[:4], []byte{0x4c, 0x42, 0x45, 0x31}) {
+		return nil // already sealed
+	}
+	return enc.Put(ctx, key, bytes.NewReader(data))
 }

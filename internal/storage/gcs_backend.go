@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,12 @@ type GCSBackendConfig struct {
 	Prefix          string // Optional key prefix for all snapshots
 	CredentialsFile string // Path to Google service account key file
 	ProjectID       string // Google Cloud Project ID
+
+	// Remote encryption at rest settings.
+	EncryptionMode    string // "none", "client", "cmek", "kms"
+	CMEKKeyID         string // KMS key resource name for CMEK
+	KMSKeyID          string // alias for CMEKKeyID
+	RequireEncryption bool   // fail closed when no approved mode is configured
 }
 
 // GCSBackend implements SnapshotBackend for Google Cloud Storage
@@ -27,12 +34,19 @@ type GCSBackend struct {
 	client *storage.Client
 	bucket string
 	prefix string
+
+	encryptionMode    string
+	cmekKeyID         string
+	lastObjectVersion string
 }
 
 // NewGCSBackend creates a new GCS backend from configuration
 func NewGCSBackend(ctx context.Context, cfg *GCSBackendConfig) (SnapshotBackend, error) {
 	if cfg.Bucket == "" {
 		return nil, fmt.Errorf("GCS bucket is required")
+	}
+	if err := cfg.ValidateRemoteEncryption(); err != nil {
+		return nil, err
 	}
 
 	var opts []option.ClientOption
@@ -46,9 +60,11 @@ func NewGCSBackend(ctx context.Context, cfg *GCSBackendConfig) (SnapshotBackend,
 	}
 
 	return &GCSBackend{
-		client: client,
-		bucket: cfg.Bucket,
-		prefix: strings.TrimSuffix(cfg.Prefix, "/"),
+		client:         client,
+		bucket:         cfg.Bucket,
+		prefix:         strings.TrimSuffix(cfg.Prefix, "/"),
+		encryptionMode: strings.ToLower(strings.TrimSpace(cfg.EncryptionMode)),
+		cmekKeyID:      gcsCMEKKeyID(cfg),
 	}, nil
 }
 
@@ -69,18 +85,62 @@ func (b *GCSBackend) WriteSnapshot(ctx context.Context, name string, data []byte
 	return b.WriteSnapshotFile(ctx, name, ".parquet", bytes.NewReader(data))
 }
 
+// ValidateRemoteEncryption validates provider-managed GCS encryption settings.
+func (c *GCSBackendConfig) ValidateRemoteEncryption() error {
+	mode := strings.ToLower(strings.TrimSpace(c.EncryptionMode))
+	if mode == "" {
+		mode = "none"
+	}
+	switch mode {
+	case "none", "plaintext":
+		if c.RequireEncryption {
+			return errors.New("GCS remote encryption is required but no approved mode is configured")
+		}
+	case "client":
+	case "cmek", "kms":
+		if strings.TrimSpace(c.CMEKKeyID) == "" && strings.TrimSpace(c.KMSKeyID) == "" {
+			return errors.New("GCS CMEK requires a KMS key ID")
+		}
+	default:
+		return fmt.Errorf("unsupported GCS encryption mode: %q", c.EncryptionMode)
+	}
+	return nil
+}
+
+func gcsCMEKKeyID(cfg *GCSBackendConfig) string {
+	if key := strings.TrimSpace(cfg.CMEKKeyID); key != "" {
+		return key
+	}
+	return strings.TrimSpace(cfg.KMSKeyID)
+}
+
+// ObjectVersion returns the version ID of the most recently written object, if available.
+func (b *GCSBackend) ObjectVersion() string { return b.lastObjectVersion }
+
+// ObjectVersion returns the version ID of the most recently written object, if available.
+func (b *S3Backend) ObjectVersion() string { return b.lastObjectVersion }
+
 // WriteSnapshotFile runs the write snapshot file operation.
 func (b *GCSBackend) WriteSnapshotFile(ctx context.Context, name, ext string, r io.Reader) error {
 	key := buildGCSKeyWithExt(b.prefix, name, ext)
 	obj := b.client.Bucket(b.bucket).Object(key)
 	w := obj.NewWriter(ctx)
+	if b.cmekKeyID != "" {
+		w.KMSKeyName = b.cmekKeyID
+	}
 
 	if _, err := io.Copy(w, r); err != nil {
 		_ = w.Close()
 		return fmt.Errorf("GCS write failed: %w", err)
 	}
 
-	return w.Close()
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("GCS write failed: %w", err)
+	}
+	if attrs, err := obj.Attrs(ctx); err == nil {
+		b.lastObjectVersion = fmt.Sprintf("%d", attrs.Generation) // generation is not a version ID but a stable object revision
+	}
+	return nil
 }
 
 // ReadSnapshot runs the read snapshot operation.

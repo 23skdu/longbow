@@ -49,6 +49,15 @@ type S3BackendConfig struct {
 	WorkerCount    int  // Number of parallel upload workers
 	QueueSize      int  // Buffer size for pending uploads
 	AsyncMultipart bool // Use multipart upload for large files
+
+	// Remote encryption at rest settings. Empty mode preserves legacy behavior;
+	// RequireEncryption makes Validate fail closed for unencrypted remote backups.
+	EncryptionMode       string // "none", "client", "sse-s3", "sse-kms", "aws:kms", "aes256"
+	KMSKeyID             string // alias for SSEKMSKeyID
+	SSEKMSKeyID          string // KMS key ID/ARN for SSE-KMS
+	ServerSideEncryption string // explicit S3 server-side encryption value
+	BucketKeyEnabled     bool   // enable S3 Bucket Keys for SSE-KMS
+	RequireEncryption    bool   // fail closed when no approved mode is configured
 }
 
 // Validate checks the configuration for required fields
@@ -59,7 +68,52 @@ func (c *S3BackendConfig) Validate() error {
 	if c.AccessKeyID == "" || c.SecretAccessKey == "" {
 		return errors.New("S3 credentials are required")
 	}
+	return c.ValidateRemoteEncryption()
+}
+
+// ValidateRemoteEncryption validates provider-managed S3 encryption settings.
+func (c *S3BackendConfig) ValidateRemoteEncryption() error {
+	mode := strings.ToLower(strings.TrimSpace(c.EncryptionMode))
+	if mode == "" {
+		mode = "none"
+	}
+	switch mode {
+	case "none", "plaintext":
+		if c.RequireEncryption {
+			return errors.New("S3 remote encryption is required but no approved mode is configured")
+		}
+	case "client":
+		// Client-side envelope encryption is enforced by EncryptedSnapshotBackend.
+	case "sse-s3", "aes256":
+	case "sse-kms", "aws:kms", "kms":
+		key := strings.TrimSpace(c.SSEKMSKeyID)
+		if key == "" {
+			key = strings.TrimSpace(c.KMSKeyID)
+		}
+		if key == "" {
+			return errors.New("S3 SSE-KMS requires a KMS key ID")
+		}
+	default:
+		return fmt.Errorf("unsupported S3 encryption mode: %q", c.EncryptionMode)
+	}
 	return nil
+}
+
+// normalizedS3EncryptionMode returns the effective encryption mode.
+func (c *S3BackendConfig) normalizedS3EncryptionMode() string {
+	mode := strings.ToLower(strings.TrimSpace(c.EncryptionMode))
+	if mode == "" {
+		return "none"
+	}
+	return mode
+}
+
+// s3KMSKeyID returns the effective SSE-KMS key.
+func (c *S3BackendConfig) s3KMSKeyID() string {
+	if key := strings.TrimSpace(c.SSEKMSKeyID); key != "" {
+		return key
+	}
+	return strings.TrimSpace(c.KMSKeyID)
 }
 
 // S3ClientAPI defines the subset of s3.Client methods used by S3Backend
@@ -77,6 +131,12 @@ type S3Backend struct {
 	prefix     string
 	transport  *http.Transport
 	httpClient *http.Client
+
+	encryptionMode    string
+	sseKMSKeyID       string
+	serverSideEnc     string
+	bucketKeyEnabled  bool
+	lastObjectVersion string
 }
 
 // AsyncS3Backend wraps S3Backend for background execution
@@ -158,11 +218,15 @@ func NewS3Backend(cfg *S3BackendConfig) (SnapshotBackend, error) {
 	client := s3.NewFromConfig(awsCfg, opts)
 
 	backend := &S3Backend{
-		client:     client,
-		bucket:     cfg.Bucket,
-		prefix:     strings.TrimSuffix(cfg.Prefix, "/"),
-		transport:  transport,
-		httpClient: httpClient,
+		client:           client,
+		bucket:           cfg.Bucket,
+		prefix:           strings.TrimSuffix(cfg.Prefix, "/"),
+		transport:        transport,
+		httpClient:       httpClient,
+		encryptionMode:   cfg.normalizedS3EncryptionMode(),
+		sseKMSKeyID:      cfg.s3KMSKeyID(),
+		serverSideEnc:    strings.TrimSpace(cfg.ServerSideEncryption),
+		bucketKeyEnabled: cfg.BucketKeyEnabled,
 	}
 
 	if cfg.AsyncEnabled {

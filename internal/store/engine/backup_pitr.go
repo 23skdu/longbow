@@ -39,6 +39,12 @@ type SnapshotManifest struct {
 	Dimension     uint32            `json:"dimension"`
 	Metric        string            `json:"metric"`
 	FileChecksums map[string]string `json:"file_checksums"`
+
+	// Encryption-at-rest attestation for remote objects.
+	EncryptionMode string `json:"encryption_mode,omitempty"`
+	KeyID          string `json:"key_id,omitempty"`
+	AADVersion     int    `json:"aad_version,omitempty"`
+	ObjectVersion  string `json:"object_version,omitempty"`
 }
 
 // SnapshotDatasetMetadata holds dataset-level state persisted alongside Arrow batches.
@@ -68,6 +74,11 @@ type RestoreVerificationReport struct {
 	RestoredRows      int64  `json:"restored_rows"`
 	WALEntriesApplied int    `json:"wal_entries_applied"`
 	FinalWALSequence  uint64 `json:"final_wal_sequence"`
+
+	EncryptionMode string `json:"encryption_mode,omitempty"`
+	KeyID          string `json:"key_id,omitempty"`
+	AADVersion     int    `json:"aad_version,omitempty"`
+	ObjectVersion  string `json:"object_version,omitempty"`
 }
 
 var backupSeq atomic.Uint64
@@ -112,8 +123,16 @@ func NewSnapshotBackendForURI(ctx context.Context, dest string) (storage.Snapsho
 	return storage.NewFileSnapshotBackend(dir)
 }
 
+// SnapshotEncryption describes encryption-at-rest attestation embedded in a snapshot manifest.
+type SnapshotEncryption struct {
+	Mode          string
+	KeyID         string
+	AADVersion    int
+	ObjectVersion string
+}
+
 // BuildSnapshotArchive serializes dataset records, index metadata, and dataset metadata into a checksummed tar.gz archive.
-func BuildSnapshotArchive(ds *Dataset, backupID string, walSeq uint64) ([]byte, SnapshotManifest, error) {
+func BuildSnapshotArchive(ds *Dataset, backupID string, walSeq uint64, encryption ...SnapshotEncryption) ([]byte, SnapshotManifest, error) {
 	if ds == nil {
 		return nil, SnapshotManifest{}, errors.New("dataset is required")
 	}
@@ -205,16 +224,30 @@ func BuildSnapshotArchive(ds *Dataset, backupID string, walSeq uint64) ([]byte, 
 		checksums[name] = hex.EncodeToString(sum[:])
 	}
 
+	enc := SnapshotEncryption{Mode: "none", AADVersion: 1}
+	if len(encryption) > 0 {
+		enc = encryption[0]
+		if enc.AADVersion <= 0 {
+			enc.AADVersion = 1
+		}
+		if enc.Mode == "" {
+			enc.Mode = "none"
+		}
+	}
 	manifest := SnapshotManifest{
-		FormatVersion: 1,
-		BackupID:      backupID,
-		DatasetName:   ds.Name,
-		CreatedAt:     time.Now().UTC(),
-		WALSequence:   walSeq,
-		RowCount:      totalRows,
-		Dimension:     dim,
-		Metric:        metric,
-		FileChecksums: checksums,
+		FormatVersion:  1,
+		BackupID:       backupID,
+		DatasetName:    ds.Name,
+		CreatedAt:      time.Now().UTC(),
+		WALSequence:    walSeq,
+		RowCount:       totalRows,
+		Dimension:      dim,
+		Metric:         metric,
+		FileChecksums:  checksums,
+		EncryptionMode: enc.Mode,
+		KeyID:          enc.KeyID,
+		AADVersion:     enc.AADVersion,
+		ObjectVersion:  enc.ObjectVersion,
 	}
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -337,7 +370,32 @@ func (vs *VectorStore) CreateOnlineBackup(ctx context.Context, datasetName, dest
 
 	backupID := nextUniqueBackupID(datasetName)
 	walSeq := vs.sequence.Load()
-	archiveBytes, manifest, err := BuildSnapshotArchive(ds, backupID, walSeq)
+
+	mode := strings.TrimSpace(vs.backupManager.config.EncryptionMode)
+	if mode == "" {
+		if isRemoteBackupDestination(destination) {
+			return BackupMetadata{}, errors.New("backup: remote destination requires an approved encryption mode")
+		}
+		mode = "none"
+	}
+	if isRemoteBackupDestination(destination) {
+		switch strings.ToLower(mode) {
+		case "none", "plaintext":
+			return BackupMetadata{}, errors.New("backup: remote destination requires an approved encryption mode")
+		}
+	}
+	aadVersion := vs.backupManager.config.AADVersion
+	if aadVersion <= 0 {
+		aadVersion = 1
+	}
+	enc := SnapshotEncryption{
+		Mode:          mode,
+		KeyID:         vs.backupManager.config.KeyID,
+		AADVersion:    aadVersion,
+		ObjectVersion: vs.backupManager.config.ObjectVersion,
+	}
+
+	archiveBytes, manifest, err := BuildSnapshotArchive(ds, backupID, walSeq, enc)
 	if err != nil {
 		return BackupMetadata{}, err
 	}
@@ -346,16 +404,20 @@ func (vs *VectorStore) CreateOnlineBackup(ctx context.Context, datasetName, dest
 	checksum := hex.EncodeToString(hasher[:])
 
 	meta := BackupMetadata{
-		BackupID:    backupID,
-		DatasetName: datasetName,
-		Timestamp:   manifest.CreatedAt,
-		SizeBytes:   int64(len(archiveBytes)),
-		Type:        "full",
-		Checksum:    checksum,
-		Version:     manifest.FormatVersion,
-		WALSequence: walSeq,
-		RowCount:    manifest.RowCount,
-		Destination: destination,
+		BackupID:       backupID,
+		DatasetName:    datasetName,
+		Timestamp:      manifest.CreatedAt,
+		SizeBytes:      int64(len(archiveBytes)),
+		Type:           "full",
+		Checksum:       checksum,
+		Version:        manifest.FormatVersion,
+		WALSequence:    walSeq,
+		RowCount:       manifest.RowCount,
+		Destination:    destination,
+		EncryptionMode: manifest.EncryptionMode,
+		KeyID:          manifest.KeyID,
+		AADVersion:     manifest.AADVersion,
+		ObjectVersion:  manifest.ObjectVersion,
 	}
 
 	vs.backupManager.mu.Lock()
@@ -370,6 +432,17 @@ func (vs *VectorStore) CreateOnlineBackup(ctx context.Context, datasetName, dest
 		}
 		if err := backend.WriteSnapshotFile(ctx, backupID, ".tar.gz", bytes.NewReader(archiveBytes)); err != nil {
 			return BackupMetadata{}, fmt.Errorf("failed writing backup to %s: %w", destination, err)
+		}
+		if ov, ok := backend.(interface{ ObjectVersion() string }); ok {
+			if v := ov.ObjectVersion(); v != "" {
+				meta.ObjectVersion = v
+				vs.backupManager.mu.Lock()
+				if m, ok := vs.backupManager.backups[backupID]; ok {
+					m.ObjectVersion = v
+					vs.backupManager.backups[backupID] = m
+				}
+				vs.backupManager.mu.Unlock()
+			}
 		}
 	} else if vs.backupManager.backupDir != "" {
 		backend, err := storage.NewFileSnapshotBackend(vs.backupManager.backupDir)
@@ -431,6 +504,10 @@ func (vs *VectorStore) RestoreWithPITR(ctx context.Context, cfg PITRConfig) (Res
 		}
 		report.ChecksumsVerified = true
 		report.FinalWALSequence = manifest.WALSequence
+		report.EncryptionMode = manifest.EncryptionMode
+		report.KeyID = manifest.KeyID
+		report.AADVersion = manifest.AADVersion
+		report.ObjectVersion = manifest.ObjectVersion
 
 		// Validate Arrow IPC stream BEFORE mutating store state (atomic consistency check)
 		arrowData := files["records.arrow"]
@@ -697,3 +774,8 @@ func (vs *VectorStore) handleBackupAction(action *flight.Action, stream flight.F
 
 // Unused import safety helper for memory.NewGoAllocator if needed in tests
 var _ = memory.NewGoAllocator
+
+// isRemoteBackupDestination reports whether destination targets S3 or GCS.
+func isRemoteBackupDestination(destination string) bool {
+	return strings.HasPrefix(destination, "s3://") || strings.HasPrefix(destination, "gs://")
+}

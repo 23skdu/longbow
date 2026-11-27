@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,10 +24,11 @@ type BackupConfig struct {
 	Destination    string
 
 	// Remote encryption-at-rest settings for S3/GCS destinations.
-	EncryptionMode string
-	KeyID          string
-	AADVersion     int
-	ObjectVersion  string
+	EncryptionMode    string
+	KeyID             string
+	AADVersion        int
+	ObjectVersion     string
+	RequireEncryption bool
 }
 
 // BackupMetadata stores information about a specific backup.
@@ -379,4 +381,37 @@ func (vs *VectorStore) RestoreFromBackup(backupID, datasetName string) error {
 	}
 
 	return r.Err()
+}
+
+// ErrRemoteBackupEncryptionRequired is returned when a remote backup destination
+// is used without an approved encryption mode.
+var ErrRemoteBackupEncryptionRequired = errors.New("backup: remote destination requires encryption at rest")
+
+// ValidateRemoteBackupEncryption validates a remote backup destination/mode pair.
+func ValidateRemoteBackupEncryption(destination, mode string) error {
+	if !isRemoteBackupDestination(destination) {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "client", "sse-s3", "aes256", "sse-kms", "aws:kms", "kms", "cmek":
+		return nil
+	default:
+		return ErrRemoteBackupEncryptionRequired
+	}
+}
+
+// ValidateRemoteBackupConfig validates a BackupConfig before it is used.
+func ValidateRemoteBackupConfig(cfg BackupConfig) error {
+	if cfg.RequireEncryption && !isRemoteBackupDestination(cfg.Destination) {
+		// Local destinations are still governed by storage encryption settings.
+	}
+	if isRemoteBackupDestination(cfg.Destination) {
+		if err := ValidateRemoteBackupEncryption(cfg.Destination, cfg.EncryptionMode); err != nil {
+			return err
+		}
+	}
+	if cfg.RequireEncryption && cfg.EncryptionMode == "" {
+		return ErrRemoteBackupEncryptionRequired
+	}
+	return nil
 }

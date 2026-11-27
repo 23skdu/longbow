@@ -142,7 +142,7 @@ help:
 # Combined Local CI Pipeline
 # ==============================================================================
 
-ci: fmt-check lint vet build build-adbc cross-compile check-simd check-avx512-coverage module-size-check test-coverage fuzz-coverage test-docker test-bench-harness test-rbac-verifier test-version check-version accuracy-gate oracle-gate search-gate observability-check observability-rules sec-gosec helm-lint
+ci: fmt-check lint vet build build-adbc cross-compile check-simd check-avx512-coverage module-size-check test-coverage fuzz-coverage test-docker test-bench-harness test-rbac-verifier test-version check-version accuracy-gate oracle-gate search-gate observability-check observability-rules sec-gosec helm-lint remote-backup-encryption-check
 	@echo "=========================================================="
 	@echo " ✓ Complete local CI verification pipeline passed 100%!"
 	@echo "=========================================================="
@@ -532,6 +532,10 @@ search-gate:
 	@echo "Running Search Modes Gate (accuracy & performance regression across all 21 search types)..."
 	$(GO) test -v -count=1 ./internal/store/... -run='^TestSearchModesGate$$'
 	$(GO) test -run='^$$' -bench='^BenchmarkSearchModesGate$$' -benchtime=25ms -benchmem ./internal/store/...
+
+remote-backup-encryption-check:
+	@echo "Checking remote backup encryption at rest..."
+	@./scripts/check_remote_backup_encryption.sh
 
 module-size-check:
 	@echo "Checking module size budgets (warn >800 LOC, fail >1,200 LOC new files)..."

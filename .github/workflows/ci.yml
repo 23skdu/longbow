@@ -709,7 +709,7 @@ jobs:
       # Local scan SBOM validates the amd64 build before publishing. Published
       # SBOMs (below) are generated from the actual pushed manifest digests.
       - name: Generate local scan SBOM (SPDX)
-        uses: anchore/sbom-action@v0.24.3
+        uses: anchore/sbom-action@v0.24.4
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:scan
           format: spdx-json
@@ -863,7 +863,7 @@ jobs:
 
       - name: Generate published Standard SBOM from pushed digest
         if: env.PUBLISH == 'true'
-        uses: anchore/sbom-action@v0.24.3
+        uses: anchore/sbom-action@v0.24.4
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-cpu.outputs.digest }}
           registry-username: ${{ github.actor }}
@@ -874,7 +874,7 @@ jobs:
 
       - name: Generate published EMLGo CPU SBOM from pushed digest
         if: env.PUBLISH == 'true'
-        uses: anchore/sbom-action@v0.24.3
+        uses: anchore/sbom-action@v0.24.4
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-emlgo-cpu.outputs.digest }}
           registry-username: ${{ github.actor }}
@@ -885,7 +885,7 @@ jobs:
 
       - name: Generate published NVIDIA SBOM from pushed digest
         if: env.PUBLISH == 'true'
-        uses: anchore/sbom-action@v0.24.3
+        uses: anchore/sbom-action@v0.24.4
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-nvidia.outputs.digest }}
           registry-username: ${{ github.actor }}
@@ -896,7 +896,7 @@ jobs:
 
       - name: Generate published EMLGo GPU SBOM from pushed digest
         if: env.PUBLISH == 'true'
-        uses: anchore/sbom-action@v0.24.3
+        uses: anchore/sbom-action@v0.24.4
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-emlgo-nvidia.outputs.digest }}
           registry-username: ${{ github.actor }}
